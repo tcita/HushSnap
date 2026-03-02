@@ -1,6 +1,6 @@
-# 打包命令: pyinstaller --noconsole --onefile --clean Isnap.py
-# 自启并立即启动: 将.\dist\Isnap.exe快捷方式放入shell:startup，并立刻启动一次
-# 或在项目根目录终端执行: $exe=(Resolve-Path '.\dist\Isnap.exe').Path; $startup=[Environment]::GetFolderPath('Startup'); $lnk=Join-Path $startup 'Isnap.lnk'; $w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut($lnk); $s.TargetPath=$exe; $s.WorkingDirectory=(Split-Path $exe); $s.IconLocation="$exe,0"; $s.Save(); Start-Process $exe
+# 打包命令: pyinstaller --noconsole --onefile --clean HashSnap.py
+# 在项目根目录终端执行: $exe=(Resolve-Path '.\dist\HashSnap.exe').Path; $startup=[Environment]::GetFolderPath('Startup'); $lnk=Join-Path $startup 'HashSnap.lnk'; $w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut($lnk); $s.TargetPath=$exe; $s.WorkingDirectory=(Split-Path $exe); $s.IconLocation="$exe,0"; $s.Save(); Start-Process $exe
+# 手动自启: 将.\dist\HashSnap.exe快捷方式放入shell:startup，并立刻启动一次
 
 import sys
 import socket
@@ -93,7 +93,7 @@ def get_app_dir():
 
 
 def get_config_path():
-    return get_app_dir() / "isnap_config.json"
+    return get_app_dir() / "hashsnap_config.json"
 
 
 def _write_default_config_if_missing(config_path):
@@ -220,7 +220,8 @@ class CaptureWindow(QtWidgets.QWidget):
         self.start_pos = None
         self.curr_pos = None
         self.click_threshold = 8
-        self.log_path = Path(__file__).resolve().parent / "isnap_capture_error.log"
+        # Keep logs next to installed executable for stable post-install debugging.
+        self.log_path = get_app_dir() / "hashsnap_capture_error.log"
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -462,7 +463,7 @@ def main():
             new_mod, new_vk, new_name = parse_hotkey(read_hotkey_text_from_config(config_path))
         except Exception as exc:
             tray_icon.showMessage(
-                "Isnap 热键未更新",
+                "HashSnap 热键未更新",
                 f"配置无效，继续使用 {current_hotkey_name}\n{exc}",
                 QtWidgets.QSystemTrayIcon.MessageIcon.Warning,
                 3000,
@@ -474,14 +475,14 @@ def main():
                 return
             if register_hotkey(new_mod, new_vk, new_name):
                 tray_icon.showMessage(
-                    "Isnap 热键已启用",
+                    "HashSnap 热键已启用",
                     f"已启用 {new_name}",
                     QtWidgets.QSystemTrayIcon.MessageIcon.Information,
                     2000,
                 )
             else:
                 tray_icon.showMessage(
-                    "Isnap 热键未更新",
+                    "HashSnap 热键未更新",
                     f"{new_name} 仍被占用",
                     QtWidgets.QSystemTrayIcon.MessageIcon.Warning,
                     3000,
@@ -492,7 +493,7 @@ def main():
         unregister_current_hotkey()
         if register_hotkey(new_mod, new_vk, new_name):
             tray_icon.showMessage(
-                "Isnap 热键已更新",
+                "HashSnap 热键已更新",
                 f"{old_name} -> {new_name}",
                 QtWidgets.QSystemTrayIcon.MessageIcon.Information,
                 2000,
@@ -502,7 +503,7 @@ def main():
         # 新热键注册失败，回滚旧热键。
         if not register_hotkey(old_mod, old_vk, old_name):
             tray_icon.showMessage(
-                "Isnap 热键错误",
+                "HashSnap 热键错误",
                 "新热键不可用，且旧热键恢复失败。",
                 QtWidgets.QSystemTrayIcon.MessageIcon.Critical,
                 4000,
@@ -510,7 +511,7 @@ def main():
             return
 
         tray_icon.showMessage(
-            "Isnap 热键未更新",
+            "HashSnap 热键未更新",
             f"{new_name} 被占用，已保持 {old_name}",
             QtWidgets.QSystemTrayIcon.MessageIcon.Warning,
             3000,
@@ -534,3 +535,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

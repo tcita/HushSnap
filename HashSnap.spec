@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['Isnap.py'],
+    ['HashSnap.py'],
     pathex=[],
     binaries=[],
     datas=[],
@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='Isnap',
+    name='HashSnap',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
