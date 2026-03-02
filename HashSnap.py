@@ -2,10 +2,12 @@
 # 在项目根目录终端执行: $exe=(Resolve-Path '.\dist\HashSnap.exe').Path; $startup=[Environment]::GetFolderPath('Startup'); $lnk=Join-Path $startup 'HashSnap.lnk'; $w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut($lnk); $s.TargetPath=$exe; $s.WorkingDirectory=(Split-Path $exe); $s.IconLocation="$exe,0"; $s.Save(); Start-Process $exe
 # 手动自启: 将.\dist\HashSnap.exe快捷方式放入shell:startup，并立刻启动一次
 
+import os
 import sys
 import socket
 import ctypes
 import json
+import subprocess
 from pathlib import Path
 from datetime import datetime
 import traceback
@@ -20,6 +22,7 @@ MOD_CONTROL = 0x0002
 MOD_SHIFT = 0x0004
 MOD_WIN = 0x0008
 DEFAULT_HOTKEY = "Alt+Q"
+APP_VERSION = "1.0.0"
 
 # 托盘图标：程序内绘制，避免依赖外部 ico 文件
 def create_tray_icon():
@@ -211,10 +214,17 @@ class CaptureWindow(QtWidgets.QWidget):
     def __init__(self, pixmap):
         super().__init__()
         self.pixmap = pixmap
-        self.setWindowFlags(QtCore.Qt.WindowType.FramelessWindowHint | 
+        # 使用 Window 标志确保它是一个独立的顶级窗口
+        self.setWindowFlags(QtCore.Qt.WindowType.Window |
+                            QtCore.Qt.WindowType.FramelessWindowHint | 
                             QtCore.Qt.WindowType.WindowStaysOnTopHint | 
                             QtCore.Qt.WindowType.Tool)
+        
         self.setWindowState(QtCore.Qt.WindowState.WindowFullScreen)
+        # 显式覆盖所有屏幕区域
+        screen = QtWidgets.QApplication.primaryScreen()
+        self.setGeometry(screen.geometry())
+        
         self.setCursor(QtCore.Qt.CursorShape.CrossCursor)
         self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
         self.start_pos = None
@@ -225,9 +235,30 @@ class CaptureWindow(QtWidgets.QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
+        # 确保窗口能够接收输入
         self.raise_()
         self.activateWindow()
         self.setFocus()
+        # 稍微增加延迟，确保系统完成窗口创建后再强制夺取最高优先级
+        QtCore.QTimer.singleShot(100, self._force_win_topmost)
+
+    def _force_win_topmost(self):
+        if sys.platform == "win32":
+            try:
+                hwnd = int(self.winId())
+                # 设置 WS_EX_TOPMOST 样式
+                GWL_EXSTYLE = -20
+                WS_EX_TOPMOST = 0x00000008
+                current_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+                ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, current_style | WS_EX_TOPMOST)
+                
+                # 强制夺取前台焦点并置顶
+                ctypes.windll.user32.BringWindowToTop(hwnd)
+                ctypes.windll.user32.SetForegroundWindow(hwnd)
+                # HWND_TOPMOST = -1, SWP_NOMOVE=2, SWP_NOSIZE=1, SWP_SHOWWINDOW=0x40
+                ctypes.windll.user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040)
+            except Exception:
+                pass
 
     def _write_error_log(self, reason, extra=""):
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -384,8 +415,6 @@ def main():
     app.setWindowIcon(icon)
     tray_icon = QtWidgets.QSystemTrayIcon(icon, app)
     menu = QtWidgets.QMenu()
-    quit_action = menu.addAction("quit")
-    quit_action.triggered.connect(app.quit)
     tray_icon.setContextMenu(menu)
     tray_icon.show()
 
@@ -400,9 +429,16 @@ def main():
             comm.win = None
         
         screen = QtWidgets.QApplication.primaryScreen()
+        # 抓取屏幕时显式设置 DPR，确保后续选区计算正确
+        dpr = screen.devicePixelRatio()
         p = screen.grabWindow(0)
+        p.setDevicePixelRatio(dpr)
+        
         comm.win = CaptureWindow(p)
         comm.win.show()
+        # 显示后立即尝试一次强行置顶
+        if sys.platform == "win32":
+            QtCore.QTimer.singleShot(10, comm.win._force_win_topmost)
 
     comm.trigger.connect(launch)
 
@@ -421,6 +457,70 @@ def main():
     current_hotkey_mod = hotkey_mod
     current_hotkey_vk = hotkey_vk
     current_hotkey_name = hotkey_name
+
+    def find_uninstaller():
+        app_dir = get_app_dir()
+        default_uninstaller = app_dir / "unins000.exe"
+        if default_uninstaller.exists():
+            return default_uninstaller
+        candidates = sorted(app_dir.glob("unins*.exe"))
+        return candidates[0] if candidates else None
+
+    def launch_uninstaller():
+        uninstaller_path = find_uninstaller()
+        if not uninstaller_path:
+            QtWidgets.QMessageBox.warning(
+                None,
+                "未找到卸载程序",
+                "当前目录未检测到卸载程序，请在 控制面板 -> 程序和功能 中卸载 HashSnap。",
+            )
+            return
+
+        confirm = QtWidgets.QMessageBox.question(
+            None,
+            "确认卸载",
+            "将启动 HashSnap 卸载程序，是否继续？",
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.No,
+        )
+        if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            subprocess.Popen([str(uninstaller_path)], cwd=str(uninstaller_path.parent))
+            app.quit()
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(None, "启动卸载失败", str(exc))
+
+    def show_settings_about():
+        box = QtWidgets.QMessageBox()
+        box.setIcon(QtWidgets.QMessageBox.Icon.Information)
+        box.setWindowTitle("设置 / 关于")
+        box.setText(
+            f"HashSnap {APP_VERSION}\n当前热键: {current_hotkey_name}\n配置文件: {config_path}"
+        )
+        box.setInformativeText("可在 控制面板 -> 程序和功能 卸载，或点击下方“卸载”按钮。")
+        uninstall_btn = box.addButton("卸载", QtWidgets.QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton("关闭", QtWidgets.QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() == uninstall_btn:
+            launch_uninstaller()
+
+    def open_app_dir():
+        try:
+            os.startfile(get_app_dir())
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(None, "无法打开目录", str(exc))
+
+    settings_about_action = menu.addAction("设置/关于...")
+    settings_about_action.triggered.connect(show_settings_about)
+    
+    open_dir_action = menu.addAction("打开安装目录")
+    open_dir_action.triggered.connect(open_app_dir)
+
+    menu.addSeparator()
+    quit_action = menu.addAction("退出")
+    quit_action.triggered.connect(app.quit)
 
     def unregister_current_hotkey():
         nonlocal hotkey_registered

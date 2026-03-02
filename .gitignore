@@ -1,0 +1,15 @@
+# PyInstaller build artifacts
+build/
+dist/
+*.spec
+__pycache__/
+
+# Installer build artifacts
+dist-installer/
+
+# Executables
+*.exe
+
+# Configuration and logs
+hashsnap_config.json
+hashsnap_capture_error.log

@@ -14,10 +14,13 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 DefaultDirName={localappdata}\{#MyAppName}
+UsePreviousAppDir=no
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 DisableDirPage=no
+DirExistsWarning=no
 PrivilegesRequired=lowest
+UsePreviousPrivileges=no
 CloseApplications=yes
 OutputDir=..\dist-installer
 OutputBaseFilename=HashSnap-Setup
@@ -25,6 +28,10 @@ Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayIcon={app}\{#MyAppExeName}
+UninstallDisplayName={#MyAppName}
+; Keep this enabled so the app is listed in Control Panel > Programs and Features
+CreateUninstallRegKey=yes
+Uninstallable=yes
 ShowLanguageDialog=auto
 
 [Languages]
@@ -52,16 +59,22 @@ Source: "..\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\{#MyConfigName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\{#MyLogName}"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist
 
+[Registry]
+; Standard Inno Setup CreateUninstallRegKey=yes will handle this in HKCU when PrivilegesRequired=lowest.
+[InstallDelete]
+Type: files; Name: "{group}\Uninstall {#MyAppName}.lnk"
+Type: files; Name: "{group}\卸载 {#MyAppName}.lnk"
+Type: files; Name: "{group}\{#MyAppName} Uninstall Tool (Direct).lnk"
+
 [Icons]
+Name: "{app}\{cm:UninstallApp}"; Filename: "{app}\unins000.exe"; WorkingDir: "{app}"; IconFilename: "{app}\unins000.exe"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
-Name: "{autodesktop}\{cm:UninstallApp}"; Filename: "{uninstallexe}"
-Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"; Tasks: startup
+Name: "{autostartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"; Tasks: startup
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"
-Name: "{group}\{cm:UninstallApp}"; Filename: "{uninstallexe}"
+Name: "{group}\{cm:UninstallApp}"; Filename: "{app}\unins000.exe"; WorkingDir: "{app}"
 
 [UninstallDelete]
-Type: files; Name: "{autodesktop}\卸载 HashSnap.lnk"
-Type: files; Name: "{userstartup}\HashSnap.lnk"
+Type: files; Name: "{autostartup}\HashSnap.lnk"
 Type: files; Name: "{app}\hashsnap_config.json"
 Type: files; Name: "{app}\hashsnap_capture_error.log"
 Type: dirifempty; Name: "{app}"
@@ -71,6 +84,16 @@ Filename: "{cmd}"; Parameters: "/C taskkill /F /T /IM HashSnap.exe >nul 2>&1"; F
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchNow}"; Flags: nowait postinstall skipifsilent
+
+
+
+
+
+
+
+
+
+
 
 
 
