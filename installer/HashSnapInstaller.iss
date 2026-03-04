@@ -6,7 +6,7 @@
 #define MyAppPublisher "HashSnap"
 #define MyAppExeName "HashSnap.exe"
 #define MyConfigName "hashsnap_config.json"
-#define MyLogName "hashsnap_capture_error.log"
+#define MyLogName "hashsnap_capture_debug.log"
 
 [Setup]
 AppId={{A53D0F97-1664-4740-A22D-4A0A8DE5C30A}
@@ -32,11 +32,11 @@ UninstallDisplayName={#MyAppName}
 ; Keep this enabled so the app is listed in Control Panel > Programs and Features
 CreateUninstallRegKey=yes
 Uninstallable=yes
-ShowLanguageDialog=auto
+ShowLanguageDialog=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
-Name: "chinesesimp"; MessagesFile: "compiler:Default.isl"
+Name: "chinesesimp"; MessagesFile: "{#SourcePath}\languages\ChineseSimplified.isl"
 
 [CustomMessages]
 english.AdditionalTasks=Additional tasks:
@@ -76,6 +76,7 @@ Name: "{group}\{cm:UninstallApp}"; Filename: "{app}\unins000.exe"; WorkingDir: "
 [UninstallDelete]
 Type: files; Name: "{autostartup}\HashSnap.lnk"
 Type: files; Name: "{app}\hashsnap_config.json"
+Type: files; Name: "{app}\hashsnap_capture_debug.log"
 Type: files; Name: "{app}\hashsnap_capture_error.log"
 Type: dirifempty; Name: "{app}"
 

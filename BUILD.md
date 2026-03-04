@@ -1,35 +1,57 @@
-# HashSnap Build Instructions
+# HashSnap Build Guide
 
-## 1. PyInstaller (Build Single File EXE)
+## Prerequisites
+
+- Run commands from the project root.
+- Python and PyInstaller are installed and callable in your shell.
+- Inno Setup 6 is installed.
+- `ISCC.exe` is available (either callable in shell or passed via `-IsccPath`).
+
+## 1) Build EXE
 
 ```powershell
-# 在项目根目录执行
 pyinstaller --noconsole --onefile --clean HashSnap.py
 ```
 
-## 2. Inno Setup (Build Installer)
+Output:
 
-确保已安装 [Inno Setup](https://jrsoftware.org/isinfo.php)，并将 `ISCC.exe` 路径添加到环境变量（或手动指定）。
+- `dist/HashSnap.exe`
 
-```powershell
-# 使用命令行打包安装程序
-iscc.exe .\installer\HashSnapInstaller.iss
-```
+## 2) Build Installer
 
-或者运行 `installer/build_installer.ps1` 脚本：
+### Option A (recommended): Project script
 
 ```powershell
 .\installer\build_installer.ps1
 ```
 
-## 3. Post-Build: Add to Startup (Manual/Automatic)
-
-### Automatic via PowerShell (Run once)
+If `ISCC.exe` is not callable in your shell:
 
 ```powershell
-$exe=(Resolve-Path '.\dist\HashSnap.exe').Path; $startup=[Environment]::GetFolderPath('Startup'); $lnk=Join-Path $startup 'HashSnap.lnk'; $w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut($lnk); $s.TargetPath=$exe; $s.WorkingDirectory=(Split-Path $exe); $s.IconLocation="$exe,0"; $s.Save(); Start-Process $exe
+.\installer\build_installer.ps1 -IsccPath "<full-path-to-ISCC.exe>"
 ```
 
-### Manual
+### Option B: Direct command
 
-将 `.\dist\HashSnap.exe` 的快捷方式放入 `shell:startup` 目录。
+```powershell
+iscc.exe .\installer\HashSnapInstaller.iss
+```
+
+Output:
+
+- `dist-installer/HashSnap-Setup.exe`
+
+## 3) Optional: Add App to Startup
+
+```powershell
+$exe = (Resolve-Path '.\dist\HashSnap.exe').Path
+$startup = [Environment]::GetFolderPath('Startup')
+$linkPath = Join-Path $startup 'HashSnap.lnk'
+
+$wsh = New-Object -ComObject WScript.Shell
+$shortcut = $wsh.CreateShortcut($linkPath)
+$shortcut.TargetPath = $exe
+$shortcut.WorkingDirectory = Split-Path $exe
+$shortcut.IconLocation = "$exe,0"
+$shortcut.Save()
+```

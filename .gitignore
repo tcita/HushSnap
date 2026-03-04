@@ -13,3 +13,4 @@ dist-installer/
 # Configuration and logs
 hashsnap_config.json
 hashsnap_capture_error.log
+hashsnap_capture_debug.log
