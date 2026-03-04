@@ -800,6 +800,12 @@ def main():
     comm = Communicator()
     comm.win = None
 
+    def on_tray_activated(reason):
+        if reason == QtWidgets.QSystemTrayIcon.ActivationReason.Trigger:
+            comm.trigger.emit()
+
+    tray_icon.activated.connect(on_tray_activated)
+
     def launch():
         try:
             if comm.win and comm.win.isVisible(): 
