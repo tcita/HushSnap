@@ -1,7 +1,3 @@
-# 打包命令: pyinstaller --noconsole --onefile --clean HashSnap.py
-# 在项目根目录终端执行: $exe=(Resolve-Path '.\dist\HashSnap.exe').Path; $startup=[Environment]::GetFolderPath('Startup'); $lnk=Join-Path $startup 'HashSnap.lnk'; $w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut($lnk); $s.TargetPath=$exe; $s.WorkingDirectory=(Split-Path $exe); $s.IconLocation="$exe,0"; $s.Save(); Start-Process $exe
-# 手动自启: 将.\dist\HashSnap.exe快捷方式放入shell:startup，并立刻启动一次
-
 import os
 import sys
 import socket
@@ -23,6 +19,80 @@ MOD_SHIFT = 0x0004
 MOD_WIN = 0x0008
 DEFAULT_HOTKEY = "Alt+Q"
 APP_VERSION = "1.0.0"
+
+# --- 2. Logging switches (visible) ---
+# User default: lightweight logs only.
+LOG_MODE_LIGHT = "light"
+LOG_MODE_DEBUG = "debug"
+DEFAULT_LOG_MODE = LOG_MODE_LIGHT
+LOG_MODE_ENV = "HASHSNAP_LOG_MODE"  # values: light | debug
+DEBUG_TOPMOST_ENV = "HASHSNAP_DEBUG_TOPMOST"  # backward-compatible override
+
+# --- 3. UI language switches ---
+UI_LANG_ENV = "HASHSNAP_UI_LANG"  # values: auto | en | zh
+UI_LANG_AUTO = "auto"
+UI_LANG_EN = "en"
+UI_LANG_ZH = "zh"
+DEFAULT_UI_LANG = UI_LANG_AUTO
+
+UI_TEXT = {
+    UI_LANG_EN: {
+        "error": "Error",
+        "hotkey_taken": "{hotkey} is already in use.\nConfig: {config_path}",
+        "uninstaller_not_found_title": "Uninstaller Not Found",
+        "uninstaller_not_found_body": "No uninstaller was found in the app directory. Uninstall HashSnap from Control Panel > Programs and Features.",
+        "confirm_uninstall_title": "Confirm Uninstall",
+        "confirm_uninstall_body": "HashSnap uninstaller will be launched. Continue?",
+        "launch_uninstall_failed": "Failed to Launch Uninstaller",
+        "settings_about_title": "Settings / About",
+        "settings_about_body": "HashSnap {version}\nCurrent hotkey: {hotkey}\nConfig: {config_path}",
+        "settings_about_info": "You can uninstall from Control Panel > Programs and Features, or click \"Uninstall\" below.",
+        "uninstall_btn": "Uninstall",
+        "close_btn": "Close",
+        "open_dir_failed": "Cannot Open Folder",
+        "menu_settings_about": "Settings / About...",
+        "menu_open_install_dir": "Open Install Folder",
+        "menu_quit": "Quit",
+        "hotkey_not_updated_title": "HashSnap Hotkey Not Updated",
+        "hotkey_invalid_config": "Invalid config. Keep using {hotkey}\n{error}",
+        "hotkey_enabled_title": "HashSnap Hotkey Enabled",
+        "hotkey_enabled": "Enabled {hotkey}",
+        "hotkey_still_occupied": "{hotkey} is still in use",
+        "hotkey_updated_title": "HashSnap Hotkey Updated",
+        "hotkey_updated": "{old_hotkey} -> {new_hotkey}",
+        "hotkey_error_title": "HashSnap Hotkey Error",
+        "hotkey_recover_failed": "New hotkey is unavailable, and old hotkey recovery failed.",
+        "hotkey_kept_old": "{new_hotkey} is in use. Kept {old_hotkey}.",
+    },
+    UI_LANG_ZH: {
+        "error": "错误",
+        "hotkey_taken": "{hotkey} 热键已被占用！\n配置文件: {config_path}",
+        "uninstaller_not_found_title": "未找到卸载程序",
+        "uninstaller_not_found_body": "当前目录未检测到卸载程序，请在 控制面板 -> 程序和功能 中卸载 HashSnap。",
+        "confirm_uninstall_title": "确认卸载",
+        "confirm_uninstall_body": "将启动 HashSnap 卸载程序，是否继续？",
+        "launch_uninstall_failed": "启动卸载失败",
+        "settings_about_title": "设置 / 关于",
+        "settings_about_body": "HashSnap {version}\n当前热键: {hotkey}\n配置文件: {config_path}",
+        "settings_about_info": "可在 控制面板 -> 程序和功能 卸载，或点击下方“卸载”按钮。",
+        "uninstall_btn": "卸载",
+        "close_btn": "关闭",
+        "open_dir_failed": "无法打开目录",
+        "menu_settings_about": "设置/关于...",
+        "menu_open_install_dir": "打开安装目录",
+        "menu_quit": "退出",
+        "hotkey_not_updated_title": "HashSnap 热键未更新",
+        "hotkey_invalid_config": "配置无效，继续使用 {hotkey}\n{error}",
+        "hotkey_enabled_title": "HashSnap 热键已启用",
+        "hotkey_enabled": "已启用 {hotkey}",
+        "hotkey_still_occupied": "{hotkey} 仍被占用",
+        "hotkey_updated_title": "HashSnap 热键已更新",
+        "hotkey_updated": "{old_hotkey} -> {new_hotkey}",
+        "hotkey_error_title": "HashSnap 热键错误",
+        "hotkey_recover_failed": "新热键不可用，且旧热键恢复失败。",
+        "hotkey_kept_old": "{new_hotkey} 被占用，已保持 {old_hotkey}",
+    },
+}
 
 # 托盘图标：程序内绘制，避免依赖外部 ico 文件
 def create_tray_icon():
@@ -104,7 +174,7 @@ def _write_default_config_if_missing(config_path):
         return
     try:
         config_path.write_text(
-            json.dumps({"hotkey": DEFAULT_HOTKEY}, indent=2),
+            json.dumps({"hotkey": DEFAULT_HOTKEY, "language": UI_LANG_AUTO}, indent=2),
             encoding="utf-8",
         )
     except Exception:
@@ -200,6 +270,40 @@ def load_hotkey_setting():
         mod, vk, canonical = parse_hotkey(DEFAULT_HOTKEY)
         return mod, vk, canonical, config_path
 
+
+def _read_ui_lang_from_config(config_path):
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return UI_LANG_AUTO
+        value = data.get("language", UI_LANG_AUTO)
+        if isinstance(value, str):
+            v = value.strip().lower()
+            if v in {UI_LANG_AUTO, UI_LANG_EN, UI_LANG_ZH}:
+                return v
+    except Exception:
+        pass
+    return UI_LANG_AUTO
+
+
+def resolve_ui_lang(config_path):
+    env = os.environ.get(UI_LANG_ENV, "").strip().lower()
+    if env in {UI_LANG_EN, UI_LANG_ZH}:
+        return env
+
+    cfg = _read_ui_lang_from_config(config_path)
+    if cfg in {UI_LANG_EN, UI_LANG_ZH}:
+        return cfg
+
+    locale_name = QtCore.QLocale.system().name().lower()
+    return UI_LANG_ZH if locale_name.startswith("zh") else UI_LANG_EN
+
+
+def ui_text(lang, key, **kwargs):
+    table = UI_TEXT.get(lang, UI_TEXT[UI_LANG_EN])
+    text = table.get(key, UI_TEXT[UI_LANG_EN].get(key, key))
+    return text.format(**kwargs)
+
 # 防止多开
 def is_already_running():
     try:
@@ -214,12 +318,17 @@ class CaptureWindow(QtWidgets.QWidget):
     def __init__(self, pixmap):
         super().__init__()
         self.pixmap = pixmap
-        # 使用 Window 标志确保它是一个独立的顶级窗口
-        self.setWindowFlags(QtCore.Qt.WindowType.Window |
-                            QtCore.Qt.WindowType.FramelessWindowHint | 
-                            QtCore.Qt.WindowType.WindowStaysOnTopHint | 
-                            QtCore.Qt.WindowType.Tool)
         
+        # 【修改点 1】：移除 BypassWindowManagerHint 和原生的 Window 标志
+        # Tool + Frameless + StaysOnTop 已经足够覆盖全屏、不显示任务栏图标，
+        # 并且能让系统正常处理焦点转移，从而触发开始菜单的自动收起（Light-dismiss）。
+        self.setWindowFlags(
+            QtCore.Qt.WindowType.Tool |
+            QtCore.Qt.WindowType.FramelessWindowHint | 
+            QtCore.Qt.WindowType.WindowStaysOnTopHint
+        )
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_NativeWindow, True)
+
         self.setWindowState(QtCore.Qt.WindowState.WindowFullScreen)
         # 显式覆盖所有屏幕区域
         screen = QtWidgets.QApplication.primaryScreen()
@@ -231,36 +340,299 @@ class CaptureWindow(QtWidgets.QWidget):
         self.curr_pos = None
         self.click_threshold = 8
         # Keep logs next to installed executable for stable post-install debugging.
-        self.log_path = get_app_dir() / "hashsnap_capture_error.log"
+        self.log_path = get_app_dir() / "hashsnap_capture_debug.log"
+
+        # 日志模式：默认轻量；设置 HASHSNAP_LOG_MODE=debug 开启详细调试日志。
+        raw_log_mode = os.environ.get(LOG_MODE_ENV, DEFAULT_LOG_MODE).strip().lower()
+        self.log_mode = raw_log_mode if raw_log_mode in {LOG_MODE_LIGHT, LOG_MODE_DEBUG} else DEFAULT_LOG_MODE
+        self.debug_topmost = self.log_mode == LOG_MODE_DEBUG
+
+        # 兼容旧开关：HASHSNAP_DEBUG_TOPMOST=1/0 可直接覆盖 detailed topmost 调试。
+        legacy = os.environ.get(DEBUG_TOPMOST_ENV)
+        if legacy is not None:
+            self.debug_topmost = legacy.strip().lower() not in {"0", "false", "off", "no"}
+            if self.debug_topmost:
+                self.log_mode = LOG_MODE_DEBUG
+
+        self._topmost_debug_seq = 0
 
     def showEvent(self, event):
         super().showEvent(event)
-        # 确保窗口能够接收输入
+        self._debug_topmost_state("show_event_before_focus_ops")
+
+        # 先执行一次，尽量命中开始菜单仍在前台的时机
+        self._force_win_topmost()
+
+        # 再走 Qt 焦点链
         self.raise_()
         self.activateWindow()
         self.setFocus()
-        # 稍微增加延迟，确保系统完成窗口创建后再强制夺取最高优先级
-        QtCore.QTimer.singleShot(100, self._force_win_topmost)
+        self._debug_topmost_state("show_event_after_focus_ops")
+
+        # 最后补一次，处理竞争条件
+        QtCore.QTimer.singleShot(0, self._force_win_topmost)
+        QtCore.QTimer.singleShot(120, lambda: self._debug_topmost_state("show_event_t+120ms"))
+
+    def _hwnd_value(self, hwnd):
+        if hwnd is None:
+            return 0
+
+        # sip.voidptr (Qt winId) usually supports int() directly.
+        try:
+            return int(hwnd)
+        except Exception:
+            pass
+
+        try:
+            return int(hwnd.__index__())
+        except Exception:
+            pass
+
+        try:
+            if isinstance(hwnd, int):
+                return hwnd
+            if isinstance(hwnd, (bytes, bytearray)):
+                return int.from_bytes(hwnd, byteorder=sys.byteorder, signed=False)
+
+            value = getattr(hwnd, "value", None)
+            if isinstance(value, int):
+                return value
+            if isinstance(value, (bytes, bytearray)):
+                return int.from_bytes(value, byteorder=sys.byteorder, signed=False)
+
+            if hasattr(hwnd, "asinteger"):
+                try:
+                    return int(hwnd.asinteger())
+                except Exception:
+                    pass
+
+            casted = ctypes.cast(hwnd, ctypes.c_void_p)
+            return int(casted.value or 0)
+        except Exception:
+            return 0
+
+    def _self_hwnd(self):
+        # Force native handle creation, then try multiple Qt ids.
+        try:
+            self.setAttribute(QtCore.Qt.WidgetAttribute.WA_NativeWindow, True)
+        except Exception:
+            pass
+
+        candidates = []
+        try:
+            candidates.append(self.winId())
+        except Exception:
+            pass
+        try:
+            candidates.append(self.effectiveWinId())
+        except Exception:
+            pass
+        try:
+            wh = self.windowHandle()
+            if wh is not None:
+                candidates.append(wh.winId())
+        except Exception:
+            pass
+
+        for candidate in candidates:
+            val = self._hwnd_value(candidate)
+            if val:
+                return val
+
+        return 0
+
+    def _fmt_hwnd(self, hwnd):
+        val = self._hwnd_value(hwnd)
+        if val <= 0:
+            return "0x0"
+        return f"0x{val:08X}"
+
+    def _get_window_class(self, user32, hwnd):
+        if not hwnd:
+            return ""
+        buf = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(hwnd, buf, len(buf))
+        return buf.value.strip()
+
+    def _get_window_title(self, user32, hwnd):
+        if not hwnd:
+            return ""
+        length = user32.GetWindowTextLengthW(hwnd)
+        buf = ctypes.create_unicode_buffer(max(1, length + 1))
+        user32.GetWindowTextW(hwnd, buf, len(buf))
+        return buf.value.replace("\n", " " ).strip()
+
+    def _window_snapshot(self, user32, hwnd):
+        if not hwnd:
+            return "hwnd=0x0"
+
+        pid = wintypes.DWORD(0)
+        tid = user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+
+        GWL_STYLE = -16
+        GWL_EXSTYLE = -20
+        style = user32.GetWindowLongW(hwnd, GWL_STYLE) & 0xFFFFFFFF
+        ex_style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE) & 0xFFFFFFFF
+
+        rect = wintypes.RECT()
+        has_rect = user32.GetWindowRect(hwnd, ctypes.byref(rect))
+        rect_text = f"{rect.left},{rect.top},{rect.right},{rect.bottom}" if has_rect else "n/a"
+
+        cls = self._get_window_class(user32, hwnd)
+        title = self._get_window_title(user32, hwnd)
+        visible = int(bool(user32.IsWindowVisible(hwnd)))
+        topmost = int(bool(ex_style & 0x00000008))
+
+        return (
+            f"hwnd={self._fmt_hwnd(hwnd)},tid={tid},pid={pid.value},class={cls!r},title={title!r},"
+            f"visible={visible},topmost={topmost},style=0x{style:08X},ex=0x{ex_style:08X},rect={rect_text}"
+        )
+
+    def _debug_topmost_state(self, stage, extra=""):
+        if not self.debug_topmost or sys.platform != "win32":
+            return
+
+        try:
+            user32 = ctypes.windll.user32
+            hwnd = wintypes.HWND(self._self_hwnd())
+            fg_hwnd = wintypes.HWND(self._hwnd_value(user32.GetForegroundWindow()))
+
+            self._topmost_debug_seq += 1
+            msg = (
+                f"seq={self._topmost_debug_seq},stage={stage},"
+                f"self=[{self._window_snapshot(user32, hwnd)}],"
+                f"fg=[{self._window_snapshot(user32, fg_hwnd)}]"
+            )
+            if extra:
+                msg += f", {extra}"
+            self._write_log("topmost_debug", msg, level=LOG_MODE_DEBUG)
+        except Exception:
+            self._write_log(
+                "topmost_debug_exception",
+                f"stage={stage}, traceback={traceback.format_exc().strip()}",
+                level=LOG_MODE_DEBUG
+            )
 
     def _force_win_topmost(self):
-        if sys.platform == "win32":
-            try:
-                hwnd = int(self.winId())
-                # 设置 WS_EX_TOPMOST 样式
-                GWL_EXSTYLE = -20
-                WS_EX_TOPMOST = 0x00000008
-                current_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-                ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, current_style | WS_EX_TOPMOST)
-                
-                # 强制夺取前台焦点并置顶
-                ctypes.windll.user32.BringWindowToTop(hwnd)
-                ctypes.windll.user32.SetForegroundWindow(hwnd)
-                # HWND_TOPMOST = -1, SWP_NOMOVE=2, SWP_NOSIZE=1, SWP_SHOWWINDOW=0x40
-                ctypes.windll.user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040)
-            except Exception:
-                pass
+        if sys.platform != "win32":
+            return
 
-    def _write_error_log(self, reason, extra=""):
+        try:
+            user32 = ctypes.windll.user32
+            kernel32 = ctypes.windll.kernel32
+            hwnd_val = self._self_hwnd()
+            hwnd = wintypes.HWND(hwnd_val)
+            if not hwnd_val:
+                wid = "<err>"
+                ewid = "<err>"
+                try:
+                    wid = repr(self.winId())
+                except Exception:
+                    pass
+                try:
+                    ewid = repr(self.effectiveWinId())
+                except Exception:
+                    pass
+                self._write_log("topmost_debug", f"stage=force_no_hwnd,winId={wid},effectiveWinId={ewid}", level=LOG_MODE_DEBUG)
+                return
+
+            WM_CANCELMODE = 0x001F
+            HWND_TOPMOST = wintypes.HWND(-1)
+            SWP_NOSIZE = 0x0001
+            SWP_NOMOVE = 0x0002
+            SWP_FRAMECHANGED = 0x0020
+            SWP_SHOWWINDOW = 0x0040
+            SW_SHOW = 5
+            swp_flags = SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_FRAMECHANGED
+
+            self._debug_topmost_state("force_enter")
+
+            fg_hwnd = wintypes.HWND(self._hwnd_value(user32.GetForegroundWindow()))
+            fg_val = self._hwnd_value(fg_hwnd)
+            if fg_val and fg_val != hwnd_val:
+                kernel32.SetLastError(0)
+                pm_ret = user32.PostMessageW(fg_hwnd, WM_CANCELMODE, 0, 0)
+                pm_err = kernel32.GetLastError()
+                self._debug_topmost_state(
+                    "post_cancelmode",
+                    f"target={self._fmt_hwnd(fg_hwnd)}, ret={pm_ret}, err={pm_err}"
+                )
+            else:
+                self._debug_topmost_state(
+                    "post_cancelmode_skip",
+                    f"fg={self._fmt_hwnd(fg_hwnd)}"
+                )
+
+            current_tid = kernel32.GetCurrentThreadId()
+            fg_tid = user32.GetWindowThreadProcessId(fg_hwnd, None) if fg_hwnd else 0
+            attached = False
+            if fg_tid and fg_tid != current_tid:
+                kernel32.SetLastError(0)
+                attach_ret = user32.AttachThreadInput(current_tid, fg_tid, True)
+                attach_err = kernel32.GetLastError()
+                attached = bool(attach_ret)
+                self._debug_topmost_state(
+                    "attach_thread_input",
+                    f"current_tid={current_tid}, fg_tid={fg_tid}, ret={attach_ret}, err={attach_err}"
+                )
+            else:
+                self._debug_topmost_state(
+                    "attach_thread_input_skip",
+                    f"current_tid={current_tid}, fg_tid={fg_tid}"
+                )
+
+            try:
+                kernel32.SetLastError(0)
+                show_ret = user32.ShowWindow(hwnd, SW_SHOW)
+                show_err = kernel32.GetLastError()
+
+                kernel32.SetLastError(0)
+                top_ret = user32.BringWindowToTop(hwnd)
+                top_err = kernel32.GetLastError()
+
+                kernel32.SetLastError(0)
+                pos_ret = user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, swp_flags)
+                pos_err = kernel32.GetLastError()
+
+                kernel32.SetLastError(0)
+                fg_ret = user32.SetForegroundWindow(hwnd)
+                fg_err = kernel32.GetLastError()
+
+                kernel32.SetLastError(0)
+                active_ret = user32.SetActiveWindow(hwnd)
+                active_err = kernel32.GetLastError()
+
+                kernel32.SetLastError(0)
+                focus_ret = user32.SetFocus(hwnd)
+                focus_err = kernel32.GetLastError()
+
+                self._debug_topmost_state(
+                    "force_calls_done",
+                    f"show={show_ret}/{show_err}, bring={top_ret}/{top_err}, pos={pos_ret}/{pos_err}, "
+                    f"fg={fg_ret}/{fg_err}, active={self._fmt_hwnd(active_ret)}/{active_err}, "
+                    f"focus={self._fmt_hwnd(focus_ret)}/{focus_err}, flags=0x{swp_flags:04X}"
+                )
+            finally:
+                if attached:
+                    kernel32.SetLastError(0)
+                    detach_ret = user32.AttachThreadInput(current_tid, fg_tid, False)
+                    detach_err = kernel32.GetLastError()
+                    self._debug_topmost_state(
+                        "detach_thread_input",
+                        f"current_tid={current_tid}, fg_tid={fg_tid}, ret={detach_ret}, err={detach_err}"
+                    )
+
+            self._debug_topmost_state("force_exit")
+        except Exception:
+            self._write_log(
+                "topmost_force_exception",
+                f"traceback={traceback.format_exc().strip()}"
+            )
+
+    def _write_log(self, reason, extra="", level=LOG_MODE_LIGHT):
+        if level == LOG_MODE_DEBUG and not self.debug_topmost:
+            return
+
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         line = f"[{ts}] {reason}"
         if extra:
@@ -274,7 +646,7 @@ class CaptureWindow(QtWidgets.QWidget):
     def _set_clipboard_pixmap(self, pixmap, scene):
         try:
             if pixmap.isNull():
-                self._write_error_log("clipboard_write_failed", f"scene={scene}, reason=pixmap_is_null")
+                self._write_log("clipboard_write_failed", f"scene={scene}, reason=pixmap_is_null")
                 return False
 
             clipboard = QtWidgets.QApplication.clipboard()
@@ -301,7 +673,7 @@ class CaptureWindow(QtWidgets.QWidget):
                 written_img = clipboard.image(mode=clipboard.Mode.Clipboard)
 
             if written_img.isNull():
-                self._write_error_log(
+                self._write_log(
                     "clipboard_write_failed",
                     f"scene={scene}, size={pixmap.width()}x{pixmap.height()}, dpr={pixmap.devicePixelRatio():.2f}"
                 )
@@ -309,7 +681,7 @@ class CaptureWindow(QtWidgets.QWidget):
 
             return True
         except Exception:
-            self._write_error_log(
+            self._write_log(
                 "clipboard_write_exception",
                 f"scene={scene}, traceback={traceback.format_exc().strip()}"
             )
@@ -410,7 +782,14 @@ def main():
     app = QtWidgets.QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
-    # 3. 系统托盘设置
+    # 3. 加载配置与 UI 语言
+    hotkey_mod, hotkey_vk, hotkey_name, config_path = load_hotkey_setting()
+    ui_lang = resolve_ui_lang(config_path)
+
+    def t(key, **kwargs):
+        return ui_text(ui_lang, key, **kwargs)
+
+    # 4. 系统托盘设置
     icon = create_tray_icon()
     app.setWindowIcon(icon)
     tray_icon = QtWidgets.QSystemTrayIcon(icon, app)
@@ -436,19 +815,15 @@ def main():
         
         comm.win = CaptureWindow(p)
         comm.win.show()
-        # 显示后立即尝试一次强行置顶
-        if sys.platform == "win32":
-            QtCore.QTimer.singleShot(10, comm.win._force_win_topmost)
 
     comm.trigger.connect(launch)
 
-    # 4. 注册系统全局热键 (从配置文件读取)
-    hotkey_mod, hotkey_vk, hotkey_name, config_path = load_hotkey_setting()
+    # 5. 注册系统全局热键
     if not ctypes.windll.user32.RegisterHotKey(None, HOTKEY_ID, hotkey_mod, hotkey_vk):
         QtWidgets.QMessageBox.warning(
             None,
-            "错误",
-            f"{hotkey_name} 热键已被占用！\n配置文件: {config_path}",
+            t("error"),
+            t("hotkey_taken", hotkey=hotkey_name, config_path=config_path),
         )
         hotkey_registered = False
     else:
@@ -460,26 +835,36 @@ def main():
 
     def find_uninstaller():
         app_dir = get_app_dir()
-        default_uninstaller = app_dir / "unins000.exe"
-        if default_uninstaller.exists():
-            return default_uninstaller
-        candidates = sorted(app_dir.glob("unins*.exe"))
-        return candidates[0] if candidates else None
+
+        # Prefer the newest uninstaller to avoid launching stale unins000.exe.
+        candidates = []
+        for p in app_dir.glob("unins*.exe"):
+            try:
+                stat = p.stat()
+                candidates.append((stat.st_mtime, p))
+            except Exception:
+                candidates.append((0.0, p))
+
+        if not candidates:
+            return None
+
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        return candidates[0][1]
 
     def launch_uninstaller():
         uninstaller_path = find_uninstaller()
         if not uninstaller_path:
             QtWidgets.QMessageBox.warning(
                 None,
-                "未找到卸载程序",
-                "当前目录未检测到卸载程序，请在 控制面板 -> 程序和功能 中卸载 HashSnap。",
+                t("uninstaller_not_found_title"),
+                t("uninstaller_not_found_body"),
             )
             return
 
         confirm = QtWidgets.QMessageBox.question(
             None,
-            "确认卸载",
-            "将启动 HashSnap 卸载程序，是否继续？",
+            t("confirm_uninstall_title"),
+            t("confirm_uninstall_body"),
             QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
             QtWidgets.QMessageBox.StandardButton.No,
         )
@@ -490,18 +875,18 @@ def main():
             subprocess.Popen([str(uninstaller_path)], cwd=str(uninstaller_path.parent))
             app.quit()
         except Exception as exc:
-            QtWidgets.QMessageBox.warning(None, "启动卸载失败", str(exc))
+            QtWidgets.QMessageBox.warning(None, t("launch_uninstall_failed"), str(exc))
 
     def show_settings_about():
         box = QtWidgets.QMessageBox()
         box.setIcon(QtWidgets.QMessageBox.Icon.Information)
-        box.setWindowTitle("设置 / 关于")
+        box.setWindowTitle(t("settings_about_title"))
         box.setText(
-            f"HashSnap {APP_VERSION}\n当前热键: {current_hotkey_name}\n配置文件: {config_path}"
+            t("settings_about_body", version=APP_VERSION, hotkey=current_hotkey_name, config_path=config_path)
         )
-        box.setInformativeText("可在 控制面板 -> 程序和功能 卸载，或点击下方“卸载”按钮。")
-        uninstall_btn = box.addButton("卸载", QtWidgets.QMessageBox.ButtonRole.DestructiveRole)
-        box.addButton("关闭", QtWidgets.QMessageBox.ButtonRole.RejectRole)
+        box.setInformativeText(t("settings_about_info"))
+        uninstall_btn = box.addButton(t("uninstall_btn"), QtWidgets.QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton(t("close_btn"), QtWidgets.QMessageBox.ButtonRole.RejectRole)
         box.exec()
         if box.clickedButton() == uninstall_btn:
             launch_uninstaller()
@@ -510,16 +895,16 @@ def main():
         try:
             os.startfile(get_app_dir())
         except Exception as exc:
-            QtWidgets.QMessageBox.warning(None, "无法打开目录", str(exc))
+            QtWidgets.QMessageBox.warning(None, t("open_dir_failed"), str(exc))
 
-    settings_about_action = menu.addAction("设置/关于...")
+    settings_about_action = menu.addAction(t("menu_settings_about"))
     settings_about_action.triggered.connect(show_settings_about)
     
-    open_dir_action = menu.addAction("打开安装目录")
+    open_dir_action = menu.addAction(t("menu_open_install_dir"))
     open_dir_action.triggered.connect(open_app_dir)
 
     menu.addSeparator()
-    quit_action = menu.addAction("退出")
+    quit_action = menu.addAction(t("menu_quit"))
     quit_action.triggered.connect(app.quit)
 
     def unregister_current_hotkey():
@@ -563,8 +948,8 @@ def main():
             new_mod, new_vk, new_name = parse_hotkey(read_hotkey_text_from_config(config_path))
         except Exception as exc:
             tray_icon.showMessage(
-                "HashSnap 热键未更新",
-                f"配置无效，继续使用 {current_hotkey_name}\n{exc}",
+                t("hotkey_not_updated_title"),
+                t("hotkey_invalid_config", hotkey=current_hotkey_name, error=exc),
                 QtWidgets.QSystemTrayIcon.MessageIcon.Warning,
                 3000,
             )
@@ -575,15 +960,15 @@ def main():
                 return
             if register_hotkey(new_mod, new_vk, new_name):
                 tray_icon.showMessage(
-                    "HashSnap 热键已启用",
-                    f"已启用 {new_name}",
+                    t("hotkey_enabled_title"),
+                    t("hotkey_enabled", hotkey=new_name),
                     QtWidgets.QSystemTrayIcon.MessageIcon.Information,
                     2000,
                 )
             else:
                 tray_icon.showMessage(
-                    "HashSnap 热键未更新",
-                    f"{new_name} 仍被占用",
+                    t("hotkey_not_updated_title"),
+                    t("hotkey_still_occupied", hotkey=new_name),
                     QtWidgets.QSystemTrayIcon.MessageIcon.Warning,
                     3000,
                 )
@@ -593,8 +978,8 @@ def main():
         unregister_current_hotkey()
         if register_hotkey(new_mod, new_vk, new_name):
             tray_icon.showMessage(
-                "HashSnap 热键已更新",
-                f"{old_name} -> {new_name}",
+                t("hotkey_updated_title"),
+                t("hotkey_updated", old_hotkey=old_name, new_hotkey=new_name),
                 QtWidgets.QSystemTrayIcon.MessageIcon.Information,
                 2000,
             )
@@ -603,16 +988,16 @@ def main():
         # 新热键注册失败，回滚旧热键。
         if not register_hotkey(old_mod, old_vk, old_name):
             tray_icon.showMessage(
-                "HashSnap 热键错误",
-                "新热键不可用，且旧热键恢复失败。",
+                t("hotkey_error_title"),
+                t("hotkey_recover_failed"),
                 QtWidgets.QSystemTrayIcon.MessageIcon.Critical,
                 4000,
             )
             return
 
         tray_icon.showMessage(
-            "HashSnap 热键未更新",
-            f"{new_name} 被占用，已保持 {old_name}",
+            t("hotkey_not_updated_title"),
+            t("hotkey_kept_old", new_hotkey=new_name, old_hotkey=old_name),
             QtWidgets.QSystemTrayIcon.MessageIcon.Warning,
             3000,
         )
