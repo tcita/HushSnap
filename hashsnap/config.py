@@ -30,12 +30,24 @@ def get_config_path():
     return get_app_dir() / "hashsnap_config.json"
 
 
+def _hotkey_warning_note():
+    return "Note: You can edit hotkey manually (including single-key). Some keys may conflict with system/apps; use at your own discretion."
+
+
 def _ensure_default_config_exists(config_path):
     if config_path.exists():
         return
     try:
         config_path.write_text(
-            json.dumps({"hotkey": DEFAULT_HOTKEY, "language": UI_LANG_AUTO}, indent=2),
+            json.dumps(
+                {
+                    "hotkey": DEFAULT_HOTKEY,
+                    "language": UI_LANG_AUTO,
+                    "_hotkey_note": _hotkey_warning_note(),
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
             encoding="utf-8",
         )
     except Exception:
@@ -70,11 +82,15 @@ def _parse_virtual_key(token):
 
 def parse_hotkey(hotkey_text):
     hotkey_parts = [part.strip() for part in hotkey_text.split("+") if part.strip()]
-    if len(hotkey_parts) < 2:
-        raise ValueError("Hotkey must include at least one modifier and one key.")
+    if len(hotkey_parts) < 1:
+        raise ValueError("Hotkey must include at least one key.")
 
-    modifier_tokens = hotkey_parts[:-1]
-    key_token = hotkey_parts[-1]
+    if len(hotkey_parts) == 1:
+        modifier_tokens = []
+        key_token = hotkey_parts[0]
+    else:
+        modifier_tokens = hotkey_parts[:-1]
+        key_token = hotkey_parts[-1]
 
     modifier_mask = 0
     for raw_modifier in modifier_tokens:
@@ -90,9 +106,6 @@ def parse_hotkey(hotkey_text):
         else:
             raise ValueError(f"Unknown modifier: {raw_modifier}")
 
-    if modifier_mask == 0:
-        raise ValueError("At least one modifier is required.")
-
     virtual_key = _parse_virtual_key(key_token)
     if virtual_key is None:
         raise ValueError(f"Unsupported key: {key_token}")
@@ -106,7 +119,11 @@ def parse_hotkey(hotkey_text):
         canonical_modifiers.append("Shift")
     if modifier_mask & MOD_WIN:
         canonical_modifiers.append("Win")
-    canonical_hotkey = "+".join(canonical_modifiers + [key_token.upper()])
+
+    if canonical_modifiers:
+        canonical_hotkey = "+".join(canonical_modifiers + [key_token.upper()])
+    else:
+        canonical_hotkey = key_token.upper()
     return modifier_mask, virtual_key, canonical_hotkey
 
 
@@ -127,6 +144,15 @@ def _write_config_data(config_path, config_data):
     )
 
 
+def _ensure_hotkey_note_field(config_path):
+    config_data = _load_config_data(config_path)
+    note = _hotkey_warning_note()
+    if config_data.get("_hotkey_note") == note:
+        return
+    config_data["_hotkey_note"] = note
+    _write_config_data(config_path, config_data)
+
+
 def read_hotkey_text_from_config(config_path):
     config_data = json.loads(config_path.read_text(encoding="utf-8"))
     if not isinstance(config_data, dict):
@@ -144,6 +170,7 @@ def update_hotkey_in_config(config_path, hotkey_text):
     language_value = config_data.get("language")
     if not isinstance(language_value, str) or not language_value.strip():
         config_data["language"] = UI_LANG_AUTO
+    config_data["_hotkey_note"] = _hotkey_warning_note()
 
     _write_config_data(config_path, config_data)
 
@@ -151,6 +178,7 @@ def update_hotkey_in_config(config_path, hotkey_text):
 def load_hotkey_setting():
     config_path = get_config_path()
     _ensure_default_config_exists(config_path)
+    _ensure_hotkey_note_field(config_path)
 
     try:
         modifier_mask, virtual_key, canonical_hotkey = parse_hotkey(

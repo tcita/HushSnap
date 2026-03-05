@@ -265,13 +265,13 @@ def main(app_version):
         current_parts = [part.strip() for part in current_hotkey_name.split("+") if part.strip()]
         current_key = current_parts[-1].upper() if current_parts else "Q"
         current_modifier = "Alt"
-        for candidate in ("Ctrl", "Alt", "Shift", "Win"):
+        for candidate in ("Ctrl", "Alt", "Shift"):
             if candidate in current_parts[:-1]:
                 current_modifier = candidate
                 break
 
         modifier_combo = QtWidgets.QComboBox()
-        modifier_combo.addItems(["Ctrl", "Alt", "Shift", "Win"])
+        modifier_combo.addItems(["Ctrl", "Alt", "Shift"])
         modifier_combo.setCurrentText(current_modifier)
         modifier_combo.setMaximumWidth(92)
         modifier_combo.setMaximumHeight(24)
@@ -396,3 +396,4 @@ def main(app_version):
     app.installNativeEventFilter(native_hotkey_filter)
 
     sys.exit(app.exec())
+
