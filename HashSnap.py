@@ -18,7 +18,7 @@ MOD_CONTROL = 0x0002
 MOD_SHIFT = 0x0004
 MOD_WIN = 0x0008
 DEFAULT_HOTKEY = "Alt+Q"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 
 # --- 2. Logging switches (visible) ---
 # User default: lightweight logs only.
