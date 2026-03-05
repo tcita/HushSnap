@@ -3,50 +3,57 @@
 ## Prerequisites
 
 - Run commands from the project root.
-- Python and PyInstaller are installed and callable in your shell.
+- Python and PyInstaller are installed.
 - Inno Setup 6 is installed.
-- `ISCC.exe` is available (either callable in shell or passed via `-IsccPath`).
 
-## 1) One-Command Build (recommended)
+## 1) One-Command Build (Recommended)
 
-Update `version.txt` first, then run:
+Update `version.txt` first, then run the following command to generate the final installer:
 
-```powershell
+PowerShell
+
+```
 powershell -ExecutionPolicy Bypass -File installer/build_installer.ps1
 ```
 
-This command will:
+**This command will automatically:**
 
-- Read version from `version.txt`
-- Sync `APP_VERSION` in `HashSnap.py`
-- Build EXE via PyInstaller
-- Build installer with the same version
+- Read the version from `version.txt`.
+- Sync `APP_VERSION` in `HashSnap.py`.
+- Build the executable via PyInstaller.
+- Package the installer with the matching version.
 
-Use this as the default release command.
+**Output:**
 
-If `ISCC.exe` or `pyinstaller` are not in PATH:
+- `dist/HashSnap.exe`
 
-```powershell
-powershell -ExecutionPolicy Bypass -File installer/build_installer.ps1 -IsccPath "<full-path-to-ISCC.exe>" -PyInstallerPath "<full-path-to-pyinstaller.exe>"
+- `dist-installer\HashSnap-Setup.exe`
+
+​	
+
+## 2) Optional: Build EXE Only (Debug)
+
+If you only need to test the executable without creating an installer, run:
+
+PowerShell
+
 ```
-
-## 2) Optional: Build EXE Only (debug)
-
-```powershell
 pyinstaller --noconsole --onefile --clean HashSnap.py
 ```
 
-This is an optional debug step. It is not required before `powershell -ExecutionPolicy Bypass -File installer/build_installer.ps1`.  
-This builds `dist/HashSnap.exe` only.  
-It does **not** sync version from `version.txt`.
+*Note: This builds `dist/HashSnap.exe` only and does **not** sync the version from `version.txt`.*
 
-Output:
+**Output:**
 
 - `dist/HashSnap.exe`
 
 ## 3) Optional: Add App to Startup
 
-```powershell
+To test the application's startup behavior on your local machine:
+
+PowerShell
+
+```
 $exe = (Resolve-Path '.\dist\HashSnap.exe').Path
 $startup = [Environment]::GetFolderPath('Startup')
 $linkPath = Join-Path $startup 'HashSnap.lnk'
@@ -58,3 +65,4 @@ $shortcut.WorkingDirectory = Split-Path $exe
 $shortcut.IconLocation = "$exe,0"
 $shortcut.Save()
 ```
+
