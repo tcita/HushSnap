@@ -31,18 +31,21 @@ if ($Version -notmatch '^\d+\.\d+\.\d+([\-+][0-9A-Za-z\.-]+)?$') {
     throw "Invalid version '$Version'. Expected SemVer-like format, e.g. 1.0.1"
 }
 
-$sourceText = Get-Content -Path $sourceFile -Raw
-$updatedSourceText = [regex]::Replace(
-    $sourceText,
-    '(?m)^APP_VERSION\s*=\s*"[^"]*"$',
-    "APP_VERSION = `"$Version`""
-)
+$sourceLines = Get-Content -Path $sourceFile
+$versionLineIndex = -1
+for ($i = 0; $i -lt $sourceLines.Count; $i++) {
+    if ($sourceLines[$i] -match '^\s*APP_VERSION\s*=') {
+        $versionLineIndex = $i
+        break
+    }
+}
 
-if ($updatedSourceText -eq $sourceText) {
+if ($versionLineIndex -lt 0) {
     throw "Could not find APP_VERSION assignment in $sourceFile"
 }
 
-Set-Content -Path $sourceFile -Value $updatedSourceText -Encoding UTF8NoBOM
+$sourceLines[$versionLineIndex] = "APP_VERSION = `"$Version`""
+Set-Content -Path $sourceFile -Value $sourceLines -Encoding UTF8NoBOM
 
 Push-Location $rootDir
 try {
