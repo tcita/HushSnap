@@ -2,7 +2,9 @@
 ; Build: ISCC installer\HashSnapInstaller.iss
 
 #define MyAppName "HashSnap"
+#ifndef MyAppVersion
 #define MyAppVersion "1.0.0"
+#endif
 #define MyAppPublisher "HashSnap"
 #define MyAppExeName "HashSnap.exe"
 #define MyConfigName "hashsnap_config.json"
@@ -85,7 +87,6 @@ Filename: "{cmd}"; Parameters: "/C taskkill /F /T /IM HashSnap.exe >nul 2>&1"; F
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchNow}"; Flags: nowait postinstall skipifsilent
-
 
 
 
