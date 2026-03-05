@@ -58,8 +58,8 @@ Name: "startup"; Description: "{cm:LaunchOnStartup}"; GroupDescription: "{cm:Add
 
 [Files]
 Source: "..\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\dist\{#MyConfigName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\{#MyLogName}"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist
+Source: "..\dist\{#MyConfigName}"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "..\{#MyLogName}"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist skipifsourcedoesntexist
 
 [Registry]
 ; Standard Inno Setup CreateUninstallRegKey=yes will handle this in HKCU when PrivilegesRequired=lowest.
@@ -87,7 +87,6 @@ Filename: "{cmd}"; Parameters: "/C taskkill /F /T /IM HashSnap.exe >nul 2>&1"; F
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchNow}"; Flags: nowait postinstall skipifsilent
-
 
 
 
