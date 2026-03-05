@@ -7,6 +7,22 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Invoke-ExternalCommand {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Executable,
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments,
+        [Parameter(Mandatory = $true)]
+        [string]$StepName
+    )
+
+    & $Executable @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "$StepName failed with exit code $LASTEXITCODE"
+    }
+}
+
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $rootDir = Resolve-Path (Join-Path $scriptDir "..")
 $issPath = Join-Path $scriptDir "HashSnapInstaller.iss"
@@ -51,9 +67,13 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 Push-Location $rootDir
 try {
     if (-not $InstallerOnly) {
-        & $PyInstallerPath --noconsole --onefile --clean HashSnap.py
+        $distExe = Join-Path $rootDir "dist\HashSnap.exe"
+        if (Test-Path $distExe) {
+            Remove-Item -Path $distExe -Force
+        }
+        Invoke-ExternalCommand -Executable $PyInstallerPath -Arguments @("--noconsole", "--onefile", "--clean", "HashSnap.py") -StepName "PyInstaller build"
     }
-    & $IsccPath "/DMyAppVersion=$Version" $issPath
+    Invoke-ExternalCommand -Executable $IsccPath -Arguments @("/DMyAppVersion=$Version", $issPath) -StepName "Inno Setup build"
 }
 finally {
     Pop-Location

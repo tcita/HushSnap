@@ -88,6 +88,18 @@ def main(app_version):
     current_hotkey_virtual_key = hotkey_virtual_key
     current_hotkey_name = hotkey_name
     settings_dialog = None
+    settings_hotkey_label = None
+
+    def refresh_settings_hotkey_label():
+        nonlocal settings_hotkey_label
+        if settings_hotkey_label is None:
+            return
+        try:
+            settings_hotkey_label.setText(
+                translate("settings_current_hotkey", hotkey=current_hotkey_name)
+            )
+        except RuntimeError:
+            settings_hotkey_label = None
 
     def find_uninstaller():
         app_dir = get_app_dir()
@@ -133,6 +145,16 @@ def main(app_version):
         except Exception as exc:
             QtWidgets.QMessageBox.warning(None, translate("launch_uninstall_failed"), str(exc))
 
+    def open_config_dir():
+        try:
+            os.startfile(config_path.parent)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(
+                None,
+                translate("open_dir_failed"),
+                str(exc),
+            )
+
     def unregister_current_hotkey():
         nonlocal hotkey_registered
         if hotkey_registered:
@@ -146,6 +168,7 @@ def main(app_version):
             current_hotkey_modifier = modifier
             current_hotkey_virtual_key = virtual_key
             current_hotkey_name = name
+            refresh_settings_hotkey_label()
             return True
         return False
 
@@ -240,8 +263,29 @@ def main(app_version):
     watcher.directoryChanged.connect(schedule_hotkey_reload)
     reload_timer.timeout.connect(apply_hotkey_reload)
 
+    def _qt_key_to_hotkey_token(key):
+        if QtCore.Qt.Key.Key_A <= key <= QtCore.Qt.Key.Key_Z:
+            return chr(key)
+        if QtCore.Qt.Key.Key_0 <= key <= QtCore.Qt.Key.Key_9:
+            return chr(key)
+        if QtCore.Qt.Key.Key_F1 <= key <= QtCore.Qt.Key.Key_F24:
+            return f"F{key - QtCore.Qt.Key.Key_F1 + 1}"
+
+        special_map = {
+            QtCore.Qt.Key.Key_Escape: "ESC",
+            QtCore.Qt.Key.Key_Tab: "TAB",
+            QtCore.Qt.Key.Key_Enter: "ENTER",
+            QtCore.Qt.Key.Key_Return: "ENTER",
+            QtCore.Qt.Key.Key_Space: "SPACE",
+            QtCore.Qt.Key.Key_Left: "LEFT",
+            QtCore.Qt.Key.Key_Up: "UP",
+            QtCore.Qt.Key.Key_Right: "RIGHT",
+            QtCore.Qt.Key.Key_Down: "DOWN",
+        }
+        return special_map.get(key)
+
     def show_settings_dialog():
-        nonlocal settings_dialog
+        nonlocal settings_dialog, settings_hotkey_label
         if settings_dialog is not None and settings_dialog.isVisible():
             settings_dialog.raise_()
             settings_dialog.activateWindow()
@@ -255,59 +299,18 @@ def main(app_version):
         settings_dialog = dialog
 
         def clear_settings_dialog(_obj=None):
-            nonlocal settings_dialog
+            nonlocal settings_dialog, settings_hotkey_label
             settings_dialog = None
+            settings_hotkey_label = None
 
         dialog.destroyed.connect(clear_settings_dialog)
 
         layout = QtWidgets.QVBoxLayout(dialog)
-        form_layout = QtWidgets.QFormLayout()
-        current_parts = [part.strip() for part in current_hotkey_name.split("+") if part.strip()]
-        current_key = current_parts[-1].upper() if current_parts else "Q"
-        current_modifier = "Alt"
-        for candidate in ("Ctrl", "Alt", "Shift"):
-            if candidate in current_parts[:-1]:
-                current_modifier = candidate
-                break
 
-        modifier_combo = QtWidgets.QComboBox()
-        modifier_combo.addItems(["Ctrl", "Alt", "Shift"])
-        modifier_combo.setCurrentText(current_modifier)
-        modifier_combo.setMaximumWidth(92)
-        modifier_combo.setMaximumHeight(24)
-
-        key_options = [
-            "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P",
-            "A", "S", "D", "F", "G", "H", "J", "K",
-            "Z", "X", "C", "V", "B", "N", "M",
-            "F8", "F9", "F10", "F11", "F12",
-        ]
-        if current_key not in key_options:
-            key_options.insert(0, current_key)
-
-        key_combo = QtWidgets.QComboBox()
-        key_combo.addItems(key_options)
-        key_combo.setCurrentText(current_key)
-        key_combo.setMaximumWidth(98)
-        key_combo.setMaximumHeight(24)
-
-        plus_label = QtWidgets.QLabel("+")
-        plus_label.setAlignment(
-            QtCore.Qt.AlignmentFlag.AlignHCenter | QtCore.Qt.AlignmentFlag.AlignVCenter
-        )
-        plus_label.setFixedWidth(12)
-
-        hotkey_widget = QtWidgets.QWidget()
-        hotkey_row = QtWidgets.QHBoxLayout(hotkey_widget)
-        hotkey_row.setContentsMargins(0, 0, 0, 0)
-        hotkey_row.setSpacing(6)
-        hotkey_row.addWidget(modifier_combo)
-        hotkey_row.addWidget(plus_label)
-        hotkey_row.addWidget(key_combo)
-        hotkey_row.addStretch(1)
-
-        form_layout.addRow(translate("settings_hotkey_label"), hotkey_widget)
-        layout.addLayout(form_layout)
+        settings_hotkey_label = QtWidgets.QLabel("")
+        settings_hotkey_label.setWordWrap(True)
+        layout.addWidget(settings_hotkey_label)
+        refresh_settings_hotkey_label()
 
         status_label = QtWidgets.QLabel("")
         status_label.setWordWrap(True)
@@ -317,18 +320,113 @@ def main(app_version):
             status_label.setText(message)
             status_label.setStyleSheet("color: #B00020;" if is_error else "")
 
-        def open_config_dir():
-            try:
-                os.startfile(config_path.parent)
-            except Exception as exc:
-                set_status(f"{translate('open_dir_failed')}: {exc}", is_error=True)
+        def capture_hotkey_dialog():
+            class HotkeyCaptureDialog(QtWidgets.QDialog):
+                def __init__(self, parent=None):
+                    super().__init__(parent)
+                    self.captured_hotkey = None
+                    self.setWindowTitle(translate("settings_hotkey_capture_title"))
+                    self.setModal(True)
+                    self.setMinimumWidth(340)
+                    self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
 
-        def save_hotkey_from_settings():
-            requested_hotkey = f"{modifier_combo.currentText()}+{key_combo.currentText()}"
-            try:
-                _, _, canonical_hotkey = parse_hotkey(requested_hotkey)
-            except Exception as exc:
-                set_status(translate("settings_hotkey_invalid", error=exc), is_error=True)
+                    layout = QtWidgets.QVBoxLayout(self)
+                    self.hotkey_display = QtWidgets.QLineEdit("")
+                    self.hotkey_display.setReadOnly(True)
+                    self.hotkey_display.setPlaceholderText(
+                        translate("settings_hotkey_capture_placeholder")
+                    )
+                    self.hotkey_display.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
+                    layout.addWidget(self.hotkey_display)
+
+                    self.feedback_label = QtWidgets.QLabel("")
+                    self.feedback_label.setWordWrap(True)
+                    layout.addWidget(self.feedback_label)
+
+                    button_row = QtWidgets.QHBoxLayout()
+                    button_row.addStretch(1)
+                    self.save_button = QtWidgets.QPushButton(translate("settings_save_hotkey_btn"))
+                    self.save_button.setEnabled(False)
+                    self.save_button.clicked.connect(self.accept)
+                    button_row.addWidget(self.save_button)
+                    cancel_button = QtWidgets.QPushButton(
+                        translate("settings_hotkey_capture_cancel_btn")
+                    )
+                    cancel_button.clicked.connect(self.reject)
+                    button_row.addWidget(cancel_button)
+                    layout.addLayout(button_row)
+
+                    self._set_feedback(translate("settings_hotkey_capture_waiting"))
+                    QtCore.QTimer.singleShot(0, self.setFocus)
+
+                def _set_feedback(self, message, is_error=False):
+                    self.feedback_label.setText(message)
+                    self.feedback_label.setStyleSheet("color: #B00020;" if is_error else "")
+
+                def keyPressEvent(self, event):
+                    modifier_only_keys = {
+                        QtCore.Qt.Key.Key_Control,
+                        QtCore.Qt.Key.Key_Shift,
+                        QtCore.Qt.Key.Key_Alt,
+                        QtCore.Qt.Key.Key_Meta,
+                        QtCore.Qt.Key.Key_Super_L,
+                        QtCore.Qt.Key.Key_Super_R,
+                    }
+
+                    key = event.key()
+                    if key in modifier_only_keys:
+                        self.captured_hotkey = None
+                        self.save_button.setEnabled(False)
+                        self._set_feedback(translate("settings_hotkey_capture_invalid"), is_error=True)
+                        event.accept()
+                        return
+
+                    key_token = _qt_key_to_hotkey_token(key)
+                    if key_token is None:
+                        self.captured_hotkey = None
+                        self.save_button.setEnabled(False)
+                        self._set_feedback(translate("settings_hotkey_capture_invalid"), is_error=True)
+                        event.accept()
+                        return
+
+                    modifiers = event.modifiers()
+                    modifier_tokens = []
+                    if modifiers & QtCore.Qt.KeyboardModifier.ControlModifier:
+                        modifier_tokens.append("Ctrl")
+                    if modifiers & QtCore.Qt.KeyboardModifier.AltModifier:
+                        modifier_tokens.append("Alt")
+                    if modifiers & QtCore.Qt.KeyboardModifier.ShiftModifier:
+                        modifier_tokens.append("Shift")
+                    if modifiers & QtCore.Qt.KeyboardModifier.MetaModifier:
+                        modifier_tokens.append("Win")
+
+                    requested_hotkey = "+".join(modifier_tokens + [key_token]) if modifier_tokens else key_token
+                    try:
+                        _, _, canonical_hotkey = parse_hotkey(requested_hotkey)
+                    except Exception as exc:
+                        self.captured_hotkey = None
+                        self.save_button.setEnabled(False)
+                        self._set_feedback(translate("settings_hotkey_invalid", error=exc), is_error=True)
+                        event.accept()
+                        return
+
+                    self.captured_hotkey = canonical_hotkey
+                    self.hotkey_display.setText(canonical_hotkey)
+                    self._set_feedback(
+                        translate("settings_hotkey_capture_captured", hotkey=canonical_hotkey),
+                        is_error=False,
+                    )
+                    self.save_button.setEnabled(True)
+                    event.accept()
+
+            capture_dialog = HotkeyCaptureDialog(dialog)
+            if capture_dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+                return capture_dialog.captured_hotkey
+            return None
+
+        def change_hotkey_from_settings():
+            canonical_hotkey = capture_hotkey_dialog()
+            if not canonical_hotkey:
                 return
 
             try:
@@ -337,14 +435,12 @@ def main(app_version):
                 set_status(translate("settings_hotkey_save_failed", error=exc), is_error=True)
                 return
 
-            canonical_parts = [part.strip() for part in canonical_hotkey.split("+") if part.strip()]
-            if len(canonical_parts) >= 2:
-                modifier_combo.setCurrentText(canonical_parts[0])
-                key_combo.setCurrentText(canonical_parts[-1])
             apply_hotkey_reload()
+            refresh_settings_hotkey_label()
 
             if current_hotkey_name == canonical_hotkey:
-                set_status(translate("settings_hotkey_saved", hotkey=canonical_hotkey), is_error=False)
+                # Keep status area for errors only; current hotkey is shown by the dedicated label.
+                set_status("", is_error=False)
             else:
                 set_status(
                     translate(
@@ -356,16 +452,11 @@ def main(app_version):
                 )
 
         button_row = QtWidgets.QHBoxLayout()
-        open_config_button = QtWidgets.QPushButton(translate("settings_open_config_btn"))
-        open_config_button.clicked.connect(open_config_dir)
-        open_config_button.setMaximumWidth(110)
-        open_config_button.setMaximumHeight(24)
-        button_row.addWidget(open_config_button)
-
-        save_button = QtWidgets.QPushButton(translate("settings_save_hotkey_btn"))
-        save_button.clicked.connect(save_hotkey_from_settings)
-        save_button.setMaximumHeight(24)
-        button_row.addWidget(save_button)
+        change_hotkey_button = QtWidgets.QPushButton(translate("settings_change_hotkey_btn"))
+        change_hotkey_button.clicked.connect(change_hotkey_from_settings)
+        change_hotkey_button.setMaximumWidth(140)
+        change_hotkey_button.setMaximumHeight(24)
+        button_row.addWidget(change_hotkey_button)
 
         uninstall_button = QtWidgets.QPushButton(translate("uninstall_btn"))
         uninstall_button.clicked.connect(launch_uninstaller)
@@ -384,6 +475,8 @@ def main(app_version):
 
     settings_action = tray_menu.addAction(translate("menu_settings"))
     settings_action.triggered.connect(show_settings_dialog)
+    config_dir_action = tray_menu.addAction(translate("menu_open_install_dir"))
+    config_dir_action.triggered.connect(open_config_dir)
 
     tray_menu.addSeparator()
     quit_action = tray_menu.addAction(translate("menu_quit"))
