@@ -1,0 +1,1 @@
+"""HashSnap package."""

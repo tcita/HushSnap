@@ -45,7 +45,8 @@ if ($versionLineIndex -lt 0) {
 }
 
 $sourceLines[$versionLineIndex] = "APP_VERSION = `"$Version`""
-Set-Content -Path $sourceFile -Value $sourceLines -Encoding UTF8NoBOM
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllLines($sourceFile, $sourceLines, $utf8NoBom)
 
 Push-Location $rootDir
 try {
