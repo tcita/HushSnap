@@ -1,8 +1,7 @@
 param(
     [string]$IsccPath = "ISCC.exe",
     [string]$Version,
-    [string]$PyInstallerPath = "pyinstaller",
-    [switch]$InstallerOnly
+    [string]$PyInstallerPath = "pyinstaller"
 )
 
 $ErrorActionPreference = "Stop"
@@ -66,13 +65,11 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
 Push-Location $rootDir
 try {
-    if (-not $InstallerOnly) {
-        $distExe = Join-Path $rootDir "dist\HashSnap.exe"
-        if (Test-Path $distExe) {
-            Remove-Item -Path $distExe -Force
-        }
-        Invoke-ExternalCommand -Executable $PyInstallerPath -Arguments @("--noconsole", "--onefile", "--clean", "HashSnap.py") -StepName "PyInstaller build"
+    $distExe = Join-Path $rootDir "dist\HashSnap.exe"
+    if (Test-Path $distExe) {
+        Remove-Item -Path $distExe -Force
     }
+    Invoke-ExternalCommand -Executable $PyInstallerPath -Arguments @("--noconsole", "--onefile", "--clean", "HashSnap.py") -StepName "PyInstaller build"
     Invoke-ExternalCommand -Executable $IsccPath -Arguments @("/DMyAppVersion=$Version", $issPath) -StepName "Inno Setup build"
 }
 finally {

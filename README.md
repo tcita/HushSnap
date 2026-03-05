@@ -12,7 +12,7 @@
 Update `version.txt` first, then run:
 
 ```powershell
-.\installer\build_installer.ps1
+powershell -ExecutionPolicy Bypass -File installer/build_installer.ps1
 ```
 
 This command will:
@@ -27,16 +27,8 @@ Use this as the default release command.
 If `ISCC.exe` or `pyinstaller` are not in PATH:
 
 ```powershell
-.\installer\build_installer.ps1 -IsccPath "<full-path-to-ISCC.exe>" -PyInstallerPath "<full-path-to-pyinstaller.exe>"
+powershell -ExecutionPolicy Bypass -File installer/build_installer.ps1 -IsccPath "<full-path-to-ISCC.exe>" -PyInstallerPath "<full-path-to-pyinstaller.exe>"
 ```
-
-Only build installer (skip EXE build):
-
-```powershell
-.\installer\build_installer.ps1 -InstallerOnly
-```
-
-`-InstallerOnly` still reads `version.txt` and syncs `APP_VERSION` before creating the installer.
 
 ## 2) Optional: Build EXE Only (debug)
 
@@ -44,7 +36,7 @@ Only build installer (skip EXE build):
 pyinstaller --noconsole --onefile --clean HashSnap.py
 ```
 
-This is an optional debug step. It is not required before `.\installer\build_installer.ps1`.  
+This is an optional debug step. It is not required before `powershell -ExecutionPolicy Bypass -File installer/build_installer.ps1`.  
 This builds `dist/HashSnap.exe` only.  
 It does **not** sync version from `version.txt`.
 
