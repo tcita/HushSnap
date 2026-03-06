@@ -1,7 +1,8 @@
 import json
 import os
-import socket
 import sys
+import ctypes
+from ctypes import wintypes
 from pathlib import Path
 
 from PyQt6 import QtCore
@@ -18,6 +19,15 @@ from .constants import (
     UI_LANG_ZH,
     UI_TEXT,
 )
+
+_kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+_create_mutex = _kernel32.CreateMutexW
+_create_mutex.argtypes = (wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR)
+_create_mutex.restype = wintypes.HANDLE
+_close_handle = _kernel32.CloseHandle
+_close_handle.argtypes = (wintypes.HANDLE,)
+_close_handle.restype = wintypes.BOOL
+_ERROR_ALREADY_EXISTS = 183
 
 
 def get_app_dir():
@@ -246,9 +256,13 @@ def ui_text(lang, key, **kwargs):
 
 # 防止多开
 def is_already_running():
-    try:
-        lock_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        lock_socket.bind(("127.0.0.1", 65432))
-        return lock_socket
-    except socket.error:
+    mutex_name = "Local\\HashSnap.SingleInstance"
+    handle = _create_mutex(None, False, mutex_name)
+    if not handle:
         return None
+
+    if ctypes.get_last_error() == _ERROR_ALREADY_EXISTS:
+        _close_handle(handle)
+        return None
+
+    return handle
