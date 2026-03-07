@@ -69,7 +69,13 @@ try {
     if (Test-Path $distExe) {
         Remove-Item -Path $distExe -Force
     }
-    Invoke-ExternalCommand -Executable $PyInstallerPath -Arguments @("--noconsole", "--onefile", "--clean", "HashSnap.py") -StepName "PyInstaller build"
+    Invoke-ExternalCommand -Executable $PyInstallerPath -Arguments @(
+    "--noconsole",
+    "--onefile",
+    "--clean",
+    "--collect-all", "PyQt6",
+    "HashSnap.py"
+) -StepName "PyInstaller build"
     Invoke-ExternalCommand -Executable $IsccPath -Arguments @("/DMyAppVersion=$Version", $issPath) -StepName "Inno Setup build"
 }
 finally {
