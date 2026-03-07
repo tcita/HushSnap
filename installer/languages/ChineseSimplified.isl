@@ -1,4 +1,4 @@
-; *** Inno Setup version 6.5.0+ Chinese Simplified messages ***
+﻿; *** Inno Setup version 6.5.0+ Chinese Simplified messages ***
 ;
 ; To download user-contributed translations of this file, go to:
 ;   https://jrsoftware.org/files/istrans/
@@ -28,11 +28,11 @@ LanguageID=$0804
 LanguageCodePage=936
 ; If the language you are translating to requires special font faces or
 ; sizes, uncomment any of the following entries and change them accordingly.
-;DialogFontName=
-;DialogFontSize=9
+DialogFontName=Microsoft YaHei UI
+DialogFontSize=9
 ;DialogFontBaseScaleWidth=7
 ;DialogFontBaseScaleHeight=15
-;WelcomeFontName=Segoe UI
+WelcomeFontName=Microsoft YaHei UI
 ;WelcomeFontSize=14
 
 [Messages]
