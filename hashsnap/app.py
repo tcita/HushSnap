@@ -3,11 +3,12 @@ import os
 import subprocess
 import sys
 
-from PyQt6 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 from .capture_window import CaptureWindow
 from .config import (
     get_app_dir,
+    get_resource_dir,
     is_already_running,
     load_hotkey_setting,
     parse_hotkey,
@@ -18,7 +19,6 @@ from .config import (
 )
 from .constants import HOTKEY_ID
 from .hotkey import Communicator, HotkeyFilter
-from .icon import create_tray_icon
 
 
 def main(app_version):
@@ -39,7 +39,7 @@ def main(app_version):
         return ui_text(ui_language, key, **kwargs)
 
     # 4. 系统托盘设置
-    tray_icon_image = create_tray_icon()
+    tray_icon_image = QtGui.QIcon(str(get_resource_dir() / "camera.ico"))
     app.setWindowIcon(tray_icon_image)
     tray_icon = QtWidgets.QSystemTrayIcon(tray_icon_image, app)
     tray_menu = QtWidgets.QMenu()
@@ -489,4 +489,8 @@ def main(app_version):
     app.installNativeEventFilter(native_hotkey_filter)
 
     sys.exit(app.exec())
+
+
+
+
 

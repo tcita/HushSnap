@@ -26,47 +26,30 @@ function Invoke-ExternalCommand {
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $rootDir = Resolve-Path (Join-Path $scriptDir "..")
 $issPath = Join-Path $scriptDir "HashSnapInstaller.iss"
-$versionFile = Join-Path $rootDir "version.txt"
-$sourceFile = Join-Path $rootDir "HashSnap.py"
+$packageInitFile = Join-Path $rootDir "hashsnap\__init__.py"
 $resolvedSpecPath = Join-Path $rootDir $SpecPath
 
 if (-not (Test-Path $issPath)) {
     throw "Installer script not found: $issPath"
 }
-if (-not (Test-Path $sourceFile)) {
-    throw "Source file not found: $sourceFile"
+if (-not (Test-Path $packageInitFile)) {
+    throw "Package init file not found: $packageInitFile"
 }
 if (-not (Test-Path $resolvedSpecPath)) {
     throw "PyInstaller spec not found: $resolvedSpecPath"
 }
 
 if (-not $Version) {
-    if (-not (Test-Path $versionFile)) {
-        throw "Version file not found: $versionFile"
+    $versionMatch = Select-String -Path $packageInitFile -Pattern '^__version__\s*=\s*"([^"]+)"' | Select-Object -First 1
+    if (-not $versionMatch) {
+        throw "Could not find __version__ assignment in $packageInitFile"
     }
-    $Version = (Get-Content -Path $versionFile -Raw).Trim()
+    $Version = $versionMatch.Matches[0].Groups[1].Value
 }
 
 if ($Version -notmatch '^\d+\.\d+\.\d+([\-+][0-9A-Za-z\.-]+)?$') {
     throw "Invalid version '$Version'. Expected SemVer-like format, e.g. 1.0.1"
 }
-
-$sourceLines = Get-Content -Path $sourceFile
-$versionLineIndex = -1
-for ($i = 0; $i -lt $sourceLines.Count; $i++) {
-    if ($sourceLines[$i] -match '^\s*APP_VERSION\s*=') {
-        $versionLineIndex = $i
-        break
-    }
-}
-
-if ($versionLineIndex -lt 0) {
-    throw "Could not find APP_VERSION assignment in $sourceFile"
-}
-
-$sourceLines[$versionLineIndex] = "APP_VERSION = `"$Version`""
-$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-[System.IO.File]::WriteAllLines($sourceFile, $sourceLines, $utf8NoBom)
 
 Push-Location $rootDir
 try {

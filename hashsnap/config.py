@@ -36,6 +36,12 @@ def get_app_dir():
     return Path(__file__).resolve().parent.parent
 
 
+
+def get_resource_dir():
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+    return Path(__file__).resolve().parent.parent
+
 def get_config_path():
     return get_app_dir() / "hashsnap_config.json"
 
@@ -254,7 +260,7 @@ def ui_text(lang, key, **kwargs):
     return text_template.format(**kwargs)
 
 
-# 防止多开
+# 用互斥锁防止多开
 def is_already_running():
     mutex_name = "Local\\HashSnap.SingleInstance"
     handle = _create_mutex(None, False, mutex_name)
@@ -266,3 +272,4 @@ def is_already_running():
         return None
 
     return handle
+
