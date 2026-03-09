@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-datas = []
+datas = [('camera.ico', '.')]
 binaries = []
 hiddenimports = []
 
@@ -128,3 +128,5 @@ coll = COLLECT(
     upx_exclude=[],
     name='HashSnap',
 )
+
+

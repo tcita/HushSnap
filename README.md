@@ -8,44 +8,42 @@
 
 ## 1) One-Command Build (Recommended)
 
-Update `version.txt` first, then run the following command to generate the final installer:
+Update `hashsnap/__init__.py` first (the `__version__` value), then run the following command to generate the final installer:
 
 PowerShell
 
-```
+```powershell
 powershell -ExecutionPolicy Bypass -File installer/build_installer.ps1
 ```
 
 **This command will automatically:**
 
-- Read the version from `version.txt`.
-- Sync `APP_VERSION` in `HashSnap.py`.
-- Build the executable via PyInstaller.
-- Package the installer with the matching version.
+- Read the version from `hashsnap/__init__.py`.
+- Build the app via PyInstaller as a `onedir` bundle based on `HashSnap.spec`.
+- Package the entire `dist\HashSnap\` folder into the installer with the matching version.
 
 **Output:**
 
-- `dist/HashSnap.exe`
-
+- `dist\HashSnap\HashSnap.exe`
+- `dist\HashSnap\_internal\...` (runtime dependencies and bundled resources)
 - `dist-installer\HashSnap-Setup.exe`
-
-​	
 
 ## 2) Optional: Build EXE Only (Debug)
 
-If you only need to test the executable without creating an installer, run:
+If you only need to test the packaged app without creating an installer, run:
 
 PowerShell
 
-```
-pyinstaller --noconsole --onefile --clean HashSnap.py
+```powershell
+pyinstaller --clean HashSnap.spec
 ```
 
-*Note: This builds `dist/HashSnap.exe` only and does **not** sync the version from `version.txt`.*
+*Note: This creates a `onedir` app folder at `dist\HashSnap\` and uses the version already defined in `hashsnap/__init__.py`.*
 
 **Output:**
 
-- `dist/HashSnap.exe`
+- `dist\HashSnap\HashSnap.exe`
+- `dist\HashSnap\_internal\...`
 
 ## 3) Optional: Add App to Startup
 
@@ -53,8 +51,8 @@ To test the application's startup behavior on your local machine:
 
 PowerShell
 
-```
-$exe = (Resolve-Path '.\dist\HashSnap.exe').Path
+```powershell
+$exe = (Resolve-Path '.\dist\HashSnap\HashSnap.exe').Path
 $startup = [Environment]::GetFolderPath('Startup')
 $linkPath = Join-Path $startup 'HashSnap.lnk'
 
@@ -65,4 +63,3 @@ $shortcut.WorkingDirectory = Split-Path $exe
 $shortcut.IconLocation = "$exe,0"
 $shortcut.Save()
 ```
-

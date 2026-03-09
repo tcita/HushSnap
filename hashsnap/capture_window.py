@@ -23,9 +23,7 @@ class CaptureWindow(QtWidgets.QWidget):
         super().__init__()
         self.pixmap = pixmap
 
-        # 【修改点 1】：移除 BypassWindowManagerHint 和原生的 Window 标志
-        # Tool + Frameless + StaysOnTop 已经足够覆盖全屏、不显示任务栏图标，
-        # 并且能让系统正常处理焦点转移，从而触发开始菜单的自动收起（Light-dismiss）。
+
         self.setWindowFlags(
             QtCore.Qt.WindowType.Tool
             | QtCore.Qt.WindowType.FramelessWindowHint
