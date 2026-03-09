@@ -1,7 +1,8 @@
 param(
     [string]$IsccPath = "ISCC.exe",
     [string]$Version,
-    [string]$PyInstallerPath = "pyinstaller"
+    [string]$PyInstallerPath = "pyinstaller",
+    [string]$SpecPath = "HashSnap.spec"
 )
 
 $ErrorActionPreference = "Stop"
@@ -27,12 +28,16 @@ $rootDir = Resolve-Path (Join-Path $scriptDir "..")
 $issPath = Join-Path $scriptDir "HashSnapInstaller.iss"
 $versionFile = Join-Path $rootDir "version.txt"
 $sourceFile = Join-Path $rootDir "HashSnap.py"
+$resolvedSpecPath = Join-Path $rootDir $SpecPath
 
 if (-not (Test-Path $issPath)) {
     throw "Installer script not found: $issPath"
 }
 if (-not (Test-Path $sourceFile)) {
     throw "Source file not found: $sourceFile"
+}
+if (-not (Test-Path $resolvedSpecPath)) {
+    throw "PyInstaller spec not found: $resolvedSpecPath"
 }
 
 if (-not $Version) {
@@ -65,17 +70,16 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
 Push-Location $rootDir
 try {
-    $distExe = Join-Path $rootDir "dist\HashSnap.exe"
-    if (Test-Path $distExe) {
-        Remove-Item -Path $distExe -Force
+    $distDir = Join-Path $rootDir "dist\HashSnap"
+    if (Test-Path $distDir) {
+        Remove-Item -Path $distDir -Recurse -Force
     }
+
     Invoke-ExternalCommand -Executable $PyInstallerPath -Arguments @(
-    "--noconsole",
-    "--onefile",
-    "--clean",
-    "--collect-all", "PyQt6",
-    "HashSnap.py"
-) -StepName "PyInstaller build"
+        "--clean",
+        $resolvedSpecPath
+    ) -StepName "PyInstaller build"
+
     Invoke-ExternalCommand -Executable $IsccPath -Arguments @("/DMyAppVersion=$Version", $issPath) -StepName "Inno Setup build"
 }
 finally {
