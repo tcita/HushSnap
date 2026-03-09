@@ -60,7 +60,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "startup"; Description: "{cm:LaunchOnStartup}"; GroupDescription: "{cm:AdditionalTasks}"
 
 [Files]
-Source: "..\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\HashSnap\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\dist\{#MyConfigName}"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "..\{#MyLogName}"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist skipifsourcedoesntexist
 
@@ -138,3 +138,4 @@ begin
   if CurStep = ssPostInstall then
     WriteUiLangHintFile();
 end;
+
