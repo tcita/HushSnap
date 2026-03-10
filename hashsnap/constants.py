@@ -39,14 +39,6 @@ SETTINGS_UNINSTALL_BUTTON_STYLE = (
 )
 
 
-# --- 2. Logging switches (visible) ---
-# User default: lightweight logs only.
-LOG_MODE_LIGHT = "light"
-LOG_MODE_DEBUG = "debug"
-DEFAULT_LOG_MODE = LOG_MODE_LIGHT
-LOG_MODE_ENV = "HASHSNAP_LOG_MODE"  # values: light | debug
-DEBUG_TOPMOST_ENV = "HASHSNAP_DEBUG_TOPMOST"  # backward-compatible override
-
 # --- 3. UI language switches ---
 UI_LANG_ENV = "HASHSNAP_UI_LANG"  # values: auto | en | zh
 UI_LANG_AUTO = "auto"
@@ -148,3 +140,4 @@ UI_TEXT = {
         "hotkey_kept_old": "{new_hotkey} 被占用，已保持 {old_hotkey}",
     },
 }
+

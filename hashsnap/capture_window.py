@@ -14,8 +14,10 @@ from .constants import (
     CAPTURE_LOG_TS_FMT,
     CAPTURE_OVERLAY_RGBA,
     CAPTURE_SELECTION_MIN_PX,
-    DEBUG_TOPMOST_ENV,
     DEBUG_TOPMOST_DELAY_MS,
+)
+from .logging_config import (
+    DEBUG_TOPMOST_ENV,
     DEFAULT_LOG_MODE,
     LOG_MODE_DEBUG,
     LOG_MODE_ENV,
@@ -79,7 +81,10 @@ class CaptureWindow(QtWidgets.QWidget):
 
         # 最后补一次，处理竞争条件
         QtCore.QTimer.singleShot(0, self._force_win_topmost)
-        QtCore.QTimer.singleShot(DEBUG_TOPMOST_DELAY_MS, lambda: self._debug_topmost_state("show_event_t+120ms"))
+        QtCore.QTimer.singleShot(
+            DEBUG_TOPMOST_DELAY_MS,
+            lambda: self._debug_topmost_state(f"show_event_t+{DEBUG_TOPMOST_DELAY_MS}ms"),
+        )
 
     def _hwnd_value(self, hwnd):
         if hwnd is None:
@@ -461,5 +466,8 @@ class CaptureWindow(QtWidgets.QWidget):
     def keyPressEvent(self, event):
         if event.key() == QtCore.Qt.Key.Key_Escape:
             self.close()
+
+
+
 
 
