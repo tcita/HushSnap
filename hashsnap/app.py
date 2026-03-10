@@ -17,17 +17,31 @@ from .config import (
     ui_text,
     update_hotkey_in_config,
 )
-from .constants import HOTKEY_ID
+from .constants import (
+    HOTKEY_ID,
+    APP_ICON_FILENAME,
+    UNINSTALLER_GLOB,
+    RELOAD_TIMER_MS,
+    TRAY_MSG_SHORT_MS,
+    TRAY_MSG_MEDIUM_MS,
+    TRAY_MSG_LONG_MS,
+    SETTINGS_CAPTURE_DIALOG_MIN_WIDTH,
+    SETTINGS_BUTTON_HEIGHT,
+    SETTINGS_CHANGE_BUTTON_MAX_WIDTH,
+    SETTINGS_UNINSTALL_BUTTON_MAX_WIDTH,
+    SETTINGS_ERROR_COLOR,
+    SETTINGS_UNINSTALL_BUTTON_STYLE,
+)
 from .hotkey import Communicator, HotkeyFilter
 
 
-def main(app_version):
+def main():
     # 1. 检查多开
     instance_lock = is_already_running()
     if not instance_lock:
         return
 
-    # 2. 正常初始化 App (PyQt6 自动处理高DPI)
+    # 2. 初始化,后台运行
     app = QtWidgets.QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
@@ -39,7 +53,7 @@ def main(app_version):
         return ui_text(ui_language, key, **kwargs)
 
     # 4. 系统托盘设置
-    tray_icon_image = QtGui.QIcon(str(get_resource_dir() / "camera.ico"))
+    tray_icon_image = QtGui.QIcon(str(get_resource_dir() / APP_ICON_FILENAME))
     app.setWindowIcon(tray_icon_image)
     tray_icon = QtWidgets.QSystemTrayIcon(tray_icon_image, app)
     tray_menu = QtWidgets.QMenu()
@@ -106,7 +120,7 @@ def main(app_version):
 
         # Prefer the newest uninstaller to avoid launching stale unins000.exe.
         uninstaller_candidates = []
-        for candidate_path in app_dir.glob("unins*.exe"):
+        for candidate_path in app_dir.glob(UNINSTALLER_GLOB):
             try:
                 stat = candidate_path.stat()
                 uninstaller_candidates.append((stat.st_mtime, candidate_path))
@@ -182,7 +196,7 @@ def main(app_version):
 
     reload_timer = QtCore.QTimer(app)
     reload_timer.setSingleShot(True)
-    reload_timer.setInterval(300)
+    reload_timer.setInterval(RELOAD_TIMER_MS)
 
     def ensure_watch_targets():
         if config_dir_path_str not in watcher.directories():
@@ -200,7 +214,7 @@ def main(app_version):
                 translate("hotkey_not_updated_title"),
                 translate("hotkey_invalid_config", hotkey=current_hotkey_name, error=exc),
                 QtWidgets.QSystemTrayIcon.MessageIcon.Warning,
-                3000,
+                TRAY_MSG_MEDIUM_MS,
             )
             return
 
@@ -212,15 +226,15 @@ def main(app_version):
                     translate("hotkey_enabled_title"),
                     translate("hotkey_enabled", hotkey=new_name),
                     QtWidgets.QSystemTrayIcon.MessageIcon.Information,
-                    2000,
-                )
+                TRAY_MSG_SHORT_MS,
+            )
             else:
                 tray_icon.showMessage(
                     translate("hotkey_not_updated_title"),
                     translate("hotkey_still_occupied", hotkey=new_name),
                     QtWidgets.QSystemTrayIcon.MessageIcon.Warning,
-                    3000,
-                )
+                TRAY_MSG_MEDIUM_MS,
+            )
             return
 
         old_modifier, old_virtual_key, old_name = (
@@ -234,7 +248,7 @@ def main(app_version):
                 translate("hotkey_updated_title"),
                 translate("hotkey_updated", old_hotkey=old_name, new_hotkey=new_name),
                 QtWidgets.QSystemTrayIcon.MessageIcon.Information,
-                2000,
+                TRAY_MSG_SHORT_MS,
             )
             return
 
@@ -244,7 +258,7 @@ def main(app_version):
                 translate("hotkey_error_title"),
                 translate("hotkey_recover_failed"),
                 QtWidgets.QSystemTrayIcon.MessageIcon.Critical,
-                4000,
+                TRAY_MSG_LONG_MS,
             )
             return
 
@@ -252,8 +266,8 @@ def main(app_version):
             translate("hotkey_not_updated_title"),
             translate("hotkey_kept_old", new_hotkey=new_name, old_hotkey=old_name),
             QtWidgets.QSystemTrayIcon.MessageIcon.Warning,
-            3000,
-        )
+                TRAY_MSG_MEDIUM_MS,
+            )
 
     def schedule_hotkey_reload(_path):
         ensure_watch_targets()
@@ -318,7 +332,7 @@ def main(app_version):
 
         def set_status(message, is_error=False):
             status_label.setText(message)
-            status_label.setStyleSheet("color: #B00020;" if is_error else "")
+            status_label.setStyleSheet(f"color: {SETTINGS_ERROR_COLOR};" if is_error else "")
 
         def capture_hotkey_dialog():
             class HotkeyCaptureDialog(QtWidgets.QDialog):
@@ -327,7 +341,7 @@ def main(app_version):
                     self.captured_hotkey = None
                     self.setWindowTitle(translate("settings_hotkey_capture_title"))
                     self.setModal(True)
-                    self.setMinimumWidth(340)
+                    self.setMinimumWidth(SETTINGS_CAPTURE_DIALOG_MIN_WIDTH)
                     self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
 
                     layout = QtWidgets.QVBoxLayout(self)
@@ -361,7 +375,7 @@ def main(app_version):
 
                 def _set_feedback(self, message, is_error=False):
                     self.feedback_label.setText(message)
-                    self.feedback_label.setStyleSheet("color: #B00020;" if is_error else "")
+                    self.feedback_label.setStyleSheet(f"color: {SETTINGS_ERROR_COLOR};" if is_error else "")
 
                 def keyPressEvent(self, event):
                     modifier_only_keys = {
@@ -454,18 +468,15 @@ def main(app_version):
         button_row = QtWidgets.QHBoxLayout()
         change_hotkey_button = QtWidgets.QPushButton(translate("settings_change_hotkey_btn"))
         change_hotkey_button.clicked.connect(change_hotkey_from_settings)
-        change_hotkey_button.setMaximumWidth(140)
-        change_hotkey_button.setMaximumHeight(24)
+        change_hotkey_button.setMaximumWidth(SETTINGS_CHANGE_BUTTON_MAX_WIDTH)
+        change_hotkey_button.setMaximumHeight(SETTINGS_BUTTON_HEIGHT)
         button_row.addWidget(change_hotkey_button)
 
         uninstall_button = QtWidgets.QPushButton(translate("uninstall_btn"))
         uninstall_button.clicked.connect(launch_uninstaller)
-        uninstall_button.setMaximumWidth(84)
-        uninstall_button.setMaximumHeight(24)
-        uninstall_button.setStyleSheet(
-            "QPushButton { background-color: #C62828; color: white; border: 1px solid #9E1F1F; padding: 2px 8px; }"
-            "QPushButton:hover { background-color: #B71C1C; }"
-        )
+        uninstall_button.setMaximumWidth(SETTINGS_UNINSTALL_BUTTON_MAX_WIDTH)
+        uninstall_button.setMaximumHeight(SETTINGS_BUTTON_HEIGHT)
+        uninstall_button.setStyleSheet(SETTINGS_UNINSTALL_BUTTON_STYLE)
         button_row.addWidget(uninstall_button)
 
         layout.addLayout(button_row)
@@ -489,6 +500,13 @@ def main(app_version):
     app.installNativeEventFilter(native_hotkey_filter)
 
     sys.exit(app.exec())
+
+
+
+
+
+
+
 
 
 

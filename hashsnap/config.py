@@ -8,11 +8,14 @@ from pathlib import Path
 from PyQt6 import QtCore
 
 from .constants import (
+    APP_CONFIG_FILENAME,
     DEFAULT_HOTKEY,
+    INSTALLER_LANG_FILENAME,
     MOD_ALT,
     MOD_CONTROL,
     MOD_SHIFT,
     MOD_WIN,
+    SINGLE_INSTANCE_MUTEX,
     UI_LANG_AUTO,
     UI_LANG_EN,
     UI_LANG_ENV,
@@ -43,7 +46,7 @@ def get_resource_dir():
     return Path(__file__).resolve().parent.parent
 
 def get_config_path():
-    return get_app_dir() / "hashsnap_config.json"
+    return get_app_dir() / APP_CONFIG_FILENAME
 
 
 def _hotkey_warning_note():
@@ -222,7 +225,7 @@ def _read_ui_lang_from_config(config_path):
 
 
 def _read_ui_lang_from_installer_hint(config_path):
-    hint_path = config_path.parent / "hashsnap_installer_lang.txt"
+    hint_path = config_path.parent / INSTALLER_LANG_FILENAME
     try:
         hint_value = hint_path.read_text(encoding="utf-8").strip().lower()
     except Exception:
@@ -260,9 +263,10 @@ def ui_text(lang, key, **kwargs):
     return text_template.format(**kwargs)
 
 
-# 用互斥锁防止多开
+# 通过命名 mutex 检测并阻止多开
+
 def is_already_running():
-    mutex_name = "Local\\HashSnap.SingleInstance"
+    mutex_name = SINGLE_INSTANCE_MUTEX
     handle = _create_mutex(None, False, mutex_name)
     if not handle:
         return None
@@ -272,4 +276,9 @@ def is_already_running():
         return None
 
     return handle
+
+
+
+
+
 
