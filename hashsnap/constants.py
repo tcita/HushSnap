@@ -6,6 +6,38 @@ MOD_CONTROL = 0x0002
 MOD_SHIFT = 0x0004
 MOD_WIN = 0x0008
 DEFAULT_HOTKEY = "Alt+Q"
+# --- 1.5 App paths / filenames ---
+APP_CONFIG_FILENAME = "hashsnap_config.json"
+INSTALLER_LANG_FILENAME = "hashsnap_installer_lang.txt"
+CAPTURE_DEBUG_LOG_FILENAME = "hashsnap_capture_debug.log"
+APP_ICON_FILENAME = "camera.ico"
+UNINSTALLER_GLOB = "unins*.exe"
+SINGLE_INSTANCE_MUTEX = "Local\\HashSnap.SingleInstance"
+
+# --- 1.6 UI / timing constants ---
+RELOAD_TIMER_MS = 300
+TRAY_MSG_SHORT_MS = 2000
+TRAY_MSG_MEDIUM_MS = 3000
+TRAY_MSG_LONG_MS = 4000
+DEBUG_TOPMOST_DELAY_MS = 120
+
+# --- 1.7 Capture UI constants ---
+CAPTURE_CLICK_THRESHOLD_PX = 8
+CAPTURE_SELECTION_MIN_PX = 10
+CAPTURE_OVERLAY_RGBA = (0, 0, 0, 80)
+CAPTURE_LOG_TS_FMT = "%Y-%m-%d %H:%M:%S"
+
+# --- 1.8 Settings dialog constants ---
+SETTINGS_CAPTURE_DIALOG_MIN_WIDTH = 340
+SETTINGS_BUTTON_HEIGHT = 24
+SETTINGS_CHANGE_BUTTON_MAX_WIDTH = 140
+SETTINGS_UNINSTALL_BUTTON_MAX_WIDTH = 84
+SETTINGS_ERROR_COLOR = "#B00020"
+SETTINGS_UNINSTALL_BUTTON_STYLE = (
+    "QPushButton { background-color: #C62828; color: white; border: 1px solid #9E1F1F; padding: 2px 8px; }"
+    "QPushButton:hover { background-color: #B71C1C; }"
+)
+
 
 # --- 2. Logging switches (visible) ---
 # User default: lightweight logs only.

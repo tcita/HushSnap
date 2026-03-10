@@ -1,6 +1,6 @@
-from hashsnap import __version__
 from hashsnap.app import main
 
 
 if __name__ == "__main__":
-    main(__version__)
+    main()
+

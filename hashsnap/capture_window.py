@@ -9,7 +9,13 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 
 from .config import get_app_dir
 from .constants import (
+    CAPTURE_CLICK_THRESHOLD_PX,
+    CAPTURE_DEBUG_LOG_FILENAME,
+    CAPTURE_LOG_TS_FMT,
+    CAPTURE_OVERLAY_RGBA,
+    CAPTURE_SELECTION_MIN_PX,
     DEBUG_TOPMOST_ENV,
+    DEBUG_TOPMOST_DELAY_MS,
     DEFAULT_LOG_MODE,
     LOG_MODE_DEBUG,
     LOG_MODE_ENV,
@@ -40,9 +46,9 @@ class CaptureWindow(QtWidgets.QWidget):
         self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
         self.start_pos = None
         self.curr_pos = None
-        self.click_threshold = 8
+        self.click_threshold = CAPTURE_CLICK_THRESHOLD_PX
         # Keep logs next to installed executable for stable post-install debugging.
-        self.log_path = get_app_dir() / "hashsnap_capture_debug.log"
+        self.log_path = get_app_dir() / CAPTURE_DEBUG_LOG_FILENAME
 
         # 日志模式：默认轻量；设置 HASHSNAP_LOG_MODE=debug 开启详细调试日志。
         raw_log_mode = os.environ.get(LOG_MODE_ENV, DEFAULT_LOG_MODE).strip().lower()
@@ -73,7 +79,7 @@ class CaptureWindow(QtWidgets.QWidget):
 
         # 最后补一次，处理竞争条件
         QtCore.QTimer.singleShot(0, self._force_win_topmost)
-        QtCore.QTimer.singleShot(120, lambda: self._debug_topmost_state("show_event_t+120ms"))
+        QtCore.QTimer.singleShot(DEBUG_TOPMOST_DELAY_MS, lambda: self._debug_topmost_state("show_event_t+120ms"))
 
     def _hwnd_value(self, hwnd):
         if hwnd is None:
@@ -335,7 +341,7 @@ class CaptureWindow(QtWidgets.QWidget):
         if level == LOG_MODE_DEBUG and not self.debug_topmost:
             return
 
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ts = datetime.now().strftime(CAPTURE_LOG_TS_FMT)
         line = f"[{ts}] {reason}"
         if extra:
             line += f" | {extra}"
@@ -392,12 +398,12 @@ class CaptureWindow(QtWidgets.QWidget):
     def paintEvent(self, event):
         painter = QtGui.QPainter(self)
         painter.drawPixmap(self.rect(), self.pixmap)
-        painter.fillRect(self.rect(), QtGui.QColor(0, 0, 0, 80))
+        painter.fillRect(self.rect(), QtGui.QColor(*CAPTURE_OVERLAY_RGBA))
 
         if self.start_pos is not None and self.curr_pos is not None:
             rect = QtCore.QRect(self.start_pos, self.curr_pos).normalized()
             # Only draw selection preview when dragged area is large enough.
-            if rect.width() >= 10 and rect.height() >= 10:
+            if rect.width() >= CAPTURE_SELECTION_MIN_PX and rect.height() >= CAPTURE_SELECTION_MIN_PX:
                 # Avoid per-frame pixmap copy while dragging.
                 painter.save()
                 painter.setClipRect(rect)
@@ -455,3 +461,5 @@ class CaptureWindow(QtWidgets.QWidget):
     def keyPressEvent(self, event):
         if event.key() == QtCore.Qt.Key.Key_Escape:
             self.close()
+
+
