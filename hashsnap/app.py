@@ -38,11 +38,8 @@ def main():
     communicator.win = None
 
     def launch_capture_window():
-        try:
-            if communicator.win and communicator.win.isVisible():
-                return
-        except RuntimeError:
-            communicator.win = None
+        if communicator.win:
+            return
 
         screen = QtWidgets.QApplication.primaryScreen()
         # 抓取屏幕时显式设置 DPR，确保后续选区计算正确
@@ -51,6 +48,8 @@ def main():
         screen_pixmap.setDevicePixelRatio(device_pixel_ratio)
 
         communicator.win = CaptureWindow(screen_pixmap)
+        # 利用 destroyed 信号同步，确保窗口关闭并销毁后 communicator.win 重置为 None
+        communicator.win.destroyed.connect(lambda: setattr(communicator, "win", None))
         communicator.win.show()
 
     communicator.trigger.connect(launch_capture_window)
