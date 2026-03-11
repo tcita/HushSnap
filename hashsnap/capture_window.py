@@ -38,6 +38,7 @@ class CaptureWindow(QtWidgets.QWidget):
             | QtCore.Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_NativeWindow, True)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, True)
 
         self.setWindowState(QtCore.Qt.WindowState.WindowFullScreen)
         # 显式覆盖所有屏幕区域
