@@ -48,7 +48,7 @@ def main():
         screen_pixmap.setDevicePixelRatio(device_pixel_ratio)
         communicator.win = CaptureWindow(screen_pixmap)
         
-        # 利用信号和闭包确保CaptureWindow关闭并销毁后  communicator.win 重置为 None
+        # 利用信号和闭包确保CaptureWindow关闭并销毁后将communicator.win 重置为 None
         communicator.win.destroyed.connect(lambda: setattr(communicator, "win", None))
         communicator.win.show()
 
