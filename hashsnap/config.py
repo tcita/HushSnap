@@ -33,20 +33,26 @@ _close_handle.restype = wintypes.BOOL
 _ERROR_ALREADY_EXISTS = 183
 
 
-def get_app_dir():
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
-    return Path(__file__).resolve().parent.parent
+# --- 2. 路径常量定义 ---
+_is_frozen = getattr(sys, "frozen", False)
+# 程序的根目录 (exe 所在目录或项目根目录)
+APP_DIR = Path(sys.executable).resolve().parent if _is_frozen else Path(__file__).resolve().parent.parent
+# 配置文件路径
+CONFIG_PATH = APP_DIR / APP_CONFIG_FILENAME
+# 资源目录 (如果是 PyInstaller 模式，则从 _MEIPASS 临时目录读取资源，否则就是 APP_DIR)
+RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR)) if _is_frozen else APP_DIR
 
+
+def get_app_dir():
+    return APP_DIR
 
 
 def get_resource_dir():
-    if getattr(sys, "frozen", False):
-        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
-    return Path(__file__).resolve().parent.parent
+    return RESOURCE_DIR
+
 
 def get_config_path():
-    return get_app_dir() / APP_CONFIG_FILENAME
+    return CONFIG_PATH
 
 
 def _hotkey_warning_note():
