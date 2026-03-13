@@ -77,6 +77,7 @@ UI_TEXT = {
         "settings_hotkey_apply_failed": "Requested {new_hotkey}, but system kept {old_hotkey}.",
         "uninstall_btn": "Uninstall",
         "close_btn": "Close",
+        "settings_init_failed": "Settings initialization failed: {error}",
         "open_dir_failed": "Cannot Open Folder",
         "menu_settings": "Settings...",
         "menu_about": "About...",
@@ -123,6 +124,7 @@ UI_TEXT = {
         "settings_hotkey_apply_failed": "尝试应用 {new_hotkey}，但系统保持为 {old_hotkey}。",
         "uninstall_btn": "卸载",
         "close_btn": "关闭",
+        "settings_init_failed": "设置初始化失败: {error}",
         "open_dir_failed": "无法打开目录",
         "menu_settings": "设置...",
         "menu_about": "关于...",
@@ -140,4 +142,8 @@ UI_TEXT = {
         "hotkey_kept_old": "{new_hotkey} 被占用，已保持 {old_hotkey}",
     },
 }
+
+
+
+
 
