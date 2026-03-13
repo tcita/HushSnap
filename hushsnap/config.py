@@ -18,6 +18,8 @@ from .constants import (
     MOD_SHIFT,
     MOD_WIN,
     SINGLE_INSTANCE_MUTEX,
+)
+from .translations import (
     UI_LANG_AUTO,
     UI_LANG_EN,
     UI_LANG_ENV,
