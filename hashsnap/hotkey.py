@@ -1,3 +1,5 @@
+"""热键通信与原生事件过滤器。"""
+
 from ctypes import wintypes
 
 from PyQt6 import QtCore

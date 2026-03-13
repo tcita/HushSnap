@@ -1,3 +1,4 @@
+<!-- 项目说明文档 -->
 # HashSnap Build Guide
 
 ## Prerequisites
@@ -63,3 +64,4 @@ $shortcut.WorkingDirectory = Split-Path $exe
 $shortcut.IconLocation = "$exe,0"
 $shortcut.Save()
 ```
+

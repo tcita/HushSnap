@@ -1,3 +1,5 @@
+"""卸载流程与引导。"""
+
 import subprocess
 
 from PyQt6 import QtWidgets
@@ -49,3 +51,4 @@ def launch_uninstaller(translate, on_quit):
         on_quit()
     except Exception as exc:
         QtWidgets.QMessageBox.warning(None, translate("launch_uninstall_failed"), str(exc))
+

@@ -1,3 +1,5 @@
+"""全局热键注册与监听管理。"""
+
 import ctypes
 
 from PyQt6 import QtCore, QtWidgets
@@ -156,3 +158,4 @@ class HotkeyManager:
         self._watcher.fileChanged.connect(self.schedule_hotkey_reload)
         self._watcher.directoryChanged.connect(self.schedule_hotkey_reload)
         self._reload_timer.timeout.connect(self.apply_hotkey_reload)
+

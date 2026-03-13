@@ -1,3 +1,5 @@
+"""PyInstaller 打包配置。"""
+
 # -*- mode: python ; coding: utf-8 -*-
 
 datas = [('camera.ico', '.')]
@@ -128,5 +130,6 @@ coll = COLLECT(
     upx_exclude=[],
     name='HashSnap',
 )
+
 
 

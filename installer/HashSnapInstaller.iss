@@ -1,3 +1,4 @@
+; Inno Setup 安装器脚本。
 ; HashSnap installer (Inno Setup)
 ; Build: ISCC installer\HashSnapInstaller.iss
 
@@ -138,4 +139,5 @@ begin
   if CurStep = ssPostInstall then
     WriteUiLangHintFile();
 end;
+
 
