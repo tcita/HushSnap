@@ -17,9 +17,15 @@ from .system.hotkey_manager import HotkeyManager
 from .system.uninstall import launch_uninstaller
 from .ui.settings_dialog import SettingsDialogController
 from .ui.tray import create_tray
+from .config import get_app_dir
+from .constants import CAPTURE_DEBUG_LOG_FILENAME
+from .logging_config import setup_logging
 
 
 def main():
+    # 初始化日志系统
+    setup_logging(get_app_dir() / CAPTURE_DEBUG_LOG_FILENAME)
+
     # 检查多开
     instance_lock = is_already_running()
     if not instance_lock:
