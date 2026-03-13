@@ -19,7 +19,8 @@ def create_tray(app, translate, on_trigger, on_open_settings, on_open_config_dir
     tray_icon.activated.connect(on_tray_icon_activated)
 
     settings_action = tray_menu.addAction(translate("menu_settings"))
-    settings_action.triggered.connect(on_open_settings)
+    if on_open_settings is not None:
+        settings_action.triggered.connect(on_open_settings)
     config_dir_action = tray_menu.addAction(translate("menu_open_install_dir"))
     config_dir_action.triggered.connect(on_open_config_dir)
 
@@ -27,4 +28,4 @@ def create_tray(app, translate, on_trigger, on_open_settings, on_open_config_dir
     quit_action = tray_menu.addAction(translate("menu_quit"))
     quit_action.triggered.connect(on_quit)
 
-    return tray_icon
+    return tray_icon, settings_action
