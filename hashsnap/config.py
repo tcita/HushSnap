@@ -1,3 +1,5 @@
+"""配置读写、热键解析与单实例检查。"""
+
 import json
 import os
 import sys
@@ -282,6 +284,7 @@ def is_already_running():
         return None
 
     return handle
+
 
 
 

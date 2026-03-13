@@ -1,3 +1,4 @@
+# 构建安装包的脚本。
 param(
     [string]$IsccPath = "ISCC.exe",
     [string]$Version,
@@ -68,3 +69,4 @@ try {
 finally {
     Pop-Location
 }
+

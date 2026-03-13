@@ -1,3 +1,5 @@
+"""应用入口与主流程协调。"""
+
 import os
 import sys
 
@@ -18,16 +20,16 @@ from .ui.tray import create_tray
 
 
 def main():
-    # 1. 检查多开
+    # 检查多开
     instance_lock = is_already_running()
     if not instance_lock:
         return
 
-    # 2. 初始化,后台运行
+    # 初始化,后台运行
     app = QtWidgets.QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
-    # 3. 加载配置与 UI 语言
+    # 加载配置与 UI 语言
     hotkey_modifier, hotkey_virtual_key, hotkey_name, config_path = load_hotkey_setting()
     ui_language = resolve_ui_lang(config_path)
 
@@ -48,11 +50,15 @@ def main():
         screen_pixmap.setDevicePixelRatio(device_pixel_ratio)
         communicator.win = CaptureWindow(screen_pixmap)
 
-        # 利用观察者模式(信号槽)使用闭包确保CaptureWindow关闭并销毁后,将communicator.win 重置为 None
+        # 利用观察者模式(Qt信号槽)使用闭包确保CaptureWindow关闭并销毁后,将communicator.win 重置为 None
         communicator.win.destroyed.connect(lambda: setattr(communicator, "win", None))
         communicator.win.show()
 
     communicator.trigger.connect(launch_capture_window)
+
+    # 安装过滤器捕获热键
+    native_hotkey_filter = HotkeyFilter(communicator.trigger)
+    app.installNativeEventFilter(native_hotkey_filter)
 
     def open_config_dir():
         try:
@@ -106,9 +112,9 @@ def main():
 
     app.aboutToQuit.connect(hotkey_manager.unregister_current_hotkey)
 
-    # 安装过滤器捕获热键
-    native_hotkey_filter = HotkeyFilter(communicator.trigger)
-    app.installNativeEventFilter(native_hotkey_filter)
 
     sys.exit(app.exec())
+
+
+
 

@@ -1,3 +1,5 @@
+"""设置窗口与表单交互。"""
+
 from PyQt6 import QtCore, QtWidgets
 
 from ..config import parse_hotkey, update_hotkey_in_config
@@ -254,3 +256,4 @@ class SettingsDialogController:
         dialog.show()
         dialog.raise_()
         dialog.activateWindow()
+

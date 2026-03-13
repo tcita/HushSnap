@@ -1,3 +1,5 @@
+"""截图窗口与选区交互逻辑。"""
+
 import ctypes
 import os
 import sys
@@ -467,6 +469,7 @@ class CaptureWindow(QtWidgets.QWidget):
     def keyPressEvent(self, event):
         if event.key() == QtCore.Qt.Key.Key_Escape:
             self.close()
+
 
 
 

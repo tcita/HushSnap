@@ -1,3 +1,5 @@
+"""项目常量与默认值。"""
+
 # --- 1. Windows 原生热键常量定义 ---
 WM_HOTKEY = 0x0312
 HOTKEY_ID = 1
@@ -142,6 +144,7 @@ UI_TEXT = {
         "hotkey_kept_old": "{new_hotkey} 被占用，已保持 {old_hotkey}",
     },
 }
+
 
 
 

@@ -1,3 +1,5 @@
+"""系统托盘菜单与动作。"""
+
 from PyQt6 import QtGui, QtWidgets
 
 from ..config import get_resource_dir
@@ -29,3 +31,4 @@ def create_tray(app, translate, on_trigger, on_open_settings, on_open_config_dir
     quit_action.triggered.connect(on_quit)
 
     return tray_icon, settings_action
+

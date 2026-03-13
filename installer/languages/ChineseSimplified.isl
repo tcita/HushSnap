@@ -1,4 +1,5 @@
-﻿; *** Inno Setup version 6.5.0+ Chinese Simplified messages ***
+; 简体中文语言包。
+; *** Inno Setup version 6.5.0+ Chinese Simplified messages ***
 ;
 ; To download user-contributed translations of this file, go to:
 ;   https://jrsoftware.org/files/istrans/
@@ -416,3 +417,4 @@ AssocingFileExtension=正在将 %2 文件扩展名与 %1 建立关联...
 AutoStartProgramGroupDescription=启动：
 AutoStartProgram=自动启动 %1
 AddonHostProgramNotFound=您选择的文件夹中无法找到 %1。%n%n您要继续吗？
+
