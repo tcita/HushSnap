@@ -1,5 +1,4 @@
-<!-- 项目说明文档 -->
-# HashSnap Build Guide
+﻿# HushSnap Build Guide
 
 ## Prerequisites
 
@@ -9,7 +8,7 @@
 
 ## 1) One-Command Build (Recommended)
 
-Update `hashsnap/__init__.py` first (the `__version__` value), then run the following command to generate the final installer:
+Update `HushSnap/__init__.py` first (the `__version__` value), then run the following command to generate the final installer:
 
 PowerShell
 
@@ -19,15 +18,15 @@ powershell -ExecutionPolicy Bypass -File installer/build_installer.ps1
 
 **This command will automatically:**
 
-- Read the version from `hashsnap/__init__.py`.
-- Build the app via PyInstaller as a `onedir` bundle based on `HashSnap.spec`.
-- Package the entire `dist\HashSnap\` folder into the installer with the matching version.
+- Read the version from `HushSnap/__init__.py`.
+- Build the app via PyInstaller as a `onedir` bundle based on `HushSnap.spec`.
+- Package the entire `dist\HushSnap\` folder into the installer with the matching version.
 
 **Output:**
 
-- `dist\HashSnap\HashSnap.exe`
-- `dist\HashSnap\_internal\...` (runtime dependencies and bundled resources)
-- `dist-installer\HashSnap-Setup.exe`
+- `dist\HushSnap\HushSnap.exe`
+- `dist\HushSnap\_internal\...` (runtime dependencies and bundled resources)
+- `dist-installer\HushSnap-Setup.exe`
 
 ## 2) Optional: Build EXE Only (Debug)
 
@@ -36,15 +35,15 @@ If you only need to test the packaged app without creating an installer, run:
 PowerShell
 
 ```powershell
-pyinstaller --clean HashSnap.spec
+pyinstaller --clean HushSnap.spec
 ```
 
-*Note: This creates a `onedir` app folder at `dist\HashSnap\` and uses the version already defined in `hashsnap/__init__.py`.*
+*Note: This creates a `onedir` app folder at `dist\HushSnap\` and uses the version already defined in `HushSnap/__init__.py`.*
 
 **Output:**
 
-- `dist\HashSnap\HashSnap.exe`
-- `dist\HashSnap\_internal\...`
+- `dist\HushSnap\HushSnap.exe`
+- `dist\HushSnap\_internal\...`
 
 ## 3) Optional: Add App to Startup
 
@@ -53,9 +52,9 @@ To test the application's startup behavior on your local machine:
 PowerShell
 
 ```powershell
-$exe = (Resolve-Path '.\dist\HashSnap\HashSnap.exe').Path
+$exe = (Resolve-Path '.\dist\HushSnap\HushSnap.exe').Path
 $startup = [Environment]::GetFolderPath('Startup')
-$linkPath = Join-Path $startup 'HashSnap.lnk'
+$linkPath = Join-Path $startup 'HushSnap.lnk'
 
 $wsh = New-Object -ComObject WScript.Shell
 $shortcut = $wsh.CreateShortcut($linkPath)
@@ -64,4 +63,5 @@ $shortcut.WorkingDirectory = Split-Path $exe
 $shortcut.IconLocation = "$exe,0"
 $shortcut.Save()
 ```
+
 

@@ -1,4 +1,4 @@
-"""截图窗口与选区交互逻辑。"""
+﻿"""截图窗口与选区交互逻辑。"""
 
 import ctypes
 import os
@@ -55,12 +55,12 @@ class CaptureWindow(QtWidgets.QWidget):
         # Keep logs next to installed executable for stable post-install debugging.
         self.log_path = get_app_dir() / CAPTURE_DEBUG_LOG_FILENAME
 
-        # 日志模式：默认轻量；设置 HASHSNAP_LOG_MODE=debug 开启详细调试日志。
+        # 日志模式：默认轻量；设置 HushSnap_LOG_MODE=debug 开启详细调试日志。
         raw_log_mode = os.environ.get(LOG_MODE_ENV, DEFAULT_LOG_MODE).strip().lower()
         self.log_mode = raw_log_mode if raw_log_mode in {LOG_MODE_LIGHT, LOG_MODE_DEBUG} else DEFAULT_LOG_MODE
         self.debug_topmost = self.log_mode == LOG_MODE_DEBUG
 
-        # 兼容旧开关：HASHSNAP_DEBUG_TOPMOST=1/0 可直接覆盖 detailed topmost 调试。
+        # 兼容旧开关：HushSnap_DEBUG_TOPMOST=1/0 可直接覆盖 detailed topmost 调试。
         legacy = os.environ.get(DEBUG_TOPMOST_ENV)
         if legacy is not None:
             self.debug_topmost = legacy.strip().lower() not in {"0", "false", "off", "no"}
@@ -469,6 +469,7 @@ class CaptureWindow(QtWidgets.QWidget):
     def keyPressEvent(self, event):
         if event.key() == QtCore.Qt.Key.Key_Escape:
             self.close()
+
 
 
 

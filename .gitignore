@@ -2,7 +2,7 @@
 build/
 dist/
 *.spec
-!HashSnap.spec
+!HushSnap.spec
 __pycache__/
 
 # Installer build artifacts
@@ -12,6 +12,6 @@ dist-installer/
 *.exe
 
 # Configuration and logs
-hashsnap_config.json
-hashsnap_capture_error.log
-hashsnap_capture_debug.log
+hushsnap_config.json
+hushsnap_capture_error.log
+hushsnap_capture_debug.log

@@ -1,9 +1,9 @@
-# 构建安装包的脚本。
+﻿# 构建安装包的脚本。
 param(
     [string]$IsccPath = "ISCC.exe",
     [string]$Version,
     [string]$PyInstallerPath = "pyinstaller",
-    [string]$SpecPath = "HashSnap.spec"
+    [string]$SpecPath = "HushSnap.spec"
 )
 
 $ErrorActionPreference = "Stop"
@@ -26,8 +26,8 @@ function Invoke-ExternalCommand {
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $rootDir = Resolve-Path (Join-Path $scriptDir "..")
-$issPath = Join-Path $scriptDir "HashSnapInstaller.iss"
-$packageInitFile = Join-Path $rootDir "hashsnap\__init__.py"
+$issPath = Join-Path $scriptDir "HushSnapInstaller.iss"
+$packageInitFile = Join-Path $rootDir "hushsnap\__init__.py"
 $resolvedSpecPath = Join-Path $rootDir $SpecPath
 
 if (-not (Test-Path $issPath)) {
@@ -54,7 +54,7 @@ if ($Version -notmatch '^\d+\.\d+\.\d+([\-+][0-9A-Za-z\.-]+)?$') {
 
 Push-Location $rootDir
 try {
-    $distDir = Join-Path $rootDir "dist\HashSnap"
+    $distDir = Join-Path $rootDir "dist\HushSnap"
     if (Test-Path $distDir) {
         Remove-Item -Path $distDir -Recurse -Force
     }
@@ -69,4 +69,5 @@ try {
 finally {
     Pop-Location
 }
+
 
