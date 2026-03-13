@@ -1,19 +1,19 @@
-; Inno Setup 安装器脚本。
-; HashSnap installer (Inno Setup)
-; Build: ISCC installer\HashSnapInstaller.iss
+﻿; Inno Setup 安装器脚本。
+; HushSnap installer (Inno Setup)
+; Build: ISCC installer\HushSnapInstaller.iss
 
-#define MyAppName "HashSnap"
+#define MyAppName "HushSnap"
 #ifndef MyAppVersion
 #define MyAppVersion "1.0.0"
 #endif
-#define MyAppPublisher "HashSnap"
-#define MyAppExeName "HashSnap.exe"
-#define MyConfigName "hashsnap_config.json"
-#define MyLogName "hashsnap_capture_debug.log"
-#define MyInstallerLangHintName "hashsnap_installer_lang.txt"
+#define MyAppPublisher "HushSnap"
+#define MyAppExeName "HushSnap.exe"
+#define MyConfigName "hushsnap_config.json"
+#define MyLogName "hushsnap_capture_debug.log"
+#define MyInstallerLangHintName "hushsnap_installer_lang.txt"
 
 [Setup]
-AppId={{A53D0F97-1664-4740-A22D-4A0A8DE5C30A}
+AppId={{916B0BB3-8426-497F-8C2B-74F342C02536}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
@@ -29,7 +29,7 @@ UsePreviousPrivileges=no
 CloseApplications=no
 RestartApplications=no
 OutputDir=..\dist-installer
-OutputBaseFilename=HashSnap-Setup
+OutputBaseFilename=HushSnap-Setup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -61,12 +61,14 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "startup"; Description: "{cm:LaunchOnStartup}"; GroupDescription: "{cm:AdditionalTasks}"
 
 [Files]
-Source: "..\dist\HashSnap\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\dist\HushSnap\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\dist\{#MyConfigName}"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "..\{#MyLogName}"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist skipifsourcedoesntexist
 
 [Registry]
 ; Standard Inno Setup CreateUninstallRegKey=yes will handle this in HKCU when PrivilegesRequired=lowest.
+; Explicitly add InstallLocation to help Windows 11 "Installed Apps" find the app.
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{916B0BB3-8426-497F-8C2B-74F342C02536}_is1"; ValueType: string; ValueName: "InstallLocation"; ValueData: "{app}"; Flags: uninsdeletevalue
 [InstallDelete]
 Type: files; Name: "{group}\Uninstall {#MyAppName}.lnk"
 Type: files; Name: "{group}\卸载 {#MyAppName}.lnk"
@@ -80,21 +82,21 @@ Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{a
 Name: "{group}\{cm:UninstallApp}"; Filename: "{app}\unins000.exe"; WorkingDir: "{app}"
 
 [UninstallDelete]
-Type: files; Name: "{autostartup}\HashSnap.lnk"
-Type: files; Name: "{app}\hashsnap_config.json"
-Type: files; Name: "{app}\hashsnap_capture_debug.log"
-Type: files; Name: "{app}\hashsnap_capture_error.log"
+Type: files; Name: "{autostartup}\HushSnap.lnk"
+Type: files; Name: "{app}\hushsnap_config.json"
+Type: files; Name: "{app}\hushsnap_capture_debug.log"
+Type: files; Name: "{app}\hushsnap_capture_error.log"
 Type: files; Name: "{app}\{#MyInstallerLangHintName}"
 Type: dirifempty; Name: "{app}"
 
 [UninstallRun]
-Filename: "{cmd}"; Parameters: "/C taskkill /F /T /IM HashSnap.exe >nul 2>&1"; Flags: runhidden waituntilterminated; RunOnceId: "KillHashSnap"
+Filename: "{cmd}"; Parameters: "/C taskkill /F /T /IM HushSnap.exe >nul 2>&1"; Flags: runhidden waituntilterminated; RunOnceId: "KillHushSnap"
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchNow}"; Flags: nowait postinstall skipifsilent
 
 [Code]
-function ForceKillHashSnap(): Boolean;
+function ForceKillHushSnap(): Boolean;
 var
   ResultCode: Integer;
 begin
@@ -128,16 +130,17 @@ end;
 
 function InitializeSetup(): Boolean;
 begin
-  ForceKillHashSnap();
+  ForceKillHushSnap();
   Result := True;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssInstall then
-    ForceKillHashSnap();
+    ForceKillHushSnap();
   if CurStep = ssPostInstall then
     WriteUiLangHintFile();
 end;
+
 
 

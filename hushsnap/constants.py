@@ -1,4 +1,4 @@
-"""项目常量与默认值。"""
+﻿"""项目常量与默认值。"""
 
 # --- 1. Windows 原生热键常量定义 ---
 WM_HOTKEY = 0x0312
@@ -9,12 +9,12 @@ MOD_SHIFT = 0x0004
 MOD_WIN = 0x0008
 DEFAULT_HOTKEY = "Alt+Q"
 # --- 1.5 App paths / filenames ---
-APP_CONFIG_FILENAME = "hashsnap_config.json"
-INSTALLER_LANG_FILENAME = "hashsnap_installer_lang.txt"
-CAPTURE_DEBUG_LOG_FILENAME = "hashsnap_capture_debug.log"
+APP_CONFIG_FILENAME = "hushsnap_config.json"
+INSTALLER_LANG_FILENAME = "hushsnap_installer_lang.txt"
+CAPTURE_DEBUG_LOG_FILENAME = "hushsnap_capture_debug.log"
 APP_ICON_FILENAME = "camera.ico"
 UNINSTALLER_GLOB = "unins*.exe"
-SINGLE_INSTANCE_MUTEX = "Local\\HashSnap.SingleInstance"
+SINGLE_INSTANCE_MUTEX = "Local\\hushsnap.SingleInstance"
 
 # --- 1.6 UI / timing constants ---
 RELOAD_TIMER_MS = 300
@@ -42,7 +42,7 @@ SETTINGS_UNINSTALL_BUTTON_STYLE = (
 
 
 # --- 3. UI language switches ---
-UI_LANG_ENV = "HASHSNAP_UI_LANG"  # values: auto | en | zh
+UI_LANG_ENV = "HUSHSNAP_UI_LANG"  # values: auto | en | zh
 UI_LANG_AUTO = "auto"
 UI_LANG_EN = "en"
 UI_LANG_ZH = "zh"
@@ -53,13 +53,13 @@ UI_TEXT = {
         "error": "Error",
         "hotkey_taken": "{hotkey} is already in use.\nConfig: {config_path}",
         "uninstaller_not_found_title": "Uninstaller Not Found",
-        "uninstaller_not_found_body": "No uninstaller was found in the app directory. Uninstall HashSnap from Control Panel > Programs and Features.",
+        "uninstaller_not_found_body": "No uninstaller was found in the app directory. Uninstall HushSnap from Control Panel > Programs and Features.",
         "confirm_uninstall_title": "Confirm Uninstall",
-        "confirm_uninstall_body": "HashSnap uninstaller will be launched. Continue?",
+        "confirm_uninstall_body": "HushSnap uninstaller will be launched. Continue?",
         "launch_uninstall_failed": "Failed to Launch Uninstaller",
         "about_title": "About",
-        "about_body": "HashSnap {version}\nCurrent hotkey: {hotkey}\nConfig: {config_path}",
-        "about_info": "HashSnap runs in the system tray. Use Settings to change hotkey or uninstall.",
+        "about_body": "HushSnap {version}\nCurrent hotkey: {hotkey}\nConfig: {config_path}",
+        "about_info": "HushSnap runs in the system tray. Use Settings to change hotkey or uninstall.",
         "settings_title": "Settings",
         "settings_body": "Current hotkey: {hotkey}\nConfig: {config_path}",
         "settings_current_hotkey": "Current hotkey: {hotkey}",
@@ -85,14 +85,14 @@ UI_TEXT = {
         "menu_about": "About...",
         "menu_open_install_dir": "Config Folder",
         "menu_quit": "Quit",
-        "hotkey_not_updated_title": "HashSnap Hotkey Not Updated",
+        "hotkey_not_updated_title": "HushSnap Hotkey Not Updated",
         "hotkey_invalid_config": "Invalid config. Keep using {hotkey}\n{error}",
-        "hotkey_enabled_title": "HashSnap Hotkey Enabled",
+        "hotkey_enabled_title": "HushSnap Hotkey Enabled",
         "hotkey_enabled": "Enabled {hotkey}",
         "hotkey_still_occupied": "{hotkey} is still in use",
-        "hotkey_updated_title": "HashSnap Hotkey Updated",
+        "hotkey_updated_title": "HushSnap Hotkey Updated",
         "hotkey_updated": "{old_hotkey} -> {new_hotkey}",
-        "hotkey_error_title": "HashSnap Hotkey Error",
+        "hotkey_error_title": "HushSnap Hotkey Error",
         "hotkey_recover_failed": "New hotkey is unavailable, and old hotkey recovery failed.",
         "hotkey_kept_old": "{new_hotkey} is in use. Kept {old_hotkey}.",
     },
@@ -100,13 +100,13 @@ UI_TEXT = {
         "error": "错误",
         "hotkey_taken": "{hotkey} 热键已被占用！\n配置文件: {config_path}",
         "uninstaller_not_found_title": "未找到卸载程序",
-        "uninstaller_not_found_body": "当前目录未检测到卸载程序，请在 控制面板 -> 程序和功能 中卸载 HashSnap。",
+        "uninstaller_not_found_body": "当前目录未检测到卸载程序，请在 控制面板 -> 程序和功能 中卸载 HushSnap。",
         "confirm_uninstall_title": "确认卸载",
-        "confirm_uninstall_body": "将启动 HashSnap 卸载程序，是否继续？",
+        "confirm_uninstall_body": "将启动 HushSnap 卸载程序，是否继续？",
         "launch_uninstall_failed": "启动卸载失败",
         "about_title": "关于",
-        "about_body": "HashSnap {version}\n当前热键: {hotkey}\n配置文件: {config_path}",
-        "about_info": "HashSnap 常驻系统托盘。可在“设置”中修改热键或卸载。",
+        "about_body": "HushSnap {version}\n当前热键: {hotkey}\n配置文件: {config_path}",
+        "about_info": "HushSnap 常驻系统托盘。可在“设置”中修改热键或卸载。",
         "settings_title": "设置",
         "settings_body": "当前热键: {hotkey}\n配置文件: {config_path}",
         "settings_current_hotkey": "当前快捷键: {hotkey}",
@@ -132,18 +132,19 @@ UI_TEXT = {
         "menu_about": "关于...",
         "menu_open_install_dir": "配置目录",
         "menu_quit": "退出",
-        "hotkey_not_updated_title": "HashSnap 热键未更新",
+        "hotkey_not_updated_title": "HushSnap 热键未更新",
         "hotkey_invalid_config": "配置无效，继续使用 {hotkey}\n{error}",
-        "hotkey_enabled_title": "HashSnap 热键已启用",
+        "hotkey_enabled_title": "HushSnap 热键已启用",
         "hotkey_enabled": "已启用 {hotkey}",
         "hotkey_still_occupied": "{hotkey} 仍被占用",
-        "hotkey_updated_title": "HashSnap 热键已更新",
+        "hotkey_updated_title": "HushSnap 热键已更新",
         "hotkey_updated": "{old_hotkey} -> {new_hotkey}",
-        "hotkey_error_title": "HashSnap 热键错误",
+        "hotkey_error_title": "HushSnap 热键错误",
         "hotkey_recover_failed": "新热键不可用，且旧热键恢复失败。",
         "hotkey_kept_old": "{new_hotkey} 被占用，已保持 {old_hotkey}",
     },
 }
+
 
 
 
