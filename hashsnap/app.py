@@ -42,13 +42,13 @@ def main():
             return
 
         screen = QtWidgets.QApplication.primaryScreen()
-        # 抓取屏幕时显式设置 DPR，确保后续选区计算正确
+        # 显式地设置 DPR(windows系统上的屏幕缩放倍数)，确保后续截屏选区计算正确
         device_pixel_ratio = screen.devicePixelRatio()
         screen_pixmap = screen.grabWindow(0)
         screen_pixmap.setDevicePixelRatio(device_pixel_ratio)
-
         communicator.win = CaptureWindow(screen_pixmap)
-        # 利用 destroyed 信号同步，确保窗口关闭并销毁后 communicator.win 重置为 None
+        
+        # 利用信号和闭包确保CaptureWindow关闭并销毁后  communicator.win 重置为 None
         communicator.win.destroyed.connect(lambda: setattr(communicator, "win", None))
         communicator.win.show()
 
@@ -107,4 +107,3 @@ def main():
     app.installNativeEventFilter(native_hotkey_filter)
 
     sys.exit(app.exec())
-
