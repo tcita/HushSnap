@@ -62,8 +62,6 @@ Name: "startup"; Description: "{cm:LaunchOnStartup}"; GroupDescription: "{cm:Add
 
 [Files]
 Source: "..\dist\HushSnap\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\dist\{#MyConfigName}"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
-Source: "..\{#MyLogName}"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist skipifsourcedoesntexist
 
 [Registry]
 ; Standard Inno Setup CreateUninstallRegKey=yes will handle this in HKCU when PrivilegesRequired=lowest.

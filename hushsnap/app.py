@@ -1,5 +1,3 @@
-"""应用入口与主流程协调。"""
-
 import os
 import sys
 
@@ -17,9 +15,15 @@ from .system.hotkey_manager import HotkeyManager
 from .system.uninstall import launch_uninstaller
 from .ui.settings_dialog import SettingsDialogController
 from .ui.tray import create_tray
+from .config import get_user_data_dir
+from .constants import CAPTURE_DEBUG_LOG_FILENAME
+from .logging_config import setup_logging
 
 
 def main():
+    # 初始化日志系统
+    setup_logging(get_user_data_dir() / CAPTURE_DEBUG_LOG_FILENAME)
+
     # 检查多开
     instance_lock = is_already_running()
     if not instance_lock:
@@ -39,15 +43,11 @@ def main():
     communicator = Communicator()
     communicator.win = None
 
-    def launch_capture_window():
+    def launch_capture_window(screen_pixmap):
         if communicator.win:
             return
 
-        screen = QtWidgets.QApplication.primaryScreen()
-        # 显式地设置 DPR(windows系统上的屏幕缩放倍数)，确保后续截屏选区计算正确
-        device_pixel_ratio = screen.devicePixelRatio()
-        screen_pixmap = screen.grabWindow(0)
-        screen_pixmap.setDevicePixelRatio(device_pixel_ratio)
+        # 使用预先抓好的 Pixmap，UI 在此处加载更及时。
         communicator.win = CaptureWindow(screen_pixmap)
 
         # 利用观察者模式(Qt信号槽)使用闭包确保CaptureWindow关闭并销毁后,将communicator.win 重置为 None

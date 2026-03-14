@@ -1,5 +1,3 @@
-"""配置读写、热键解析与单实例检查。"""
-
 import json
 import os
 import sys
@@ -18,6 +16,8 @@ from .constants import (
     MOD_SHIFT,
     MOD_WIN,
     SINGLE_INSTANCE_MUTEX,
+)
+from .translations import (
     UI_LANG_AUTO,
     UI_LANG_EN,
     UI_LANG_ENV,
@@ -37,16 +37,37 @@ _ERROR_ALREADY_EXISTS = 183
 
 # --- 2. 路径常量定义 ---
 _is_frozen = getattr(sys, "frozen", False)
-# 程序的根目录 (exe 所在目录或项目根目录)
+# 程序的安装目录 (只读资源如图标所在处)
 APP_DIR = Path(sys.executable).resolve().parent if _is_frozen else Path(__file__).resolve().parent.parent
-# 配置文件路径
-CONFIG_PATH = APP_DIR / APP_CONFIG_FILENAME
+
+def get_user_data_dir():
+    r"""获取用户可写的数据目录 (%LOCALAPPDATA%\HushSnap)"""
+    local_app_data = os.getenv("LOCALAPPDATA")
+    if local_app_data:
+        path = Path(local_app_data) / "HushSnap"
+    else:
+        # 退避方案
+        path = Path.home() / ".hushsnap"
+
+    # 确保目录存在
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        # 如果创建失败，退避到临时目录或当前目录
+        import tempfile
+        path = Path(tempfile.gettempdir()) / "HushSnap"
+        path.mkdir(parents=True, exist_ok=True)
+    return path
+
+# 配置文件路径迁移到用户数据目录
+CONFIG_PATH = get_user_data_dir() / APP_CONFIG_FILENAME
 # 资源目录 (如果是 PyInstaller 模式，则从 _MEIPASS 临时目录读取资源，否则就是 APP_DIR)
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR)) if _is_frozen else APP_DIR
 
 
 def get_app_dir():
     return APP_DIR
+
 
 
 def get_resource_dir():

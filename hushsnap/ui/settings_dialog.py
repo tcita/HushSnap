@@ -1,9 +1,7 @@
-"""设置窗口与表单交互。"""
-
 from PyQt6 import QtCore, QtWidgets
 
 from ..config import parse_hotkey, update_hotkey_in_config
-from ..constants import (
+from .styles import (
     SETTINGS_BUTTON_HEIGHT,
     SETTINGS_CAPTURE_DIALOG_MIN_WIDTH,
     SETTINGS_CHANGE_BUTTON_MAX_WIDTH,
