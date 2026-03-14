@@ -1,5 +1,3 @@
-"""卸载流程与引导。"""
-
 import subprocess
 
 from PyQt6 import QtWidgets

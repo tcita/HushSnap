@@ -1,7 +1,3 @@
-"""
-现代化的日志配置中心。基于标准库 logging 实现自动轮转与分级过滤。
-"""
-
 import logging
 import os
 from logging.handlers import RotatingFileHandler

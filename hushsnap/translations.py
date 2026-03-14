@@ -1,5 +1,3 @@
-"""国际化文案与语言配置。"""
-
 UI_LANG_ENV = "HUSHSNAP_UI_LANG"  # values: auto | en | zh
 UI_LANG_AUTO = "auto"
 UI_LANG_EN = "en"
