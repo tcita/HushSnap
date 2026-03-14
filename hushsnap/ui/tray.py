@@ -16,7 +16,12 @@ def create_tray(app, translate, on_trigger, on_open_settings, on_open_config_dir
 
     def on_tray_icon_activated(reason):
         if reason == QtWidgets.QSystemTrayIcon.ActivationReason.Trigger:
-            on_trigger()
+            screen = QtWidgets.QApplication.primaryScreen()
+            if screen:
+                dpr = screen.devicePixelRatio()
+                pixmap = screen.grabWindow(0)
+                pixmap.setDevicePixelRatio(dpr)
+                on_trigger(pixmap)
 
     tray_icon.activated.connect(on_tray_icon_activated)
 
