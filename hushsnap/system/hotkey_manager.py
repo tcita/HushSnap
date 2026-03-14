@@ -6,7 +6,6 @@ from PyQt6 import QtCore, QtWidgets
 
 from ..config import parse_hotkey, read_hotkey_text_from_config
 from ..constants import (
-    HOTKEY_ID,
     RELOAD_TIMER_MS,
     TRAY_MSG_LONG_MS,
     TRAY_MSG_MEDIUM_MS,
@@ -21,6 +20,14 @@ class HotkeyManager:
         self.config_path = config_path
         self.hotkey_registered = False
 
+        # 使用 GlobalAddAtom 生成系统级唯一的热键 ID
+        # 字符串 "HushSnap_Hotkey_Atom" 用于生成该原子，
+        # 在 0xC000 到 0xFFFF 范围内返回一个唯一的 ID。
+        self.hotkey_id = ctypes.windll.kernel32.GlobalAddAtomW("HushSnap_Hotkey_Atom")
+        if not self.hotkey_id:
+            # 回退到固定 ID，以防 GlobalAddAtom 失败
+            self.hotkey_id = 0xBFFF
+
         self.current_hotkey_modifier = modifier
         self.current_hotkey_virtual_key = virtual_key
         self.current_hotkey_name = name
@@ -33,7 +40,7 @@ class HotkeyManager:
     def register_initial(self):
         if not ctypes.windll.user32.RegisterHotKey(
             None,
-            HOTKEY_ID,
+            self.hotkey_id,
             self.current_hotkey_modifier,
             self.current_hotkey_virtual_key,
         ):
@@ -54,11 +61,16 @@ class HotkeyManager:
 
     def unregister_current_hotkey(self):
         if self.hotkey_registered:
-            ctypes.windll.user32.UnregisterHotKey(None, HOTKEY_ID)
+            ctypes.windll.user32.UnregisterHotKey(None, self.hotkey_id)
             self.hotkey_registered = False
+        
+        # 清理原子 ID
+        if hasattr(self, "hotkey_id") and self.hotkey_id:
+            ctypes.windll.kernel32.GlobalDeleteAtom(self.hotkey_id)
+            self.hotkey_id = 0
 
     def register_hotkey(self, modifier, virtual_key, name):
-        if ctypes.windll.user32.RegisterHotKey(None, HOTKEY_ID, modifier, virtual_key):
+        if ctypes.windll.user32.RegisterHotKey(None, self.hotkey_id, modifier, virtual_key):
             self.hotkey_registered = True
             self.current_hotkey_modifier = modifier
             self.current_hotkey_virtual_key = virtual_key
