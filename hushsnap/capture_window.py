@@ -1,8 +1,5 @@
-"""截图窗口与选区交互逻辑。"""
-
 import ctypes
 import logging
-import os
 import sys
 import traceback
 from ctypes import wintypes

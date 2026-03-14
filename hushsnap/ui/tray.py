@@ -1,5 +1,3 @@
-"""系统托盘菜单与动作。"""
-
 from PyQt6 import QtGui, QtWidgets
 
 from ..config import get_resource_dir

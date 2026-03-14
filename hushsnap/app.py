@@ -1,5 +1,3 @@
-"""应用入口与主流程协调。"""
-
 import os
 import sys
 
@@ -52,7 +50,7 @@ def main():
         # 使用预先抓好的 Pixmap，UI 在此处加载更及时。
         communicator.win = CaptureWindow(screen_pixmap)
 
-        # 利用 Qt 信号槽确保窗口销毁后重置 communicator.win 为 None
+        # 利用观察者模式(Qt信号槽)使用闭包确保CaptureWindow关闭并销毁后,将communicator.win 重置为 None
         communicator.win.destroyed.connect(lambda: setattr(communicator, "win", None))
         communicator.win.show()
 

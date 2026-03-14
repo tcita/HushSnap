@@ -1,5 +1,3 @@
-"""Win32 窗口底层诊断工具。用于置顶与焦点丢失的深度排查。"""
-
 import ctypes
 from ctypes import wintypes
 

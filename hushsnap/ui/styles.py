@@ -1,5 +1,3 @@
-"""UI 样式、尺寸与视觉常量。"""
-
 # 窗口与对话框尺寸
 SETTINGS_CAPTURE_DIALOG_MIN_WIDTH = 340
 SETTINGS_BUTTON_HEIGHT = 24

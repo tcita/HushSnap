@@ -1,5 +1,3 @@
-"""全局热键注册与监听管理。"""
-
 import ctypes
 
 from PyQt6 import QtCore, QtWidgets
