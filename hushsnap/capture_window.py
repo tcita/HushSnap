@@ -6,7 +6,6 @@ from ctypes import wintypes
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
-from .config import get_app_dir
 from .constants import (
     CAPTURE_CLICK_THRESHOLD_PX,
     CAPTURE_OVERLAY_RGBA,
@@ -71,23 +70,18 @@ class CaptureWindow(QtWidgets.QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
-        self._debug_topmost_state("show_event_init")
-        
-        # 核心置顶逻辑
-        self._force_win_topmost()
-        self.raise_()
-        self.activateWindow()
-        self.setFocus()
-
-        # 异步补强，处理某些全屏应用抢占焦点的情况
+        # 核心：将所有置顶与焦点抢占逻辑移至异步队列，确保窗口句柄完全就绪后再执行
         QtCore.QTimer.singleShot(0, self._force_win_topmost)
-        QtCore.QTimer.singleShot(
-            DEBUG_TOPMOST_DELAY_MS,
-            lambda: self._debug_topmost_state(f"show_event_t+{DEBUG_TOPMOST_DELAY_MS}ms"),
-        )
+        
+        # 异步审计，处理某些极端情况
+        if logger.isEnabledFor(logging.DEBUG):
+            QtCore.QTimer.singleShot(
+                DEBUG_TOPMOST_DELAY_MS,
+                lambda: self._debug_topmost_state(f"post_show_{DEBUG_TOPMOST_DELAY_MS}ms"),
+            )
 
     def _force_win_topmost(self):
-        """强力置顶逻辑。"""
+        """最强置顶逻辑：整合了强制取消前台模式、线程输入挂载和硬件级置顶。"""
         if sys.platform != "win32": return
         try:
             user32 = ctypes.windll.user32
@@ -95,12 +89,14 @@ class CaptureWindow(QtWidgets.QWidget):
             hwnd_val = get_hwnd_value(self.winId())
             if not hwnd_val: return
 
-            self._debug_topmost_state("force_enter")
+            hwnd = wintypes.HWND(hwnd_val)
             fg_hwnd = user32.GetForegroundWindow()
             
+            # 1. 核心：如果当前焦点不是我，强制对方退出菜单/取消模式（解决开始菜单、右键菜单抢占问题）
             if fg_hwnd and get_hwnd_value(fg_hwnd) != hwnd_val:
                 user32.PostMessageW(fg_hwnd, 0x001F, 0, 0) # WM_CANCELMODE
 
+            # 2. 挂载线程输入，绕过 Windows 对 SetForegroundWindow 的严格限制
             curr_tid = kernel32.GetCurrentThreadId()
             fg_tid = user32.GetWindowThreadProcessId(fg_hwnd, None) if fg_hwnd else 0
             attached = False
@@ -108,18 +104,20 @@ class CaptureWindow(QtWidgets.QWidget):
                 attached = bool(user32.AttachThreadInput(curr_tid, fg_tid, True))
 
             try:
-                hwnd = wintypes.HWND(hwnd_val)
+                # 3. 硬件级置顶与焦点设置
+                # HWND_TOPMOST (-1)
+                # SWP_NOSIZE(0x0001) | SWP_NOMOVE(0x0002) | SWP_SHOWWINDOW(0x0040)
                 user32.ShowWindow(hwnd, 5) # SW_SHOW
-                user32.BringWindowToTop(hwnd)
-                user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0040 | 0x0020 | 0x0002 | 0x0001)
+                user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0040 | 0x0002 | 0x0001)
                 user32.SetForegroundWindow(hwnd)
                 user32.SetActiveWindow(hwnd)
                 user32.SetFocus(hwnd)
             finally:
                 if attached:
                     user32.AttachThreadInput(curr_tid, fg_tid, False)
-
-            self._debug_topmost_state("force_exit")
+            
+            if logger.isEnabledFor(logging.DEBUG):
+                self._debug_topmost_state("force_complete")
         except Exception:
             logger.error(f"topmost_force_err | {traceback.format_exc().strip()}")
 
