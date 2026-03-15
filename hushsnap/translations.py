@@ -1,9 +1,19 @@
-UI_LANG_ENV = "HUSHSNAP_UI_LANG"  # values: auto | en | zh
+"""
+HushSnap 多语言翻译模块
+包含支持的语言代码常量以及 UI 文本的英/中对照表。
+"""
+
+# 环境变量名，用于强制指定 UI 语言
+UI_LANG_ENV = "HUSHSNAP_UI_LANG"  # 可选值: auto | en | zh
+# 语言代码常量
 UI_LANG_AUTO = "auto"
 UI_LANG_EN = "en"
 UI_LANG_ZH = "zh"
+# 默认语言
 DEFAULT_UI_LANG = UI_LANG_AUTO
 
+# UI 文本翻译表
+# 结构: { 语言代码: { 键名: 翻译模板 } }
 UI_TEXT = {
     UI_LANG_EN: {
         "error": "Error",

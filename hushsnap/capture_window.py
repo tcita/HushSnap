@@ -1,3 +1,8 @@
+"""
+截图交互界面模块。
+负责全屏遮罩展示、鼠标拖拽选区绘制以及最终的图像裁剪与剪贴板写入。
+"""
+
 import ctypes
 import logging
 import sys
@@ -21,12 +26,22 @@ from .system.win32_window_utils import (
 logger = get_logger(__name__)
 
 
-# 截图窗口逻辑
 class CaptureWindow(QtWidgets.QWidget):
+    """
+    全屏截图窗口类。
+    工作流程：
+    1. 接收全屏位图作为背景。
+    2. 设置为无边框全屏置顶窗口。
+    3. 响应鼠标事件：
+       - 左键点击拖动：创建选区。
+       - 左键单纯点击：全屏截图。
+       - 右键/Esc：退出。
+    """
     def __init__(self, pixmap):
         super().__init__()
         self.pixmap = pixmap
 
+        # 设置窗口属性：工具窗口样式、无边框、初始置顶标志
         self.setWindowFlags(
             QtCore.Qt.WindowType.Tool
             | QtCore.Qt.WindowType.FramelessWindowHint
@@ -35,10 +50,12 @@ class CaptureWindow(QtWidgets.QWidget):
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_NativeWindow, True)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, True)
 
+        # 铺满主屏幕
         self.setWindowState(QtCore.Qt.WindowState.WindowFullScreen)
         screen = QtWidgets.QApplication.primaryScreen()
         self.setGeometry(screen.geometry())
 
+        # 设置交互参数
         self.setCursor(QtCore.Qt.CursorShape.CrossCursor)
         self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
         self.start_pos = None
@@ -69,6 +86,7 @@ class CaptureWindow(QtWidgets.QWidget):
             logger.debug(f"topmost_audit_err | {traceback.format_exc().strip()}")
 
     def showEvent(self, event):
+        """窗口显示事件：异步触发 Win32 抢占焦点逻辑。"""
         super().showEvent(event)
         # 核心：将所有置顶与焦点抢占逻辑移至异步队列，确保窗口句柄完全就绪后再执行
         QtCore.QTimer.singleShot(0, self._force_win_topmost)
@@ -105,8 +123,6 @@ class CaptureWindow(QtWidgets.QWidget):
 
             try:
                 # 3. 硬件级置顶与焦点设置
-                # HWND_TOPMOST (-1)
-                # SWP_NOSIZE(0x0001) | SWP_NOMOVE(0x0002) | SWP_SHOWWINDOW(0x0040)
                 user32.ShowWindow(hwnd, 5) # SW_SHOW
                 user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0040 | 0x0002 | 0x0001)
                 user32.SetForegroundWindow(hwnd)
@@ -122,7 +138,7 @@ class CaptureWindow(QtWidgets.QWidget):
             logger.error(f"topmost_force_err | {traceback.format_exc().strip()}")
 
     def _set_clipboard_pixmap(self, pixmap, scene):
-        """写入剪贴板。"""
+        """将生成的图片写入系统剪贴板。"""
         try:
             if pixmap.isNull():
                 logger.error(f"clip_err | scene={scene}, reason=null")
@@ -131,12 +147,14 @@ class CaptureWindow(QtWidgets.QWidget):
             cb = QtWidgets.QApplication.clipboard()
             cb.setPixmap(pixmap, mode=cb.Mode.Clipboard)
             
+            # 兼容性处理：如果 setPixmap 没立即生效，尝试强制处理一次事件循环
             if cb.pixmap(mode=cb.Mode.Clipboard).isNull():
                 QtWidgets.QApplication.processEvents(QtCore.QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
             
             if not cb.pixmap(mode=cb.Mode.Clipboard).isNull():
                 return True
 
+            # 备选方案：尝试以 Image 格式写入
             cb.setImage(pixmap.toImage(), mode=cb.Mode.Clipboard)
             success = not cb.image(mode=cb.Mode.Clipboard).isNull()
             if not success:
@@ -147,10 +165,14 @@ class CaptureWindow(QtWidgets.QWidget):
             return False
 
     def paintEvent(self, event):
+        """绘制事件：渲染全屏背景、半透明遮罩和选区高亮。"""
         painter = QtGui.QPainter(self)
+        # 1. 绘制底层全屏背景
         painter.drawPixmap(self.rect(), self.pixmap)
+        # 2. 填充半透明灰色遮罩
         painter.fillRect(self.rect(), QtGui.QColor(*CAPTURE_OVERLAY_RGBA))
 
+        # 3. 如果正在拖拽选区，绘制“挖洞”效果（即显示选区内的原始背景）
         if self.start_pos and self.curr_pos:
             rect = QtCore.QRect(self.start_pos, self.curr_pos).normalized()
             if rect.width() >= CAPTURE_SELECTION_MIN_PX and rect.height() >= CAPTURE_SELECTION_MIN_PX:
@@ -158,10 +180,12 @@ class CaptureWindow(QtWidgets.QWidget):
                 painter.setClipRect(rect)
                 painter.drawPixmap(self.rect(), self.pixmap)
                 painter.restore()
-                painter.setPen(QtGui.QPen(QtCore.Qt.GlobalColor.cyan, 2))
+                # 绘制深橙色选区边框
+                painter.setPen(QtGui.QPen(QtGui.QColor("#FF8C00"), 2))
                 painter.drawRect(rect)
 
     def mousePressEvent(self, event):
+        """鼠标按下：记录起始点或关闭窗口。"""
         if event.button() == QtCore.Qt.MouseButton.RightButton:
             self.close()
         elif event.button() == QtCore.Qt.MouseButton.LeftButton:
@@ -169,20 +193,24 @@ class CaptureWindow(QtWidgets.QWidget):
             self.curr_pos = self.start_pos
 
     def mouseMoveEvent(self, event):
+        """鼠标移动：更新选区坐标并触发重绘。"""
         if self.start_pos:
             self.curr_pos = event.position().toPoint()
             self.update()
 
     def mouseReleaseEvent(self, event):
+        """鼠标释放：根据拖动距离判断是选区截图还是全屏截图。"""
         if event.button() == QtCore.Qt.MouseButton.LeftButton and self.start_pos:
             self.curr_pos = event.position().toPoint()
             rect = QtCore.QRect(self.start_pos, self.curr_pos).normalized()
             
+            # 如果移动距离过小，视为单纯点击 -> 全屏截图
             if (self.curr_pos - self.start_pos).manhattanLength() <= self.click_threshold:
                 full = self.pixmap.copy()
                 full.setDevicePixelRatio(self.pixmap.devicePixelRatio())
                 self._set_clipboard_pixmap(full, "fullscreen")
             else:
+                # 选区截图：根据屏幕缩放比例转换逻辑坐标为实际像素坐标
                 ratio = self.pixmap.devicePixelRatio()
                 physical = QtCore.QRect(
                     int(rect.x() * ratio), int(rect.y() * ratio),
@@ -196,5 +224,6 @@ class CaptureWindow(QtWidgets.QWidget):
             self.close()
 
     def keyPressEvent(self, event):
+        """按键响应：Esc 退出截图。"""
         if event.key() == QtCore.Qt.Key.Key_Escape:
             self.close()
