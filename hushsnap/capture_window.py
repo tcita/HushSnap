@@ -86,10 +86,13 @@ class CaptureWindow(QtWidgets.QWidget):
             logger.debug(f"topmost_audit_err | {traceback.format_exc().strip()}")
 
     def showEvent(self, event):
-        """窗口显示事件：异步触发 Win32 抢占焦点逻辑。"""
+        """窗口显示事件：异步触发 Win32 抢占焦点逻辑，并设置安全自毁定时器。"""
         super().showEvent(event)
         # 核心：将所有置顶与焦点抢占逻辑移至异步队列，确保窗口句柄完全就绪后再执行
         QtCore.QTimer.singleShot(0, self._force_win_topmost)
+
+        # 安全快门：20秒后自动关闭窗口，防止程序挂起导致遮罩无法移除
+        QtCore.QTimer.singleShot(20000, self.close)
         
         # 异步审计，处理某些极端情况
         if logger.isEnabledFor(logging.DEBUG):
@@ -99,7 +102,7 @@ class CaptureWindow(QtWidgets.QWidget):
             )
 
     def _force_win_topmost(self):
-        """最强置顶逻辑：整合了强制取消前台模式、线程输入挂载和硬件级置顶。"""
+        """置顶逻辑：整合了强制取消前台模式、线程输入挂载和硬件级置顶。"""
         if sys.platform != "win32": return
         try:
             user32 = ctypes.windll.user32
@@ -136,6 +139,8 @@ class CaptureWindow(QtWidgets.QWidget):
                 self._debug_topmost_state("force_complete")
         except Exception:
             logger.error(f"topmost_force_err | {traceback.format_exc().strip()}")
+            # 异常即刻自毁：如果置顶逻辑崩溃，立即关闭窗口以防卡死
+            self.close()
 
     def _set_clipboard_pixmap(self, pixmap, scene):
         """将生成的图片写入系统剪贴板。"""
