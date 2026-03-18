@@ -88,13 +88,13 @@ class CaptureWindow(QtWidgets.QWidget):
     def showEvent(self, event):
         """窗口显示事件：异步触发 Win32 抢占焦点逻辑，并设置安全自毁定时器。"""
         super().showEvent(event)
-        # 核心：将所有置顶与焦点抢占逻辑移至异步队列，确保窗口句柄完全就绪后再执行
+        # 将所有置顶与焦点抢占逻辑移至异步队列，确保窗口句柄完全就绪后再执行
         QtCore.QTimer.singleShot(0, self._force_win_topmost)
 
-        # 安全快门：20秒后自动关闭窗口，防止程序挂起导致遮罩无法移除
-        QtCore.QTimer.singleShot(20000, self.close)
+        # 安全快门：25秒后自动关闭窗口，防止程序挂起导致遮罩无法移除
+        QtCore.QTimer.singleShot(25000, self.close)
         
-        # 异步审计，处理某些极端情况
+        # 异步审计，开启debug等级的日志后处理极端情况
         if logger.isEnabledFor(logging.DEBUG):
             QtCore.QTimer.singleShot(
                 DEBUG_TOPMOST_DELAY_MS,
@@ -102,45 +102,89 @@ class CaptureWindow(QtWidgets.QWidget):
             )
 
     def _force_win_topmost(self):
-        """置顶逻辑：整合了强制取消前台模式、线程输入挂载和硬件级置顶。"""
+        """
+        置顶逻辑（渐进式）：
+        1. 基础置顶 (HWND_TOPMOST) + 焦点转移尝试。
+        2. 验证焦点状态。
+        3. 响应性检查：确认目标窗口未死锁后再进行线程挂载 (AttachThreadInput)。
+        """
         if sys.platform != "win32": return
         try:
             user32 = ctypes.windll.user32
             kernel32 = ctypes.windll.kernel32
-            hwnd_val = get_hwnd_value(self.winId())
-            if not hwnd_val: return
-
-            hwnd = wintypes.HWND(hwnd_val)
-            fg_hwnd = user32.GetForegroundWindow()
             
-            # 1. 核心：如果当前焦点不是我，强制对方退出菜单/取消模式（解决开始菜单、右键菜单抢占问题）
-            if fg_hwnd and get_hwnd_value(fg_hwnd) != hwnd_val:
-                user32.PostMessageW(fg_hwnd, 0x001F, 0, 0) # WM_CANCELMODE
+            # --- 严格声明 API 签名：防止 64 位系统下的句柄截断 ---
+            user32.GetForegroundWindow.restype = wintypes.HWND
+            user32.IsHungAppWindow.argtypes = [wintypes.HWND]
+            user32.IsHungAppWindow.restype = wintypes.BOOL
+            
+            # SendMessageTimeoutW: 同步取消模式，设置 200ms 超时防止死锁 (WM_CANCELMODE=0x1F, SMTO_ABORTIFHUNG=0x2)
+            user32.SendMessageTimeoutW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM, wintypes.UINT, wintypes.UINT, ctypes.POINTER(wintypes.DWORD)]
+            user32.SendMessageTimeoutW.restype = wintypes.LPARAM
+            
+            user32.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
+            user32.AttachThreadInput.restype = wintypes.BOOL
+            
+            user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.UINT]
+            user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+            user32.SetActiveWindow.argtypes = [wintypes.HWND]
+            user32.SetFocus.argtypes = [wintypes.HWND]
+            
+            hwnd = get_hwnd_value(self.winId())
+            if not hwnd: return
+            
+            # --- 阶段 1: 基础抢占 (非入侵) ---
+            fg_hwnd = user32.GetForegroundWindow()
+            # 注意：ctypes 比较 HWND 时应比较其值
+            if fg_hwnd and fg_hwnd != hwnd:
+                unused_res = wintypes.DWORD()
+                user32.SendMessageTimeoutW(fg_hwnd, 0x001F, 0, 0, 0x0002, 200, ctypes.byref(unused_res))
+            
+            # 基础视觉置顶 (HWND_TOPMOST = -1, SW_SHOW = 5)
+            # SWP_SHOWWINDOW=0x40, SWP_NOMOVE=0x2, SWP_NOSIZE=0x1
+            user32.ShowWindow(hwnd, 5)
+            user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0043)
+            user32.SetForegroundWindow(hwnd)
+            user32.SetActiveWindow(hwnd)
+            user32.SetFocus(hwnd)
 
-            # 2. 挂载线程输入，绕过 Windows 对 SetForegroundWindow 的严格限制
+            # --- 阶段 2: 验证与健康检查 ---
+            if user32.GetForegroundWindow() == hwnd:
+                if logger.isEnabledFor(logging.DEBUG):
+                    self._debug_topmost_state("force_complete_soft")
+                return
+
+            if not fg_hwnd: return
+            
+            # 检查原前台窗口是否已死锁，防止挂载后同步卡死
+            if user32.IsHungAppWindow(fg_hwnd):
+                logger.warning(f"topmost_warn | Target window {fg_hwnd} is HUNG. Skipping AttachThreadInput.")
+                return
+
+            # --- 阶段 3: 入侵式强制挂载 (fallback) ---
             curr_tid = kernel32.GetCurrentThreadId()
-            fg_tid = user32.GetWindowThreadProcessId(fg_hwnd, None) if fg_hwnd else 0
+            fg_tid = user32.GetWindowThreadProcessId(fg_hwnd, None)
+            
             attached = False
             if fg_tid and fg_tid != curr_tid:
-                attached = bool(user32.AttachThreadInput(curr_tid, fg_tid, True))
+                try:
+                    attached = bool(user32.AttachThreadInput(curr_tid, fg_tid, True))
+                except Exception as e:
+                    logger.debug(f"topmost_warn | AttachThreadInput failed: {e}")
 
             try:
-                # 3. 硬件级置顶与焦点设置
-                user32.ShowWindow(hwnd, 5) # SW_SHOW
-                user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0040 | 0x0002 | 0x0001)
-                user32.SetForegroundWindow(hwnd)
-                user32.SetActiveWindow(hwnd)
-                user32.SetFocus(hwnd)
+                if attached:
+                    user32.SetForegroundWindow(hwnd)
+                    user32.SetActiveWindow(hwnd)
+                    user32.SetFocus(hwnd)
             finally:
                 if attached:
                     user32.AttachThreadInput(curr_tid, fg_tid, False)
-            
+
             if logger.isEnabledFor(logging.DEBUG):
-                self._debug_topmost_state("force_complete")
+                self._debug_topmost_state("force_complete_hard")
         except Exception:
-            logger.error(f"topmost_force_err | {traceback.format_exc().strip()}")
-            # 异常即刻自毁：如果置顶逻辑崩溃，立即关闭窗口以防卡死
-            self.close()
+            logger.error(f"topmost_err | {traceback.format_exc().strip()}")
 
     def _set_clipboard_pixmap(self, pixmap, scene):
         """将生成的图片写入系统剪贴板。"""

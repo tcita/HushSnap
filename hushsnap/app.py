@@ -65,7 +65,7 @@ def main():
     if not instance_lock:
         return
 
-    # 初始化 Qt 环境：设置为后台运行模式（关闭最后一个窗口不退出程序）
+    # 初始化 Qt 环境：设置为后台运行模式
     app = QtWidgets.QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
@@ -87,12 +87,11 @@ def main():
         :param screen_pixmap: 预先捕获的全屏位图（由 HotkeyFilter 提供）
         """
         if communicator.win:
-            return # 防止重复打开
+            return 
 
         # 创建截图窗口实例
         communicator.win = CaptureWindow(screen_pixmap)
 
-        # 资源自动回收：当窗口关闭或手动销毁时，重置引用以允许下次唤起
         # 利用观察者模式(Qt信号槽)使用闭包确保CaptureWindow关闭并销毁后,将communicator.win 重置为 None
         communicator.win.destroyed.connect(lambda: setattr(communicator, "win", None))
         communicator.win.show()
@@ -160,7 +159,7 @@ def main():
         # 将托盘菜单的“设置”项连接到控制器的显示方法
         settings_action.triggered.connect(settings_controller.show)
 
-    # 程序退出前的清理工作：注销热键以保持系统环境干净
+    # 程序退出前注销热键
     app.aboutToQuit.connect(hotkey_manager.unregister_current_hotkey)
 
     # 进入事件循环
