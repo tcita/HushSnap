@@ -118,7 +118,7 @@ class CaptureWindow(QtWidgets.QWidget):
             user32.IsHungAppWindow.argtypes = [wintypes.HWND]
             user32.IsHungAppWindow.restype = wintypes.BOOL
             
-            # SendMessageTimeoutW: 同步取消模式，设置 200ms 超时防止死锁 (WM_CANCELMODE=0x1F, SMTO_ABORTIFHUNG=0x2)
+            # SendMessageTimeoutW: 向当前前台窗口发送WM_CANCELMODE，设置 200ms 超时防止死锁 (WM_CANCELMODE=0x1F, SMTO_ABORTIFHUNG=0x2)
             user32.SendMessageTimeoutW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM, wintypes.UINT, wintypes.UINT, ctypes.POINTER(wintypes.DWORD)]
             user32.SendMessageTimeoutW.restype = wintypes.LPARAM
             
@@ -148,7 +148,7 @@ class CaptureWindow(QtWidgets.QWidget):
             user32.SetActiveWindow(hwnd)
             user32.SetFocus(hwnd)
 
-            # --- 阶段 2: 验证与健康检查 ---
+            # --- 阶段 2: 前台窗口的验证与健康检查 ---
             if user32.GetForegroundWindow() == hwnd:
                 if logger.isEnabledFor(logging.DEBUG):
                     self._debug_topmost_state("force_complete_soft")
@@ -179,6 +179,7 @@ class CaptureWindow(QtWidgets.QWidget):
                     user32.SetFocus(hwnd)
             finally:
                 if attached:
+                    # 撤销挂载
                     user32.AttachThreadInput(curr_tid, fg_tid, False)
 
             if logger.isEnabledFor(logging.DEBUG):

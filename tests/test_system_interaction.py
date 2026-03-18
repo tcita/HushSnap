@@ -34,7 +34,9 @@ def test_capture_window_initialization(qapp, mock_pixmap):
 @patch("ctypes.windll.user32.AttachThreadInput")
 @patch("ctypes.windll.kernel32.GetCurrentThreadId")
 @patch("ctypes.windll.user32.GetWindowThreadProcessId")
+@patch("ctypes.windll.user32.IsHungAppWindow")
 def test_capture_window_force_topmost_logic(
+    mock_is_hung,
     mock_get_thread_id, 
     mock_get_curr_id, 
     mock_attach, 
@@ -48,6 +50,7 @@ def test_capture_window_force_topmost_logic(
     mock_get_fg.return_value = 0x999 
     mock_get_curr_id.return_value = 100
     mock_get_thread_id.return_value = 200 # Other thread
+    mock_is_hung.return_value = False
     mock_attach.return_value = True
     
     win = CaptureWindow(mock_pixmap)
@@ -63,6 +66,71 @@ def test_capture_window_force_topmost_logic(
         mock_set_fg.assert_called()
         # Verify AttachThreadInput was detached (False)
         mock_attach.assert_any_call(100, 200, False)
+    
+    win.close()
+
+@patch("ctypes.windll.user32.GetForegroundWindow")
+@patch("ctypes.windll.user32.IsHungAppWindow")
+@patch("ctypes.windll.user32.AttachThreadInput")
+def test_capture_window_force_topmost_hung(
+    mock_attach,
+    mock_is_hung,
+    mock_get_fg,
+    qapp,
+    mock_pixmap
+):
+    # Scenario: Target window is HUNG
+    mock_get_fg.return_value = 0x999
+    mock_is_hung.return_value = True
+    
+    win = CaptureWindow(mock_pixmap)
+    with patch.object(win, "winId", return_value=0x123):
+        win._force_win_topmost()
+        
+        # Should NOT call AttachThreadInput if window is hung
+        mock_attach.assert_not_called()
+    
+    win.close()
+
+@patch("ctypes.windll.user32.GetForegroundWindow")
+@patch("ctypes.windll.user32.IsHungAppWindow")
+@patch("ctypes.windll.user32.AttachThreadInput")
+@patch("ctypes.windll.kernel32.GetCurrentThreadId")
+@patch("ctypes.windll.user32.GetWindowThreadProcessId")
+@patch("ctypes.windll.user32.SetForegroundWindow")
+def test_capture_window_force_topmost_attach_fail(
+    mock_set_fg,
+    mock_get_thread_id,
+    mock_get_curr_id,
+    mock_attach,
+    mock_is_hung,
+    mock_get_fg,
+    qapp,
+    mock_pixmap
+):
+    # Scenario: AttachThreadInput fails (e.g., high-privilege window)
+    # 1st call (Stage 1): returns 0x999
+    # 2nd call (Stage 2): returns 0x999 (meaning soft attempt failed)
+    mock_get_fg.side_effect = [0x999, 0x999]
+    mock_is_hung.return_value = False
+    mock_get_curr_id.return_value = 100
+    mock_get_thread_id.return_value = 200
+    mock_attach.return_value = False # Fails
+    
+    win = CaptureWindow(mock_pixmap)
+    with patch.object(win, "winId", return_value=0x123):
+        win._force_win_topmost()
+        
+        # Attach was attempted
+        mock_attach.assert_called_with(100, 200, True)
+        
+        # In Stage 1, SetForegroundWindow is called once.
+        # In Stage 3, it should NOT be called because attached is False.
+        # Total calls should be 1.
+        assert mock_set_fg.call_count == 1
+        
+        # Verify detach was NOT called
+        assert mock_attach.call_count == 1
     
     win.close()
 
