@@ -94,7 +94,7 @@ class CaptureWindow(QtWidgets.QWidget):
         # 安全快门：25秒后自动关闭窗口，防止程序挂起导致遮罩无法移除
         QtCore.QTimer.singleShot(25000, self.close)
         
-        # 异步审计，开启debug等级的日志后处理极端情况
+        # 单线程异步审计，开启debug等级的日志后处理极端情况
         if logger.isEnabledFor(logging.DEBUG):
             QtCore.QTimer.singleShot(
                 DEBUG_TOPMOST_DELAY_MS,
