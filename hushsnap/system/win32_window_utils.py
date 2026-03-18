@@ -40,20 +40,43 @@ def get_hwnd_value(hwnd):
     :return: 整数类型的 HWND 值
     """
     if hwnd is None: return 0
-    try: return int(hwnd)
-    except Exception: pass
-    try: return int(hwnd.__index__())
-    except Exception: pass
+    
+    # 1. 如果本身是整数，直接返回
+    if isinstance(hwnd, int):
+        return hwnd
+    
+    # 2. 尝试通过 __index__ (PyQt winId 对象) 转换
     try:
-        if isinstance(hwnd, int): return hwnd
-        # 处理带有 .value 属性的 ctypes 对象
+        if hasattr(hwnd, "__index__"):
+            return int(hwnd.__index__())
+    except Exception:
+        pass
+        
+    # 3. 尝试直接转换为整数（兼容字符串形式的数字）
+    try:
+        if isinstance(hwnd, (str, bytes)):
+            # 只对纯数字字符串尝试转换，防止 ctypes.cast 提取字符串内存地址
+            if hwnd.strip().isdigit() or (hwnd.startswith("0x") and all(c in "0123456789abcdefABCDEF" for c in hwnd[2:])):
+                return int(hwnd, 0)
+            return 0
+        return int(hwnd)
+    except Exception:
+        pass
+
+    # 4. 处理 ctypes 对象
+    try:
         if hasattr(hwnd, "value"):
             v = hwnd.value
             if isinstance(v, int): return v
-        # 尝试强制转换为 void 指针再取值
-        casted = ctypes.cast(hwnd, ctypes.c_void_p)
-        return int(casted.value or 0)
-    except Exception: return 0
+        
+        # 仅对已知的 ctypes 指针/句柄类型进行 cast
+        if hasattr(hwnd, "_as_parameter_") or isinstance(hwnd, (ctypes.c_void_p, wintypes.HANDLE)):
+            casted = ctypes.cast(hwnd, ctypes.c_void_p)
+            return int(casted.value or 0)
+    except Exception:
+        pass
+        
+    return 0
 
 def get_window_snapshot(hwnd):
     """
