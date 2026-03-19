@@ -74,10 +74,10 @@ def main():
     ui_language = resolve_ui_lang(config_path)
 
     def translate(key, **kwargs):
-        """便捷翻译包装函数，用于在各模块间传递。"""
+        """翻译包装函数"""
         return ui_text(ui_language, key, **kwargs)
 
-    # 通信器：作为热键过滤器与 UI 界面之间的桥梁
+    # 热键事件 -> Qt 信号(communicator) -> UI 回调
     communicator = Communicator()
     communicator.win = None # 用于持有当前的截图窗口引用
 
@@ -96,10 +96,12 @@ def main():
         communicator.win.destroyed.connect(lambda: setattr(communicator, "win", None))
         communicator.win.show()
 
+
     # 信号绑定：热键被触发时调用窗口显示逻辑
     communicator.trigger.connect(launch_capture_window)
 
-    # 安装原生事件过滤器：在 Qt 事件到达窗口前拦截 Win32 热键消息 (WM_HOTKEY)
+    # 安装hotkey.py中的HotkeyFilter,在 Qt 事件到达窗口前拦截 Win32 热键消息 (WM_HOTKEY)
+    # 把 communicator 对象的 trigger 信号，传给了 HotkeyFilter 的构造函数。
     native_hotkey_filter = HotkeyFilter(communicator.trigger)
     app.installNativeEventFilter(native_hotkey_filter)
 

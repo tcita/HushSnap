@@ -57,7 +57,7 @@ def get_user_data_dir():
     if local_app_data:
         path = Path(local_app_data) / "HushSnap"
     else:
-        # 如果获取不到 LOCALAPPDATA，退避方案使用家目录下的隐藏文件夹
+        # 如果获取不到 LOCALAPPDATA，退避方案使用home目录下的隐藏文件夹
         path = Path.home() / ".hushsnap"
 
     # 确保目录存在，避免后续读写报错
