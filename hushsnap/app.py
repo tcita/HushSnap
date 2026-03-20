@@ -74,7 +74,6 @@ def main():
     ui_language = resolve_ui_lang(config_path)
 
     def translate(key, **kwargs):
-        """翻译包装函数"""
         return ui_text(ui_language, key, **kwargs)
 
     # 热键事件 -> Qt 信号(communicator) -> UI 回调
@@ -97,7 +96,7 @@ def main():
         communicator.win.show()
 
 
-    # 信号绑定：热键被触发时调用窗口显示逻辑
+    # 将launch_capture_window注册到 communicator 对象的 trigger 信号的监听列表里
     communicator.trigger.connect(launch_capture_window)
 
     # 安装hotkey.py中的HotkeyFilter,在 Qt 事件到达窗口前拦截 Win32 热键消息 (WM_HOTKEY)

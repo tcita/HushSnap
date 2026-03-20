@@ -9,7 +9,7 @@ from PyQt6 import QtCore, QtWidgets
 from .constants import WM_HOTKEY
 
 
-class HotkeyFilter(QtCore.QAbstractNativeEventFilter):
+class HotkeyFilter( ):
     """
     Windows 原生事件过滤器。
     专门用于监听系统广播的消息，并从中筛选出热键激活消息。
@@ -49,7 +49,7 @@ class HotkeyFilter(QtCore.QAbstractNativeEventFilter):
                     screen_pixmap = screen.grabWindow(0)
                     screen_pixmap.setDevicePixelRatio(device_pixel_ratio)
                     
-                    # 将截图数据通过信号发送给 UI 线程进行后续的选取处理
+                    # 将截图数据通过信号发送给 UI 线程(launch_capture_window)进行后续的选取处理
                     self.trigger_signal.emit(screen_pixmap)
                 
                 # 返回 True 表示该消息已处理，不再传递给其他过滤器
