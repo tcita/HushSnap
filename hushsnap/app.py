@@ -162,7 +162,7 @@ def main():
     # 程序退出前注销热键
     app.aboutToQuit.connect(hotkey_manager.unregister_current_hotkey)
 
-    # 进入事件循环
+    # 进入事件循环,构建脚本build_installer.ps1会检查状态码LASTEXITCODE
     sys.exit(app.exec())
 
 
