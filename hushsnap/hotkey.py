@@ -49,7 +49,7 @@ class HotkeyFilter( ):
                     screen_pixmap = screen.grabWindow(0)
                     screen_pixmap.setDevicePixelRatio(device_pixel_ratio)
                     
-                    # 将截图数据通过信号发送给 UI 线程(launch_capture_window)进行后续的选取处理
+                    # 发射信号,将截图数据通过信号发送给 UI 线程(launch_capture_window)
                     self.trigger_signal.emit(screen_pixmap)
                 
                 # 返回 True 表示该消息已处理，不再传递给其他过滤器
@@ -62,5 +62,5 @@ class Communicator(QtCore.QObject):
     信号传输中转类。
     用于在原生过滤器和 Qt 窗口系统之间架起通信桥梁。
     """
-    # 携带捕获到的 QPixmap 对象的信号
+    # 自定义携带捕获到的 QPixmap 对象的信号
     trigger = QtCore.pyqtSignal(object)
