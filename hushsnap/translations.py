@@ -1,19 +1,19 @@
 """
-HushSnap 多语言翻译模块
-包含支持的语言代码常量以及 UI 文本的英/中对照表。
+HushSnap translations module.
+Contains language code constants and bilingual (EN/ZH) UI text table.
 """
 
-# 环境变量名，用于强制指定 UI 语言
-UI_LANG_ENV = "HUSHSNAP_UI_LANG"  # 可选值: auto | en | zh
-# 语言代码常量
+# Environment variable used to force UI language.
+UI_LANG_ENV = "HUSHSNAP_UI_LANG"  # Supported values: auto | en | zh
+# Language code constants
 UI_LANG_AUTO = "auto"
 UI_LANG_EN = "en"
 UI_LANG_ZH = "zh"
-# 默认语言
+# Default language
 DEFAULT_UI_LANG = UI_LANG_AUTO
 
-# UI 文本翻译表
-# 结构: { 语言代码: { 键名: 翻译模板 } }
+# UI translation table
+# Structure: { language_code: { text_key: translation_template } }
 UI_TEXT = {
     UI_LANG_EN: {
         "error": "Error",

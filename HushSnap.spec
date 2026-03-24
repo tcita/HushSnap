@@ -27,9 +27,9 @@ a = Analysis(
     noarchive=False,
 )
 
-# --- 极致精简优化：过滤掉不需要的图片插件和翻译 ---
+# --- Extreme size optimization: remove unnecessary image plugins and translations ---
 def filter_binaries(binaries):
-    # 剔除冗余 DLL 和不常用的图片格式插件
+    # Drop redundant DLLs and rarely used image format plugins.
     excluded_dlls = [
         'Qt6Pdf.dll', 'Qt6Network.dll', 'Qt6Svg.dll',
         'qpdf.dll', 'qtiff.dll', 'qicns.dll', 'qtga.dll', 'qwbmp.dll'
@@ -37,7 +37,7 @@ def filter_binaries(binaries):
     return [b for b in binaries if not any(dll.lower() in b[0].lower() for dll in excluded_dlls)]
 
 def filter_datas(datas):
-    # 仅保留最核心的中文翻译包，剔除 help 等模块的翻译
+    # Keep only the core Chinese Qt translation pack; remove other translation modules.
     return [d for d in datas if not (
         'translations' in d[0].lower() and not ('qtbase_zh_cn' in d[0].lower())
     )]

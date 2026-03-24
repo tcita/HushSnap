@@ -1,6 +1,6 @@
 """
-HushSnap 热键管理器模块
-负责 Windows 全局热键的注册、注销、冲突处理以及配置文件的动态监听与自动重载。
+HushSnap hotkey manager module.
+Handles global hotkey register/unregister, conflict handling, and dynamic config reload.
 """
 
 import ctypes
@@ -17,33 +17,32 @@ from ..constants import (
 
 class HotkeyManager:
     """
-    管理 Windows 全局热键的类。
-    支持热键的注册、注销、动态更新以及配置文件变动后的自动重载。
+    Manager for Windows global hotkeys.
+    Supports registration, unregistration, dynamic updates, and auto-reload on config changes.
     """
     def __init__(self, tray_icon, translate, config_path, modifier, virtual_key, name):
         """
-        初始化热键管理器。
+        Initialize hotkey manager.
         
         Args:
-            tray_icon (QSystemTrayIcon): 托盘图标实例，用于弹出提示消息。
-            translate (callable): 翻译函数，用于多语言显示。
-            config_path (Path): 配置文件路径。
-            modifier (int): 初始修饰键掩码。
-            virtual_key (int): 初始虚拟键码。
-            name (str): 初始热键的人类可读名称。
+            tray_icon (QSystemTrayIcon): Tray icon instance for notifications.
+            translate (callable): Translation function for i18n text.
+            config_path (Path): Config file path.
+            modifier (int): Initial modifier mask.
+            virtual_key (int): Initial virtual key code.
+            name (str): Initial human-readable hotkey name.
         """
         self.tray_icon = tray_icon
         self.translate = translate
         self.config_path = config_path
         self.hotkey_registered = False
 
-        # 使用 GlobalAddAtom 生成系统级唯一的热键 ID。
-        # 字符串 "HushSnap_Hotkey_Atom" 用于生成该原子，
-        # 在 0xC000 到 0xFFFF 范围内返回一个唯一的 ID。
-        # 这样可以避免与系统中其他程序注册的热键 ID 冲突。
+        # Use GlobalAddAtom to generate a system-unique hotkey ID.
+        # "HushSnap_Hotkey_Atom" generates an atom in the 0xC000-0xFFFF range,
+        # which helps avoid ID collisions with other programs.
         self.hotkey_id = ctypes.windll.kernel32.GlobalAddAtomW("HushSnap_Hotkey_Atom")
         if not self.hotkey_id:
-            # 如果原子生成失败，回退到固定的 ID。
+            # Fallback to a fixed ID if atom creation fails.
             self.hotkey_id = 0xBFFF
 
         self.current_hotkey_modifier = modifier
@@ -57,10 +56,10 @@ class HotkeyManager:
 
     def register_initial(self):
         """
-        程序启动时的首次热键注册。
+        Initial hotkey registration at application startup.
         
         Returns:
-            bool: 注册成功返回 True，否则弹出警告并返回 False。
+            bool: True on success; otherwise show warning and return False.
         """
         if not ctypes.windll.user32.RegisterHotKey(
             None,
@@ -84,27 +83,27 @@ class HotkeyManager:
         return True
 
     def unregister_current_hotkey(self):
-        """注销当前已注册的热键，并清理系统资源。"""
+        """Unregister current hotkey and release system resources."""
         if self.hotkey_registered:
             ctypes.windll.user32.UnregisterHotKey(None, self.hotkey_id)
             self.hotkey_registered = False
         
-        # 清理原子 ID
+        # Release atom ID.
         if hasattr(self, "hotkey_id") and self.hotkey_id:
             ctypes.windll.kernel32.GlobalDeleteAtom(self.hotkey_id)
             self.hotkey_id = 0
 
     def register_hotkey(self, modifier, virtual_key, name):
         """
-        尝试注册一个新的热键。
+        Try registering a new hotkey.
         
         Args:
-            modifier (int): 修饰键掩码。
-            virtual_key (int): 虚拟键码。
-            name (str): 热键名称。
+            modifier (int): Modifier mask.
+            virtual_key (int): Virtual key code.
+            name (str): Hotkey name.
             
         Returns:
-            bool: 注册成功返回 True，否则返回 False。
+            bool: True if registration succeeds, else False.
         """
         if ctypes.windll.user32.RegisterHotKey(None, self.hotkey_id, modifier, virtual_key):
             self.hotkey_registered = True
@@ -115,7 +114,7 @@ class HotkeyManager:
         return False
 
     def _ensure_watch_targets(self):
-        """确保 QFileSystemWatcher 监听的目标路径仍然有效（防止文件被删除又重建导致监听失效）。"""
+        """Ensure QFileSystemWatcher targets stay valid after file delete/recreate cycles."""
         if self._config_dir_path_str not in self._watcher.directories():
             self._watcher.addPath(self._config_dir_path_str)
         if self.config_path.exists() and self._config_file_path_str not in self._watcher.files():
@@ -123,9 +122,9 @@ class HotkeyManager:
 
     def apply_hotkey_reload(self):
         """
-        执行热键重载逻辑。
-        从配置文件读取新设置，并尝试注销旧热键、注册新热键。
-        如果新热键失败，会尝试回滚到旧热键。
+        Execute hotkey reload flow.
+        Read new config, unregister old hotkey, and register new one.
+        If new registration fails, attempt rollback to old hotkey.
         """
         self._ensure_watch_targets()
         try:
@@ -141,14 +140,14 @@ class HotkeyManager:
             )
             return
 
-        # 如果热键设置没变且已激活，直接跳过
+        # Skip if hotkey settings are unchanged and currently active.
         if (
             new_modifier == self.current_hotkey_modifier
             and new_virtual_key == self.current_hotkey_virtual_key
         ):
             if self.hotkey_registered:
                 return
-            # 如果之前处于未激活状态（如因冲突失败），尝试重新激活
+            # If previously inactive (e.g., conflict), try to reactivate.
             if self.register_hotkey(new_modifier, new_virtual_key, new_name):
                 self.tray_icon.showMessage(
                     self.translate("hotkey_enabled_title"),
@@ -165,7 +164,7 @@ class HotkeyManager:
                 )
             return
 
-        # 热键设置已更改，执行更新流程
+        # Hotkey changed, run update flow.
         old_modifier, old_virtual_key, old_name = (
             self.current_hotkey_modifier,
             self.current_hotkey_virtual_key,
@@ -181,7 +180,7 @@ class HotkeyManager:
             )
             return
 
-        # 新热键注册失败，尝试恢复旧热键。
+        # New hotkey registration failed, try restoring previous hotkey.
         if not self.register_hotkey(old_modifier, old_virtual_key, old_name):
             self.tray_icon.showMessage(
                 self.translate("hotkey_error_title"),
@@ -191,7 +190,7 @@ class HotkeyManager:
             )
             return
 
-        # 恢复成功，但告知用户新热键被占用了
+        # Restoration succeeded; notify user that new hotkey is occupied.
         self.tray_icon.showMessage(
             self.translate("hotkey_not_updated_title"),
             self.translate("hotkey_kept_old", new_hotkey=new_name, old_hotkey=old_name),
@@ -200,23 +199,23 @@ class HotkeyManager:
         )
 
     def schedule_hotkey_reload(self, _path):
-        """调度热键重载（通过定时器实现防抖，避免编辑器保存时的多次触发）。"""
+        """Schedule hotkey reload with debounce to avoid repeated triggers during file save."""
         self._ensure_watch_targets()
         self._reload_timer.start()
 
     def start_watch(self, app):
         """
-        开始监听配置文件变动。
+        Start watching config file changes.
         
         Args:
-            app (QApplication): Qt 应用程序实例。
+            app (QApplication): Qt application instance.
         """
         self._watcher = QtCore.QFileSystemWatcher(app)
         self._watcher.addPath(self._config_dir_path_str)
         if self.config_path.exists():
             self._watcher.addPath(self._config_file_path_str)
 
-        # 定时器用于“防抖”重载逻辑
+        # Timer used for debounce reload logic.
         self._reload_timer = QtCore.QTimer(app)
         self._reload_timer.setSingleShot(True)
         self._reload_timer.setInterval(RELOAD_TIMER_MS)

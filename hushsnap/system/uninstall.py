@@ -1,6 +1,6 @@
 """
-HushSnap 卸载辅助模块
-负责在程序目录下查找 Inno Setup 生成的卸载程序，并引导用户进行卸载。
+HushSnap uninstall helper module.
+Finds the Inno Setup uninstaller in app directory and guides uninstall flow.
 """
 
 import subprocess
@@ -12,15 +12,15 @@ from ..constants import UNINSTALLER_GLOB
 
 def find_uninstaller(app_dir):
     """
-    在指定目录下搜索卸载程序（unins*.exe）。
-    为了避免执行到旧的卸载文件（如 unins000.exe 可能不是最新的），
-    该函数会根据文件修改时间排序，优先选择最新创建的卸载程序。
+    Search for uninstallers (unins*.exe) under the given directory.
+    To avoid running stale files (e.g., old unins000.exe), candidates are sorted
+    by modification time and the newest one is selected.
     
     Args:
-        app_dir (Path): 搜索目录。
+        app_dir (Path): Search directory.
         
     Returns:
-        Path: 找到的最新的卸载程序路径，未找到则返回 None。
+        Path: Newest uninstaller path, or None if not found.
     """
     uninstaller_candidates = []
     for candidate_path in app_dir.glob(UNINSTALLER_GLOB):
@@ -28,30 +28,30 @@ def find_uninstaller(app_dir):
             stat = candidate_path.stat()
             uninstaller_candidates.append((stat.st_mtime, candidate_path))
         except Exception:
-            # 容错：如果无法获取属性，则给予最低权重
+            # Fault tolerance: if stat fails, give this candidate lowest priority.
             uninstaller_candidates.append((0.0, candidate_path))
 
     if not uninstaller_candidates:
         return None
 
-    # 按修改时间倒序排列，取最新一个
+    # Sort by mtime descending and take the newest one.
     uninstaller_candidates.sort(key=lambda item: item[0], reverse=True)
     return uninstaller_candidates[0][1]
 
 
 def launch_uninstaller(translate, on_quit):
     """
-    查找并启动卸载程序。
-    包含用户确认步骤，并在成功启动后调用退出回调以关闭当前程序。
+    Locate and launch uninstaller.
+    Includes user confirmation and invokes quit callback after successful launch.
     
     Args:
-        translate (callable): 翻译函数。
-        on_quit (callable): 启动卸载后的退出回调。
+        translate (callable): Translation function.
+        on_quit (callable): Exit callback after launching uninstaller.
     """
     app_dir = get_app_dir()
     uninstaller_path = find_uninstaller(app_dir)
     if not uninstaller_path:
-        # 如果没找到卸载程序，引导用户手动在控制面板操作
+        # If no uninstaller is found, guide user to manual uninstall path.
         QtWidgets.QMessageBox.warning(
             None,
             translate("uninstaller_not_found_title"),
@@ -59,7 +59,7 @@ def launch_uninstaller(translate, on_quit):
         )
         return
 
-    # 弹出对话框确认，防止误点
+    # Confirm with dialog to avoid accidental click.
     confirm = QtWidgets.QMessageBox.question(
         None,
         translate("confirm_uninstall_title"),
@@ -71,9 +71,9 @@ def launch_uninstaller(translate, on_quit):
         return
 
     try:
-        # 启动卸载进程
+        # Start uninstaller process.
         subprocess.Popen([str(uninstaller_path)], cwd=str(uninstaller_path.parent))
-        # 卸载程序运行时，当前程序必须退出，否则文件会被占用导致卸载不彻底
+        # Current app must exit while uninstaller runs to avoid file lock leftovers.
         on_quit()
     except Exception as exc:
         QtWidgets.QMessageBox.warning(None, translate("launch_uninstall_failed"), str(exc))

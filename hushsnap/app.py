@@ -21,7 +21,7 @@ from .logging_config import setup_logging
 
 
 """
-负责初始化应用环境、配置加载、热键注册及托盘菜单的构建。
+Initializes app environment, loads config, registers hotkeys, and builds tray menu.
 """
 
 import os
@@ -48,63 +48,63 @@ from .logging_config import setup_logging
 
 def main():
     """
-    应用程序主入口函数。
-    执行流程：
-    1. 初始化日志与数据目录。
-    2. 检查单实例运行状态。
-    3. 加载用户配置与多语言资源。
-    4. 建立热键监听与截图窗口唤起逻辑。
-    5. 构建系统托盘图标与设置对话框。
-    6. 启动 Qt 事件循环。
+    Main application entry point.
+    Flow:
+    1. Initialize logging and data directory.
+    2. Check single-instance state.
+    3. Load user config and i18n resources.
+    4. Wire hotkey listener and capture window launch logic.
+    5. Build system tray icon and settings dialog.
+    6. Start Qt event loop.
     """
-    # 初始化日志系统：确保所有运行信息都被记录到本地用户数据目录
+    # Initialize logging so runtime information is written to the local user data directory.
     setup_logging(get_user_data_dir() / CAPTURE_DEBUG_LOG_FILENAME)
 
-    # 检查多开：利用文件锁或系统互斥量确保同时只有一个实例在运行
+    # Enforce single instance via lock/mutex.
     instance_lock = is_already_running()
     if not instance_lock:
         return
 
-    # 初始化 Qt 环境：设置为后台运行模式
+    # Initialize Qt environment for background-style behavior.
     app = QtWidgets.QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
-    # 加载配置：获取当前绑定的热键组合及语言偏好
+    # Load config: current hotkey binding and language preference.
     hotkey_modifier, hotkey_virtual_key, hotkey_name, config_path = load_hotkey_setting()
     ui_language = resolve_ui_lang(config_path)
 
     def translate(key, **kwargs):
         return ui_text(ui_language, key, **kwargs)
 
-    # 热键事件 -> Qt 信号(communicator) -> UI 回调
+    # Hotkey event -> Qt signal (communicator) -> UI callback
     communicator = Communicator()
     communicator.win = None 
 
     def launch_capture_window(screen_pixmap):
         """
-        唤起截图窗口的回调逻辑。
-        :param screen_pixmap: 预先捕获的全屏位图（由 HotkeyFilter 提供）
+        Callback that launches the capture window.
+        :param screen_pixmap: Pre-captured fullscreen bitmap from HotkeyFilter.
         """
         if communicator.win:
             return 
 
-        # 创建截图窗口实例
+        # Create capture window instance.
         communicator.win = CaptureWindow(screen_pixmap)
 
-        # CaptureWindow销毁后发送信号,将communicator.win 重置为 None
+        # Reset communicator.win to None when CaptureWindow is destroyed.
         communicator.win.destroyed.connect(lambda: setattr(communicator, "win", None))
         communicator.win.show()
 
 
-    # 将launch_capture_window注册到 communicator 对象的 trigger 信号的监听列表里
+    # Connect launch_capture_window to communicator's trigger signal.
     communicator.trigger.connect(launch_capture_window)
 
-    # 安装hotkey.py中的HotkeyFilter,在 Qt 事件到达窗口前拦截 Win32 热键消息 (WM_HOTKEY)
+    # Install HotkeyFilter to intercept WM_HOTKEY before Qt window event delivery.
     native_hotkey_filter = HotkeyFilter(communicator.trigger)
     app.installNativeEventFilter(native_hotkey_filter)
 
     def open_config_dir():
-        """打开配置文件所在的本地文件夹。"""
+        """Open the local folder that contains the config file."""
         try:
             os.startfile(config_path.parent)
         except Exception as exc:
@@ -115,20 +115,20 @@ def main():
             )
 
     def on_uninstall():
-        """卸载回调：清理注册表与文件系统。"""
+        """Uninstall callback."""
         launch_uninstaller(translate, app.quit)
 
-    # 创建系统托盘图标：提供右键菜单访问入口
+    # Create system tray icon and right-click menu entry points.
     tray_icon, settings_action = create_tray(
         app,
         translate,
-        communicator.trigger.emit, # 允许从托盘菜单触发截图
+        communicator.trigger.emit, # Allow screenshot trigger from tray menu.
         None,
         open_config_dir,
         app.quit,
     )
 
-    # 热键管理器：负责向 Windows 系统注册/注销热键
+    # Hotkey manager handles registration/unregistration with Windows.
     hotkey_manager = HotkeyManager(
         tray_icon,
         translate,
@@ -138,9 +138,9 @@ def main():
         hotkey_name,
     )
     hotkey_manager.register_initial()
-    hotkey_manager.start_watch(app) # 启动配置变更监听
+    hotkey_manager.start_watch(app) # Start config-change watcher.
 
-    # 初始化设置对话框控制器
+    # Initialize settings dialog controller.
     try:
         settings_controller = SettingsDialogController(
             translate,
@@ -156,13 +156,13 @@ def main():
         )
         settings_action.setEnabled(False)
     else:
-        # 将托盘菜单的“设置”项连接到控制器的显示方法
+        # Connect tray "Settings" action to controller show method.
         settings_action.triggered.connect(settings_controller.show)
 
-    # 程序退出前注销热键
+    # Unregister hotkey before app exit.
     app.aboutToQuit.connect(hotkey_manager.unregister_current_hotkey)
 
-    # 进入事件循环,构建脚本build_installer.ps1会检查状态码LASTEXITCODE
+    # Enter event loop (build_installer.ps1 checks LASTEXITCODE).
     sys.exit(app.exec())
 
 

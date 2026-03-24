@@ -1,6 +1,6 @@
 """
-HushSnap 配置管理模块
-负责处理应用程序的配置读取、写入、路径解析、多语言支持以及单实例检测。
+HushSnap configuration management module.
+Handles config read/write, path resolution, i18n, and single-instance detection.
 """
 
 import json
@@ -30,7 +30,7 @@ from .translations import (
     UI_TEXT,
 )
 
-# Windows API 封装，用于实现单实例互斥锁
+# Windows API wrappers for the single-instance mutex.
 _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 _create_mutex = _kernel32.CreateMutexW
 _create_mutex.argtypes = (wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR)
@@ -41,67 +41,67 @@ _close_handle.restype = wintypes.BOOL
 _ERROR_ALREADY_EXISTS = 183
 
 
-# --- 路径常量定义 ---
+# --- Path constants ---
 _is_frozen = getattr(sys, "frozen", False)
-# 程序的安装目录 (只读资源如图标所在处)
+# Application install directory (contains read-only assets like icon files).
 APP_DIR = Path(sys.executable).resolve().parent if _is_frozen else Path(__file__).resolve().parent.parent
 
 def get_user_data_dir():
     """
-    获取用户可写的数据目录 (%LOCALAPPDATA%\\HushSnap)
+    Get the user-writable data directory (%LOCALAPPDATA%\\HushSnap).
     
     Returns:
-        Path: 用户数据目录的 Path 对象。
+        Path: Path object for the user data directory.
     """
     local_app_data = os.getenv("LOCALAPPDATA")
     if local_app_data:
         path = Path(local_app_data) / "HushSnap"
     else:
-        # 如果获取不到 LOCALAPPDATA，退避方案使用home目录下的隐藏文件夹
+        # Fallback: use a hidden folder under home if LOCALAPPDATA is unavailable.
         path = Path.home() / ".hushsnap"
 
-    # 确保目录存在，避免后续读写报错
+    # Ensure directory exists to avoid subsequent read/write errors.
     try:
         path.mkdir(parents=True, exist_ok=True)
     except Exception:
-        # 如果创建失败（如权限问题），退避到系统临时目录
+        # Fallback to system temp directory if creation fails (e.g. permission issues).
         import tempfile
         path = Path(tempfile.gettempdir()) / "HushSnap"
         path.mkdir(parents=True, exist_ok=True)
     return path
 
-# 配置文件路径迁移到用户数据目录，避免安装目录的写权限问题
+# Store config in user data directory to avoid install-directory write permission issues.
 CONFIG_PATH = get_user_data_dir() / APP_CONFIG_FILENAME
-# 资源目录 (如果是 PyInstaller 模式，则从 _MEIPASS 临时目录读取资源，否则就是 APP_DIR)
+# Resource directory (for PyInstaller, read from _MEIPASS; otherwise APP_DIR).
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR)) if _is_frozen else APP_DIR
 
 
 def get_app_dir():
-    """获取程序安装目录"""
+    """Get the application install directory."""
     return APP_DIR
 
 
 def get_resource_dir():
-    """获取资源文件目录"""
+    """Get the resource directory."""
     return RESOURCE_DIR
 
 
 def get_config_path():
-    """获取配置文件绝对路径"""
+    """Get the absolute config file path."""
     return CONFIG_PATH
 
 
 def _hotkey_warning_note():
-    """返回配置文件中显示的热键提示说明"""
+    """Return the hotkey guidance text shown in the config file."""
     return "Note: You can edit hotkey manually (including single-key). Some keys may conflict with system/apps; use at your own discretion."
 
 
 def _ensure_default_config_exists(config_path):
     """
-    如果配置文件不存在，则创建一个包含默认设置的初始文件。
+    Create an initial config file with defaults if it does not exist.
     
     Args:
-        config_path (Path): 配置文件路径。
+        config_path (Path): Config file path.
     """
     if config_path.exists():
         return
@@ -121,27 +121,27 @@ def _ensure_default_config_exists(config_path):
 
 def _parse_virtual_key(token):
     """
-    将热键文本中的按键部分解析为 Windows 虚拟键码。
+    Parse the key token in hotkey text into a Windows virtual-key code.
     
     Args:
-        token (str): 按键名称（如 'A', 'F1', 'ESC'）。
+        token (str): Key name (e.g. 'A', 'F1', 'ESC').
         
     Returns:
-        int: 虚拟键码，如果不支持则返回 None。
+        int: Virtual-key code, or None if unsupported.
     """
     normalized_token = token.strip().upper()
-    # 单个字符按键 (A-Z, 0-9)
+    # Single-character keys (A-Z, 0-9)
     if len(normalized_token) == 1 and "A" <= normalized_token <= "Z":
         return ord(normalized_token)
     if len(normalized_token) == 1 and "0" <= normalized_token <= "9":
         return ord(normalized_token)
-    # 功能键 (F1-F24)
+    # Function keys (F1-F24)
     if normalized_token.startswith("F") and normalized_token[1:].isdigit():
         function_key_index = int(normalized_token[1:])
         if 1 <= function_key_index <= 24:
             return 0x6F + function_key_index
 
-    # 特殊命名按键映射
+    # Named special key mapping
     named_key_map = {
         "ESC": 0x1B,
         "ESCAPE": 0x1B,
@@ -159,16 +159,16 @@ def _parse_virtual_key(token):
 
 def parse_hotkey(hotkey_text):
     """
-    解析热键字符串（如 'Ctrl+Alt+A'）为修饰符掩码和虚拟键码。
+    Parse hotkey string (e.g. 'Ctrl+Alt+A') into modifier mask and virtual-key code.
     
     Args:
-        hotkey_text (str): 热键文本。
+        hotkey_text (str): Hotkey text.
         
     Returns:
         tuple: (modifier_mask, virtual_key, canonical_hotkey_text)
         
     Raises:
-        ValueError: 如果热键格式不正确或包含不支持的按键。
+        ValueError: If hotkey format is invalid or contains unsupported keys.
     """
     hotkey_parts = [part.strip() for part in hotkey_text.split("+") if part.strip()]
     if len(hotkey_parts) < 1:
@@ -181,7 +181,7 @@ def parse_hotkey(hotkey_text):
         modifier_tokens = hotkey_parts[:-1]
         key_token = hotkey_parts[-1]
 
-    # 解析修饰符 (Ctrl, Alt, Shift, Win)
+    # Parse modifiers (Ctrl, Alt, Shift, Win)
     modifier_mask = 0
     for raw_modifier in modifier_tokens:
         normalized_modifier = raw_modifier.lower()
@@ -196,12 +196,12 @@ def parse_hotkey(hotkey_text):
         else:
             raise ValueError(f"Unknown modifier: {raw_modifier}")
 
-    # 解析主键
+    # Parse primary key
     virtual_key = _parse_virtual_key(key_token)
     if virtual_key is None:
         raise ValueError(f"Unsupported key: {key_token}")
 
-    # 构建标准化的热键字符串显示
+    # Build canonical hotkey display string
     canonical_modifiers = []
     if modifier_mask & MOD_CONTROL:
         canonical_modifiers.append("Ctrl")
@@ -220,7 +220,7 @@ def parse_hotkey(hotkey_text):
 
 
 def _load_config_data(config_path):
-    """从磁盘加载 JSON 配置数据"""
+    """Load JSON config data from disk."""
     try:
         config_data = json.loads(config_path.read_text(encoding="utf-8"))
         if isinstance(config_data, dict):
@@ -231,7 +231,7 @@ def _load_config_data(config_path):
 
 
 def _write_config_data(config_path, config_data):
-    """将配置数据写入磁盘 JSON 文件"""
+    """Write config data to disk as JSON."""
     config_path.write_text(
         json.dumps(config_data, ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -239,7 +239,7 @@ def _write_config_data(config_path, config_data):
 
 
 def _ensure_hotkey_note_field(config_path):
-    """确保配置文件中存在热键说明字段，以便用户手动编辑时看到提示"""
+    """Ensure the hotkey note field exists so manual editors can see guidance."""
     config_data = _load_config_data(config_path)
     note = _hotkey_warning_note()
     if config_data.get("_hotkey_note") == note:
@@ -249,7 +249,7 @@ def _ensure_hotkey_note_field(config_path):
 
 
 def read_hotkey_text_from_config(config_path):
-    """从配置文件中读取热键文本串"""
+    """Read hotkey text from config file."""
     config_data = json.loads(config_path.read_text(encoding="utf-8"))
     if not isinstance(config_data, dict):
         raise ValueError("Config must be a JSON object.")
@@ -260,7 +260,7 @@ def read_hotkey_text_from_config(config_path):
 
 
 def update_hotkey_in_config(config_path, hotkey_text):
-    """更新并保存新的热键到配置文件"""
+    """Update and persist the new hotkey in the config file."""
     config_data = _load_config_data(config_path)
     config_data["hotkey"] = hotkey_text
 
@@ -274,7 +274,7 @@ def update_hotkey_in_config(config_path, hotkey_text):
 
 def load_hotkey_setting():
     """
-    加载热键设置的入口函数，处理文件初始化和容错逻辑。
+    Entry point for loading hotkey settings, with initialization and fault tolerance.
     
     Returns:
         tuple: (modifier_mask, virtual_key, canonical_hotkey, config_path)
@@ -289,13 +289,13 @@ def load_hotkey_setting():
         )
         return modifier_mask, virtual_key, canonical_hotkey, config_path
     except Exception:
-        # 如果解析失败，返回系统默认热键作为兜底
+        # Fallback to default system hotkey if parsing fails.
         modifier_mask, virtual_key, canonical_hotkey = parse_hotkey(DEFAULT_HOTKEY)
         return modifier_mask, virtual_key, canonical_hotkey, config_path
 
 
 def _read_ui_lang_from_config(config_path):
-    """从配置文件读取语言设置"""
+    """Read UI language setting from config."""
     try:
         config_data = json.loads(config_path.read_text(encoding="utf-8"))
         if not isinstance(config_data, dict):
@@ -312,8 +312,8 @@ def _read_ui_lang_from_config(config_path):
 
 def _read_ui_lang_from_installer_hint(config_path):
     """
-    读取安装程序留下的语言提示文件。
-    用于在首次运行时，跟随用户在安装界面选择的语言。
+    Read language hint written by installer.
+    Used on first run to follow language selected in installer UI.
     """
     hint_path = config_path.parent / INSTALLER_LANG_FILENAME
     try:
@@ -332,8 +332,8 @@ def _read_ui_lang_from_installer_hint(config_path):
 
 def resolve_ui_lang(config_path):
     """
-    解析最终应当显示的 UI 语言。
-    优先级：环境变量 > 配置文件 > 安装程序提示 > 系统区域设置。
+    Resolve the final UI language.
+    Priority: environment variable > config file > installer hint > system locale.
     """
     env_language = os.environ.get(UI_LANG_ENV, "").strip().lower()
     if env_language in {UI_LANG_EN, UI_LANG_ZH}:
@@ -347,22 +347,22 @@ def resolve_ui_lang(config_path):
     if installer_hint_language in {UI_LANG_EN, UI_LANG_ZH}:
         return installer_hint_language
 
-    # 最终根据系统 Locale 自动判定
+    # Final fallback: infer from system locale.
     locale_name = QtCore.QLocale.system().name().lower()
     return UI_LANG_ZH if locale_name.startswith("zh") else UI_LANG_EN
 
 
 def ui_text(lang, key, **kwargs):
     """
-    根据语言代码和键值获取对应的 UI 文本。
+    Get UI text by language code and key.
     
     Args:
-        lang (str): 语言代码 (en/zh)。
-        key (str): 文本键名。
-        **kwargs: 用于格式化字符串的参数。
+        lang (str): Language code (en/zh).
+        key (str): Text key.
+        **kwargs: Parameters for string formatting.
         
     Returns:
-        str: 翻译后的文本。
+        str: Translated text.
     """
     lang_table = UI_TEXT.get(lang, UI_TEXT[UI_LANG_EN])
     text_template = lang_table.get(key, UI_TEXT[UI_LANG_EN].get(key, key))
@@ -371,11 +371,11 @@ def ui_text(lang, key, **kwargs):
 
 def is_already_running():
     """
-    通过 Windows 命名互斥锁检测程序是否已经在运行。
-    用于实现单实例启动限制。
+    Detect whether the app is already running via Windows named mutex.
+    Used to enforce single-instance startup.
     
     Returns:
-        handle: 互斥锁句柄（如果成功创建且唯一），否则返回 None。
+        handle: Mutex handle if successfully created and unique; otherwise None.
     """
     mutex_name = SINGLE_INSTANCE_MUTEX
     handle = _create_mutex(None, False, mutex_name)

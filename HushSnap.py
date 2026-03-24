@@ -1,4 +1,4 @@
-"""程序入口：启动主应用。"""
+"""Application entry point: launch the main app."""
 
 from hushsnap.app import main
 
