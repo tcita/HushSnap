@@ -27,12 +27,12 @@ a = Analysis(
     noarchive=False,
 )
 
-# --- Extreme size optimization: remove unnecessary image plugins and translations ---
+# --- Less aggressive optimization for stability ---
 def filter_binaries(binaries):
-    # Drop redundant DLLs and rarely used image format plugins.
+    # Only drop very obvious heavy but unused DLLs if necessary.
+    # Restoring Network and Svg as they are often required by Qt internally.
     excluded_dlls = [
-        'Qt6Pdf.dll', 'Qt6Network.dll', 'Qt6Svg.dll',
-        'qpdf.dll', 'qtiff.dll', 'qicns.dll', 'qtga.dll', 'qwbmp.dll'
+        'Qt6Pdf.dll', 'qpdf.dll'
     ]
     return [b for b in binaries if not any(dll.lower() in b[0].lower() for dll in excluded_dlls)]
 

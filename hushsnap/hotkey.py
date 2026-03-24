@@ -9,7 +9,7 @@ from PyQt6 import QtCore, QtWidgets
 from .constants import WM_HOTKEY
 
 
-class HotkeyFilter( ):
+class HotkeyFilter(QtCore.QAbstractNativeEventFilter):
     """
     Native Windows event filter.
     Listens to system-broadcast messages and extracts hotkey activation events.

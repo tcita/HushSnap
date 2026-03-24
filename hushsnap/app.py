@@ -20,32 +20,6 @@ from .constants import CAPTURE_DEBUG_LOG_FILENAME
 from .logging_config import setup_logging
 
 
-"""
-Initializes app environment, loads config, registers hotkeys, and builds tray menu.
-"""
-
-import os
-import sys
-
-from PyQt6 import QtWidgets
-
-from .capture_window import CaptureWindow
-from .config import (
-    is_already_running,
-    load_hotkey_setting,
-    resolve_ui_lang,
-    ui_text,
-)
-from .hotkey import Communicator, HotkeyFilter
-from .system.hotkey_manager import HotkeyManager
-from .system.uninstall import launch_uninstaller
-from .ui.settings_dialog import SettingsDialogController
-from .ui.tray import create_tray
-from .config import get_user_data_dir
-from .constants import CAPTURE_DEBUG_LOG_FILENAME
-from .logging_config import setup_logging
-
-
 def main():
     """
     Main application entry point.

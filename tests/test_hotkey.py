@@ -9,6 +9,12 @@ def mock_app():
     with patch("PyQt6.QtWidgets.QApplication") as mock:
         yield mock
 
+def test_hotkey_filter_inheritance():
+    mock_signal = MagicMock()
+    filter = HotkeyFilter(mock_signal)
+    # This check ensures the class is compatible with installNativeEventFilter
+    assert isinstance(filter, QtCore.QAbstractNativeEventFilter)
+
 def test_hotkey_filter_ignore_other_events():
     mock_signal = MagicMock()
     filter = HotkeyFilter(mock_signal)

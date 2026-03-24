@@ -48,6 +48,135 @@ def _qt_key_to_hotkey_token(key):
     return special_map.get(key)
 
 
+class HotkeyCaptureDialog(QtWidgets.QDialog):
+    """
+    Modal dialog that captures new hotkey input from keyboard.
+    Extracted as a top-level class for stability and cleaner architecture.
+    """
+    def __init__(self, translate, parent=None):
+        super().__init__(parent)
+        self.translate = translate
+        self.captured_hotkey = None
+        self.setWindowTitle(self.translate("settings_hotkey_capture_title"))
+        self.setModal(True)
+        self.setMinimumWidth(SETTINGS_CAPTURE_DIALOG_MIN_WIDTH)
+        self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        # Read-only input showing captured hotkey.
+        self.hotkey_display = QtWidgets.QLineEdit("")
+        self.hotkey_display.setReadOnly(True)
+        self.hotkey_display.setPlaceholderText(
+            self.translate("settings_hotkey_capture_placeholder")
+        )
+        self.hotkey_display.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
+        layout.addWidget(self.hotkey_display)
+
+        self.feedback_label = QtWidgets.QLabel("")
+        self.feedback_label.setWordWrap(True)
+        layout.addWidget(self.feedback_label)
+
+        button_row = QtWidgets.QHBoxLayout()
+        button_row.addStretch(1)
+        self.save_button = QtWidgets.QPushButton(
+            self.translate("settings_save_hotkey_btn")
+        )
+        self.save_button.setEnabled(False)
+        self.save_button.clicked.connect(self.accept)
+        button_row.addWidget(self.save_button)
+        
+        cancel_button = QtWidgets.QPushButton(
+            self.translate("settings_hotkey_capture_cancel_btn")
+        )
+        cancel_button.clicked.connect(self.reject)
+        button_row.addWidget(cancel_button)
+        layout.addLayout(button_row)
+
+        self._set_feedback(self.translate("settings_hotkey_capture_waiting"))
+        # Ensure dialog gets focus immediately for keyboard input.
+        QtCore.QTimer.singleShot(0, self.setFocus)
+
+    def _set_feedback(self, message, is_error=False):
+        self.feedback_label.setText(message)
+        self.feedback_label.setStyleSheet(
+            f"color: {SETTINGS_ERROR_COLOR};" if is_error else ""
+        )
+
+    def keyPressEvent(self, event):
+        """Override key event to intercept and parse user shortcut combination."""
+        modifier_only_keys = {
+            QtCore.Qt.Key.Key_Control,
+            QtCore.Qt.Key.Key_Shift,
+            QtCore.Qt.Key.Key_Alt,
+            QtCore.Qt.Key.Key_Meta,
+            QtCore.Qt.Key.Key_Super_L,
+            QtCore.Qt.Key.Key_Super_R,
+        }
+
+        key = event.key()
+        # If only a modifier key is pressed, do not treat it as valid hotkey yet.
+        if key in modifier_only_keys:
+            self.captured_hotkey = None
+            self.save_button.setEnabled(False)
+            self._set_feedback(
+                self.translate("settings_hotkey_capture_invalid"),
+                is_error=True,
+            )
+            event.accept()
+            return
+
+        # Parse primary key.
+        key_token = _qt_key_to_hotkey_token(key)
+        if key_token is None:
+            self.captured_hotkey = None
+            self.save_button.setEnabled(False)
+            self._set_feedback(
+                self.translate("settings_hotkey_capture_invalid"),
+                is_error=True,
+            )
+            event.accept()
+            return
+
+        # Parse modifier state.
+        modifiers = event.modifiers()
+        modifier_tokens = []
+        if modifiers & QtCore.Qt.KeyboardModifier.ControlModifier:
+            modifier_tokens.append("Ctrl")
+        if modifiers & QtCore.Qt.KeyboardModifier.AltModifier:
+            modifier_tokens.append("Alt")
+        if modifiers & QtCore.Qt.KeyboardModifier.ShiftModifier:
+            modifier_tokens.append("Shift")
+        if modifiers & QtCore.Qt.KeyboardModifier.MetaModifier:
+            modifier_tokens.append("Win")
+
+        # Build full hotkey string and validate.
+        requested_hotkey = "+".join(modifier_tokens + [key_token]) if modifier_tokens else key_token
+        try:
+            _, _, canonical_hotkey = parse_hotkey(requested_hotkey)
+        except Exception as exc:
+            self.captured_hotkey = None
+            self.save_button.setEnabled(False)
+            self._set_feedback(
+                self.translate("settings_hotkey_invalid", error=exc),
+                is_error=True,
+            )
+            event.accept()
+            return
+
+        # Update UI with captured result.
+        self.captured_hotkey = canonical_hotkey
+        self.hotkey_display.setText(canonical_hotkey)
+        self._set_feedback(
+            self.translate(
+                "settings_hotkey_capture_captured",
+                hotkey=canonical_hotkey,
+            ),
+            is_error=False,
+        )
+        self.save_button.setEnabled(True)
+        event.accept()
+
+
 class SettingsDialogController:
     """
     Settings dialog controller.
@@ -123,141 +252,13 @@ class SettingsDialogController:
             status_label.setText(message)
             status_label.setStyleSheet(f"color: {SETTINGS_ERROR_COLOR};" if is_error else "")
 
-        def capture_hotkey_dialog():
-            """
-            Internal nested class/function for opening a modal dialog that captures new hotkey input.
-            """
-            class HotkeyCaptureDialog(QtWidgets.QDialog):
-                def __init__(self, parent=None):
-                    super().__init__(parent)
-                    self.captured_hotkey = None
-                    self.setWindowTitle(self.translate("settings_hotkey_capture_title"))
-                    self.setModal(True)
-                    self.setMinimumWidth(SETTINGS_CAPTURE_DIALOG_MIN_WIDTH)
-                    self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
-
-                    layout = QtWidgets.QVBoxLayout(self)
-                    # Read-only input showing captured hotkey.
-                    self.hotkey_display = QtWidgets.QLineEdit("")
-                    self.hotkey_display.setReadOnly(True)
-                    self.hotkey_display.setPlaceholderText(
-                        self.translate("settings_hotkey_capture_placeholder")
-                    )
-                    self.hotkey_display.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
-                    layout.addWidget(self.hotkey_display)
-
-                    self.feedback_label = QtWidgets.QLabel("")
-                    self.feedback_label.setWordWrap(True)
-                    layout.addWidget(self.feedback_label)
-
-                    button_row = QtWidgets.QHBoxLayout()
-                    button_row.addStretch(1)
-                    self.save_button = QtWidgets.QPushButton(
-                        self.translate("settings_save_hotkey_btn")
-                    )
-                    self.save_button.setEnabled(False)
-                    self.save_button.clicked.connect(self.accept)
-                    button_row.addWidget(self.save_button)
-                    
-                    cancel_button = QtWidgets.QPushButton(
-                        self.translate("settings_hotkey_capture_cancel_btn")
-                    )
-                    cancel_button.clicked.connect(self.reject)
-                    button_row.addWidget(cancel_button)
-                    layout.addLayout(button_row)
-
-                    self._set_feedback(self.translate("settings_hotkey_capture_waiting"))
-                    # Ensure dialog gets focus immediately for keyboard input.
-                    QtCore.QTimer.singleShot(0, self.setFocus)
-
-                def _set_feedback(self, message, is_error=False):
-                    self.feedback_label.setText(message)
-                    self.feedback_label.setStyleSheet(
-                        f"color: {SETTINGS_ERROR_COLOR};" if is_error else ""
-                    )
-
-                def keyPressEvent(self, event):
-                    """Override key event to intercept and parse user shortcut combination."""
-                    modifier_only_keys = {
-                        QtCore.Qt.Key.Key_Control,
-                        QtCore.Qt.Key.Key_Shift,
-                        QtCore.Qt.Key.Key_Alt,
-                        QtCore.Qt.Key.Key_Meta,
-                        QtCore.Qt.Key.Key_Super_L,
-                        QtCore.Qt.Key.Key_Super_R,
-                    }
-
-                    key = event.key()
-                    # If only a modifier key is pressed, do not treat it as valid hotkey yet.
-                    if key in modifier_only_keys:
-                        self.captured_hotkey = None
-                        self.save_button.setEnabled(False)
-                        self._set_feedback(
-                            self.translate("settings_hotkey_capture_invalid"),
-                            is_error=True,
-                        )
-                        event.accept()
-                        return
-
-                    # Parse primary key.
-                    key_token = _qt_key_to_hotkey_token(key)
-                    if key_token is None:
-                        self.captured_hotkey = None
-                        self.save_button.setEnabled(False)
-                        self._set_feedback(
-                            self.translate("settings_hotkey_capture_invalid"),
-                            is_error=True,
-                        )
-                        event.accept()
-                        return
-
-                    # Parse modifier state.
-                    modifiers = event.modifiers()
-                    modifier_tokens = []
-                    if modifiers & QtCore.Qt.KeyboardModifier.ControlModifier:
-                        modifier_tokens.append("Ctrl")
-                    if modifiers & QtCore.Qt.KeyboardModifier.AltModifier:
-                        modifier_tokens.append("Alt")
-                    if modifiers & QtCore.Qt.KeyboardModifier.ShiftModifier:
-                        modifier_tokens.append("Shift")
-                    if modifiers & QtCore.Qt.KeyboardModifier.MetaModifier:
-                        modifier_tokens.append("Win")
-
-                    # Build full hotkey string and validate.
-                    requested_hotkey = "+".join(modifier_tokens + [key_token]) if modifier_tokens else key_token
-                    try:
-                        _, _, canonical_hotkey = parse_hotkey(requested_hotkey)
-                    except Exception as exc:
-                        self.captured_hotkey = None
-                        self.save_button.setEnabled(False)
-                        self._set_feedback(
-                            self.translate("settings_hotkey_invalid", error=exc),
-                            is_error=True,
-                        )
-                        event.accept()
-                        return
-
-                    # Update UI with captured result.
-                    self.captured_hotkey = canonical_hotkey
-                    self.hotkey_display.setText(canonical_hotkey)
-                    self._set_feedback(
-                        self.translate(
-                            "settings_hotkey_capture_captured",
-                            hotkey=canonical_hotkey,
-                        ),
-                        is_error=False,
-                    )
-                    self.save_button.setEnabled(True)
-                    event.accept()
-
-            capture_dialog = HotkeyCaptureDialog(dialog)
-            if capture_dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-                return capture_dialog.captured_hotkey
-            return None
-
         def change_hotkey_from_settings():
             """Hotkey change flow: capture dialog -> update config -> trigger manager reload."""
-            canonical_hotkey = capture_hotkey_dialog()
+            capture_dialog = HotkeyCaptureDialog(self.translate, parent=dialog)
+            if capture_dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
+                return
+
+            canonical_hotkey = capture_dialog.captured_hotkey
             if not canonical_hotkey:
                 return
 

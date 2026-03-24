@@ -24,20 +24,20 @@ def setup_logging(log_file_path: Path):
     Args:
         log_file_path (Path): Full path to the log file.
     """
-    # 1. Resolve the log level (default INFO).
+    # Resolve the log level (default INFO).
     level_str = os.environ.get(LOG_LEVEL_ENV, "INFO").upper().strip()
-    # Convert level name to logging constant (DEBUG, INFO, etc.).
+    # Get the logging level attribute by name; use DEFAULT_LEVEL if it doesn't exist.
     level = getattr(logging, level_str, DEFAULT_LEVEL)
 
 
-    # 2. Define formatter.
+
     # Format: [time] [level] [module:line] message
     formatter = logging.Formatter(
         '[%(asctime)s] [%(levelname)s] [%(name)s:%(lineno)d] %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
 
-    # 3. Configure rotating file handler.
+
     try:
         # Ensure the log directory exists.
         log_file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -52,7 +52,7 @@ def setup_logging(log_file_path: Path):
         file_handler.setFormatter(formatter)
         file_handler.setLevel(level)
 
-        # 4. Configure root logger.
+        # Configure root logger.
         root = logging.getLogger()
         root.setLevel(level)
         
