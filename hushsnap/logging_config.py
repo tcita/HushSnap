@@ -1,10 +1,11 @@
-"""
+﻿"""
 HushSnap logging configuration module.
 Initializes global logging with file rotation and env-driven log levels.
 """
 
 import logging
 import os
+import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -52,28 +53,35 @@ def setup_logging(log_file_path: Path):
         file_handler.setFormatter(formatter)
         file_handler.setLevel(level)
 
-        # Configure root logger.
-        root = logging.getLogger()
-        root.setLevel(level)
+        # Ensure that the logging initialization is idempotent.
+        logging.basicConfig(
+            level=level, 
+            handlers=[file_handler], 
+            force=True
+        )
         
-        # Clear existing handlers to avoid duplicate output (common in tests/reload).
-        if root.hasHandlers():
-            root.handlers.clear()
-        
-        # Attach file handler to root logger.
-        root.addHandler(file_handler)
         
         logging.info(f"Logging initialized. Level: {logging.getLevelName(level)}, Path: {log_file_path}")
+    
+    # Fallback: if logging initialization fails, write to a fallback file.
     except Exception as e:
-        # Fallback: if logging initialization fails, write to a fallback file.
         try:
-            fallback_path = Path.home() / "AppData" / "Local" / "HushSnap" / "log_init_error.log"
-            fallback_path.parent.mkdir(parents=True, exist_ok=True)
+            import tempfile, traceback
+            fallback_dir = Path(tempfile.gettempdir()) / "HushSnap"
+            fallback_dir.mkdir(parents=True, exist_ok=True)
+            fallback_path = fallback_dir / f"log_init_error_{os.getpid()}.log"
+            print(f"CRITICAL: Logging failed. Error details saved to: {fallback_path}", file=sys.stderr)
+            
             with open(fallback_path, "a", encoding="utf-8") as f:
                 f.write(f"Failed to setup file logging: {e}\n")
-        except Exception:
-            # Last-resort fallback: never crash because logging setup failed.
-            pass
+                traceback.print_exc(file=f)
+        except Exception as fe:
+            print(
+                    f"Logging initialization failed.\n"
+                    f"  Original error: {e}\n"
+                    f"  Fallback error: {fe}",
+                    file=sys.stderr
+                )
 
 def get_logger(name: str):
 
