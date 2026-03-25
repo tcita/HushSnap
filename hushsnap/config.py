@@ -371,18 +371,33 @@ def ui_text(lang, key, **kwargs):
 
 def is_already_running():
     """
-    Detect whether the app is already running via Windows named mutex.
-    Used to enforce single-instance startup.
-    
+    Create a named mutex to ensure single-instance execution.
+
+    Windows behavior:
+    - If the mutex does not exist, CreateMutex creates it and GetLastError() == 0.
+    - If the mutex already exists, CreateMutex still returns a handle but
+      GetLastError() == ERROR_ALREADY_EXISTS, meaning another instance is running.
+
     Returns:
-        handle: Mutex handle if successfully created and unique; otherwise None.
+        handle: Unique mutex handle if this is the first instance.
+        None:   If another instance is already running.
     """
     mutex_name = SINGLE_INSTANCE_MUTEX
-    handle = _create_mutex(None, False, mutex_name)
+    handle = _create_mutex(
+    None,          
+    False,         # bInitialOwner: Create the mutex object only, without acquiring the lock.
+                   # (We need the "Mutex" resource, not immediate "Lock" ownership.)
+    mutex_name     
+)
     if not handle:
         return None
 
     if ctypes.get_last_error() == _ERROR_ALREADY_EXISTS:
+    # The mutex already exists, which means another instance of the program is running.
+    # CreateMutex() still returns a valid handle to the existing mutex, but we should not
+    # use it in a single-instance check. We only needed to detect the condition.
+    
+    # Close the handle to avoid leaking system resources.
         _close_handle(handle)
         return None
 
