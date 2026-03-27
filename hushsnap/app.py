@@ -1,5 +1,6 @@
 import os
 import sys
+import logging
 
 from PyQt6 import QtWidgets
 
@@ -24,15 +25,30 @@ def main():
     """
     Main application entry point.
     Flow:
-    1. Initialize logging and data directory.
-    2. Check single-instance state.
-    3. Load user config and i18n resources.
-    4. Wire hotkey listener and capture window launch logic.
-    5. Build system tray icon and settings dialog.
-    6. Start Qt event loop.
+    1. Parse CLI arguments for debug mode.
+    2. Initialize logging and data directory.
+    3. Check single-instance state.
+    4. Load user config and i18n resources.
+    5. Wire hotkey listener and capture window launch logic.
+    6. Build system tray icon and settings dialog.
+    7. Start Qt event loop.
     """
-    # Initialize logging so runtime information is written to the local user data directory.
-    setup_logging(get_user_data_dir() / CAPTURE_DEBUG_LOG_FILENAME)
+    # 1. Parse CLI arguments
+    force_debug = "--debug" in sys.argv
+    user_data_dir = get_user_data_dir()
+    
+    # 2. Initialize logging
+    setup_logging(
+        user_data_dir / CAPTURE_DEBUG_LOG_FILENAME, 
+        force_level=logging.DEBUG if force_debug else None
+    )
+
+    if force_debug:
+        print(f"DEBUG MODE ENABLED. Opening log directory: {user_data_dir}")
+        try:
+            os.startfile(user_data_dir)
+        except Exception as e:
+            print(f"Failed to open log directory: {e}")
 
     # Enforce single instance via lock/mutex.
     instance_lock = is_already_running()
@@ -82,6 +98,7 @@ def main():
         try:
             os.startfile(config_path.parent)
         except Exception as exc:
+            logging.getLogger(__name__).error(f"Failed to open config dir: {exc}")
             QtWidgets.QMessageBox.warning(
                 None,
                 translate("open_dir_failed"),
@@ -123,6 +140,7 @@ def main():
             on_uninstall,
         )
     except Exception as exc:
+        logging.getLogger(__name__).error(f"Failed to initialize settings dialog: {exc}")
         QtWidgets.QMessageBox.warning(
             None,
             translate("error"),
@@ -138,7 +156,3 @@ def main():
 
     # Enter event loop (build_installer.ps1 checks LASTEXITCODE).
     sys.exit(app.exec())
-
-
-
-

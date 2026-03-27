@@ -15,4 +15,5 @@ dist-installer/
 hushsnap_config.json
 hushsnap_capture_error.log
 hushsnap_capture_debug.log
-.vscode/settings.json
+.vscode/
+.vs/

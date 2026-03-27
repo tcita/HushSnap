@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import ctypes
+import logging
 from ctypes import wintypes
 from pathlib import Path
 
@@ -40,6 +41,8 @@ _close_handle.argtypes = (wintypes.HANDLE,)
 _close_handle.restype = wintypes.BOOL
 _ERROR_ALREADY_EXISTS = 183
 
+logger = logging.getLogger(__name__)
+
 
 # --- Path constants ---
 _is_frozen = getattr(sys, "frozen", False)
@@ -49,25 +52,32 @@ APP_DIR = Path(sys.executable).resolve().parent if _is_frozen else Path(__file__
 def get_user_data_dir():
     """
     Get the user-writable data directory (%LOCALAPPDATA%\\HushSnap).
+    Uses a different folder name for development runs to avoid interference.
     
     Returns:
         Path: Path object for the user data directory.
     """
+    folder_name = "HushSnap" if _is_frozen else "HushSnap_Dev"
     local_app_data = os.getenv("LOCALAPPDATA")
+    
     if local_app_data:
-        path = Path(local_app_data) / "HushSnap"
+        path = Path(local_app_data) / folder_name
     else:
         # Fallback: use a hidden folder under home if LOCALAPPDATA is unavailable.
-        path = Path.home() / ".hushsnap"
+        path = Path.home() / f".{folder_name.lower()}"
 
     # Ensure directory exists to avoid subsequent read/write errors.
     try:
         path.mkdir(parents=True, exist_ok=True)
-    except Exception:
+    except Exception as e:
         # Fallback to system temp directory if creation fails (e.g. permission issues).
         import tempfile
+        logger.debug(f"Failed to create user data dir at {path}: {e}. Falling back to temp.")
         path = Path(tempfile.gettempdir()) / "HushSnap"
-        path.mkdir(parents=True, exist_ok=True)
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+        except Exception as e2:
+            print(f"CRITICAL: Failed to create temp data dir: {e2}", file=sys.stderr)
     return path
 
 # Store config in user data directory to avoid install-directory write permission issues.
@@ -115,8 +125,8 @@ def _ensure_default_config_exists(config_path):
             json.dumps(config_data, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed to ensure default config exists at {config_path}: {e}")
 
 
 def _parse_virtual_key(token):
@@ -225,8 +235,8 @@ def _load_config_data(config_path):
         config_data = json.loads(config_path.read_text(encoding="utf-8"))
         if isinstance(config_data, dict):
             return config_data
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed to load config data from {config_path}: {e}")
     return {}
 
 
@@ -245,7 +255,10 @@ def _ensure_hotkey_note_field(config_path):
     if config_data.get("_hotkey_note") == note:
         return
     config_data["_hotkey_note"] = note
-    _write_config_data(config_path, config_data)
+    try:
+        _write_config_data(config_path, config_data)
+    except Exception as e:
+        logger.debug(f"Failed to update hotkey note: {e}")
 
 
 def read_hotkey_text_from_config(config_path):
@@ -269,7 +282,10 @@ def update_hotkey_in_config(config_path, hotkey_text):
         config_data["language"] = UI_LANG_AUTO
     config_data["_hotkey_note"] = _hotkey_warning_note()
 
-    _write_config_data(config_path, config_data)
+    try:
+        _write_config_data(config_path, config_data)
+    except Exception as e:
+        logger.error(f"Failed to update hotkey in config: {e}")
 
 
 def load_hotkey_setting():
@@ -288,8 +304,9 @@ def load_hotkey_setting():
             read_hotkey_text_from_config(config_path)
         )
         return modifier_mask, virtual_key, canonical_hotkey, config_path
-    except Exception:
+    except Exception as e:
         # Fallback to default system hotkey if parsing fails.
+        logger.warning(f"Failed to load hotkey from config, falling back to default: {e}")
         modifier_mask, virtual_key, canonical_hotkey = parse_hotkey(DEFAULT_HOTKEY)
         return modifier_mask, virtual_key, canonical_hotkey, config_path
 
@@ -305,8 +322,8 @@ def _read_ui_lang_from_config(config_path):
             normalized_language = configured_language.strip().lower()
             if normalized_language in {UI_LANG_AUTO, UI_LANG_EN, UI_LANG_ZH}:
                 return normalized_language
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed to read UI language from config: {e}")
     return UI_LANG_AUTO
 
 
@@ -318,7 +335,8 @@ def _read_ui_lang_from_installer_hint(config_path):
     hint_path = config_path.parent / INSTALLER_LANG_FILENAME
     try:
         hint_value = hint_path.read_text(encoding="utf-8").strip().lower()
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Failed to read installer language hint: {e}")
         return None
 
     if hint_value in {UI_LANG_EN, UI_LANG_ZH}:

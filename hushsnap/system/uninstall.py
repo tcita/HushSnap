@@ -4,11 +4,13 @@ Finds the Inno Setup uninstaller in app directory and guides uninstall flow.
 """
 
 import subprocess
+import logging
 from PyQt6 import QtWidgets
 
 from ..config import get_app_dir
 from ..constants import UNINSTALLER_GLOB
 
+logger = logging.getLogger(__name__)
 
 def find_uninstaller(app_dir):
     """
@@ -27,8 +29,9 @@ def find_uninstaller(app_dir):
         try:
             stat = candidate_path.stat()
             uninstaller_candidates.append((stat.st_mtime, candidate_path))
-        except Exception:
+        except Exception as e:
             # Fault tolerance: if stat fails, give this candidate lowest priority.
+            logger.debug(f"Failed to stat uninstaller candidate {candidate_path}: {e}")
             uninstaller_candidates.append((0.0, candidate_path))
 
     if not uninstaller_candidates:
@@ -52,6 +55,7 @@ def launch_uninstaller(translate, on_quit):
     uninstaller_path = find_uninstaller(app_dir)
     if not uninstaller_path:
         # If no uninstaller is found, guide user to manual uninstall path.
+        logger.warning(f"Uninstaller not found in {app_dir}")
         QtWidgets.QMessageBox.warning(
             None,
             translate("uninstaller_not_found_title"),
@@ -72,8 +76,10 @@ def launch_uninstaller(translate, on_quit):
 
     try:
         # Start uninstaller process.
+        logger.info(f"Launching uninstaller: {uninstaller_path}")
         subprocess.Popen([str(uninstaller_path)], cwd=str(uninstaller_path.parent))
         # Current app must exit while uninstaller runs to avoid file lock leftovers.
         on_quit()
     except Exception as exc:
+        logger.error(f"Failed to launch uninstaller {uninstaller_path}: {exc}")
         QtWidgets.QMessageBox.warning(None, translate("launch_uninstall_failed"), str(exc))

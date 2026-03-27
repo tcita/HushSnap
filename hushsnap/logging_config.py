@@ -9,26 +9,22 @@ import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-# Environment variable that controls the logging level (e.g. $env:HUSHSNAP_LOG_LEVEL = "DEBUG")
-LOG_LEVEL_ENV = "HUSHSNAP_LOG_LEVEL"
 # Default logging level
 DEFAULT_LEVEL = logging.INFO
 
-def setup_logging(log_file_path: Path):
+def setup_logging(log_file_path: Path, force_level=None):
     """
     Initialize the global logging system.
     Includes:
     - Automatic file rotation: 5MB per file, keep 1 backup.
-    - Dynamic level from environment variable (default INFO).
+    - Level is DEBUG if force_level is set, otherwise INFO.
     - Formatted output with timestamp, level, module, and line number.
     
     Args:
         log_file_path (Path): Full path to the log file.
+        force_level (int, optional): Explicit logging level (e.g. logging.DEBUG).
     """
-    # Resolve the log level (default INFO).
-    level_str = os.environ.get(LOG_LEVEL_ENV, "INFO").upper().strip()
-    # Get the logging level attribute by name; use DEFAULT_LEVEL if it doesn't exist.
-    level = getattr(logging, level_str, DEFAULT_LEVEL)
+    level = force_level if force_level is not None else DEFAULT_LEVEL
 
 
 

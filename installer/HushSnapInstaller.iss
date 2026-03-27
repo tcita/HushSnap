@@ -81,10 +81,8 @@ Name: "{group}\{cm:UninstallApp}"; Filename: "{app}\unins000.exe"; WorkingDir: "
 
 [UninstallDelete]
 Type: files; Name: "{autostartup}\HushSnap.lnk"
-Type: files; Name: "{app}\hushsnap_config.json"
-Type: files; Name: "{app}\hushsnap_capture_debug.log"
-Type: files; Name: "{app}\hushsnap_capture_error.log"
-Type: files; Name: "{app}\{#MyInstallerLangHintName}"
+Type: filesandordirs; Name: "{localappdata}\{#MyAppName}"
+; In case it was installed elsewhere, also try to clean up the install dir if it's empty
 Type: dirifempty; Name: "{app}"
 
 [UninstallRun]

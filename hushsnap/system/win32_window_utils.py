@@ -1,4 +1,5 @@
 import ctypes
+import logging
 from ctypes import wintypes
 
 # Win32 Constants
@@ -17,8 +18,7 @@ Win32 window utility module.
 Provides low-level Windows helper functions, including HWND handling and window-state auditing.
 """
 
-import ctypes
-from ctypes import wintypes
+logger = logging.getLogger(__name__)
 
 # Win32 constant definitions
 GWL_STYLE = -16           # Window style index
@@ -49,8 +49,8 @@ def get_hwnd_value(hwnd):
     try:
         if hasattr(hwnd, "__index__"):
             return int(hwnd.__index__())
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed __index__ conversion for {hwnd}: {e}")
         
     # 3. Try direct integer conversion (including numeric strings).
     try:
@@ -60,8 +60,8 @@ def get_hwnd_value(hwnd):
                 return int(hwnd, 0)
             return 0
         return int(hwnd)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed direct int conversion for {hwnd}: {e}")
 
     # 4. Handle ctypes objects.
     try:
@@ -73,8 +73,8 @@ def get_hwnd_value(hwnd):
         if hasattr(hwnd, "_as_parameter_") or isinstance(hwnd, (ctypes.c_void_p, wintypes.HANDLE)):
             casted = ctypes.cast(hwnd, ctypes.c_void_p)
             return int(casted.value or 0)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed ctypes conversion for {hwnd}: {e}")
         
     return 0
 

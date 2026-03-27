@@ -3,6 +3,7 @@ HushSnap settings dialog module.
 Provides UI to view current hotkey, capture/change a new hotkey, and launch uninstall.
 """
 
+import logging
 from PyQt6 import QtCore, QtWidgets
 
 from ..config import parse_hotkey, update_hotkey_in_config
@@ -14,6 +15,8 @@ from .styles import (
     SETTINGS_UNINSTALL_BUTTON_MAX_WIDTH,
     SETTINGS_UNINSTALL_BUTTON_STYLE,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _qt_key_to_hotkey_token(key):
