@@ -22,7 +22,7 @@ python HushSnap.py --debug
 **Key Features of Debug Mode:**
 - **Isolation:** Running from source uses `%LOCALAPPDATA%\HushSnap_Dev`, ensuring your production settings remain untouched.
 - **Traceability:** Sets log level to `DEBUG` and opens the log folder immediately upon startup.
-- **Live Output:** Standard `print()` statements are shown in the terminal for real-time monitoring.
+- **Live Output:** Real-time logs are streamed to the terminal via the logging console handler (`StreamHandler`).
 
 ---
 
