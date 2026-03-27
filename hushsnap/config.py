@@ -77,7 +77,7 @@ def get_user_data_dir():
         try:
             path.mkdir(parents=True, exist_ok=True)
         except Exception as e2:
-            print(f"CRITICAL: Failed to create temp data dir: {e2}", file=sys.stderr)
+            logger.critical(f"Failed to create temp data dir: {e2}")
     return path
 
 # Store config in user data directory to avoid install-directory write permission issues.

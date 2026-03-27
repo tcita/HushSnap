@@ -81,5 +81,9 @@ def launch_uninstaller(translate, on_quit):
         # Current app must exit while uninstaller runs to avoid file lock leftovers.
         on_quit()
     except Exception as exc:
-        logger.error(f"Failed to launch uninstaller {uninstaller_path}: {exc}")
-        QtWidgets.QMessageBox.warning(None, translate("launch_uninstall_failed"), str(exc))
+        logger.exception(f"Failed to launch uninstaller {uninstaller_path}: {exc}")
+        QtWidgets.QMessageBox.warning(
+            None,
+            translate("launch_uninstall_failed"),
+            translate("launch_uninstall_failed_body"),
+        )

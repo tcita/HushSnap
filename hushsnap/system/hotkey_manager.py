@@ -4,6 +4,7 @@ Handles global hotkey register/unregister, conflict handling, and dynamic config
 """
 
 import ctypes
+import logging
 from PyQt6 import QtCore, QtWidgets
 
 from ..config import parse_hotkey, read_hotkey_text_from_config
@@ -13,6 +14,8 @@ from ..constants import (
     TRAY_MSG_MEDIUM_MS,
     TRAY_MSG_SHORT_MS,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class HotkeyManager:
@@ -132,9 +135,10 @@ class HotkeyManager:
                 read_hotkey_text_from_config(self.config_path)
             )
         except Exception as exc:
+            logger.exception(f"Failed to reload hotkey from config {self.config_path}: {exc}")
             self.tray_icon.showMessage(
                 self.translate("hotkey_not_updated_title"),
-                self.translate("hotkey_invalid_config", hotkey=self.current_hotkey_name, error=exc),
+                self.translate("hotkey_invalid_config", hotkey=self.current_hotkey_name),
                 QtWidgets.QSystemTrayIcon.MessageIcon.Warning,
                 TRAY_MSG_MEDIUM_MS,
             )

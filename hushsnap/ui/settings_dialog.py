@@ -157,10 +157,11 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
         try:
             _, _, canonical_hotkey = parse_hotkey(requested_hotkey)
         except Exception as exc:
+            logger.debug(f"Rejected invalid hotkey input '{requested_hotkey}': {exc}")
             self.captured_hotkey = None
             self.save_button.setEnabled(False)
             self._set_feedback(
-                self.translate("settings_hotkey_invalid", error=exc),
+                self.translate("settings_hotkey_invalid"),
                 is_error=True,
             )
             event.accept()
@@ -269,8 +270,9 @@ class SettingsDialogController:
                 # Write config file.
                 update_hotkey_in_config(self.config_path, canonical_hotkey)
             except Exception as exc:
+                logger.exception(f"Failed to save hotkey '{canonical_hotkey}' to config: {exc}")
                 set_status(
-                    self.translate("settings_hotkey_save_failed", error=exc),
+                    self.translate("settings_hotkey_save_failed"),
                     is_error=True,
                 )
                 return

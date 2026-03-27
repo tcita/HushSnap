@@ -21,17 +21,41 @@ from .constants import CAPTURE_DEBUG_LOG_FILENAME
 from .logging_config import setup_logging
 
 
+def exception_hook(exctype, value, tb):
+    """
+    Global unhandled exception handler.
+    Logs the error with stack trace and shows a message box to the user.
+    """
+    logger = logging.getLogger("HushSnap")
+    # 1. Log the full traceback to the log file.
+    logger.critical("Unhandled exception occurred:", exc_info=(exctype, value, tb))
+    
+    # 2. If a QApplication instance exists, show a graphical error dialog.
+    if QtWidgets.QApplication.instance():
+        # Use a simple dialog as a last resort.
+        QtWidgets.QMessageBox.critical(
+            None,
+            "HushSnap - Critical Error",
+            "An unexpected error occurred and the application must close.\n\n"
+            "The full error details have been saved to the log file.",
+        )
+    
+    # 3. Fallback to default Python exception behavior.
+    sys.__excepthook__(exctype, value, tb)
+
+
 def main():
     """
     Main application entry point.
     Flow:
     1. Parse CLI arguments for debug mode.
     2. Initialize logging and data directory.
-    3. Check single-instance state.
-    4. Load user config and i18n resources.
-    5. Wire hotkey listener and capture window launch logic.
-    6. Build system tray icon and settings dialog.
-    7. Start Qt event loop.
+    3. Install global exception hook.
+    4. Check single-instance state.
+    5. Load user config and i18n resources.
+    6. Wire hotkey listener and capture window launch logic.
+    7. Build system tray icon and settings dialog.
+    8. Start Qt event loop.
     """
     # 1. Parse CLI arguments
     force_debug = "--debug" in sys.argv
@@ -42,13 +66,17 @@ def main():
         user_data_dir / CAPTURE_DEBUG_LOG_FILENAME, 
         force_level=logging.DEBUG if force_debug else None
     )
+    logger = logging.getLogger(__name__)
+
+    # 3. Install global exception hook as early as possible after logging is ready.
+    sys.excepthook = exception_hook
 
     if force_debug:
-        print(f"DEBUG MODE ENABLED. Opening log directory: {user_data_dir}")
+        logger.info(f"DEBUG MODE ENABLED. Opening log directory: {user_data_dir}")
         try:
             os.startfile(user_data_dir)
         except Exception as e:
-            print(f"Failed to open log directory: {e}")
+            logger.error(f"Failed to open log directory: {e}")
 
     # Enforce single instance via lock/mutex.
     instance_lock = is_already_running()
@@ -98,11 +126,11 @@ def main():
         try:
             os.startfile(config_path.parent)
         except Exception as exc:
-            logging.getLogger(__name__).error(f"Failed to open config dir: {exc}")
+            logging.getLogger(__name__).exception(f"Failed to open config dir: {exc}")
             QtWidgets.QMessageBox.warning(
                 None,
                 translate("open_dir_failed"),
-                str(exc),
+                translate("open_dir_failed_body"),
             )
 
     def on_uninstall():
@@ -140,11 +168,11 @@ def main():
             on_uninstall,
         )
     except Exception as exc:
-        logging.getLogger(__name__).error(f"Failed to initialize settings dialog: {exc}")
+        logging.getLogger(__name__).exception(f"Failed to initialize settings dialog: {exc}")
         QtWidgets.QMessageBox.warning(
             None,
             translate("error"),
-            translate("settings_init_failed", error=exc),
+            translate("settings_init_failed"),
         )
         settings_action.setEnabled(False)
     else:

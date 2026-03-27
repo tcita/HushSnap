@@ -39,7 +39,7 @@ def setup_logging(log_file_path: Path, force_level=None):
         # Ensure the log directory exists.
         log_file_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # RotatingFileHandler: roll over when file exceeds maxBytes.
+        # 1. File Handler: RotatingFileHandler (roll over when file exceeds maxBytes)
         file_handler = RotatingFileHandler(
             log_file_path, 
             maxBytes=5*1024*1024, # 5MB
@@ -49,13 +49,17 @@ def setup_logging(log_file_path: Path, force_level=None):
         file_handler.setFormatter(formatter)
         file_handler.setLevel(level)
 
+        # 2. Console Handler: StreamHandler (output to stdout for real-time monitoring)
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(formatter)
+        console_handler.setLevel(level)
+
         # Ensure that the logging initialization is idempotent.
         logging.basicConfig(
             level=level, 
-            handlers=[file_handler], 
+            handlers=[file_handler, console_handler], 
             force=True
         )
-        
         
         logging.info(f"Logging initialized. Level: {logging.getLevelName(level)}, Path: {log_file_path}")
     
