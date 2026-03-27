@@ -11,9 +11,6 @@ dist-installer/
 # Executables
 *.exe
 
-# Configuration and logs
-hushsnap_config.json
-hushsnap_capture_error.log
-hushsnap_capture_debug.log
+
 .vscode/
 .vs/
