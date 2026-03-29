@@ -18,8 +18,14 @@ SETTINGS_UNINSTALL_BUTTON_MAX_WIDTH = 84
 SETTINGS_ERROR_COLOR = "#B00020"
 
 # QSS (Qt Style Sheets)
-# Special red style for uninstall button to emphasize caution
+# Muted text-link style for uninstall action to keep it visible but low emphasis
 SETTINGS_UNINSTALL_BUTTON_STYLE = (
-    "QPushButton { background-color: #C62828; color: white; border: 1px solid #9E1F1F; padding: 2px 8px; }"
-    "QPushButton:hover { background-color: #B71C1C; }"
+    "QPushButton {"
+    " background: transparent;"
+    " border: none;"
+    " color: #7A7A7A;"
+    " padding: 0 2px;"
+    "}"
+    "QPushButton:hover { color: #5F5F5F; }"
+    "QPushButton:pressed { color: #4A4A4A; }"
 )
