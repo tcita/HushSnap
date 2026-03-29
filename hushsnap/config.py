@@ -288,6 +288,25 @@ def update_hotkey_in_config(config_path, hotkey_text):
         logger.error(f"Failed to update hotkey in config: {e}")
 
 
+def get_ocr_lang_from_config(config_path):
+    """Read OCR language preference from config."""
+    try:
+        config_data = _load_config_data(config_path)
+        return config_data.get("ocr_language", "en-US")
+    except Exception:
+        return "en-US"
+
+
+def update_ocr_lang_in_config(config_path, ocr_lang):
+    """Update OCR language preference in config."""
+    try:
+        config_data = _load_config_data(config_path)
+        config_data["ocr_language"] = ocr_lang
+        _write_config_data(config_path, config_data)
+    except Exception as e:
+        logger.error(f"Failed to update OCR language in config: {e}")
+
+
 def load_hotkey_setting():
     """
     Entry point for loading hotkey settings, with initialization and fault tolerance.

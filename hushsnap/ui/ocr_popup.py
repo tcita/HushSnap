@@ -7,11 +7,14 @@ from PyQt6 import QtCore, QtWidgets
 
 class OcrPopup(QtWidgets.QWidget):
     """Semi-transparent floating popup for recognized OCR text."""
+    language_changed = QtCore.pyqtSignal(str)
 
     def __init__(self, translate, parent=None):
         super().__init__(parent)
         self.translate = translate
         self._drag_pos = None
+        self._last_pixmap = None
+        self._is_refreshing = False
 
         self.setWindowFlags(
             QtCore.Qt.WindowType.Tool
@@ -21,7 +24,7 @@ class OcrPopup(QtWidgets.QWidget):
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, False)
 
-        self.resize(560, 320)
+        self.resize(560, 360)
 
         outer = QtWidgets.QVBoxLayout(self)
         outer.setContentsMargins(14, 14, 14, 14)
@@ -39,6 +42,14 @@ class OcrPopup(QtWidgets.QWidget):
         self.title_label.setObjectName("ocrTitle")
         header.addWidget(self.title_label)
         header.addStretch(1)
+
+        # Language Selector
+        self.lang_combo = QtWidgets.QComboBox()
+        self.lang_combo.setObjectName("ocrLangCombo")
+        self.lang_combo.addItems(["en-US", "zh-CN"])
+        self.lang_combo.setFixedWidth(90)
+        self.lang_combo.currentTextChanged.connect(self._on_lang_changed)
+        header.addWidget(self.lang_combo)
 
         close_btn = QtWidgets.QPushButton("x")
         close_btn.setObjectName("ocrCloseBtn")
@@ -61,21 +72,28 @@ class OcrPopup(QtWidgets.QWidget):
 
         self.setStyleSheet(
             "#ocrPanel {"
-            " background-color: rgba(18, 22, 28, 218);"
+            " background-color: rgba(18, 22, 28, 228);"
             " border: 1px solid rgba(255, 255, 255, 42);"
             " border-radius: 14px;"
             "}"
             "#ocrTitle {"
             " color: #F1F5F9;"
-            " font-size: 20px;"
+            " font-size: 18px;"
             " font-weight: 600;"
             "}"
+            "#ocrLangCombo {"
+            " background: rgba(255, 255, 255, 20);"
+            " border: 1px solid rgba(255, 255, 255, 30);"
+            " border-radius: 6px;"
+            " color: #F1F5F9;"
+            " padding: 2px 5px;"
+            "}"
             "#ocrText {"
-            " background: rgba(255, 255, 255, 16);"
+            " background: rgba(255, 255, 255, 12);"
             " border: 1px solid rgba(255, 255, 255, 20);"
             " border-radius: 10px;"
             " color: #F8FAFC;"
-            " font-size: 17px;"
+            " font-size: 16px;"
             " padding: 10px;"
             "}"
             "#ocrCloseBtn {"
@@ -88,6 +106,31 @@ class OcrPopup(QtWidgets.QWidget):
             " background: rgba(255, 255, 255, 34);"
             "}"
         )
+
+    def _on_lang_changed(self, lang):
+        if not self._is_refreshing:
+            self.language_changed.emit(lang)
+
+    def show_text(self, text, pixmap=None, lang=None):
+        """Display OCR text and show popup near bottom-right corner."""
+        self._is_refreshing = True
+        self._last_pixmap = pixmap
+        if lang:
+            self.lang_combo.setCurrentText(lang)
+        self.title_label.setText(self.translate("ocr_popup_title"))
+        self.text_edit.setPlainText(text)
+        self._is_refreshing = False
+        
+        if not self.isVisible():
+            self._place_bottom_right()
+            self.show()
+        
+        self.raise_()
+        self.activateWindow()
+
+    @property
+    def last_pixmap(self):
+        return self._last_pixmap
 
     def mousePressEvent(self, event):
         """Enable dragging the window."""
@@ -105,15 +148,6 @@ class OcrPopup(QtWidgets.QWidget):
         """End drag operation."""
         self._drag_pos = None
         event.accept()
-
-    def show_text(self, text):
-        """Display OCR text and show popup near bottom-right corner."""
-        self.title_label.setText(self.translate("ocr_popup_title"))
-        self.text_edit.setPlainText(text)
-        self._place_bottom_right()
-        self.show()
-        self.raise_()
-        self.activateWindow()
 
     def _place_bottom_right(self):
         screen = QtWidgets.QApplication.primaryScreen()

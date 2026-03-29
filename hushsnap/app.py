@@ -12,6 +12,8 @@ from .config import (
     load_hotkey_setting,
     resolve_ui_lang,
     ui_text,
+    get_ocr_lang_from_config,
+    update_ocr_lang_in_config,
 )
 from .hotkey import Communicator, HotkeyFilter
 from .system.hotkey_manager import HotkeyManager
@@ -28,7 +30,7 @@ from .logging_config import setup_logging
 class OcrResultBridge(QtCore.QObject):
     """Thread-safe bridge for OCR worker result back to Qt main thread."""
 
-    finished = QtCore.pyqtSignal(str, str)
+    finished = QtCore.pyqtSignal(str, str, object) # text, error, pixmap
 
 
 def _is_explorer_open_for_path(target_path):
@@ -120,6 +122,8 @@ def main():
     """
     # 1. Parse CLI arguments
     force_debug = "--debug" in sys.argv
+    force_ocr = "--debug_ocr" in sys.argv
+    save_ocr_debug_image = force_debug or force_ocr
     user_data_dir = get_user_data_dir()
     
     # 2. Initialize logging
@@ -165,6 +169,8 @@ def main():
 
     ocr_bridge = OcrResultBridge()
     ocr_popup = OcrPopup(translate)
+    # Set initial language from config
+    ocr_popup.lang_combo.setCurrentText(get_ocr_lang_from_config(config_path))
     ocr_action = None
 
     def on_capture_completed(captured_pixmap):
@@ -175,18 +181,20 @@ def main():
             return
 
         pixmap_for_ocr = captured_pixmap.copy()
+        current_lang = ocr_popup.lang_combo.currentText()
+        debug_dir = user_data_dir if save_ocr_debug_image else None
 
-        def worker():
+        def worker(lang):
             try:
-                text = recognize_text_from_pixmap(pixmap_for_ocr)
-                ocr_bridge.finished.emit(text, "")
+                text = recognize_text_from_pixmap(pixmap_for_ocr, language_tag=lang, debug_dir=debug_dir)
+                ocr_bridge.finished.emit(text, "", pixmap_for_ocr)
             except Exception as exc:
-                logger.exception(f"OCR failed: {exc}")
-                ocr_bridge.finished.emit("", str(exc))
+                logging.getLogger(__name__).exception(f"OCR failed: {exc}")
+                ocr_bridge.finished.emit("", str(exc), pixmap_for_ocr)
 
-        threading.Thread(target=worker, daemon=True).start()
+        threading.Thread(target=worker, args=(current_lang,), daemon=True).start()
 
-    def on_ocr_finished(text, error):
+    def on_ocr_finished(text, error, pixmap):
         if ocr_action is None or not ocr_action.isChecked():
             return
 
@@ -209,7 +217,30 @@ def main():
             )
             return
 
-        ocr_popup.show_text(recognized)
+        ocr_popup.show_text(recognized, pixmap=pixmap, lang=ocr_popup.lang_combo.currentText())
+
+    def on_ocr_lang_changed(lang):
+        """Triggered when user changes language in the OCR popup."""
+        # Persist the choice
+        update_ocr_lang_in_config(config_path, lang)
+        
+        pixmap = ocr_popup.last_pixmap
+        if not pixmap or pixmap.isNull():
+            return
+        
+        debug_dir = user_data_dir if save_ocr_debug_image else None
+            
+        def worker():
+            try:
+                text = recognize_text_from_pixmap(pixmap, language_tag=lang, debug_dir=debug_dir)
+                ocr_bridge.finished.emit(text, "", pixmap)
+            except Exception as exc:
+                logging.getLogger(__name__).exception(f"OCR re-run failed: {exc}")
+                ocr_bridge.finished.emit("", str(exc), pixmap)
+        
+        threading.Thread(target=worker, daemon=True).start()
+
+    ocr_popup.language_changed.connect(on_ocr_lang_changed)
 
     def launch_capture_window(screen_pixmap):
         """
@@ -259,6 +290,11 @@ def main():
         open_config_dir,
         app.quit,
     )
+
+    if force_ocr:
+        ocr_action.setChecked(True)
+        logger.info("OCR enabled via --debug_ocr flag.")
+
     ocr_bridge.finished.connect(on_ocr_finished)
 
     def on_ocr_toggled(enabled):
