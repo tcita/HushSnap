@@ -63,6 +63,15 @@ foreach ($w in $shell.Windows()) {{
 exit 1
 """
     try:
+        startupinfo = None
+        creationflags = 0
+        if hasattr(subprocess, "STARTUPINFO"):
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0)
+            startupinfo.wShowWindow = 0
+        if hasattr(subprocess, "CREATE_NO_WINDOW"):
+            creationflags |= subprocess.CREATE_NO_WINDOW
+
         result = subprocess.run(
             [
                 "powershell",
@@ -78,6 +87,8 @@ exit 1
             text=True,
             timeout=2,
             check=False,
+            startupinfo=startupinfo,
+            creationflags=creationflags,
         )
         return result.returncode == 0
     except Exception:

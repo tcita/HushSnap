@@ -424,6 +424,15 @@ foreach ($line in $result.Lines) {{
 [Console]::Write(($payload | ConvertTo-Json -Depth 8 -Compress))
 """
 
+    startupinfo = None
+    creationflags = 0
+    if hasattr(subprocess, "STARTUPINFO"):
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0)
+        startupinfo.wShowWindow = 0
+    if hasattr(subprocess, "CREATE_NO_WINDOW"):
+        creationflags |= subprocess.CREATE_NO_WINDOW
+
     completed = subprocess.run(
         [
             "powershell",
@@ -441,6 +450,8 @@ foreach ($line in $result.Lines) {{
         errors="replace",
         timeout=20,
         check=False,
+        startupinfo=startupinfo,
+        creationflags=creationflags,
     )
 
     if completed.returncode != 0:
