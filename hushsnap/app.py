@@ -135,8 +135,7 @@ def main():
     """
     # 1. Parse CLI arguments
     force_debug = "--debug" in sys.argv
-    force_ocr = "--debug_ocr" in sys.argv
-    save_ocr_debug_image = force_debug or force_ocr
+    save_ocr_debug_image = force_debug
     user_data_dir = get_user_data_dir()
     
     # 2. Initialize logging
