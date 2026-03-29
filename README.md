@@ -9,29 +9,11 @@ Run from source:
 python HushSnap.py --debug
 ```
 
-Enable OCR flow + save OCR preprocessed image (without full debug logging):
-
-```powershell
-python HushSnap.py --debug_ocr
-```
-
-Enable both:
-
-```powershell
-python HushSnap.py --debug --debug_ocr
-```
-
-Packaged EXE also accepts the same flags:
-
-```powershell
-.\dist\HushSnap\HushSnap.exe --debug_ocr
-```
-
 **Key Features of Debug Mode:**
 - **Isolation:** Running from source uses `%LOCALAPPDATA%\HushSnap_Dev`, ensuring your production settings remain untouched.
 - **Traceability:** Sets log level to `DEBUG` and opens the log folder immediately upon startup.
 - **Live Output:** Real-time logs are streamed to the terminal via the logging console handler (`StreamHandler`).
-- **OCR Inspection:** `--debug` or `--debug_ocr` saves the preprocessed OCR image to `ocr_debug_preprocessed.png` in the data directory.
+- **OCR Inspection:** `--debug` saves the preprocessed OCR image to `ocr_debug_preprocessed.png` in the data directory.
   - Source run: `%LOCALAPPDATA%\HushSnap_Dev\ocr_debug_preprocessed.png`
   - Packaged run: `%LOCALAPPDATA%\HushSnap\ocr_debug_preprocessed.png`
 
