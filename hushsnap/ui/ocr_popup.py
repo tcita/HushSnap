@@ -11,6 +11,7 @@ class OcrPopup(QtWidgets.QWidget):
     def __init__(self, translate, parent=None):
         super().__init__(parent)
         self.translate = translate
+        self._drag_pos = None
 
         self.setWindowFlags(
             QtCore.Qt.WindowType.Tool
@@ -51,6 +52,13 @@ class OcrPopup(QtWidgets.QWidget):
         self.text_edit.setObjectName("ocrText")
         layout.addWidget(self.text_edit)
 
+        # Add size grip for resizing frameless window
+        footer = QtWidgets.QHBoxLayout()
+        footer.addStretch(1)
+        sizegrip = QtWidgets.QSizeGrip(self)
+        footer.addWidget(sizegrip)
+        layout.addLayout(footer)
+
         self.setStyleSheet(
             "#ocrPanel {"
             " background-color: rgba(18, 22, 28, 218);"
@@ -59,7 +67,7 @@ class OcrPopup(QtWidgets.QWidget):
             "}"
             "#ocrTitle {"
             " color: #F1F5F9;"
-            " font-size: 15px;"
+            " font-size: 20px;"
             " font-weight: 600;"
             "}"
             "#ocrText {"
@@ -67,7 +75,7 @@ class OcrPopup(QtWidgets.QWidget):
             " border: 1px solid rgba(255, 255, 255, 20);"
             " border-radius: 10px;"
             " color: #F8FAFC;"
-            " font-size: 13px;"
+            " font-size: 17px;"
             " padding: 10px;"
             "}"
             "#ocrCloseBtn {"
@@ -80,6 +88,23 @@ class OcrPopup(QtWidgets.QWidget):
             " background: rgba(255, 255, 255, 34);"
             "}"
         )
+
+    def mousePressEvent(self, event):
+        """Enable dragging the window."""
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
+            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        """Update window position during drag."""
+        if event.buttons() == QtCore.Qt.MouseButton.LeftButton and self._drag_pos is not None:
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        """End drag operation."""
+        self._drag_pos = None
+        event.accept()
 
     def show_text(self, text):
         """Display OCR text and show popup near bottom-right corner."""

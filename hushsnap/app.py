@@ -2,6 +2,7 @@ import os
 import sys
 import logging
 import threading
+import subprocess
 
 from PyQt6 import QtCore, QtWidgets
 
@@ -28,6 +29,57 @@ class OcrResultBridge(QtCore.QObject):
     """Thread-safe bridge for OCR worker result back to Qt main thread."""
 
     finished = QtCore.pyqtSignal(str, str)
+
+
+def _is_explorer_open_for_path(target_path):
+    """
+    Return True when File Explorer already has a window open at target_path.
+    Best-effort check; falls back to False on any query failure.
+    """
+    if sys.platform != "win32":
+        return False
+
+    path = str(target_path).replace("'", "''")
+    script = f"""
+$ErrorActionPreference = 'Stop'
+$target = '{path}'
+$shell = New-Object -ComObject Shell.Application
+foreach ($w in $shell.Windows()) {{
+    try {{
+        if ($null -eq $w -or $null -eq $w.Document) {{ continue }}
+        $folder = $w.Document.Folder
+        if ($null -eq $folder -or $null -eq $folder.Self) {{ continue }}
+        $current = [string]$folder.Self.Path
+        if (-not [string]::IsNullOrWhiteSpace($current) -and
+            [string]::Equals($current, $target, [System.StringComparison]::OrdinalIgnoreCase)) {{
+            exit 0
+        }}
+    }} catch {{
+        continue
+    }}
+}}
+exit 1
+"""
+    try:
+        result = subprocess.run(
+            [
+                "powershell",
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                script,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
 
 
 def exception_hook(exctype, value, tb):
@@ -81,9 +133,13 @@ def main():
     sys.excepthook = exception_hook
 
     if force_debug:
-        logger.info(f"DEBUG MODE ENABLED. Opening log directory: {user_data_dir}")
+        logger.info(f"DEBUG MODE ENABLED. Log directory: {user_data_dir}")
         try:
-            os.startfile(user_data_dir)
+            if _is_explorer_open_for_path(user_data_dir):
+                logger.debug("Debug log directory already open in File Explorer; skip opening.")
+            else:
+                logger.info(f"Opening log directory: {user_data_dir}")
+                os.startfile(user_data_dir)
         except Exception as e:
             logger.error(f"Failed to open log directory: {e}")
 
