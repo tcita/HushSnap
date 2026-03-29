@@ -307,6 +307,25 @@ def update_ocr_lang_in_config(config_path, ocr_lang):
         logger.error(f"Failed to update OCR language in config: {e}")
 
 
+def get_ocr_enabled_from_config(config_path):
+    """Read OCR toggle state from config."""
+    try:
+        config_data = _load_config_data(config_path)
+        return bool(config_data.get("ocr_enabled", False))
+    except Exception:
+        return False
+
+
+def update_ocr_enabled_in_config(config_path, enabled):
+    """Update OCR toggle state in config."""
+    try:
+        config_data = _load_config_data(config_path)
+        config_data["ocr_enabled"] = bool(enabled)
+        _write_config_data(config_path, config_data)
+    except Exception as e:
+        logger.error(f"Failed to update OCR enabled state in config: {e}")
+
+
 def load_hotkey_setting():
     """
     Entry point for loading hotkey settings, with initialization and fault tolerance.

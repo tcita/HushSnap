@@ -14,6 +14,8 @@ from .config import (
     ui_text,
     get_ocr_lang_from_config,
     update_ocr_lang_in_config,
+    get_ocr_enabled_from_config,
+    update_ocr_enabled_in_config,
 )
 from .hotkey import Communicator, HotkeyFilter
 from .system.hotkey_manager import HotkeyManager
@@ -302,13 +304,13 @@ def main():
         app.quit,
     )
 
-    if force_ocr:
-        ocr_action.setChecked(True)
-        logger.info("OCR enabled via --debug_ocr flag.")
+    # Restore OCR toggle state from persisted config.
+    ocr_action.setChecked(get_ocr_enabled_from_config(config_path))
 
     ocr_bridge.finished.connect(on_ocr_finished)
 
     def on_ocr_toggled(enabled):
+        update_ocr_enabled_in_config(config_path, enabled)
         tray_icon.showMessage(
             translate("ocr_toggle_title"),
             translate("ocr_enabled_body") if enabled else translate("ocr_disabled_body"),
