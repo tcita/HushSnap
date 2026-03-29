@@ -1,8 +1,9 @@
 import os
 import sys
 import logging
+import threading
 
-from PyQt6 import QtWidgets
+from PyQt6 import QtCore, QtWidgets
 
 from .capture_window import CaptureWindow
 from .config import (
@@ -14,11 +15,19 @@ from .config import (
 from .hotkey import Communicator, HotkeyFilter
 from .system.hotkey_manager import HotkeyManager
 from .system.uninstall import launch_uninstaller
+from .system.windows_ocr import recognize_text_from_pixmap
+from .ui.ocr_popup import OcrPopup
 from .ui.settings_dialog import SettingsDialogController
 from .ui.tray import create_tray
 from .config import get_user_data_dir
-from .constants import CAPTURE_DEBUG_LOG_FILENAME
+from .constants import CAPTURE_DEBUG_LOG_FILENAME, TRAY_MSG_MEDIUM_MS
 from .logging_config import setup_logging
+
+
+class OcrResultBridge(QtCore.QObject):
+    """Thread-safe bridge for OCR worker result back to Qt main thread."""
+
+    finished = QtCore.pyqtSignal(str, str)
 
 
 def exception_hook(exctype, value, tb):
@@ -96,7 +105,55 @@ def main():
 
     # Hotkey event -> Qt signal (communicator) -> UI callback
     communicator = Communicator()
-    communicator.win = None 
+    communicator.win = None
+
+    ocr_bridge = OcrResultBridge()
+    ocr_popup = OcrPopup(translate)
+    ocr_action = None
+
+    def on_capture_completed(captured_pixmap):
+        """
+        Optional OCR flow after screenshot is already copied to clipboard.
+        """
+        if ocr_action is None or not ocr_action.isChecked():
+            return
+
+        pixmap_for_ocr = captured_pixmap.copy()
+
+        def worker():
+            try:
+                text = recognize_text_from_pixmap(pixmap_for_ocr)
+                ocr_bridge.finished.emit(text, "")
+            except Exception as exc:
+                logger.exception(f"OCR failed: {exc}")
+                ocr_bridge.finished.emit("", str(exc))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def on_ocr_finished(text, error):
+        if ocr_action is None or not ocr_action.isChecked():
+            return
+
+        if error:
+            tray_icon.showMessage(
+                translate("ocr_failed_title"),
+                translate("ocr_failed_body"),
+                QtWidgets.QSystemTrayIcon.MessageIcon.Warning,
+                TRAY_MSG_MEDIUM_MS,
+            )
+            return
+
+        recognized = (text or "").strip()
+        if not recognized:
+            tray_icon.showMessage(
+                translate("ocr_empty_title"),
+                translate("ocr_empty_body"),
+                QtWidgets.QSystemTrayIcon.MessageIcon.Information,
+                TRAY_MSG_MEDIUM_MS,
+            )
+            return
+
+        ocr_popup.show_text(recognized)
 
     def launch_capture_window(screen_pixmap):
         """
@@ -104,10 +161,10 @@ def main():
         :param screen_pixmap: Pre-captured fullscreen bitmap from HotkeyFilter.
         """
         if communicator.win:
-            return 
+            return
 
         # Create capture window instance.
-        communicator.win = CaptureWindow(screen_pixmap)
+        communicator.win = CaptureWindow(screen_pixmap, on_captured=on_capture_completed)
 
         # Reset communicator.win to None when CaptureWindow is destroyed.
         communicator.win.destroyed.connect(lambda: setattr(communicator, "win", None))
@@ -138,14 +195,25 @@ def main():
         launch_uninstaller(translate, app.quit)
 
     # Create system tray icon and right-click menu entry points.
-    tray_icon, settings_action = create_tray(
+    tray_icon, settings_action, ocr_action = create_tray(
         app,
         translate,
-        communicator.trigger.emit, # Allow screenshot trigger from tray menu.
+        communicator.trigger.emit,  # Allow screenshot trigger from tray menu.
         None,
         open_config_dir,
         app.quit,
     )
+    ocr_bridge.finished.connect(on_ocr_finished)
+
+    def on_ocr_toggled(enabled):
+        tray_icon.showMessage(
+            translate("ocr_toggle_title"),
+            translate("ocr_enabled_body") if enabled else translate("ocr_disabled_body"),
+            QtWidgets.QSystemTrayIcon.MessageIcon.Information,
+            TRAY_MSG_MEDIUM_MS,
+        )
+
+    ocr_action.toggled.connect(on_ocr_toggled)
 
     # Hotkey manager handles registration/unregistration with Windows.
     hotkey_manager = HotkeyManager(
