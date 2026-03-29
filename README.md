@@ -9,6 +9,12 @@ Run from source:
 python HushSnap.py --debug
 ```
 
+Run packaged EXE in debug mode:
+
+```powershell
+.\dist\HushSnap\HushSnap.exe --debug
+```
+
 **Key Features of Debug Mode:**
 - **Isolation:** Running from source uses `%LOCALAPPDATA%\HushSnap_Dev`, ensuring your production settings remain untouched.
 - **Traceability:** Sets log level to `DEBUG` and opens the log folder immediately upon startup.
