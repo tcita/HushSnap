@@ -48,20 +48,5 @@ If you only need to test the packaged app without creating an installer, run:
 pyinstaller --clean HushSnap.spec
 ```
 
-### 3) Optional: Add App to Startup (Manual Test)
-To test the application's startup behavior on your local machine:
-```powershell
-$exe = (Resolve-Path '.\dist\HushSnap\HushSnap.exe').Path
-$startup = [Environment]::GetFolderPath('Startup')
-$linkPath = Join-Path $startup 'HushSnap.lnk'
-
-$wsh = New-Object -ComObject WScript.Shell
-$shortcut = $wsh.CreateShortcut($linkPath)
-$shortcut.TargetPath = $exe
-$shortcut.WorkingDirectory = Split-Path $exe
-$shortcut.IconLocation = "$exe,0"
-$shortcut.Save()
-```
-
 ---
 
