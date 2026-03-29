@@ -1,8 +1,10 @@
 import os
 import sys
 import logging
+import threading
+import subprocess
 
-from PyQt6 import QtWidgets
+from PyQt6 import QtCore, QtWidgets
 
 from .capture_window import CaptureWindow
 from .config import (
@@ -10,15 +12,87 @@ from .config import (
     load_hotkey_setting,
     resolve_ui_lang,
     ui_text,
+    get_ocr_lang_from_config,
+    update_ocr_lang_in_config,
 )
 from .hotkey import Communicator, HotkeyFilter
 from .system.hotkey_manager import HotkeyManager
 from .system.uninstall import launch_uninstaller
+from .system.windows_ocr import recognize_text_from_pixmap
+from .ui.ocr_popup import OcrPopup
 from .ui.settings_dialog import SettingsDialogController
 from .ui.tray import create_tray
 from .config import get_user_data_dir
-from .constants import CAPTURE_DEBUG_LOG_FILENAME
+from .constants import CAPTURE_DEBUG_LOG_FILENAME, TRAY_MSG_MEDIUM_MS
 from .logging_config import setup_logging
+
+
+class OcrResultBridge(QtCore.QObject):
+    """Thread-safe bridge for OCR worker result back to Qt main thread."""
+
+    finished = QtCore.pyqtSignal(str, str, object) # text, error, pixmap
+
+
+def _is_explorer_open_for_path(target_path):
+    """
+    Return True when File Explorer already has a window open at target_path.
+    Best-effort check; falls back to False on any query failure.
+    """
+    if sys.platform != "win32":
+        return False
+
+    path = str(target_path).replace("'", "''")
+    script = f"""
+$ErrorActionPreference = 'Stop'
+$target = '{path}'
+$shell = New-Object -ComObject Shell.Application
+foreach ($w in $shell.Windows()) {{
+    try {{
+        if ($null -eq $w -or $null -eq $w.Document) {{ continue }}
+        $folder = $w.Document.Folder
+        if ($null -eq $folder -or $null -eq $folder.Self) {{ continue }}
+        $current = [string]$folder.Self.Path
+        if (-not [string]::IsNullOrWhiteSpace($current) -and
+            [string]::Equals($current, $target, [System.StringComparison]::OrdinalIgnoreCase)) {{
+            exit 0
+        }}
+    }} catch {{
+        continue
+    }}
+}}
+exit 1
+"""
+    try:
+        startupinfo = None
+        creationflags = 0
+        if hasattr(subprocess, "STARTUPINFO"):
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0)
+            startupinfo.wShowWindow = 0
+        if hasattr(subprocess, "CREATE_NO_WINDOW"):
+            creationflags |= subprocess.CREATE_NO_WINDOW
+
+        result = subprocess.run(
+            [
+                "powershell",
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                script,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+            startupinfo=startupinfo,
+            creationflags=creationflags,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
 
 
 def exception_hook(exctype, value, tb):
@@ -59,6 +133,8 @@ def main():
     """
     # 1. Parse CLI arguments
     force_debug = "--debug" in sys.argv
+    force_ocr = "--debug_ocr" in sys.argv
+    save_ocr_debug_image = force_debug or force_ocr
     user_data_dir = get_user_data_dir()
     
     # 2. Initialize logging
@@ -72,9 +148,13 @@ def main():
     sys.excepthook = exception_hook
 
     if force_debug:
-        logger.info(f"DEBUG MODE ENABLED. Opening log directory: {user_data_dir}")
+        logger.info(f"DEBUG MODE ENABLED. Log directory: {user_data_dir}")
         try:
-            os.startfile(user_data_dir)
+            if _is_explorer_open_for_path(user_data_dir):
+                logger.debug("Debug log directory already open in File Explorer; skip opening.")
+            else:
+                logger.info(f"Opening log directory: {user_data_dir}")
+                os.startfile(user_data_dir)
         except Exception as e:
             logger.error(f"Failed to open log directory: {e}")
 
@@ -96,7 +176,82 @@ def main():
 
     # Hotkey event -> Qt signal (communicator) -> UI callback
     communicator = Communicator()
-    communicator.win = None 
+    communicator.win = None
+
+    ocr_bridge = OcrResultBridge()
+    ocr_popup = OcrPopup(translate)
+    # Set initial language from config
+    ocr_popup.lang_combo.setCurrentText(get_ocr_lang_from_config(config_path))
+    ocr_action = None
+
+    def on_capture_completed(captured_pixmap):
+        """
+        Optional OCR flow after screenshot is already copied to clipboard.
+        """
+        if ocr_action is None or not ocr_action.isChecked():
+            return
+
+        pixmap_for_ocr = captured_pixmap.copy()
+        current_lang = ocr_popup.lang_combo.currentText()
+        debug_dir = user_data_dir if save_ocr_debug_image else None
+
+        def worker(lang):
+            try:
+                text = recognize_text_from_pixmap(pixmap_for_ocr, language_tag=lang, debug_dir=debug_dir)
+                ocr_bridge.finished.emit(text, "", pixmap_for_ocr)
+            except Exception as exc:
+                logging.getLogger(__name__).exception(f"OCR failed: {exc}")
+                ocr_bridge.finished.emit("", str(exc), pixmap_for_ocr)
+
+        threading.Thread(target=worker, args=(current_lang,), daemon=True).start()
+
+    def on_ocr_finished(text, error, pixmap):
+        if ocr_action is None or not ocr_action.isChecked():
+            return
+
+        if error:
+            tray_icon.showMessage(
+                translate("ocr_failed_title"),
+                translate("ocr_failed_body"),
+                QtWidgets.QSystemTrayIcon.MessageIcon.Warning,
+                TRAY_MSG_MEDIUM_MS,
+            )
+            return
+
+        recognized = (text or "").strip()
+        if not recognized:
+            tray_icon.showMessage(
+                translate("ocr_empty_title"),
+                translate("ocr_empty_body"),
+                QtWidgets.QSystemTrayIcon.MessageIcon.Information,
+                TRAY_MSG_MEDIUM_MS,
+            )
+            return
+
+        ocr_popup.show_text(recognized, pixmap=pixmap, lang=ocr_popup.lang_combo.currentText())
+
+    def on_ocr_lang_changed(lang):
+        """Triggered when user changes language in the OCR popup."""
+        # Persist the choice
+        update_ocr_lang_in_config(config_path, lang)
+        
+        pixmap = ocr_popup.last_pixmap
+        if not pixmap or pixmap.isNull():
+            return
+        
+        debug_dir = user_data_dir if save_ocr_debug_image else None
+            
+        def worker():
+            try:
+                text = recognize_text_from_pixmap(pixmap, language_tag=lang, debug_dir=debug_dir)
+                ocr_bridge.finished.emit(text, "", pixmap)
+            except Exception as exc:
+                logging.getLogger(__name__).exception(f"OCR re-run failed: {exc}")
+                ocr_bridge.finished.emit("", str(exc), pixmap)
+        
+        threading.Thread(target=worker, daemon=True).start()
+
+    ocr_popup.language_changed.connect(on_ocr_lang_changed)
 
     def launch_capture_window(screen_pixmap):
         """
@@ -104,10 +259,10 @@ def main():
         :param screen_pixmap: Pre-captured fullscreen bitmap from HotkeyFilter.
         """
         if communicator.win:
-            return 
+            return
 
         # Create capture window instance.
-        communicator.win = CaptureWindow(screen_pixmap)
+        communicator.win = CaptureWindow(screen_pixmap, on_captured=on_capture_completed)
 
         # Reset communicator.win to None when CaptureWindow is destroyed.
         communicator.win.destroyed.connect(lambda: setattr(communicator, "win", None))
@@ -138,14 +293,30 @@ def main():
         launch_uninstaller(translate, app.quit)
 
     # Create system tray icon and right-click menu entry points.
-    tray_icon, settings_action = create_tray(
+    tray_icon, settings_action, ocr_action = create_tray(
         app,
         translate,
-        communicator.trigger.emit, # Allow screenshot trigger from tray menu.
+        communicator.trigger.emit,  # Allow screenshot trigger from tray menu.
         None,
         open_config_dir,
         app.quit,
     )
+
+    if force_ocr:
+        ocr_action.setChecked(True)
+        logger.info("OCR enabled via --debug_ocr flag.")
+
+    ocr_bridge.finished.connect(on_ocr_finished)
+
+    def on_ocr_toggled(enabled):
+        tray_icon.showMessage(
+            translate("ocr_toggle_title"),
+            translate("ocr_enabled_body") if enabled else translate("ocr_disabled_body"),
+            QtWidgets.QSystemTrayIcon.MessageIcon.Information,
+            TRAY_MSG_MEDIUM_MS,
+        )
+
+    ocr_action.toggled.connect(on_ocr_toggled)
 
     # Hotkey manager handles registration/unregistration with Windows.
     hotkey_manager = HotkeyManager(

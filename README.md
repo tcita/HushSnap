@@ -1,28 +1,39 @@
 # HushSnap
 
-HushSnap is a global hotkey-driven screenshot tool designed for speed and silence. Capture any screen region or the full screen instantly and have it saved to your clipboard.
+HushSnap is a global hotkey‑driven screenshot tool designed for speed and silence. Capture any screen region or the full screen instantly and have it saved to your clipboard. It also supports OCR, with more features currently in development.
 
 ## 🛠 Development & Debugging
+Run from source:
 
-### Run from Source
-To run the application directly from the source code:
 ```powershell
-python HushSnap.py
-```
-
-### Debug Mode
-Use the `--debug` flag to enable verbose logging and automatically open the log directory in Windows Explorer:
-```powershell
-# From source
 python HushSnap.py --debug
-
-# From built executable
-.\dist\HushSnap\HushSnap.exe --debug
 ```
+
+Enable OCR flow + save OCR preprocessed image (without full debug logging):
+
+```powershell
+python HushSnap.py --debug_ocr
+```
+
+Enable both:
+
+```powershell
+python HushSnap.py --debug --debug_ocr
+```
+
+Packaged EXE also accepts the same flags:
+
+```powershell
+.\dist\HushSnap\HushSnap.exe --debug_ocr
+```
+
 **Key Features of Debug Mode:**
 - **Isolation:** Running from source uses `%LOCALAPPDATA%\HushSnap_Dev`, ensuring your production settings remain untouched.
 - **Traceability:** Sets log level to `DEBUG` and opens the log folder immediately upon startup.
 - **Live Output:** Real-time logs are streamed to the terminal via the logging console handler (`StreamHandler`).
+- **OCR Inspection:** `--debug` or `--debug_ocr` saves the preprocessed OCR image to `ocr_debug_preprocessed.png` in the data directory.
+  - Source run: `%LOCALAPPDATA%\HushSnap_Dev\ocr_debug_preprocessed.png`
+  - Packaged run: `%LOCALAPPDATA%\HushSnap\ocr_debug_preprocessed.png`
 
 ---
 

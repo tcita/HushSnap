@@ -306,6 +306,7 @@ class SettingsDialogController:
         uninstall_button.clicked.connect(self.on_uninstall)
         uninstall_button.setMaximumWidth(SETTINGS_UNINSTALL_BUTTON_MAX_WIDTH)
         uninstall_button.setMaximumHeight(SETTINGS_BUTTON_HEIGHT)
+        uninstall_button.setFlat(True)
         uninstall_button.setStyleSheet(SETTINGS_UNINSTALL_BUTTON_STYLE)
         button_row.addWidget(uninstall_button)
 

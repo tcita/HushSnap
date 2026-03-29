@@ -9,7 +9,14 @@ from ..config import get_resource_dir
 from ..constants import APP_ICON_FILENAME
 
 
-def create_tray(app, translate, on_trigger, on_open_settings, on_open_config_dir, on_quit):
+def create_tray(
+    app,
+    translate,
+    on_trigger,
+    on_open_settings,
+    on_open_config_dir,
+    on_quit,
+):
     """
     Initialize and create the system tray icon and its menu.
     
@@ -22,7 +29,7 @@ def create_tray(app, translate, on_trigger, on_open_settings, on_open_config_dir
         on_quit (callable): Callback to quit application.
         
     Returns:
-        tuple: (tray_icon, settings_action) for later dynamic operations.
+        tuple: (tray_icon, settings_action, ocr_action) for later dynamic operations.
     """
     # Load tray icon.
     tray_icon_image = QtGui.QIcon(str(get_resource_dir() / APP_ICON_FILENAME))
@@ -57,6 +64,10 @@ def create_tray(app, translate, on_trigger, on_open_settings, on_open_config_dir
     settings_action = tray_menu.addAction(translate("menu_settings"))
     if on_open_settings is not None:
         settings_action.triggered.connect(on_open_settings)
+
+    ocr_action = tray_menu.addAction(translate("menu_ocr_recognize"))
+    ocr_action.setCheckable(True)
+    ocr_action.setChecked(False)
     
     config_dir_action = tray_menu.addAction(translate("menu_open_install_dir"))
     config_dir_action.triggered.connect(on_open_config_dir)
@@ -66,4 +77,4 @@ def create_tray(app, translate, on_trigger, on_open_settings, on_open_config_dir
     quit_action = tray_menu.addAction(translate("menu_quit"))
     quit_action.triggered.connect(on_quit)
 
-    return tray_icon, settings_action
+    return tray_icon, settings_action, ocr_action

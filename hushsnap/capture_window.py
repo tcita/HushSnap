@@ -37,9 +37,10 @@ class CaptureWindow(QtWidgets.QWidget):
        - Left click: capture full screen.
        - Right click / Esc: exit.
     """
-    def __init__(self, pixmap):
+    def __init__(self, pixmap, on_captured=None):
         super().__init__()
         self.pixmap = pixmap
+        self.on_captured = on_captured
 
         # Configure window attributes: tool style, frameless, initially topmost.
         self.setWindowFlags(
@@ -254,12 +255,14 @@ class CaptureWindow(QtWidgets.QWidget):
         if event.button() == QtCore.Qt.MouseButton.LeftButton and self.start_pos:
             self.curr_pos = event.position().toPoint()
             rect = QtCore.QRect(self.start_pos, self.curr_pos).normalized()
+            captured = None
             
             # If movement is too small, treat it as click -> fullscreen capture.
             if (self.curr_pos - self.start_pos).manhattanLength() <= self.click_threshold:
                 full = self.pixmap.copy()
                 full.setDevicePixelRatio(self.pixmap.devicePixelRatio())
                 self._set_clipboard_pixmap(full, "fullscreen")
+                captured = full
             else:
                 # Region capture: convert logical coordinates to physical pixels by screen scale.
                 ratio = self.pixmap.devicePixelRatio()
@@ -270,6 +273,10 @@ class CaptureWindow(QtWidgets.QWidget):
                 final = self.pixmap.copy(physical)
                 final.setDevicePixelRatio(ratio)
                 self._set_clipboard_pixmap(final, "region")
+                captured = final
+
+            if captured is not None:
+                self._notify_captured(captured)
 
             self.start_pos = self.curr_pos = None
             self.close()
@@ -278,3 +285,12 @@ class CaptureWindow(QtWidgets.QWidget):
         """Keyboard handling: Esc exits capture mode."""
         if event.key() == QtCore.Qt.Key.Key_Escape:
             self.close()
+
+    def _notify_captured(self, pixmap):
+        """Notify app layer with the captured image for optional OCR flow."""
+        if self.on_captured is None:
+            return
+        try:
+            self.on_captured(pixmap)
+        except Exception:
+            logger.error(f"capture_notify_err | trace={traceback.format_exc().strip()}")
