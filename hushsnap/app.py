@@ -40,60 +40,100 @@ def _is_explorer_open_for_path(target_path):
     Return True when File Explorer already has a window open at target_path.
     Best-effort check; falls back to False on any query failure.
     """
-    if sys.platform != "win32":
-        return False
 
+    
+    # Escape single quotes for PowerShell by doubling them to prevent syntax errors
     path = str(target_path).replace("'", "''")
+
+    # Build a PowerShell script that:
+    #   1. Enumerates open windows via COM (Component Object Model). 
+    #    Specifically, it instantiates the 'Shell.Application' system object to 
+    #    programmatically query the Windows Shell for its collection of active 
+    #    file explorer windows.
+    
+    #   2. Compares each window's current path to our target (case-insensitive)
+    #   3. Exits with code 0 (found) or 1 (not found)
     script = f"""
 $ErrorActionPreference = 'Stop'
 $target = '{path}'
+
+# Instantiate the Shell.Application COM object,
+# which exposes all currently open Explorer windows
 $shell = New-Object -ComObject Shell.Application
+
 foreach ($w in $shell.Windows()) {{
     try {{
+        # Skip invalid or non-Explorer windows (e.g., Internet Explorer)
         if ($null -eq $w -or $null -eq $w.Document) {{ continue }}
+
+        # Retrieve the folder object displayed in this window
         $folder = $w.Document.Folder
         if ($null -eq $folder -or $null -eq $folder.Self) {{ continue }}
+
+        # Get the filesystem path string for the current window
         $current = [string]$folder.Self.Path
+
+        # Compare paths case-insensitively (Windows paths are case-insensitive)
         if (-not [string]::IsNullOrWhiteSpace($current) -and
-            [string]::Equals($current, $target, [System.StringComparison]::OrdinalIgnoreCase)) {{
-            exit 0
+            [string]::Equals(
+                $current,
+                $target,
+                [System.StringComparison]::OrdinalIgnoreCase
+            )) {{
+            exit 0   # Match found -> return True to Python caller
         }}
     }} catch {{
+        # If querying a single window fails, skip it and continue
         continue
     }}
 }}
-exit 1
+
+exit 1   # No matching window found -> return False to Python caller
 """
+
     try:
+        # Prepare subprocess startup settings to suppress any visible window
         startupinfo = None
         creationflags = 0
+
         if hasattr(subprocess, "STARTUPINFO"):
             startupinfo = subprocess.STARTUPINFO()
+
+            # STARTF_USESHOWWINDOW: honour the wShowWindow field below
             startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0)
+
+            # SW_HIDE (0): keep the PowerShell console window completely hidden
             startupinfo.wShowWindow = 0
+
         if hasattr(subprocess, "CREATE_NO_WINDOW"):
+            # Prevent a console window from being allocated for the child process
             creationflags |= subprocess.CREATE_NO_WINDOW
 
         result = subprocess.run(
             [
                 "powershell",
-                "-NoLogo",
-                "-NoProfile",
-                "-NonInteractive",
+                "-NoLogo",          # Suppress the PowerShell copyright banner
+                "-NoProfile",       # Skip loading the user profile (faster startup)
+                "-NonInteractive",  # Disallow prompts that could block execution
                 "-ExecutionPolicy",
-                "Bypass",
+                "Bypass",           # Override system execution policy restrictions
                 "-Command",
                 script,
             ],
-            capture_output=True,
+            capture_output=True,    # Capture stdout/stderr (not used, but avoids console noise)
             text=True,
-            timeout=2,
-            check=False,
+            timeout=2,              # Hard 2-second timeout; COM queries can occasionally hang
+            check=False,            # Don't raise on non-zero exit; we interpret it ourselves
             startupinfo=startupinfo,
             creationflags=creationflags,
         )
+
+        # PowerShell exits with 0 when a matching window was found, 1 otherwise
         return result.returncode == 0
+
     except Exception:
+        # Any failure (timeout, PowerShell not found, COM error, etc.)
+        # is treated as "we don't know" -> conservatively return False
         return False
 
 
