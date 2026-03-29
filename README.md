@@ -1,17 +1,6 @@
 # HushSnap
 
-HushSnap is a global hotkey-driven screenshot tool designed for speed and silence. Capture any screen region or the full screen instantly and have it saved to your clipboard.
-
-## ✨ Key Features
-
-- **Global Hotkey:** Instant capture with a customizable shortcut (default: `Ctrl+Alt+A`).
-- **High-Performance OCR:** 
-  - **Text-Grab Engine:** Powered by Windows OCR with custom heuristics to fix common misidentifications (e.g., `of`, `in`, `if`).
-  - **Language Selection:** Toggle between `en-US` and `zh-CN` directly from the OCR popup.
-  - **Heuristic Correction:** Automatically fixes Latin text misidentified as CJK characters.
-  - **Persistent Settings:** Remembers your last used OCR language.
-- **Visual Preprocessing:** Enhanced image processing (contrast boost, sharpening, and mandatory padding) for maximum recognition accuracy.
-- **Lightweight & Silent:** Runs in the system tray with minimal resource footprint.
+HushSnap is a global hotkey‑driven screenshot tool designed for speed and silence. Capture any screen region or the full screen instantly and have it saved to your clipboard. It also supports OCR, with more features currently in development.
 
 ## 🛠 Development & Debugging
 Run from source:
