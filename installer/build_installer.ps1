@@ -54,11 +54,6 @@ if ($Version -notmatch '^\d+\.\d+\.\d+([\-+][0-9A-Za-z\.-]+)?$') {
 
 Push-Location $rootDir
 try {
-    $distDir = Join-Path $rootDir "dist\HushSnap"
-    if (Test-Path $distDir) {
-        Remove-Item -Path $distDir -Recurse -Force
-    }
-
     Invoke-ExternalCommand -Executable $PyInstallerPath -Arguments @(
         "--clean",
         $resolvedSpecPath

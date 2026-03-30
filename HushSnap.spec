@@ -6,7 +6,7 @@ a = Analysis(
     ['HushSnap.py'],
     pathex=[],
     binaries=[],
-    datas=[('camera.ico', '.')],
+    datas=[('ico.ico', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -63,7 +63,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['camera.ico'],
+    icon=['ico.ico'],
 )
 coll = COLLECT(
     exe,
@@ -72,6 +72,6 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=True,
-    upx_exclude=[],
+    upx_exclude=['python3.dll'],
     name='HushSnap',
 )
