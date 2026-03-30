@@ -10,6 +10,8 @@ This project is licensed under **[CC BY-NC-SA 4.0](https://creativecommons.org/l
 
 Thank you for respecting the creator's intent.
 
+---
+
 ```
 
 Attribution-NonCommercial-ShareAlike 4.0 International

@@ -2,7 +2,7 @@
 
 HushSnap is a global hotkey‑driven screenshot tool designed for speed and silence. Capture any screen region or the full screen instantly and have it saved to your clipboard. It also supports OCR, with more features currently in development.
 
-## 🛠 Development & Debugging
+## Development & Debugging
 Run from source:
 
 ```powershell
@@ -25,7 +25,7 @@ Run packaged EXE in debug mode:
 
 ---
 
-## 🏗 Build Guide
+## Build Guide
 
 ### Prerequisites
 - Run commands from the project root.
