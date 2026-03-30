@@ -22,7 +22,7 @@ INSTALLER_LANG_FILENAME = "hushsnap_installer_lang.txt"
 # Debug log filename
 CAPTURE_DEBUG_LOG_FILENAME = "hushsnap_capture_debug.log"
 # Tray icon filename
-APP_ICON_FILENAME = "camera.ico"
+APP_ICON_FILENAME = "ico.ico"
 # Uninstaller lookup glob
 UNINSTALLER_GLOB = "unins*.exe"
 # Named mutex for single-instance enforcement

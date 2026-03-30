@@ -9,6 +9,12 @@ Run from source:
 python HushSnap.py --debug
 ```
 
+Run packaged EXE in debug mode:
+
+```powershell
+.\dist\HushSnap\HushSnap.exe --debug
+```
+
 **Key Features of Debug Mode:**
 - **Isolation:** Running from source uses `%LOCALAPPDATA%\HushSnap_Dev`, ensuring your production settings remain untouched.
 - **Traceability:** Sets log level to `DEBUG` and opens the log folder immediately upon startup.
@@ -26,8 +32,8 @@ python HushSnap.py --debug
 - Python and PyInstaller are installed.
 - Inno Setup 6 is installed.
 
-### 1) One-Command Build (Recommended)
-Update `hushsnap/__init__.py` first (the `__version__` value), then run the following command to generate the final installer:
+### 1) Full Release Build (EXE + Installer)
+Update `hushsnap/__init__.py` first (the `__version__` value), then run the following command:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File installer/build_installer.ps1
@@ -42,11 +48,17 @@ powershell -ExecutionPolicy Bypass -File installer/build_installer.ps1
 - `dist\HushSnap\HushSnap.exe`
 - `dist-installer\HushSnap-Setup.exe`
 
-### 2) Optional: Build EXE Only
-If you only need to test the packaged app without creating an installer, run:
+### 2) Dev Build (EXE Only, for Local Debugging)
+If you only need the packaged EXE for local debugging (without generating an installer), run:
+
 ```powershell
-pyinstaller --clean HushSnap.spec
+powershell -ExecutionPolicy Bypass -File installer/build_dev.ps1
 ```
+
+**This command will automatically:**
+- Kill running `HushSnap.exe` processes.
+- Clean build folders used by PyInstaller.
+- Build `dist\HushSnap\HushSnap.exe` only (no installer output).
 
 ---
 
