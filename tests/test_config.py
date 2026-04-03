@@ -1,3 +1,8 @@
+"""
+Unit tests for the configuration module.
+Covers hotkey parsing, path resolution, and UI text translations.
+"""
+
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
@@ -5,6 +10,7 @@ from hushsnap.config import parse_hotkey, get_user_data_dir, resolve_ui_lang, ui
 from hushsnap.constants import MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN
 
 def test_parse_hotkey_valid():
+    """Test parsing of various valid hotkey string formats."""
     # Test simple hotkey
     mask, vk, canonical = parse_hotkey("Alt+Q")
     assert mask == MOD_ALT
@@ -30,6 +36,7 @@ def test_parse_hotkey_valid():
     assert canonical == "Ctrl+Alt+S"
 
 def test_parse_hotkey_invalid():
+    """Test that invalid hotkey strings raise appropriate errors."""
     with pytest.raises(ValueError, match="Unknown modifier"):
         parse_hotkey("Cmd+A")
     
@@ -40,14 +47,17 @@ def test_parse_hotkey_invalid():
         parse_hotkey("")
 
 def test_get_user_data_dir():
+    """Test the resolution of the user data directory."""
     with patch("os.getenv") as mock_getenv:
         mock_getenv.return_value = "C:\\Users\\Test\\AppData\\Local"
         with patch.object(Path, "mkdir") as mock_mkdir:
             path = get_user_data_dir()
-            assert str(path) == "C:\\Users\\Test\\AppData\\Local\\HushSnap"
+            # Dev mode uses a dedicated data folder to avoid polluting release data.
+            assert str(path) == "C:\\Users\\Test\\AppData\\Local\\HushSnap_Dev"
             mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
 
 def test_ui_text():
+    """Test the UI translation lookup and formatting."""
     # Test basic translation
     assert ui_text("en", "error") == "Error"
     assert ui_text("zh", "error") == "错误"
@@ -64,6 +74,7 @@ def test_ui_text():
 
 @patch("hushsnap.config.QtCore.QLocale")
 def test_resolve_ui_lang_auto(mock_qlocale):
+    """Test auto-resolution of UI language based on system locale."""
     # Mock system locale to Chinese
     mock_system = MagicMock()
     mock_system.name.return_value = "zh_CN"
@@ -81,6 +92,7 @@ def test_resolve_ui_lang_auto(mock_qlocale):
 
 @patch("os.environ.get")
 def test_resolve_ui_lang_env(mock_env):
+    """Test overriding UI language via environment variable."""
     mock_env.return_value = "en"
     lang = resolve_ui_lang(Path("dummy_path"))
     assert lang == "en"

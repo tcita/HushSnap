@@ -1,3 +1,8 @@
+"""
+Unit tests for system-level interactions and the capture window.
+Includes tests for window behavior, DPI scaling, and clipboard interaction.
+"""
+
 import pytest
 from unittest.mock import MagicMock, patch
 from PyQt6 import QtCore, QtGui, QtWidgets
@@ -6,6 +11,7 @@ import ctypes
 
 @pytest.fixture
 def qapp():
+    """Fixture to provide a QApplication instance."""
     app = QtWidgets.QApplication.instance()
     if not app:
         app = QtWidgets.QApplication([])
@@ -13,12 +19,14 @@ def qapp():
 
 @pytest.fixture
 def mock_pixmap():
+    """Fixture to provide a mock QPixmap for testing."""
     pixmap = QtGui.QPixmap(100, 100)
     pixmap.fill(QtCore.Qt.GlobalColor.white)
     pixmap.setDevicePixelRatio(2.0) # Simulate High DPI
     return pixmap
 
 def test_capture_window_initialization(qapp, mock_pixmap):
+    """Test proper initialization of the CaptureWindow widget."""
     with patch("PyQt6.QtWidgets.QApplication.primaryScreen") as mock_screen:
         mock_screen.return_value.geometry.return_value = QtCore.QRect(0, 0, 100, 100)
         
@@ -45,6 +53,7 @@ def test_capture_window_force_topmost_logic(
     qapp, 
     mock_pixmap
 ):
+    """Test the complex logic used to force the capture window to the foreground."""
     # Setup: Foreground is SOME OTHER window (0x999)
     # Our window ID will be something else
     mock_get_fg.return_value = 0x999 
@@ -79,6 +88,7 @@ def test_capture_window_force_topmost_hung(
     qapp,
     mock_pixmap
 ):
+    """Verify that thread attachment is skipped if the target window is hung."""
     # Scenario: Target window is HUNG
     mock_get_fg.return_value = 0x999
     mock_is_hung.return_value = True
@@ -108,6 +118,7 @@ def test_capture_window_force_topmost_attach_fail(
     qapp,
     mock_pixmap
 ):
+    """Verify behavior when AttachThreadInput fails."""
     # Scenario: AttachThreadInput fails (e.g., high-privilege window)
     # 1st call (Stage 1): returns 0x999
     # 2nd call (Stage 2): returns 0x999 (meaning soft attempt failed)
@@ -135,6 +146,7 @@ def test_capture_window_force_topmost_attach_fail(
     win.close()
 
 def test_capture_window_dpi_scaling_clip(qapp, mock_pixmap):
+    """Test that clipping logic correctly handles High DPI scaling."""
     # Pixmap is 100x100 with devicePixelRatio=2.0
     # Logical size is 50x50
     win = CaptureWindow(mock_pixmap)
@@ -163,6 +175,7 @@ def test_capture_window_dpi_scaling_clip(qapp, mock_pixmap):
     win.close()
 
 def test_clipboard_fallback_logic(qapp, mock_pixmap):
+    """Test fallback logic when setting the clipboard pixmap fails."""
     win = CaptureWindow(mock_pixmap)
     
     mock_clipboard = MagicMock()

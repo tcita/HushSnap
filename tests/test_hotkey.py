@@ -1,3 +1,8 @@
+"""
+Unit tests for the hotkey module.
+Tests the Windows native event filter for capturing global hotkeys.
+"""
+
 import pytest
 from unittest.mock import MagicMock, patch
 from ctypes import wintypes
@@ -6,16 +11,19 @@ from hushsnap.hotkey import HotkeyFilter, WM_HOTKEY
 
 @pytest.fixture
 def mock_app():
+    """Fixture to mock the QApplication instance."""
     with patch("PyQt6.QtWidgets.QApplication") as mock:
         yield mock
 
 def test_hotkey_filter_inheritance():
+    """Verify that HotkeyFilter correctly inherits from QAbstractNativeEventFilter."""
     mock_signal = MagicMock()
     filter = HotkeyFilter(mock_signal)
     # This check ensures the class is compatible with installNativeEventFilter
     assert isinstance(filter, QtCore.QAbstractNativeEventFilter)
 
 def test_hotkey_filter_ignore_other_events():
+    """Verify that the filter ignores non-Windows/non-hotkey events."""
     mock_signal = MagicMock()
     filter = HotkeyFilter(mock_signal)
     
@@ -26,6 +34,7 @@ def test_hotkey_filter_ignore_other_events():
 
 @patch("ctypes.wintypes.MSG.from_address")
 def test_hotkey_filter_handle_wm_hotkey(mock_from_address, mock_app):
+    """Test handling of the WM_HOTKEY message and screenshot capture trigger."""
     mock_signal = MagicMock()
     filter = HotkeyFilter(mock_signal)
     

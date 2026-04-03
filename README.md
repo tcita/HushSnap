@@ -9,6 +9,26 @@ Run from source:
 python HushSnap.py --debug
 ```
 
+## Unit Testing
+
+HushSnap uses `pytest`. Tests live in `tests/` and cover config, hotkey flow, system interaction, and logging.
+
+### Running Tests
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\run_tests.ps1
+```
+
+You can pass extra `pytest` args directly:
+
+```powershell
+# specific file
+powershell -ExecutionPolicy Bypass -File .\run_tests.ps1 tests/test_config.py
+
+# keyword filter
+powershell -ExecutionPolicy Bypass -File .\run_tests.ps1 -k "hotkey" -vv
+```
+
 Run packaged EXE in debug mode:
 
 ```powershell
