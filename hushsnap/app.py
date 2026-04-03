@@ -2,6 +2,7 @@ import os
 import sys
 import logging
 import threading
+import argparse
 
 from PyQt6 import QtWidgets
 
@@ -66,7 +67,10 @@ def main():
     8. Start Qt event loop.
     """
     # 1. Parse CLI arguments
-    force_debug = "--debug" in sys.argv
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--debug", action="store_true")
+    args, qt_args = parser.parse_known_args(sys.argv[1:])
+    force_debug = args.debug
     save_ocr_debug_image = force_debug
     user_data_dir = get_user_data_dir()
     
@@ -95,7 +99,7 @@ def main():
         return
 
     # Initialize Qt environment for background-style behavior.
-    app = QtWidgets.QApplication(sys.argv)
+    app = QtWidgets.QApplication([sys.argv[0], *qt_args])
     app.setQuitOnLastWindowClosed(False)
 
     # Load config: current hotkey binding and language preference.
