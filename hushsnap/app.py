@@ -3,7 +3,7 @@ import sys
 import logging
 import threading
 
-from PyQt6 import QtCore, QtWidgets
+from PyQt6 import QtWidgets
 
 from .capture_window import CaptureWindow
 from .config import (
@@ -16,7 +16,8 @@ from .config import (
     get_ocr_enabled_from_config,
     update_ocr_enabled_in_config,
 )
-from .hotkey import Communicator, HotkeyFilter
+from .hotkey import HotkeyFilter
+from .signal_bridge import SignalBridge
 from .system.hotkey_manager import HotkeyManager
 from .system.uninstall import launch_uninstaller
 from .system.windows_ocr import recognize_text_from_pixmap
@@ -26,12 +27,6 @@ from .ui.tray import create_tray
 from .config import get_user_data_dir
 from .constants import CAPTURE_DEBUG_LOG_FILENAME, TRAY_MSG_MEDIUM_MS
 from .logging_config import setup_logging
-
-
-class OcrResultBridge(QtCore.QObject):
-    """Thread-safe bridge for OCR worker result back to Qt main thread."""
-
-    finished = QtCore.pyqtSignal(str, str, object) # text, error, pixmap
 
 
 def exception_hook(exctype, value, tb):
@@ -109,11 +104,11 @@ def main():
     def translate(key, **kwargs):
         return ui_text(ui_language, key, **kwargs)
 
-    # Hotkey event -> Qt signal (communicator) -> UI callback
-    communicator = Communicator()
-    communicator.win = None
+    # Hotkey event -> Qt signal bridge -> UI callback
+    capture_bridge = SignalBridge()
+    capture_bridge.win = None
 
-    ocr_bridge = OcrResultBridge()
+    ocr_bridge = SignalBridge()
     ocr_popup = OcrPopup(translate)
     # Set initial language from config
     ocr_popup.lang_combo.setCurrentText(get_ocr_lang_from_config(config_path))
@@ -133,14 +128,15 @@ def main():
         def worker(lang):
             try:
                 text = recognize_text_from_pixmap(pixmap_for_ocr, language_tag=lang, debug_dir=debug_dir)
-                ocr_bridge.finished.emit(text, "", pixmap_for_ocr)
+                ocr_bridge.signal.emit((text, "", pixmap_for_ocr))
             except Exception as exc:
                 logging.getLogger(__name__).exception(f"OCR failed: {exc}")
-                ocr_bridge.finished.emit("", str(exc), pixmap_for_ocr)
+                ocr_bridge.signal.emit(("", str(exc), pixmap_for_ocr))
 
         threading.Thread(target=worker, args=(current_lang,), daemon=True).start()
 
-    def on_ocr_finished(text, error, pixmap):
+    def on_ocr_finished(payload):
+        text, error, pixmap = payload
         if ocr_action is None or not ocr_action.isChecked():
             return
 
@@ -179,10 +175,10 @@ def main():
         def worker():
             try:
                 text = recognize_text_from_pixmap(pixmap, language_tag=lang, debug_dir=debug_dir)
-                ocr_bridge.finished.emit(text, "", pixmap)
+                ocr_bridge.signal.emit((text, "", pixmap))
             except Exception as exc:
                 logging.getLogger(__name__).exception(f"OCR re-run failed: {exc}")
-                ocr_bridge.finished.emit("", str(exc), pixmap)
+                ocr_bridge.signal.emit(("", str(exc), pixmap))
         
         threading.Thread(target=worker, daemon=True).start()
 
@@ -193,22 +189,22 @@ def main():
         Callback that launches the capture window.
         :param screen_pixmap: Pre-captured fullscreen bitmap from HotkeyFilter.
         """
-        if communicator.win:
+        if capture_bridge.win:
             return
 
         # Create capture window instance.
-        communicator.win = CaptureWindow(screen_pixmap, on_captured=on_capture_completed)
+        capture_bridge.win = CaptureWindow(screen_pixmap, on_captured=on_capture_completed)
 
-        # Reset communicator.win to None when CaptureWindow is destroyed.
-        communicator.win.destroyed.connect(lambda: setattr(communicator, "win", None))
-        communicator.win.show()
+        # Reset capture_bridge.win to None when CaptureWindow is destroyed.
+        capture_bridge.win.destroyed.connect(lambda: setattr(capture_bridge, "win", None))
+        capture_bridge.win.show()
 
 
-    # Connect launch_capture_window to communicator's trigger signal.
-    communicator.trigger.connect(launch_capture_window)
+    # Connect launch_capture_window to capture bridge signal.
+    capture_bridge.signal.connect(launch_capture_window)
 
     # Install HotkeyFilter to intercept WM_HOTKEY before Qt window event delivery.
-    native_hotkey_filter = HotkeyFilter(communicator.trigger)
+    native_hotkey_filter = HotkeyFilter(capture_bridge.signal)
     app.installNativeEventFilter(native_hotkey_filter)
 
     def open_config_dir():
@@ -231,7 +227,7 @@ def main():
     tray_icon, settings_action, ocr_action = create_tray(
         app,
         translate,
-        communicator.trigger.emit,  # Allow screenshot trigger from tray menu.
+        capture_bridge.signal.emit,  # Allow screenshot trigger from tray menu.
         None,
         open_config_dir,
         app.quit,
@@ -240,7 +236,7 @@ def main():
     # Restore OCR toggle state from persisted config.
     ocr_action.setChecked(get_ocr_enabled_from_config(config_path))
 
-    ocr_bridge.finished.connect(on_ocr_finished)
+    ocr_bridge.signal.connect(on_ocr_finished)
 
     def on_ocr_toggled(enabled):
         update_ocr_enabled_in_config(config_path, enabled)

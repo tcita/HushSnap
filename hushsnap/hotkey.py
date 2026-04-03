@@ -55,12 +55,3 @@ class HotkeyFilter(QtCore.QAbstractNativeEventFilter):
                 # Return True to stop propagation to other filters.
                 return True, 0
         return False, 0
-
-
-class Communicator(QtCore.QObject):
-    """
-    Signal relay class.
-    Bridges communication between the native filter and the Qt window layer.
-    """
-    # Custom signal carrying the captured QPixmap object.
-    trigger = QtCore.pyqtSignal(object)
