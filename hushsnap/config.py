@@ -11,8 +11,6 @@ import logging
 from ctypes import wintypes
 from pathlib import Path
 
-from PyQt6 import QtCore
-
 from .constants import (
     APP_CONFIG_FILENAME,
     DEFAULT_HOTKEY,
@@ -26,8 +24,8 @@ from .constants import (
 from .translations import (
     UI_LANG_AUTO,
     UI_LANG_EN,
-    UI_LANG_ENV,
     UI_LANG_ZH,
+    SUPPORTED_LANGUAGES,
     UI_TEXT,
 )
 
@@ -356,13 +354,37 @@ def _read_ui_lang_from_config(config_path):
         if not isinstance(config_data, dict):
             return UI_LANG_AUTO
         configured_language = config_data.get("language", UI_LANG_AUTO)
-        if isinstance(configured_language, str):
-            normalized_language = configured_language.strip().lower()
-            if normalized_language in {UI_LANG_AUTO, UI_LANG_EN, UI_LANG_ZH}:
-                return normalized_language
+        normalized_language = _normalize_ui_language_code(configured_language, allow_auto=True)
+        if normalized_language:
+            return normalized_language
     except Exception as e:
         logger.debug(f"Failed to read UI language from config: {e}")
     return UI_LANG_AUTO
+
+
+def _normalize_ui_language_code(raw_value, allow_auto=False):
+    """
+    Normalize incoming language values to supported ISO 639-1 codes.
+
+    Accepts common BCP 47 forms (e.g. en-US, zh-CN, zh_Hans) and maps them to:
+    - 'en' for English
+    - 'zh' for Chinese
+    - 'auto' only when allow_auto=True
+    """
+    if not isinstance(raw_value, str):
+        return None
+
+    normalized = raw_value.strip().lower().replace("_", "-")
+    if not normalized:
+        return None
+
+    if allow_auto and normalized == UI_LANG_AUTO:
+        return UI_LANG_AUTO
+
+    primary_subtag = normalized.split("-", 1)[0]
+    if primary_subtag in SUPPORTED_LANGUAGES:
+        return primary_subtag
+    return None
 
 
 def _read_ui_lang_from_installer_hint(config_path):
@@ -377,11 +399,12 @@ def _read_ui_lang_from_installer_hint(config_path):
         logger.debug(f"Failed to read installer language hint: {e}")
         return None
 
-    if hint_value in {UI_LANG_EN, UI_LANG_ZH}:
-        return hint_value
-    if hint_value.startswith("zh") or "chinese" in hint_value:
+    normalized_hint = _normalize_ui_language_code(hint_value)
+    if normalized_hint in SUPPORTED_LANGUAGES:
+        return normalized_hint
+    if "chinese" in hint_value:
         return UI_LANG_ZH
-    if hint_value.startswith("en"):
+    if "english" in hint_value:
         return UI_LANG_EN
     return None
 
@@ -389,23 +412,18 @@ def _read_ui_lang_from_installer_hint(config_path):
 def resolve_ui_lang(config_path):
     """
     Resolve the final UI language.
-    Priority: environment variable > config file > installer hint > system locale.
+    Priority: config file > installer hint > English fallback.
     """
-    env_language = os.environ.get(UI_LANG_ENV, "").strip().lower()
-    if env_language in {UI_LANG_EN, UI_LANG_ZH}:
-        return env_language
-
     config_language = _read_ui_lang_from_config(config_path)
-    if config_language in {UI_LANG_EN, UI_LANG_ZH}:
+    if config_language in SUPPORTED_LANGUAGES:
         return config_language
 
     installer_hint_language = _read_ui_lang_from_installer_hint(config_path)
-    if installer_hint_language in {UI_LANG_EN, UI_LANG_ZH}:
+    if installer_hint_language in SUPPORTED_LANGUAGES:
         return installer_hint_language
 
-    # Final fallback: infer from system locale.
-    locale_name = QtCore.QLocale.system().name().lower()
-    return UI_LANG_ZH if locale_name.startswith("zh") else UI_LANG_EN
+    # Final fallback: use English.
+    return UI_LANG_EN
 
 
 def ui_text(lang, key, **kwargs):

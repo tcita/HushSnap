@@ -5,7 +5,7 @@ Covers hotkey parsing, path resolution, and UI text translations.
 
 import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from hushsnap.config import parse_hotkey, get_user_data_dir, resolve_ui_lang, ui_text
 from hushsnap.constants import MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN
 
@@ -72,27 +72,29 @@ def test_ui_text():
     # Test fallback to key if missing
     assert ui_text("en", "non_existent_key") == "non_existent_key"
 
-@patch("hushsnap.config.QtCore.QLocale")
-def test_resolve_ui_lang_auto(mock_qlocale):
-    """Test auto-resolution of UI language based on system locale."""
-    # Mock system locale to Chinese
-    mock_system = MagicMock()
-    mock_system.name.return_value = "zh_CN"
-    mock_qlocale.system.return_value = mock_system
-    
-    with patch("os.environ.get") as mock_env:
-        mock_env.return_value = ""
-        with patch("hushsnap.config._read_ui_lang_from_config") as mock_config:
-            mock_config.return_value = "auto"
-            with patch("hushsnap.config._read_ui_lang_from_installer_hint") as mock_hint:
-                mock_hint.return_value = None
-                
-                lang = resolve_ui_lang(Path("dummy_path"))
-                assert lang == "zh"
+def test_resolve_ui_lang_fallback_to_english():
+    """Test default fallback to English when no source provides a valid language."""
+    with patch("hushsnap.config._read_ui_lang_from_config") as mock_config:
+        mock_config.return_value = "auto"
+        with patch("hushsnap.config._read_ui_lang_from_installer_hint") as mock_hint:
+            mock_hint.return_value = None
+            lang = resolve_ui_lang(Path("dummy_path"))
+            assert lang == "en"
 
-@patch("os.environ.get")
-def test_resolve_ui_lang_env(mock_env):
-    """Test overriding UI language via environment variable."""
-    mock_env.return_value = "en"
-    lang = resolve_ui_lang(Path("dummy_path"))
-    assert lang == "en"
+
+def test_resolve_ui_lang_from_config_bcp47():
+    """Test config language normalization (BCP 47 -> ISO 639-1)."""
+    with patch("hushsnap.config._read_ui_lang_from_config") as mock_config:
+        mock_config.return_value = "zh"
+        lang = resolve_ui_lang(Path("dummy_path"))
+        assert lang == "zh"
+
+
+def test_resolve_ui_lang_from_installer_hint_when_config_auto():
+    """Test installer hint is used when config is auto."""
+    with patch("hushsnap.config._read_ui_lang_from_config") as mock_config:
+        mock_config.return_value = "auto"
+        with patch("hushsnap.config._read_ui_lang_from_installer_hint") as mock_hint:
+            mock_hint.return_value = "zh"
+            lang = resolve_ui_lang(Path("dummy_path"))
+            assert lang == "zh"

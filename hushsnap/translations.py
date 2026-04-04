@@ -3,8 +3,6 @@ HushSnap translations module.
 Contains language code constants and bilingual (EN/ZH) UI text table.
 """
 
-# Environment variable used to force UI language.
-UI_LANG_ENV = "HUSHSNAP_UI_LANG"  # Supported values: auto | en | zh
 # Language code constants
 UI_LANG_AUTO = "auto"
 UI_LANG_EN = "en"
@@ -132,3 +130,6 @@ UI_TEXT = {
         "hotkey_kept_old": "{new_hotkey} 被占用，已保持 {old_hotkey}",
     },
 }
+
+# Supported UI languages are derived from available translation packs.
+SUPPORTED_LANGUAGES = tuple(UI_TEXT.keys())
