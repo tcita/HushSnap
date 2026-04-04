@@ -84,22 +84,28 @@ def main():
     # 3. Install global exception hook as early as possible after logging is ready.
     sys.excepthook = exception_hook
 
+    hotkey_modifier, hotkey_virtual_key, hotkey_name, config_path = load_hotkey_setting()
+    
     if force_debug:
         logger.info("DEBUG MODE ENABLED.")
-        hotkey_modifier, hotkey_virtual_key, hotkey_name, config_path = load_hotkey_setting()
         print("\n" + "="*80)
         print(f"Config directory: {config_path.parent}")
         print("="*80 + "\n")
-    else:
-        hotkey_modifier, hotkey_virtual_key, hotkey_name, config_path = load_hotkey_setting()
+
 
     # Enforce single instance via lock/mutex.
     instance_lock = is_already_running()
     if not instance_lock:
+        message = "HushSnap is already running. Exiting this launch."
+        logger.warning(message)
+        print(message)
         return
 
-    # Initialize Qt environment for background-style behavior.
+    # Create the Qt application instance with argv0 and any remaining CLI arguments.
+    # (currently usually none unless Qt args are provided).
     app = QtWidgets.QApplication([sys.argv[0], *qt_args])
+
+    # Keep the process alive after all windows are closed.
     app.setQuitOnLastWindowClosed(False)
 
     # Load config: current hotkey binding and language preference.
