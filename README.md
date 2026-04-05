@@ -2,6 +2,16 @@
 
 HushSnap is a global hotkey‑driven screenshot tool designed for speed and silence. Capture any screen region or the full screen instantly and have it saved to your clipboard. It also supports OCR, with more features currently in development.
 
+## Third-Party Acknowledgment
+
+The OCR workflow and product ideas in this project were inspired by the
+[Text-Grab](https://github.com/TheJoeFin/Text-Grab) project, which is licensed
+under the MIT License.
+
+HushSnap is distributed under **CC BY-NC-SA 4.0**. This project-level license
+applies to HushSnap's original code and assets. Third-party projects keep their
+own licenses; see `THIRD_PARTY_NOTICES.md` for attribution details.
+
 ## Development & Debugging
 Run from source:
 
