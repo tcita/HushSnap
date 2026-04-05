@@ -1,7 +1,6 @@
 import os
 import sys
 import logging
-import threading
 import argparse
 
 from PyQt6 import QtWidgets
@@ -21,7 +20,7 @@ from .hotkey import HotkeyFilter
 from .signal_bridge import SignalBridge
 from .system.hotkey_manager import HotkeyManager
 from .system.uninstall import launch_uninstaller
-from .system.windows_ocr import recognize_text_from_pixmap
+from .text_grab import TextGrabOcrService, TextGrabRequest
 from .ui.ocr_popup import OcrPopup
 from .ui.settings_dialog import SettingsDialogController
 from .ui.tray import create_tray
@@ -120,6 +119,7 @@ def main():
 
     ocr_bridge = SignalBridge()
     ocr_popup = OcrPopup(translate)
+    ocr_service = TextGrabOcrService()
     # Set initial language from config
     ocr_popup.lang_combo.setCurrentText(get_ocr_lang_from_config(config_path))
     ocr_action = None
@@ -135,15 +135,15 @@ def main():
         current_lang = ocr_popup.lang_combo.currentText()
         debug_dir = user_data_dir if save_ocr_debug_image else None
 
-        def worker(lang):
-            try:
-                text = recognize_text_from_pixmap(pixmap_for_ocr, language_tag=lang, debug_dir=debug_dir)
-                ocr_bridge.signal.emit((text, "", pixmap_for_ocr))
-            except Exception as exc:
-                logging.getLogger(__name__).exception(f"OCR failed: {exc}")
-                ocr_bridge.signal.emit(("", str(exc), pixmap_for_ocr))
-
-        threading.Thread(target=worker, args=(current_lang,), daemon=True).start()
+        request = TextGrabRequest(
+            pixmap=pixmap_for_ocr,
+            language_tag=current_lang,
+            debug_dir=debug_dir,
+        )
+        ocr_service.recognize_async(
+            request,
+            lambda response: ocr_bridge.signal.emit((response.text, response.error, response.pixmap)),
+        )
 
     def on_ocr_finished(payload):
         text, error, pixmap = payload
@@ -167,6 +167,13 @@ def main():
                 QtWidgets.QSystemTrayIcon.MessageIcon.Information,
                 TRAY_MSG_MEDIUM_MS,
             )
+            # Keep popup accessible even for empty OCR so users can switch
+            # language and re-run OCR on the same captured image.
+            ocr_popup.show_text(
+                translate("ocr_empty_popup_hint"),
+                pixmap=pixmap,
+                lang=ocr_popup.lang_combo.currentText(),
+            )
             return
 
         ocr_popup.show_text(recognized, pixmap=pixmap, lang=ocr_popup.lang_combo.currentText())
@@ -182,15 +189,15 @@ def main():
         
         debug_dir = user_data_dir if save_ocr_debug_image else None
             
-        def worker():
-            try:
-                text = recognize_text_from_pixmap(pixmap, language_tag=lang, debug_dir=debug_dir)
-                ocr_bridge.signal.emit((text, "", pixmap))
-            except Exception as exc:
-                logging.getLogger(__name__).exception(f"OCR re-run failed: {exc}")
-                ocr_bridge.signal.emit(("", str(exc), pixmap))
-        
-        threading.Thread(target=worker, daemon=True).start()
+        request = TextGrabRequest(
+            pixmap=pixmap,
+            language_tag=lang,
+            debug_dir=debug_dir,
+        )
+        ocr_service.recognize_async(
+            request,
+            lambda response: ocr_bridge.signal.emit((response.text, response.error, response.pixmap)),
+        )
 
     ocr_popup.language_changed.connect(on_ocr_lang_changed)
 

@@ -431,7 +431,7 @@ def ui_text(lang, key, **kwargs):
     Get UI text by language code and key.
     
     Args:
-        lang (str): Language code (en/zh).
+        lang (str): Language code (e.g. en/zh).
         key (str): Text key.
         **kwargs: Parameters for string formatting.
         
