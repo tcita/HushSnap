@@ -25,6 +25,7 @@ IDEAL_LINE_HEIGHT_PX = 40.0
 MAX_OCR_IMAGE_DIMENSION = 2600
 MIN_RESCALE_DELTA = 0.15
 MIN_PAD_DIM = 64
+NO_SPACE_SCRIPT_CHAR_CLASS = r"\u3040-\u30ff\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff"
 
 NUMBERS_TO_LETTERS = {
     "0": "o", "4": "h", "9": "g", "1": "l", "8": "B", "5": "S", "6": "b", "2": "z",
@@ -33,6 +34,13 @@ LETTERS_TO_NUMBERS = {
     "o": "0", "O": "0", "Q": "0", "c": "0", "C": "0", "i": "1", "I": "1", "l": "1",
     "g": "9", "G": "9", "h": "4", "H": "4", "s": "5", "S": "5", "B": "8", "b": "6",
     "z": "2", "Z": "2",
+}
+
+# Text-Grab style GUID and technical text corrections
+GUID_CORRECTIONS = {
+    "o": "0", "O": "0", "i": "1", "l": "1", "I": "1", "h": "4", "z": "2", "Z": "2",
+    "g": "9", "G": "9", "s": "5", "S": "5", "Ø": "0", "#": "f", "@": "0", "Q": "0",
+    "¥": "f", "£": "f", "/": "7",
 }
 
 # Text-Grab style heuristic correction table
@@ -522,72 +530,84 @@ def _recommend_scale_factor(result, width, height):
 
 
 def _is_space_joining_word(token):
+    """
+    Text-Grab style SpaceJoiningWordRegex: (^[\p{L}-[\p{Lo}]]|\p{Nd}$)|.{2,}
+    Matches words that should trigger a space-joining behavior.
+    """
     if not token:
         return False
+    
+    # Length 2 or more always joins with space (Latin words, grouped CJK)
     if len(token) >= 2:
         return True
 
     ch = token[0]
-    if ch.isdigit():
+    cat = unicodedata.category(ch)
+    
+    # \p{Nd}$ : Single digit
+    if cat == "Nd":
         return True
 
-    # Text-Grab style: CJK single-char words should often be joined without spaces.
-    if ch.isalpha() and unicodedata.category(ch) != "Lo":
+    # ^[\p{L}-[\p{Lo}]] : Single letter that is NOT an 'Other_Letter' (CJK)
+    if cat.startswith("L") and cat != "Lo":
         return True
 
     return False
 
 
-def _compose_line_text(line):
-    if not line.words:
-        return (line.text or "").strip()
+def _is_space_joining_language(language_tag):
+    lang = (language_tag or "").lower()
+    return not (lang.startswith("zh") or lang == "ja" or lang.startswith("ja-"))
 
+
+def _cleanup_ocr_text_line(text):
+    text = re.sub(rf"(?<=[{NO_SPACE_SCRIPT_CHAR_CLASS}])\s+(?=[{NO_SPACE_SCRIPT_CHAR_CLASS}])", "", text)
+    text = re.sub(r"\s+([,;:.!?])", r"\1", text)
+    text = re.sub(r"([,;:.!?])(?=[A-Za-z0-9])", r"\1 ", text)
+    return text
+
+
+def _compose_line_text(line, is_space_joining_lang=True):
+    if not line.words:
+        return _cleanup_ocr_text_line((line.text or "").strip())
+
+    if is_space_joining_lang:
+        # Standard Latin-style joining
+        text = (line.text or "").strip()
+        # Heuristic correction is applied per-line for Latin
+        return _cleanup_ocr_text_line(text)
+
+    # CJK-style joining logic from Text-Grab
     parts = []
-    for i, word in enumerate(line.words):
+    is_first_word = True
+    is_prev_word_space_joining = False
+
+    for word in line.words:
         token = (word.text or "").strip()
         if not token:
             continue
 
-        # Convert full-width punctuation to half-width
-        token = unicodedata.normalize('NFKC', token)
-
-        if i == 0:
-            parts.append(token)
-            continue
-
-        prev_word = line.words[i - 1]
-        curr_box = word.bounding_box
-        prev_box = prev_word.bounding_box
+        # Convert full-width punctuation to half-width and apply basic heuristic
+        token = unicodedata.normalize("NFKC", token)
         
-        dist = curr_box.x - (prev_box.x + prev_box.width)
-        avg_height = (curr_box.height + prev_box.height) / 2
-        
-        is_cjk = any("\u4e00" <= ch <= "\u9fff" for ch in token)
-        prev_is_cjk = any("\u4e00" <= ch <= "\u9fff" for ch in prev_word.text)
+        # Heuristic correction is applied per-word for CJK
+        token = _replace_with_map(token, GREEK_CYRILLIC_LATIN_MAP)
 
-        # Thresholds:
-        # Latin: small dist (<11% height) -> merge. 0.11 is a tight threshold.
-        # CJK: merge if very close (<15% height).
-        if is_cjk or prev_is_cjk:
-            merge_threshold = avg_height * 0.15
-        else:
-            merge_threshold = avg_height * 0.11
+        is_this_word_space_joining = _is_space_joining_word(token)
 
-        if dist < merge_threshold:
+        if is_first_word or (not is_this_word_space_joining and not is_prev_word_space_joining):
             parts.append(token)
         else:
             parts.append(f" {token}")
+        
+        is_first_word = False
+        is_prev_word_space_joining = is_this_word_space_joining
 
     joined = "".join(parts).strip()
     if not joined:
         joined = (line.text or "").strip()
 
-    # Clean up common OCR artifacts
-    joined = re.sub(r"(?<=[\u4e00-\u9fff])\s+(?=[\u4e00-\u9fff])", "", joined)
-    joined = re.sub(r"\s+([,;:.!?])", r"\1", joined)
-    joined = re.sub(r"([,;:.!?])(?=[A-Za-z0-9])", r"\1 ", joined)
-    
-    return joined
+    return _cleanup_ocr_text_line(joined)
 
 
 def _normalize_ocr_text(text):
@@ -600,10 +620,7 @@ def _normalize_ocr_text(text):
         line = line.strip()
         if not line:
             continue
-        line = re.sub(r"(?<=[\u4e00-\u9fff])\s+(?=[\u4e00-\u9fff])", "", line)
-        line = re.sub(r"\s+([,;:.!?])", r"\1", line)
-        line = re.sub(r"([,;:.!?])(?=[A-Za-z0-9])", r"\1 ", line)
-        lines.append(line)
+        lines.append(_cleanup_ocr_text_line(line))
     return "\n".join(lines).strip()
 
 
@@ -639,9 +656,10 @@ def _compose_text_from_result(result, language_tag=""):
     if not result.lines:
         return _normalize_ocr_text(result.text)
 
+    is_space_joining_lang = _is_space_joining_language(language_tag)
     built_lines = []
     for line in result.lines:
-        joined = _compose_line_text(line)
+        joined = _compose_line_text(line, is_space_joining_lang=is_space_joining_lang)
         if joined:
             built_lines.append(joined)
 
@@ -651,8 +669,9 @@ def _compose_text_from_result(result, language_tag=""):
     output = "\n".join(built_lines).strip()
     
     # Text-Grab heuristic: only fix numbers/letters if it's primarily a Latin-based language
-    if not language_tag or "zh" not in language_tag.lower():
+    if is_space_joining_lang:
         output = _try_fix_every_word_letter_number_errors(output)
+        # Final pass for Greek/Cyrillic to Latin
         output = _replace_greek_cyrillic_with_latin(output)
     
     return output
