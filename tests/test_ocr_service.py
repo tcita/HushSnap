@@ -3,7 +3,7 @@ import threading
 import pytest
 from PyQt6 import QtCore, QtGui, QtWidgets
 
-from hushsnap import text_grab
+from hushsnap import ocr_service
 
 
 @pytest.fixture
@@ -21,16 +21,16 @@ def sample_pixmap(qapp):
     return pixmap
 
 
-def test_text_grab_service_sync_success(monkeypatch, sample_pixmap):
+def test_ocr_service_sync_success(monkeypatch, sample_pixmap):
     monkeypatch.setattr(
-        text_grab,
+        ocr_service,
         "recognize_result_from_pixmap",
-        lambda *args, **kwargs: text_grab.OcrRecognition(text=" hello world "),
+        lambda *args, **kwargs: ocr_service.OcrRecognition(text=" hello world "),
     )
 
-    service = text_grab.TextGrabOcrService()
+    service = ocr_service.OcrService()
     response = service.recognize(
-        text_grab.TextGrabRequest(pixmap=sample_pixmap, language_tag="en-US"),
+        ocr_service.OcrRequest(pixmap=sample_pixmap, language_tag="en-US"),
     )
 
     assert response.error == ""
@@ -38,28 +38,28 @@ def test_text_grab_service_sync_success(monkeypatch, sample_pixmap):
     assert response.recognition is not None
 
 
-def test_text_grab_service_sync_error(monkeypatch, sample_pixmap):
+def test_ocr_service_sync_error(monkeypatch, sample_pixmap):
     def _raise(*args, **kwargs):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(text_grab, "recognize_result_from_pixmap", _raise)
+    monkeypatch.setattr(ocr_service, "recognize_result_from_pixmap", _raise)
 
-    service = text_grab.TextGrabOcrService()
-    response = service.recognize(text_grab.TextGrabRequest(pixmap=sample_pixmap))
+    service = ocr_service.OcrService()
+    response = service.recognize(ocr_service.OcrRequest(pixmap=sample_pixmap))
 
     assert response.text == ""
     assert "boom" in response.error
     assert response.recognition is None
 
 
-def test_text_grab_service_async_callback(monkeypatch, sample_pixmap):
+def test_ocr_service_async_callback(monkeypatch, sample_pixmap):
     monkeypatch.setattr(
-        text_grab,
+        ocr_service,
         "recognize_result_from_pixmap",
-        lambda *args, **kwargs: text_grab.OcrRecognition(text="async"),
+        lambda *args, **kwargs: ocr_service.OcrRecognition(text="async"),
     )
 
-    service = text_grab.TextGrabOcrService()
+    service = ocr_service.OcrService()
     done = threading.Event()
     result_holder = {}
 
@@ -67,7 +67,8 @@ def test_text_grab_service_async_callback(monkeypatch, sample_pixmap):
         result_holder["response"] = response
         done.set()
 
-    service.recognize_async(text_grab.TextGrabRequest(pixmap=sample_pixmap), _done)
+    service.recognize_async(ocr_service.OcrRequest(pixmap=sample_pixmap), _done)
 
     assert done.wait(timeout=2), "OCR async callback timed out"
     assert result_holder["response"].text == "async"
+

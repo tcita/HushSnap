@@ -20,7 +20,7 @@ from .hotkey import HotkeyFilter
 from .signal_bridge import SignalBridge
 from .system.hotkey_manager import HotkeyManager
 from .system.uninstall import launch_uninstaller
-from .text_grab import TextGrabOcrService, TextGrabRequest
+from .ocr_service import OcrService, OcrRequest
 from .ui.ocr_popup import OcrPopup
 from .ui.settings_dialog import SettingsDialogController
 from .ui.tray import create_tray
@@ -119,7 +119,7 @@ def main():
 
     ocr_bridge = SignalBridge()
     ocr_popup = OcrPopup(translate)
-    ocr_service = TextGrabOcrService()
+    ocr_service = OcrService()
     # Set initial language from config
     ocr_popup.lang_combo.setCurrentText(get_ocr_lang_from_config(config_path))
     ocr_action = None
@@ -135,7 +135,7 @@ def main():
         current_lang = ocr_popup.lang_combo.currentText()
         debug_dir = user_data_dir if save_ocr_debug_image else None
 
-        request = TextGrabRequest(
+        request = OcrRequest(
             pixmap=pixmap_for_ocr,
             language_tag=current_lang,
             debug_dir=debug_dir,
@@ -189,7 +189,7 @@ def main():
         
         debug_dir = user_data_dir if save_ocr_debug_image else None
             
-        request = TextGrabRequest(
+        request = OcrRequest(
             pixmap=pixmap,
             language_tag=lang,
             debug_dir=debug_dir,
@@ -303,3 +303,4 @@ def main():
 
     # Enter event loop (build_installer.ps1 checks LASTEXITCODE).
     sys.exit(app.exec())
+

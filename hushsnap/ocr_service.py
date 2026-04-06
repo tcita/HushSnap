@@ -103,14 +103,14 @@ class OcrRecognition:
 
 
 @dataclass
-class TextGrabRequest:
+class OcrRequest:
     pixmap: QtGui.QPixmap
     language_tag: str = ""
     debug_dir: str | Path | None = None
 
 
 @dataclass
-class TextGrabResponse:
+class OcrResponse:
     text: str = ""
     error: str = ""
     pixmap: QtGui.QPixmap | None = None
@@ -530,7 +530,7 @@ def _recommend_scale_factor(result, width, height):
 
 
 def _is_space_joining_word(token):
-    """
+    r"""
     Text-Grab style SpaceJoiningWordRegex: (^[\p{L}-[\p{Lo}]]|\p{Nd}$)|.{2,}
     Matches words that should trigger a space-joining behavior.
     """
@@ -725,13 +725,13 @@ def recognize_text_from_pixmap(pixmap, language_tag="", debug_dir=None):
     return _compose_text_from_result(result, language_tag=language_tag)
 
 
-class TextGrabOcrService:
+class OcrService:
     """
     Async/sync OCR service abstraction.
     Keeps threading and error handling outside UI modules.
     """
 
-    def recognize(self, request: TextGrabRequest) -> TextGrabResponse:
+    def recognize(self, request: OcrRequest) -> OcrResponse:
         try:
             recognition = recognize_result_from_pixmap(
                 request.pixmap,
@@ -739,23 +739,24 @@ class TextGrabOcrService:
                 debug_dir=request.debug_dir,
             )
             text = _compose_text_from_result(recognition, language_tag=request.language_tag)
-            return TextGrabResponse(
+            return OcrResponse(
                 text=text,
                 error="",
                 pixmap=request.pixmap,
                 recognition=recognition,
             )
         except Exception as exc:
-            logger.exception(f"TextGrab OCR failed: {exc}")
-            return TextGrabResponse(
+            logger.exception(f"OCR service failed: {exc}")
+            return OcrResponse(
                 text="",
                 error=str(exc),
                 pixmap=request.pixmap,
                 recognition=None,
             )
 
-    def recognize_async(self, request: TextGrabRequest, done_callback):
+    def recognize_async(self, request: OcrRequest, done_callback):
         def worker():
             done_callback(self.recognize(request))
 
         threading.Thread(target=worker, daemon=True).start()
+
