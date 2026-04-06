@@ -2,6 +2,7 @@ import os
 import sys
 import logging
 import argparse
+import time
 
 from PyQt6 import QtWidgets
 
@@ -52,7 +53,7 @@ def exception_hook(exctype, value, tb):
     sys.__excepthook__(exctype, value, tb)
 
 
-def main():
+def main(boot_start_time=None):
     """
     Main application entry point.
     Flow:
@@ -65,6 +66,9 @@ def main():
     7. Build system tray icon and settings dialog.
     8. Start Qt event loop.
     """
+    overall_start = time.perf_counter()
+    boot_duration = (overall_start - boot_start_time) if boot_start_time else 0.0
+    
     # 1. Parse CLI arguments
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--debug", action="store_true")
@@ -79,11 +83,16 @@ def main():
         force_level=logging.DEBUG if force_debug else None
     )
     logger = logging.getLogger(__name__)
+    logger.info(f"--- STARTUP PERFORMANCE AUDIT ---")
+    logger.info(f"OS/Import overhead: {boot_duration:.4f}s")
+    logger.debug(f"STEP 1&2: Args parsed and logging setup. Elapsed inside main: {time.perf_counter() - overall_start:.4f}s")
 
     # 3. Install global exception hook as early as possible after logging is ready.
     sys.excepthook = exception_hook
 
+    step_start = time.perf_counter()
     hotkey_modifier, hotkey_virtual_key, hotkey_name, config_path = load_hotkey_setting()
+    logger.debug(f"STEP 4: Hotkey setting loaded. Duration: {time.perf_counter() - step_start:.4f}s")
     
     if force_debug:
         logger.info("DEBUG MODE ENABLED.")
@@ -93,7 +102,10 @@ def main():
 
 
     # Enforce single instance via lock/mutex.
+    step_start = time.perf_counter()
     instance_lock = is_already_running()
+    logger.debug(f"STEP 5: Single instance check. Duration: {time.perf_counter() - step_start:.4f}s")
+    
     if not instance_lock:
         message = "HushSnap is already running. Exiting this launch."
         logger.warning(message)
@@ -102,13 +114,17 @@ def main():
 
     # Create the Qt application instance with argv0 and any remaining CLI arguments.
     # (currently usually none unless Qt args are provided).
+    step_start = time.perf_counter()
     app = QtWidgets.QApplication([sys.argv[0], *qt_args])
+    logger.debug(f"STEP 6: QApplication created. Duration: {time.perf_counter() - step_start:.4f}s")
 
     # Keep the process alive after all windows are closed.
     app.setQuitOnLastWindowClosed(False)
 
     # Load config: current hotkey binding and language preference.
+    step_start = time.perf_counter()
     ui_language = resolve_ui_lang(config_path)
+    logger.debug(f"STEP 7: UI language resolved. Duration: {time.perf_counter() - step_start:.4f}s")
 
     def translate(key, **kwargs):
         return ui_text(ui_language, key, **kwargs)
@@ -118,8 +134,11 @@ def main():
     capture_bridge.win = None
 
     ocr_bridge = SignalBridge()
+    step_start = time.perf_counter()
     ocr_popup = OcrPopup(translate)
     ocr_service = OcrService()
+    logger.debug(f"STEP 8: OCR Popup & Service initialized. Duration: {time.perf_counter() - step_start:.4f}s")
+    
     # Set initial language from config
     ocr_popup.lang_combo.setCurrentText(get_ocr_lang_from_config(config_path))
     ocr_action = None
@@ -241,6 +260,7 @@ def main():
         launch_uninstaller(translate, app.quit)
 
     # Create system tray icon and right-click menu entry points.
+    step_start = time.perf_counter()
     tray_icon, settings_action, ocr_action = create_tray(
         app,
         translate,
@@ -249,6 +269,7 @@ def main():
         open_config_dir,
         app.quit,
     )
+    logger.debug(f"STEP 10: Tray icon created. Duration: {time.perf_counter() - step_start:.4f}s")
 
     # Restore OCR toggle state from persisted config.
     ocr_action.setChecked(get_ocr_enabled_from_config(config_path))
@@ -267,6 +288,7 @@ def main():
     ocr_action.toggled.connect(on_ocr_toggled)
 
     # Hotkey manager handles registration/unregistration with Windows.
+    step_start = time.perf_counter()
     hotkey_manager = HotkeyManager(
         tray_icon,
         translate,
@@ -277,8 +299,10 @@ def main():
     )
     hotkey_manager.register_initial()
     hotkey_manager.start_watch(app) # Start config-change watcher.
+    logger.debug(f"STEP 11: HotkeyManager init & registered. Duration: {time.perf_counter() - step_start:.4f}s")
 
     # Initialize settings dialog controller.
+    step_start = time.perf_counter()
     try:
         settings_controller = SettingsDialogController(
             translate,
@@ -297,10 +321,15 @@ def main():
     else:
         # Connect tray "Settings" action to controller show method.
         settings_action.triggered.connect(settings_controller.show)
+    logger.debug(f"STEP 12: SettingsDialogController initialized. Duration: {time.perf_counter() - step_start:.4f}s")
 
     # Unregister hotkey before app exit.
     app.aboutToQuit.connect(hotkey_manager.unregister_current_hotkey)
 
+    logic_init_duration = time.perf_counter() - overall_start
+    total_wall_time = time.perf_counter() - boot_start_time if boot_start_time else logic_init_duration
+    logger.info(f"Application logic init: {logic_init_duration:.4f}s")
+    logger.info(f"Initialization complete. Total wall-clock startup time: {total_wall_time:.4f}s")
+
     # Enter event loop (build_installer.ps1 checks LASTEXITCODE).
     sys.exit(app.exec())
-
