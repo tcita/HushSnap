@@ -55,6 +55,7 @@ if ($Version -notmatch '^\d+\.\d+\.\d+([\-+][0-9A-Za-z\.-]+)?$') {
 Push-Location $rootDir
 try {
     Invoke-ExternalCommand -Executable $PyInstallerPath -Arguments @(
+        "--noconfirm",
         "--clean",
         $resolvedSpecPath
     ) -StepName "PyInstaller build"

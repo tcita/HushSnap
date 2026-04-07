@@ -2,7 +2,8 @@
 from pathlib import Path
 
 block_cipher = None
-project_root = Path(__file__).resolve().parent
+spec_file = globals().get('SPEC') or globals().get('__file__')
+project_root = Path(spec_file).resolve().parent if spec_file else Path.cwd()
 bundle_datas = [('ico.ico', '.')]
 tessdata_fast_dir = project_root / 'tessdata_fast'
 if tessdata_fast_dir.exists() and tessdata_fast_dir.is_dir():
