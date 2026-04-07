@@ -15,6 +15,7 @@ import time
 import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from PyQt6 import QtCore, QtGui
 
@@ -117,13 +118,15 @@ class OcrResponse:
     recognition: OcrRecognition | None = None
 
 
-def _image_bytes(image):
+def _image_bytes(image: QtGui.QImage) -> memoryview:
+    """Return a writable byte view for direct pixel manipulation."""
     bits = image.bits()
     bits.setsize(image.sizeInBytes())
     return memoryview(bits)
 
 
-def _otsu_threshold(grayscale_image):
+def _otsu_threshold(grayscale_image: QtGui.QImage) -> int:
+    """Compute Otsu threshold for an 8-bit grayscale image."""
     data = _image_bytes(grayscale_image)
     hist = [0] * 256
     for value in data:
@@ -159,11 +162,8 @@ def _otsu_threshold(grayscale_image):
     return threshold
 
 
-def _to_high_contrast(image):
-    """
-    Convert to enhanced grayscale OCR image with normalized polarity:
-    white background + black text, while preserving edge gradients.
-    """
+def _to_high_contrast(image: QtGui.QImage) -> QtGui.QImage:
+    """Convert image to OCR-friendly high-contrast RGB output."""
     gray = image.convertToFormat(QtGui.QImage.Format.Format_Grayscale8)
     w = max(1, gray.width())
     h = max(1, gray.height())
@@ -237,66 +237,76 @@ def _to_high_contrast(image):
     return smooth.convertToFormat(QtGui.QImage.Format.Format_RGB32)
 
 
-def _preprocess_for_ocr(pixmap, scale_factor):
-    """
-    Bold and Sharp preprocessing for Windows OCR:
-    - Maintains original color context.
-    - Aggressive stroke boldening via 1px offset triple-draw.
-    - Perfect centered padding (Quiet Zone) with sampled background color.
-    """
-    # 1. Normalize device pixel ratio first (fixes high-DPI "content in top-left" issue).
-    src = pixmap.toImage().convertToFormat(QtGui.QImage.Format.Format_ARGB32)
-    if src.devicePixelRatio() != 1.0:
-        src.setDevicePixelRatio(1.0)
-    
-    target_w = max(1, int(round(src.width() * scale_factor)))
-    target_h = max(1, int(round(src.height() * scale_factor)))
-    
-    if abs(scale_factor - 1.0) > 0.01:
-        scaled = src.scaled(
-            target_w,
-            target_h,
-            QtCore.Qt.AspectRatioMode.IgnoreAspectRatio,
-            QtCore.Qt.TransformationMode.SmoothTransformation,
-        )
-    else:
-        scaled = src
+def _normalize_source_image(pixmap: QtGui.QPixmap) -> QtGui.QImage:
+    """Normalize DPR and pixel format to avoid HiDPI offset artifacts."""
+    image = pixmap.toImage().convertToFormat(QtGui.QImage.Format.Format_ARGB32)
+    if image.devicePixelRatio() != 1.0:
+        image.setDevicePixelRatio(1.0)
+    return image
 
-    # 2. Add Padding (Centered)
-    # Crucial: Sample background BEFORE drawing anything else
-    bg_color = scaled.pixelColor(0, 0)
-    
-    pad = 32
-    out_w = scaled.width() + (pad * 2)
-    out_h = scaled.height() + (pad * 2)
-    
-    # Use opaque output canvas to avoid alpha-blending haze that can make text look gray.
-    padded = QtGui.QImage(out_w, out_h, QtGui.QImage.Format.Format_RGB32)
+
+def _scale_image(image: QtGui.QImage, scale_factor: float) -> QtGui.QImage:
+    """Resize with smooth interpolation when scale is meaningfully different."""
+    if abs(scale_factor - 1.0) <= 0.01:
+        return image
+    return image.scaled(
+        max(1, int(round(image.width() * scale_factor))),
+        max(1, int(round(image.height() * scale_factor))),
+        QtCore.Qt.AspectRatioMode.IgnoreAspectRatio,
+        QtCore.Qt.TransformationMode.SmoothTransformation,
+    )
+
+
+def _create_padded_canvas(image: QtGui.QImage, pad: int = 32) -> tuple[QtGui.QImage, int]:
+    """
+    Create centered quiet-zone padding using sampled background color.
+    The returned image is opaque to avoid alpha-blended gray text.
+    """
+    bg_color = image.pixelColor(0, 0)
     if bg_color.alpha() < 255:
         bg_color.setAlpha(255)
-    padded.fill(bg_color)
 
-    painter = QtGui.QPainter(padded)
+    canvas = QtGui.QImage(
+        image.width() + (pad * 2),
+        image.height() + (pad * 2),
+        QtGui.QImage.Format.Format_RGB32,
+    )
+    canvas.fill(bg_color)
+    return canvas, pad
+
+
+def _draw_boldened_text(dst: QtGui.QImage, src: QtGui.QImage, pad: int) -> None:
+    """
+    Draw source image with small offsets to thicken OCR strokes.
+    Triple drawing is a pragmatic heuristic that improves OCR confidence.
+    """
+    painter = QtGui.QPainter(dst)
     try:
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
         painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform, True)
-        
-        # Aggressive Boldening: 
-        # Draw the image 3 times with 1px offsets. 
-        # This thickens the text and makes it significantly darker/punchier.
         painter.setOpacity(1.0)
-        painter.drawImage(pad, pad, scaled) # Base
-        
-        painter.setOpacity(1.0)
-        painter.drawImage(pad + 1, pad, scaled) # Horizontal shift
-        painter.drawImage(pad, pad + 1, scaled) # Vertical shift
+        painter.drawImage(pad, pad, src)
+        painter.drawImage(pad + 1, pad, src)
+        painter.drawImage(pad, pad + 1, src)
     finally:
         painter.end()
 
+
+def _preprocess_for_ocr(pixmap: QtGui.QPixmap, scale_factor: float) -> QtGui.QImage:
+    """
+    Prepare an OCR-oriented image:
+    1) normalize source pixels, 2) scale, 3) add quiet-zone padding,
+    4) bolden strokes, 5) convert to normalized high-contrast output.
+    """
+    source = _normalize_source_image(pixmap)
+    scaled = _scale_image(source, scale_factor)
+    padded, pad = _create_padded_canvas(scaled)
+    _draw_boldened_text(padded, scaled, pad)
     return _to_high_contrast(padded)
 
 
-def _parse_box(obj):
+def _parse_box(obj: Any) -> OcrBox:
+    """Parse a JSON object into OcrBox, accepting both PascalCase and camelCase keys."""
     if not isinstance(obj, dict):
         return OcrBox()
     return OcrBox(
@@ -307,7 +317,8 @@ def _parse_box(obj):
     )
 
 
-def _compute_line_box(words):
+def _compute_line_box(words: list[OcrWord]) -> OcrBox:
+    """Compute a line box from word-level boxes when line box is missing."""
     if not words:
         return OcrBox()
     left = min(w.bounding_box.x for w in words)
@@ -317,37 +328,48 @@ def _compute_line_box(words):
     return OcrBox(x=left, y=top, width=max(0.0, right - left), height=max(0.0, bottom - top))
 
 
-def _parse_ocr_payload(payload):
+def _parse_word(word_obj: Any) -> OcrWord | None:
+    """Parse one OCR word node."""
+    if not isinstance(word_obj, dict):
+        return None
+    return OcrWord(
+        text=str(word_obj.get("Text", "") or ""),
+        bounding_box=_parse_box(word_obj.get("BoundingBox")),
+    )
+
+
+def _parse_line(line_obj: Any) -> OcrLine | None:
+    """Parse one OCR line node and backfill line box from words if needed."""
+    if not isinstance(line_obj, dict):
+        return None
+
+    words: list[OcrWord] = []
+    for word_obj in line_obj.get("Words", []) or []:
+        parsed = _parse_word(word_obj)
+        if parsed is not None:
+            words.append(parsed)
+
+    line_box = _parse_box(line_obj.get("BoundingBox"))
+    if line_box.width <= 0.0 or line_box.height <= 0.0:
+        line_box = _compute_line_box(words)
+
+    return OcrLine(
+        text=str(line_obj.get("Text", "") or ""),
+        words=words,
+        bounding_box=line_box,
+    )
+
+
+def _parse_ocr_payload(payload: Any) -> OcrRecognition:
+    """Parse Windows OCR JSON payload into internal dataclasses."""
     if not isinstance(payload, dict):
         return OcrRecognition()
 
-    lines = []
+    lines: list[OcrLine] = []
     for line_obj in payload.get("Lines", []) or []:
-        if not isinstance(line_obj, dict):
-            continue
-
-        words = []
-        for word_obj in line_obj.get("Words", []) or []:
-            if not isinstance(word_obj, dict):
-                continue
-            words.append(
-                OcrWord(
-                    text=str(word_obj.get("Text", "") or ""),
-                    bounding_box=_parse_box(word_obj.get("BoundingBox")),
-                )
-            )
-
-        line_box = _parse_box(line_obj.get("BoundingBox"))
-        if line_box.width <= 0.0 or line_box.height <= 0.0:
-            line_box = _compute_line_box(words)
-
-        lines.append(
-            OcrLine(
-                text=str(line_obj.get("Text", "") or ""),
-                words=words,
-                bounding_box=line_box,
-            )
-        )
+        parsed = _parse_line(line_obj)
+        if parsed is not None:
+            lines.append(parsed)
 
     return OcrRecognition(
         text=str(payload.get("Text", "") or ""),
@@ -356,11 +378,12 @@ def _parse_ocr_payload(payload):
     )
 
 
-def _run_windows_ocr_json(image_path, language_tag=""):
+def _build_windows_ocr_script(image_path: Path, language_tag: str) -> str:
+    """Build the PowerShell script that runs Windows OCR and prints JSON."""
     escaped_path = str(image_path).replace("'", "''")
     escaped_language_tag = (language_tag or "").replace("'", "''")
 
-    script = f"""
+    return f"""
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
@@ -448,6 +471,11 @@ foreach ($line in $result.Lines) {{
 [Console]::Write(($payload | ConvertTo-Json -Depth 8 -Compress))
 """
 
+
+def _run_windows_ocr_json(image_path: Path, language_tag: str = "") -> OcrRecognition:
+    """Invoke Windows OCR through PowerShell and parse returned JSON payload."""
+    script = _build_windows_ocr_script(image_path, language_tag)
+
     startupinfo = None
     creationflags = 0
     if hasattr(subprocess, "STARTUPINFO"):
@@ -495,7 +523,8 @@ foreach ($line in $result.Lines) {{
         return OcrRecognition(text=stdout)
 
 
-def _recognize_qimage(image, language_tag=""):
+def _recognize_qimage(image: QtGui.QImage, language_tag: str = "") -> OcrRecognition:
+    """Run OCR on a temporary BMP generated from QImage."""
     tmp_path = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".bmp", delete=False) as tmp:
@@ -508,7 +537,8 @@ def _recognize_qimage(image, language_tag=""):
             tmp_path.unlink(missing_ok=True)
 
 
-def _recommend_scale_factor(result, width, height):
+def _recommend_scale_factor(result: OcrRecognition, width: int, height: int) -> float:
+    """Estimate a second-pass OCR scale based on detected word heights."""
     heights = [
         word.bounding_box.height
         for line in result.lines
@@ -529,7 +559,7 @@ def _recommend_scale_factor(result, width, height):
     return max(0.25, min(scale_factor, 4.0))
 
 
-def _is_space_joining_word(token):
+def _is_space_joining_word(token: str) -> bool:
     r"""
     Text-Grab style SpaceJoiningWordRegex: (^[\p{L}-[\p{Lo}]]|\p{Nd}$)|.{2,}
     Matches words that should trigger a space-joining behavior.
@@ -555,19 +585,20 @@ def _is_space_joining_word(token):
     return False
 
 
-def _is_space_joining_language(language_tag):
+def _is_space_joining_language(language_tag: str) -> bool:
     lang = (language_tag or "").lower()
     return not (lang.startswith("zh") or lang == "ja" or lang.startswith("ja-"))
 
 
-def _cleanup_ocr_text_line(text):
+def _cleanup_ocr_text_line(text: str) -> str:
+    """Normalize spacing around punctuation and CJK scripts."""
     text = re.sub(rf"(?<=[{NO_SPACE_SCRIPT_CHAR_CLASS}])\s+(?=[{NO_SPACE_SCRIPT_CHAR_CLASS}])", "", text)
     text = re.sub(r"\s+([,;:.!?])", r"\1", text)
     text = re.sub(r"([,;:.!?])(?=[A-Za-z0-9])", r"\1 ", text)
     return text
 
 
-def _compose_line_text(line, is_space_joining_lang=True):
+def _compose_line_text(line: OcrLine, is_space_joining_lang: bool = True) -> str:
     if not line.words:
         return _cleanup_ocr_text_line((line.text or "").strip())
 
@@ -610,7 +641,7 @@ def _compose_line_text(line, is_space_joining_lang=True):
     return _cleanup_ocr_text_line(joined)
 
 
-def _normalize_ocr_text(text):
+def _normalize_ocr_text(text: str) -> str:
     if not text:
         return ""
 
@@ -624,11 +655,11 @@ def _normalize_ocr_text(text):
     return "\n".join(lines).strip()
 
 
-def _replace_with_map(s, mapping):
+def _replace_with_map(s: str, mapping: dict[str, str]) -> str:
     return "".join(mapping.get(ch, ch) for ch in s)
 
 
-def _try_fix_number_letter_errors(token):
+def _try_fix_number_letter_errors(token: str) -> str:
     if len(token) < 5:
         return token
     total_numbers = sum(1 for ch in token if ch.isdigit())
@@ -640,7 +671,7 @@ def _try_fix_number_letter_errors(token):
     return token
 
 
-def _try_fix_every_word_letter_number_errors(text):
+def _try_fix_every_word_letter_number_errors(text: str) -> str:
     words = text.split(" ")
     fixed = [_try_fix_number_letter_errors(word) for word in words]
     joined = " ".join(fixed)
@@ -648,11 +679,11 @@ def _try_fix_every_word_letter_number_errors(text):
     return joined.strip()
 
 
-def _replace_greek_cyrillic_with_latin(text):
+def _replace_greek_cyrillic_with_latin(text: str) -> str:
     return _replace_with_map(text, GREEK_CYRILLIC_LATIN_MAP)
 
 
-def _compose_text_from_result(result, language_tag=""):
+def _compose_text_from_result(result: OcrRecognition, language_tag: str = "") -> str:
     if not result.lines:
         return _normalize_ocr_text(result.text)
 
@@ -677,22 +708,34 @@ def _compose_text_from_result(result, language_tag=""):
     return output
 
 
-def recognize_result_from_pixmap(pixmap, language_tag="", debug_dir=None):
+def _save_debug_preprocessed_image(image: QtGui.QImage, debug_dir: str | Path | None) -> None:
+    """Best-effort debug image dump; failures are logged but non-fatal."""
+    if not debug_dir:
+        return
+    try:
+        debug_path = Path(debug_dir) / "ocr_debug_preprocessed.png"
+        image.save(str(debug_path), "PNG")
+        logger.debug(f"Saved OCR debug image to: {debug_path}")
+    except Exception as exc:
+        logger.warning(f"Failed to save OCR debug image: {exc}")
+
+
+def recognize_result_from_pixmap(
+    pixmap: QtGui.QPixmap,
+    language_tag: str = "",
+    debug_dir: str | Path | None = None,
+) -> OcrRecognition:
+    """
+    Run OCR with optional adaptive second pass.
+    First pass is fast baseline; second pass is used only when scale estimate differs enough.
+    """
     total_start = time.perf_counter()
 
     if pixmap.isNull():
         return OcrRecognition()
 
     initial_image = _preprocess_for_ocr(pixmap, INITIAL_SCALE_FACTOR)
-    
-    # Save debug image if directory is provided
-    if debug_dir:
-        try:
-            debug_path = Path(debug_dir) / "ocr_debug_preprocessed.png"
-            initial_image.save(str(debug_path), "PNG")
-            logger.debug(f"Saved OCR debug image to: {debug_path}")
-        except Exception as e:
-            logger.warning(f"Failed to save OCR debug image: {e}")
+    _save_debug_preprocessed_image(initial_image, debug_dir)
 
     initial_result = _recognize_qimage(initial_image, language_tag=language_tag)
 
@@ -716,7 +759,11 @@ def recognize_result_from_pixmap(pixmap, language_tag="", debug_dir=None):
     return final_result
 
 
-def recognize_text_from_pixmap(pixmap, language_tag="", debug_dir=None):
+def recognize_text_from_pixmap(
+    pixmap: QtGui.QPixmap,
+    language_tag: str = "",
+    debug_dir: str | Path | None = None,
+) -> str:
     result = recognize_result_from_pixmap(
         pixmap,
         language_tag=language_tag,
