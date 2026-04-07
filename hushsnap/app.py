@@ -16,6 +16,8 @@ from .config import (
     update_ocr_lang_in_config,
     get_ocr_enabled_from_config,
     update_ocr_enabled_in_config,
+    get_ocr_engine_from_config,
+    update_ocr_engine_in_config,
 )
 from .hotkey import HotkeyFilter
 from .signal_bridge import SignalBridge
@@ -139,8 +141,17 @@ def main(boot_start_time=None):
     ocr_service = OcrService()
     logger.debug(f"STEP 8: OCR Popup & Service initialized. Duration: {time.perf_counter() - step_start:.4f}s")
     
-    # Set initial language from config
-    ocr_popup.lang_combo.setCurrentText(get_ocr_lang_from_config(config_path))
+    # Set initial language and engine from config
+    initial_lang = get_ocr_lang_from_config(config_path)
+    lang_idx = ocr_popup.lang_combo.findData(initial_lang)
+    if lang_idx >= 0:
+        ocr_popup.lang_combo.setCurrentIndex(lang_idx)
+    
+    initial_engine = get_ocr_engine_from_config(config_path)
+    engine_idx = ocr_popup.engine_combo.findData(initial_engine)
+    if engine_idx >= 0:
+        ocr_popup.engine_combo.setCurrentIndex(engine_idx)
+
     ocr_action = None
 
     def on_capture_completed(captured_pixmap):
@@ -151,13 +162,15 @@ def main(boot_start_time=None):
             return
 
         pixmap_for_ocr = captured_pixmap.copy()
-        current_lang = ocr_popup.lang_combo.currentText()
+        current_lang = ocr_popup.lang_combo.itemData(ocr_popup.lang_combo.currentIndex())
+        current_engine = ocr_popup.engine_combo.itemData(ocr_popup.engine_combo.currentIndex())
         debug_dir = user_data_dir if save_ocr_debug_image else None
 
         request = OcrRequest(
             pixmap=pixmap_for_ocr,
             language_tag=current_lang,
             debug_dir=debug_dir,
+            engine=current_engine,
         )
         ocr_service.recognize_async(
             request,
@@ -179,6 +192,9 @@ def main(boot_start_time=None):
             return
 
         recognized = (text or "").strip()
+        current_lang = ocr_popup.lang_combo.itemData(ocr_popup.lang_combo.currentIndex())
+        current_engine = ocr_popup.engine_combo.itemData(ocr_popup.engine_combo.currentIndex())
+
         if not recognized:
             tray_icon.showMessage(
                 translate("ocr_empty_title"),
@@ -191,11 +207,17 @@ def main(boot_start_time=None):
             ocr_popup.show_text(
                 translate("ocr_empty_popup_hint"),
                 pixmap=pixmap,
-                lang=ocr_popup.lang_combo.currentText(),
+                lang=current_lang,
+                engine=current_engine,
             )
             return
 
-        ocr_popup.show_text(recognized, pixmap=pixmap, lang=ocr_popup.lang_combo.currentText())
+        ocr_popup.show_text(
+            recognized, 
+            pixmap=pixmap, 
+            lang=current_lang,
+            engine=current_engine
+        )
 
     def on_ocr_lang_changed(lang):
         """Triggered when user changes language in the OCR popup."""
@@ -206,12 +228,14 @@ def main(boot_start_time=None):
         if not pixmap or pixmap.isNull():
             return
         
+        current_engine = ocr_popup.engine_combo.itemData(ocr_popup.engine_combo.currentIndex())
         debug_dir = user_data_dir if save_ocr_debug_image else None
             
         request = OcrRequest(
             pixmap=pixmap,
             language_tag=lang,
             debug_dir=debug_dir,
+            engine=current_engine,
         )
         ocr_service.recognize_async(
             request,
@@ -219,6 +243,30 @@ def main(boot_start_time=None):
         )
 
     ocr_popup.language_changed.connect(on_ocr_lang_changed)
+
+    def on_ocr_engine_changed(engine):
+        """Triggered when user changes OCR engine in the popup."""
+        update_ocr_engine_in_config(config_path, engine)
+        
+        pixmap = ocr_popup.last_pixmap
+        if not pixmap or pixmap.isNull():
+            return
+            
+        current_lang = ocr_popup.lang_combo.itemData(ocr_popup.lang_combo.currentIndex())
+        debug_dir = user_data_dir if save_ocr_debug_image else None
+        
+        request = OcrRequest(
+            pixmap=pixmap,
+            language_tag=current_lang,
+            debug_dir=debug_dir,
+            engine=engine,
+        )
+        ocr_service.recognize_async(
+            request,
+            lambda response: ocr_bridge.signal.emit((response.text, response.error, response.pixmap)),
+        )
+
+    ocr_popup.engine_changed.connect(on_ocr_engine_changed)
 
     def launch_capture_window(screen_pixmap):
         """

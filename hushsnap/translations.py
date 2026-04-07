@@ -71,6 +71,9 @@ UI_TEXT = {
         "hotkey_error_title": "HushSnap Hotkey Error",
         "hotkey_recover_failed": "New hotkey is unavailable, and old hotkey recovery failed.",
         "hotkey_kept_old": "{new_hotkey} is in use. Kept {old_hotkey}.",
+        "settings_ocr_engine_label": "OCR Engine:",
+        "settings_ocr_engine_tesseract": "Tesseract (Local, More languages)",
+        "settings_ocr_engine_windows": "Windows OCR (Fast, System built-in)",
     },
     UI_LANG_ZH: {
         "error": "错误",
@@ -130,6 +133,9 @@ UI_TEXT = {
         "hotkey_error_title": "HushSnap 热键错误",
         "hotkey_recover_failed": "新热键不可用，且旧热键恢复失败。",
         "hotkey_kept_old": "{new_hotkey} 被占用，已保持 {old_hotkey}",
+        "settings_ocr_engine_label": "OCR 引擎:",
+        "settings_ocr_engine_tesseract": "Tesseract (本地, 支持更多语言)",
+        "settings_ocr_engine_windows": "Windows OCR (快速, 系统内置)",
     },
 }
 

@@ -19,6 +19,20 @@ Run from source:
 python HushSnap.py --debug
 ```
 
+## OCR Engine (Tesseract + tessdata_fast)
+
+HushSnap now uses the Tesseract OCR engine and is configured to work with
+[`tessdata_fast`](https://github.com/tesseract-ocr/tessdata_fast).
+
+1. Install Tesseract.
+   - HushSnap will auto-detect the default Windows install path:
+     `C:\Program Files\Tesseract-OCR\tesseract.exe`
+   - `PATH` is still supported, and `HUSHSNAP_TESSERACT_PATH` overrides both.
+2. Put the `tessdata_fast` folder at the project root:
+   - `C:\Users\09333\Documents\GitHub\HushSnap\tessdata_fast`
+3. Optional environment overrides:
+   - `HUSHSNAP_TESSDATA_DIR` for a custom tessdata directory.
+
 ## Unit Testing
 
 HushSnap uses `pytest`. Tests live in `tests/` and cover config, hotkey flow, system interaction, and logging.

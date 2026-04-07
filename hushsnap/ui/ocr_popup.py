@@ -8,6 +8,7 @@ from PyQt6 import QtCore, QtWidgets
 class OcrPopup(QtWidgets.QWidget):
     """Semi-transparent floating popup for recognized OCR text."""
     language_changed = QtCore.pyqtSignal(str)
+    engine_changed = QtCore.pyqtSignal(str)
 
     def __init__(self, translate, parent=None):
         super().__init__(parent)
@@ -43,12 +44,24 @@ class OcrPopup(QtWidgets.QWidget):
         header.addWidget(self.title_label)
         header.addStretch(1)
 
+        # Engine Selector
+        self.engine_combo = QtWidgets.QComboBox()
+        self.engine_combo.setObjectName("ocrEngineCombo")
+        self.engine_combo.addItem("Engine: Tess", "tesseract")
+        self.engine_combo.addItem("Engine: Win", "windows")
+        self.engine_combo.setToolTip("Select OCR Engine: Tesseract (Best for multi-lang) or Windows OCR (Fast)")
+        self.engine_combo.setFixedWidth(105)
+        self.engine_combo.currentIndexChanged.connect(self._on_engine_changed)
+        header.addWidget(self.engine_combo)
+
         # Language Selector
         self.lang_combo = QtWidgets.QComboBox()
         self.lang_combo.setObjectName("ocrLangCombo")
-        self.lang_combo.addItems(["en-US", "zh-CN"])
-        self.lang_combo.setFixedWidth(90)
-        self.lang_combo.currentTextChanged.connect(self._on_lang_changed)
+        self.lang_combo.addItem("Lang: EN", "en-US")
+        self.lang_combo.addItem("Lang: ZH", "zh-CN")
+        self.lang_combo.setToolTip("Select OCR Language")
+        self.lang_combo.setFixedWidth(85)
+        self.lang_combo.currentIndexChanged.connect(self._on_lang_changed_idx)
         header.addWidget(self.lang_combo)
 
         close_btn = QtWidgets.QPushButton("x")
@@ -81,7 +94,7 @@ class OcrPopup(QtWidgets.QWidget):
             " font-size: 18px;"
             " font-weight: 600;"
             "}"
-            "#ocrLangCombo {"
+            "#ocrLangCombo, #ocrEngineCombo {"
             " background: rgba(255, 255, 255, 20);"
             " border: 1px solid rgba(255, 255, 255, 30);"
             " border-radius: 6px;"
@@ -107,16 +120,30 @@ class OcrPopup(QtWidgets.QWidget):
             "}"
         )
 
-    def _on_lang_changed(self, lang):
+    def _on_lang_changed_idx(self, index):
         if not self._is_refreshing:
-            self.language_changed.emit(lang)
+            lang_data = self.lang_combo.itemData(index)
+            if lang_data:
+                self.language_changed.emit(lang_data)
 
-    def show_text(self, text, pixmap=None, lang=None):
+    def _on_engine_changed(self, index):
+        if not self._is_refreshing:
+            engine_data = self.engine_combo.itemData(index)
+            self.engine_changed.emit(engine_data)
+
+    def show_text(self, text, pixmap=None, lang=None, engine=None):
         """Display OCR text and show popup near bottom-right corner."""
         self._is_refreshing = True
-        self._last_pixmap = pixmap
+        if pixmap is not None:
+            self._last_pixmap = pixmap
         if lang:
-            self.lang_combo.setCurrentText(lang)
+            idx = self.lang_combo.findData(lang)
+            if idx >= 0:
+                self.lang_combo.setCurrentIndex(idx)
+        if engine:
+            idx = self.engine_combo.findData(engine)
+            if idx >= 0:
+                self.engine_combo.setCurrentIndex(idx)
         self.title_label.setText(self.translate("ocr_popup_title"))
         self.text_edit.setPlainText(text)
         self._is_refreshing = False

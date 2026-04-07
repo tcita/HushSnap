@@ -1,12 +1,18 @@
 # -*- mode: python ; coding: utf-8 -*-
+from pathlib import Path
 
 block_cipher = None
+project_root = Path(__file__).resolve().parent
+bundle_datas = [('ico.ico', '.')]
+tessdata_fast_dir = project_root / 'tessdata_fast'
+if tessdata_fast_dir.exists() and tessdata_fast_dir.is_dir():
+    bundle_datas.append((str(tessdata_fast_dir), 'tessdata_fast'))
 
 a = Analysis(
     ['HushSnap.py'],
     pathex=[],
     binaries=[],
-    datas=[('ico.ico', '.')],
+    datas=bundle_datas,
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
