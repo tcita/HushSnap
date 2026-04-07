@@ -1,6 +1,8 @@
 # HushSnap
 
-HushSnap is a global hotkey‑driven screenshot tool designed for speed and silence. Capture any screen region or the full screen instantly and have it saved to your clipboard. It also supports OCR, with more features currently in development.
+HushSnap is a lightweight screenshot tool built to stay quietly in the background and be ready whenever you need it. It lives in the system tray, runs silently, and lets you instantly capture part or all of your screen, with every shot copied straight to your clipboard without interrupting your flow.
+
+Designed around global shortcuts, HushSnap can capture from anywhere in Windows while staying out of sight and out of the way. The experience is intentionally minimal, silent, and fast, with customizable hotkeys that let you shape the workflow around your own habits. OCR is already supported, and as the project continues to evolve, some parts of this README may occasionally lag behind the latest behavior or features.
 
 ## Third-Party Acknowledgment
 
