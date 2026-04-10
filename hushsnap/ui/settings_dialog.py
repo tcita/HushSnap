@@ -6,7 +6,7 @@ Provides UI to view current hotkey, capture/change a new hotkey, and launch unin
 import logging
 from PyQt6 import QtCore, QtWidgets
 
-from ..config import parse_hotkey, update_hotkey_in_config, get_ocr_engine_from_config, update_ocr_engine_in_config
+from ..config import parse_hotkey, update_hotkey_in_config
 from .styles import (
     SETTINGS_BUTTON_HEIGHT,
     SETTINGS_CAPTURE_DIALOG_MIN_WIDTH,
@@ -245,29 +245,6 @@ class SettingsDialogController:
         self._hotkey_label.setWordWrap(True)
         layout.addWidget(self._hotkey_label)
         self._refresh_hotkey_label()
-
-        # OCR Engine selection area.
-        ocr_engine_layout = QtWidgets.QHBoxLayout()
-        ocr_engine_label = QtWidgets.QLabel(self.translate("settings_ocr_engine_label"))
-        ocr_engine_layout.addWidget(ocr_engine_label)
-
-        ocr_engine_combo = QtWidgets.QComboBox()
-        ocr_engine_combo.addItem(self.translate("settings_ocr_engine_tesseract"), "tesseract")
-        ocr_engine_combo.addItem(self.translate("settings_ocr_engine_windows"), "windows")
-
-        # Load current engine from config.
-        current_engine = get_ocr_engine_from_config(self.config_path)
-        index = ocr_engine_combo.findData(current_engine)
-        if index >= 0:
-            ocr_engine_combo.setCurrentIndex(index)
-
-        def on_ocr_engine_changed(idx):
-            engine_data = ocr_engine_combo.itemData(idx)
-            update_ocr_engine_in_config(self.config_path, engine_data)
-
-        ocr_engine_combo.currentIndexChanged.connect(on_ocr_engine_changed)
-        ocr_engine_layout.addWidget(ocr_engine_combo)
-        layout.addLayout(ocr_engine_layout)
 
         # Status/error message area.
         status_label = QtWidgets.QLabel("")

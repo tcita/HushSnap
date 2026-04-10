@@ -8,7 +8,6 @@ from PyQt6 import QtCore, QtWidgets
 class OcrPopup(QtWidgets.QWidget):
     """Semi-transparent floating popup for recognized OCR text."""
     language_changed = QtCore.pyqtSignal(str)
-    engine_changed = QtCore.pyqtSignal(str)
 
     def __init__(self, translate, parent=None):
         super().__init__(parent)
@@ -43,16 +42,6 @@ class OcrPopup(QtWidgets.QWidget):
         self.title_label.setObjectName("ocrTitle")
         header.addWidget(self.title_label)
         header.addStretch(1)
-
-        # Engine Selector
-        self.engine_combo = QtWidgets.QComboBox()
-        self.engine_combo.setObjectName("ocrEngineCombo")
-        self.engine_combo.addItem("Engine: Tess", "tesseract")
-        self.engine_combo.addItem("Engine: Win", "windows")
-        self.engine_combo.setToolTip("Select OCR Engine: Tesseract (Best for multi-lang) or Windows OCR (Fast)")
-        self.engine_combo.setFixedWidth(105)
-        self.engine_combo.currentIndexChanged.connect(self._on_engine_changed)
-        header.addWidget(self.engine_combo)
 
         # Language Selector
         self.lang_combo = QtWidgets.QComboBox()
@@ -94,7 +83,7 @@ class OcrPopup(QtWidgets.QWidget):
             " font-size: 18px;"
             " font-weight: 600;"
             "}"
-            "#ocrLangCombo, #ocrEngineCombo {"
+            "#ocrLangCombo {"
             " background: rgba(255, 255, 255, 20);"
             " border: 1px solid rgba(255, 255, 255, 30);"
             " border-radius: 6px;"
@@ -126,12 +115,7 @@ class OcrPopup(QtWidgets.QWidget):
             if lang_data:
                 self.language_changed.emit(lang_data)
 
-    def _on_engine_changed(self, index):
-        if not self._is_refreshing:
-            engine_data = self.engine_combo.itemData(index)
-            self.engine_changed.emit(engine_data)
-
-    def show_text(self, text, pixmap=None, lang=None, engine=None):
+    def show_text(self, text, pixmap=None, lang=None):
         """Display OCR text and show popup near bottom-right corner."""
         self._is_refreshing = True
         if pixmap is not None:
@@ -140,10 +124,6 @@ class OcrPopup(QtWidgets.QWidget):
             idx = self.lang_combo.findData(lang)
             if idx >= 0:
                 self.lang_combo.setCurrentIndex(idx)
-        if engine:
-            idx = self.engine_combo.findData(engine)
-            if idx >= 0:
-                self.engine_combo.setCurrentIndex(idx)
         self.title_label.setText(self.translate("ocr_popup_title"))
         self.text_edit.setPlainText(text)
         self._is_refreshing = False

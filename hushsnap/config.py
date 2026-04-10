@@ -119,7 +119,6 @@ def _ensure_default_config_exists(config_path):
             "language": UI_LANG_AUTO,
             "ocr_enabled": False,
             "ocr_language": "en-US",
-            "ocr_engine": "tesseract",
             "_hotkey_note": _hotkey_warning_note(),
         }
         config_path.write_text(
@@ -325,25 +324,6 @@ def update_ocr_enabled_in_config(config_path, enabled):
         _write_config_data(config_path, config_data)
     except Exception as e:
         logger.error(f"Failed to update OCR enabled state in config: {e}")
-
-
-def get_ocr_engine_from_config(config_path):
-    """Read OCR engine preference from config."""
-    try:
-        config_data = _load_config_data(config_path)
-        return config_data.get("ocr_engine", "tesseract")
-    except Exception:
-        return "tesseract"
-
-
-def update_ocr_engine_in_config(config_path, engine_name):
-    """Update OCR engine preference in config."""
-    try:
-        config_data = _load_config_data(config_path)
-        config_data["ocr_engine"] = engine_name
-        _write_config_data(config_path, config_data)
-    except Exception as e:
-        logger.error(f"Failed to update OCR engine in config: {e}")
 
 
 def load_hotkey_setting():

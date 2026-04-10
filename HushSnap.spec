@@ -5,9 +5,6 @@ block_cipher = None
 spec_file = globals().get('SPEC') or globals().get('__file__')
 project_root = Path(spec_file).resolve().parent if spec_file else Path.cwd()
 bundle_datas = [('ico.ico', '.')]
-tessdata_fast_dir = project_root / 'tessdata_fast'
-if tessdata_fast_dir.exists() and tessdata_fast_dir.is_dir():
-    bundle_datas.append((str(tessdata_fast_dir), 'tessdata_fast'))
 
 a = Analysis(
     ['HushSnap.py'],

@@ -5,24 +5,18 @@ This module is intentionally UI-agnostic and can be reused as a standalone OCR
 service from other Python code.
 """
 
-import csv
-import json
 import logging
-import os
 import re
-import subprocess
 import tempfile
 import threading
 import time
 import unicodedata
-from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from PyQt6 import QtCore, QtGui
 
-from .config import get_resource_dir
 from .system.windows_ocr import run_windows_ocr_json
 
 logger = logging.getLogger(__name__)
@@ -33,10 +27,6 @@ MAX_OCR_IMAGE_DIMENSION = 2600
 MIN_RESCALE_DELTA = 0.15
 MIN_PAD_DIM = 64
 NO_SPACE_SCRIPT_CHAR_CLASS = r"\u3040-\u30ff\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff"
-DEFAULT_TESSERACT_OEM = "1"
-DEFAULT_TESSERACT_PSM = "6"
-DEFAULT_TESSERACT_LANG = "eng"
-TESSDATA_BEST_DIRNAME = "tessdata_best"
 
 NUMBERS_TO_LETTERS = {
     "0": "o", "4": "h", "9": "g", "1": "l", "8": "B", "5": "S", "6": "b", "2": "z",
@@ -118,7 +108,6 @@ class OcrRequest:
     pixmap: QtGui.QPixmap
     language_tag: str = ""
     debug_dir: str | Path | None = None
-    engine: str = "tesseract"  # "tesseract" or "windows"
 
 
 @dataclass
@@ -129,18 +118,7 @@ class OcrResponse:
     recognition: OcrRecognition | None = None
 
 
-class IOcrEngine(ABC):
-    @abstractmethod
-    def recognize(self, image_path: Path, language_tag: str) -> OcrRecognition:
-        pass
-
-
-class TesseractEngine(IOcrEngine):
-    def recognize(self, image_path: Path, language_tag: str) -> OcrRecognition:
-        return _run_tesseract_ocr(image_path, language_tag)
-
-
-class WindowsOcrEngine(IOcrEngine):
+class WindowsOcrEngine:
     def recognize(self, image_path: Path, language_tag: str) -> OcrRecognition:
         payload = run_windows_ocr_json(image_path, language_tag)
         return _parse_ocr_payload(payload)
@@ -406,241 +384,20 @@ def _parse_ocr_payload(payload: Any) -> OcrRecognition:
     )
 
 
-def _normalize_language_tag(language_tag: str) -> str:
-    return (language_tag or "").strip().lower().replace("_", "-")
-
-
-def _map_language_tag_to_tess_langs(language_tag: str) -> str:
-    """
-    Map BCP-47 style tags from UI/config to tesseract language packs.
-    This keeps current UI values (en-US/zh-CN) compatible with tessdata_best.
-    """
-    normalized = _normalize_language_tag(language_tag)
-    if not normalized:
-        return DEFAULT_TESSERACT_LANG
-
-    explicit_map = {
-        "en": "eng",
-        "en-us": "eng",
-        "en-gb": "eng",
-        "zh": "chi_sim+eng",
-        "zh-cn": "chi_sim+eng",
-        "zh-sg": "chi_sim+eng",
-        "zh-hans": "chi_sim+eng",
-        "zh-tw": "chi_tra+eng",
-        "zh-hk": "chi_tra+eng",
-        "zh-mo": "chi_tra+eng",
-        "zh-hant": "chi_tra+eng",
-        "ja": "jpn",
-        "ja-jp": "jpn",
-        "ko": "kor",
-        "ko-kr": "kor",
-    }
-    mapped = explicit_map.get(normalized)
-    if mapped:
-        return mapped
-
-    primary = normalized.split("-", 1)[0]
-    primary_map = {
-        "en": "eng",
-        "zh": "chi_sim+eng",
-        "ja": "jpn",
-        "ko": "kor",
-        "de": "deu",
-        "fr": "fra",
-        "es": "spa",
-        "it": "ita",
-        "pt": "por",
-        "ru": "rus",
-        "ar": "ara",
-    }
-    return primary_map.get(primary, DEFAULT_TESSERACT_LANG)
-
-
-def _resolve_tessdata_dir() -> Path | None:
-    """
-    Resolve tessdata_best directory for Tesseract.
-    Priority: env override -> bundled resource directory.
-    """
-    env_value = (os.getenv("HUSHSNAP_TESSDATA_DIR") or "").strip()
-    if env_value:
-        env_path = Path(env_value)
-        if env_path.exists() and env_path.is_dir():
-            return env_path
-
-    bundled_dir = get_resource_dir() / TESSDATA_BEST_DIRNAME
-    if bundled_dir.exists() and bundled_dir.is_dir():
-        return bundled_dir
-    return None
-
-
-def _resolve_tesseract_cmd() -> str:
-    env_path = (os.getenv("HUSHSNAP_TESSERACT_PATH") or "").strip()
-    if env_path:
-        return env_path
-    standard_install_locations = (
-        Path(r"C:\Program Files\Tesseract-OCR\tesseract.exe"),
-        Path(r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe"),
-    )
-    for candidate in standard_install_locations:
-        if candidate.exists():
-            return str(candidate)
-    return "tesseract"
-
-
-def _parse_tesseract_tsv(tsv_text: str, fallback_text: str = "") -> OcrRecognition:
-    if not tsv_text.strip():
-        return OcrRecognition(text=_normalize_ocr_text(fallback_text))
-
-    grouped_words: dict[tuple[str, str, str, str], list[OcrWord]] = {}
-    line_order: list[tuple[str, str, str, str]] = []
-
-    reader = csv.DictReader(tsv_text.splitlines(), delimiter="\t")
-    for row in reader:
-        if not isinstance(row, dict):
-            continue
-
-        raw_text = (row.get("text") or "").strip()
-        if not raw_text:
-            continue
-
-        try:
-            level = int((row.get("level") or "0").strip() or "0")
-        except ValueError:
-            level = 0
-        if level != 5:
-            continue
-
-        key = (
-            row.get("page_num", "") or "",
-            row.get("block_num", "") or "",
-            row.get("par_num", "") or "",
-            row.get("line_num", "") or "",
-        )
-        if key not in grouped_words:
-            grouped_words[key] = []
-            line_order.append(key)
-
-        try:
-            left = float((row.get("left") or "0").strip() or "0")
-            top = float((row.get("top") or "0").strip() or "0")
-            width = float((row.get("width") or "0").strip() or "0")
-            height = float((row.get("height") or "0").strip() or "0")
-        except ValueError:
-            left, top, width, height = 0.0, 0.0, 0.0, 0.0
-
-        grouped_words[key].append(
-            OcrWord(
-                text=raw_text,
-                bounding_box=OcrBox(x=left, y=top, width=max(0.0, width), height=max(0.0, height)),
-            )
-        )
-
-    lines: list[OcrLine] = []
-    for key in line_order:
-        words = grouped_words.get(key, [])
-        if not words:
-            continue
-        line_text = " ".join(word.text for word in words if word.text).strip()
-        lines.append(
-            OcrLine(
-                text=line_text,
-                words=words,
-                bounding_box=_compute_line_box(words),
-            )
-        )
-
-    if not lines:
-        return OcrRecognition(text=_normalize_ocr_text(fallback_text))
-
-    full_text = "\n".join((line.text or "").strip() for line in lines if (line.text or "").strip())
-    return OcrRecognition(
-        text=full_text.strip(),
-        lines=lines,
-        angle=0.0,
-    )
-
-
-def _run_tesseract_ocr(image_path: Path, language_tag: str = "") -> OcrRecognition:
-    tesseract_cmd = _resolve_tesseract_cmd()
-    tess_langs = _map_language_tag_to_tess_langs(language_tag)
-    tessdata_dir = _resolve_tessdata_dir()
-    if tessdata_dir is None:
-        logger.warning("tessdata_best directory not found; falling back to Tesseract default tessdata.")
-
-    startupinfo = None
-    creationflags = 0
-    if hasattr(subprocess, "STARTUPINFO"):
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0)
-        startupinfo.wShowWindow = 0
-    if hasattr(subprocess, "CREATE_NO_WINDOW"):
-        creationflags |= subprocess.CREATE_NO_WINDOW
-
-    with tempfile.TemporaryDirectory(prefix="hushsnap_ocr_") as temp_dir:
-        output_base = Path(temp_dir) / "ocr_out"
-        command = [
-            tesseract_cmd,
-            str(image_path),
-            str(output_base),
-            "-l",
-            tess_langs,
-            "--oem",
-            DEFAULT_TESSERACT_OEM,
-            "--psm",
-            DEFAULT_TESSERACT_PSM,
-        ]
-        if tessdata_dir is not None:
-            command.extend(["--tessdata-dir", str(tessdata_dir)])
-        command.extend(["tsv", "txt"])
-
-        try:
-            completed = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=20,
-                check=False,
-                startupinfo=startupinfo,
-                creationflags=creationflags,
-            )
-        except FileNotFoundError as exc:
-            raise RuntimeError(
-                "Tesseract executable not found. Install tesseract or set HUSHSNAP_TESSERACT_PATH."
-            ) from exc
-
-        if completed.returncode != 0:
-            stderr = (completed.stderr or "").strip()
-            if stderr:
-                logger.error(f"Tesseract OCR failed: {stderr}")
-            return OcrRecognition()
-
-        txt_path = output_base.with_suffix(".txt")
-        tsv_path = output_base.with_suffix(".tsv")
-        txt_content = ""
-        tsv_content = ""
-        if txt_path.exists():
-            txt_content = txt_path.read_text(encoding="utf-8", errors="replace")
-        if tsv_path.exists():
-            tsv_content = tsv_path.read_text(encoding="utf-8", errors="replace")
-        return _parse_tesseract_tsv(tsv_content, fallback_text=txt_content)
-
-
-def _recognize_qimage(image: QtGui.QImage, language_tag: str = "", engine: IOcrEngine = None) -> OcrRecognition:
+def _recognize_qimage(
+    image: QtGui.QImage,
+    language_tag: str = "",
+    engine: WindowsOcrEngine | None = None,
+) -> OcrRecognition:
     """Run OCR on a temporary file generated from QImage."""
     if engine is None:
-        engine = TesseractEngine()
-
-    suffix = ".png" if isinstance(engine, TesseractEngine) else ".bmp"
-    img_format = "PNG" if isinstance(engine, TesseractEngine) else "BMP"
+        engine = WindowsOcrEngine()
 
     tmp_path = None
     try:
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(suffix=".bmp", delete=False) as tmp:
             tmp_path = Path(tmp.name)
-        if not image.save(str(tmp_path), img_format):
+        if not image.save(str(tmp_path), "BMP"):
             return OcrRecognition()
         return engine.recognize(tmp_path, language_tag=language_tag)
     finally:
@@ -835,7 +592,6 @@ def recognize_result_from_pixmap(
     pixmap: QtGui.QPixmap,
     language_tag: str = "",
     debug_dir: str | Path | None = None,
-    engine_name: str = "tesseract",
 ) -> OcrRecognition:
     """
     Run OCR with optional adaptive second pass.
@@ -846,10 +602,7 @@ def recognize_result_from_pixmap(
     if pixmap.isNull():
         return OcrRecognition()
 
-    if engine_name == "windows":
-        engine = WindowsOcrEngine()
-    else:
-        engine = TesseractEngine()
+    engine = WindowsOcrEngine()
 
     initial_image = _preprocess_for_ocr(pixmap, INITIAL_SCALE_FACTOR)
     _save_debug_preprocessed_image(initial_image, debug_dir)
@@ -871,7 +624,7 @@ def recognize_result_from_pixmap(
 
     logger.info(
         f"OCR Completed in {time.perf_counter() - total_start:.2f}s "
-        f"(engine={engine_name}, scale={recommended_scale:.2f}, lines={len(final_result.lines)})"
+        f"(engine=windows, scale={recommended_scale:.2f}, lines={len(final_result.lines)})"
     )
     return final_result
 
@@ -880,13 +633,11 @@ def recognize_text_from_pixmap(
     pixmap: QtGui.QPixmap,
     language_tag: str = "",
     debug_dir: str | Path | None = None,
-    engine_name: str = "tesseract",
 ) -> str:
     result = recognize_result_from_pixmap(
         pixmap,
         language_tag=language_tag,
         debug_dir=debug_dir,
-        engine_name=engine_name,
     )
     return _compose_text_from_result(result, language_tag=language_tag)
 
@@ -903,7 +654,6 @@ class OcrService:
                 request.pixmap,
                 language_tag=request.language_tag,
                 debug_dir=request.debug_dir,
-                engine_name=request.engine,
             )
             text = _compose_text_from_result(recognition, language_tag=request.language_tag)
             return OcrResponse(
