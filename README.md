@@ -21,11 +21,6 @@ Run from source:
 python HushSnap.py --debug
 ```
 
-## OCR Engine
-
-HushSnap now uses the default Windows OCR engine only. No separate Tesseract
-installation or bundled language data is required.
-
 ## Unit Testing
 
 HushSnap uses `pytest`. Tests live in `tests/` and cover config, hotkey flow, system interaction, and logging.
