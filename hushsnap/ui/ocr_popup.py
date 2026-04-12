@@ -53,6 +53,12 @@ class OcrPopup(QtWidgets.QWidget):
         self.lang_combo.currentIndexChanged.connect(self._on_lang_changed_idx)
         header.addWidget(self.lang_combo)
 
+        self.copy_btn = QtWidgets.QPushButton(self.translate("ocr_copy_btn"))
+        self.copy_btn.setObjectName("ocrCopyBtn")
+        self.copy_btn.setFixedHeight(24)
+        self.copy_btn.clicked.connect(self.copy_text)
+        header.addWidget(self.copy_btn)
+
         close_btn = QtWidgets.QPushButton("x")
         close_btn.setObjectName("ocrCloseBtn")
         close_btn.setFixedSize(24, 24)
@@ -61,7 +67,7 @@ class OcrPopup(QtWidgets.QWidget):
         layout.addLayout(header)
 
         self.text_edit = QtWidgets.QPlainTextEdit()
-        self.text_edit.setReadOnly(True)
+        self.text_edit.setReadOnly(False)
         self.text_edit.setObjectName("ocrText")
         layout.addWidget(self.text_edit)
 
@@ -89,6 +95,16 @@ class OcrPopup(QtWidgets.QWidget):
             " border-radius: 6px;"
             " color: #F1F5F9;"
             " padding: 2px 5px;"
+            "}"
+            "#ocrCopyBtn {"
+            " color: #CFD8E3;"
+            " border: none;"
+            " border-radius: 8px;"
+            " background: rgba(255, 255, 255, 20);"
+            " padding: 0 10px;"
+            "}"
+            "#ocrCopyBtn:hover {"
+            " background: rgba(255, 255, 255, 34);"
             "}"
             "#ocrText {"
             " background: rgba(255, 255, 255, 12);"
@@ -125,6 +141,7 @@ class OcrPopup(QtWidgets.QWidget):
             if idx >= 0:
                 self.lang_combo.setCurrentIndex(idx)
         self.title_label.setText(self.translate("ocr_popup_title"))
+        self.copy_btn.setText(self.translate("ocr_copy_btn"))
         self.text_edit.setPlainText(text)
         self._is_refreshing = False
         
@@ -138,6 +155,12 @@ class OcrPopup(QtWidgets.QWidget):
     @property
     def last_pixmap(self):
         return self._last_pixmap
+
+    def copy_text(self):
+        """Copy the current text editor content to the system clipboard."""
+        clipboard = QtWidgets.QApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText(self.text_edit.toPlainText())
 
     def mousePressEvent(self, event):
         """Enable dragging the window."""

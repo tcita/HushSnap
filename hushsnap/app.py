@@ -201,6 +201,10 @@ def main(boot_start_time=None):
             )
             return
 
+        clipboard = app.clipboard()
+        if clipboard is not None:
+            clipboard.setText(recognized)
+
         ocr_popup.show_text(
             recognized, 
             pixmap=pixmap, 
