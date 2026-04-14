@@ -12,21 +12,16 @@ from .config import (
     load_hotkey_setting,
     resolve_ui_lang,
     ui_text,
-    get_ocr_lang_from_config,
-    update_ocr_lang_in_config,
-    get_ocr_enabled_from_config,
-    update_ocr_enabled_in_config,
 )
 from .hotkey import HotkeyFilter
+from .ocr_controller import OcrController
 from .signal_bridge import SignalBridge
 from .system.hotkey_manager import HotkeyManager
 from .system.uninstall import launch_uninstaller
-from .ocr_service import OcrService, OcrRequest
-from .ui.ocr_popup import OcrPopup
 from .ui.settings_dialog import SettingsDialogController
 from .ui.tray import create_tray
 from .config import get_user_data_dir
-from .constants import CAPTURE_DEBUG_LOG_FILENAME, TRAY_MSG_MEDIUM_MS
+from .constants import CAPTURE_DEBUG_LOG_FILENAME
 from .logging_config import setup_logging
 
 
@@ -133,17 +128,15 @@ def main(boot_start_time=None):
     capture_bridge = SignalBridge()
     capture_bridge.win = None
 
-    ocr_bridge = SignalBridge()
     step_start = time.perf_counter()
-    ocr_popup = OcrPopup(translate)
-    ocr_service = OcrService()
+    ocr_controller = OcrController(
+        app=app,
+        translate=translate,
+        config_path=config_path,
+        user_data_dir=user_data_dir,
+        save_debug_image=save_ocr_debug_image,
+    )
     logger.debug(f"STEP 8: OCR Popup & Service initialized. Duration: {time.perf_counter() - step_start:.4f}s")
-    
-    # Set initial language from config
-    initial_lang = get_ocr_lang_from_config(config_path)
-    lang_idx = ocr_popup.lang_combo.findData(initial_lang)
-    if lang_idx >= 0:
-        ocr_popup.lang_combo.setCurrentIndex(lang_idx)
 
     ocr_action = None
 
@@ -151,87 +144,7 @@ def main(boot_start_time=None):
         """
         Optional OCR flow after screenshot is already copied to clipboard.
         """
-        if ocr_action is None or not ocr_action.isChecked():
-            return
-
-        pixmap_for_ocr = captured_pixmap.copy()
-        current_lang = ocr_popup.lang_combo.itemData(ocr_popup.lang_combo.currentIndex())
-        debug_dir = user_data_dir if save_ocr_debug_image else None
-
-        request = OcrRequest(
-            pixmap=pixmap_for_ocr,
-            language_tag=current_lang,
-            debug_dir=debug_dir,
-        )
-        ocr_service.recognize_async(
-            request,
-            lambda response: ocr_bridge.signal.emit((response.text, response.error, response.pixmap)),
-        )
-
-    def on_ocr_finished(payload):
-        text, error, pixmap = payload
-        if ocr_action is None or not ocr_action.isChecked():
-            return
-
-        if error:
-            tray_icon.showMessage(
-                translate("ocr_failed_title"),
-                translate("ocr_failed_body"),
-                QtWidgets.QSystemTrayIcon.MessageIcon.Warning,
-                TRAY_MSG_MEDIUM_MS,
-            )
-            return
-
-        recognized = (text or "").strip()
-        current_lang = ocr_popup.lang_combo.itemData(ocr_popup.lang_combo.currentIndex())
-
-        if not recognized:
-            tray_icon.showMessage(
-                translate("ocr_empty_title"),
-                translate("ocr_empty_body"),
-                QtWidgets.QSystemTrayIcon.MessageIcon.Information,
-                TRAY_MSG_MEDIUM_MS,
-            )
-            # Keep popup accessible even for empty OCR so users can switch
-            # language and re-run OCR on the same captured image.
-            ocr_popup.show_text(
-                translate("ocr_empty_popup_hint"),
-                pixmap=pixmap,
-                lang=current_lang,
-            )
-            return
-
-        clipboard = app.clipboard()
-        if clipboard is not None:
-            clipboard.setText(recognized)
-
-        ocr_popup.show_text(
-            recognized, 
-            pixmap=pixmap, 
-            lang=current_lang,
-        )
-
-    def on_ocr_lang_changed(lang):
-        """Triggered when user changes language in the OCR popup."""
-        # Persist the choice
-        update_ocr_lang_in_config(config_path, lang)
-        
-        pixmap = ocr_popup.last_pixmap
-        if not pixmap or pixmap.isNull():
-            return
-        debug_dir = user_data_dir if save_ocr_debug_image else None
-            
-        request = OcrRequest(
-            pixmap=pixmap,
-            language_tag=lang,
-            debug_dir=debug_dir,
-        )
-        ocr_service.recognize_async(
-            request,
-            lambda response: ocr_bridge.signal.emit((response.text, response.error, response.pixmap)),
-        )
-
-    ocr_popup.language_changed.connect(on_ocr_lang_changed)
+        ocr_controller.handle_capture_completed(captured_pixmap)
 
     def launch_capture_window(screen_pixmap):
         """
@@ -284,21 +197,7 @@ def main(boot_start_time=None):
     )
     logger.debug(f"STEP 10: Tray icon created. Duration: {time.perf_counter() - step_start:.4f}s")
 
-    # Restore OCR toggle state from persisted config.
-    ocr_action.setChecked(get_ocr_enabled_from_config(config_path))
-
-    ocr_bridge.signal.connect(on_ocr_finished)
-
-    def on_ocr_toggled(enabled):
-        update_ocr_enabled_in_config(config_path, enabled)
-        tray_icon.showMessage(
-            translate("ocr_toggle_title"),
-            translate("ocr_enabled_body") if enabled else translate("ocr_disabled_body"),
-            QtWidgets.QSystemTrayIcon.MessageIcon.Information,
-            TRAY_MSG_MEDIUM_MS,
-        )
-
-    ocr_action.toggled.connect(on_ocr_toggled)
+    ocr_controller.attach_tray(tray_icon, ocr_action)
 
     # Hotkey manager handles registration/unregistration with Windows.
     step_start = time.perf_counter()
