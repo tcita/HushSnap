@@ -13,7 +13,7 @@ import time
 import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from PyQt6 import QtCore, QtGui
 
@@ -25,7 +25,6 @@ INITIAL_SCALE_FACTOR = 1.0
 IDEAL_LINE_HEIGHT_PX = 40.0
 MAX_OCR_IMAGE_DIMENSION = 2600
 MIN_RESCALE_DELTA = 0.15
-MIN_PAD_DIM = 64
 NO_SPACE_SCRIPT_CHAR_CLASS = r"\u3040-\u30ff\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff"
 
 NUMBERS_TO_LETTERS = {
@@ -35,43 +34,6 @@ LETTERS_TO_NUMBERS = {
     "o": "0", "O": "0", "Q": "0", "c": "0", "C": "0", "i": "1", "I": "1", "l": "1",
     "g": "9", "G": "9", "h": "4", "H": "4", "s": "5", "S": "5", "B": "8", "b": "6",
     "z": "2", "Z": "2",
-}
-
-# Text-Grab style GUID and technical text corrections
-GUID_CORRECTIONS = {
-    "o": "0", "O": "0", "i": "1", "l": "1", "I": "1", "h": "4", "z": "2", "Z": "2",
-    "g": "9", "G": "9", "s": "5", "S": "5", "Ø": "0", "#": "f", "@": "0", "Q": "0",
-    "¥": "f", "£": "f", "/": "7",
-}
-
-# Text-Grab style heuristic correction table
-# OCR often confuses similar-looking characters across different scripts.
-HEURISTIC_CORRECTION_TABLE = {
-    # Latin errors misidentified as CJK
-    "丆": "f", "仂": "t", "讵": "i", "忉": "In", "酽": "of",
-    "凼": "to", "冖": "r", "讠": "i", "沪": "v", "劬": "of",
-    "泅": "on", "凇": "in", "沪": "v", "犭": "f", "氵": "i",
-    "爿": "p", "卩": "p", "阝": "B", "匚": "C", "凵": "u",
-    "冂": "n", "厶": "s", "乜": "n", "乇": "e", "彐": "E",
-    
-    # Common Punctuation (Full-width to Half-width)
-    "、": ",", "：": ":", "；": ";", "！": "!", "？": "?",
-    "（": "(", "）": ")", "【": "[", "】": "]", "“": "\"", "”": "\"",
-    "‘": "'", "’": "'", "。": ".", "，": ",",
-}
-
-GREEK_CYRILLIC_LATIN_MAP = {
-    "Γ": "r", "Δ": "A", "Θ": "O", "Λ": "A", "Ξ": "E", "Π": "n", "Σ": "E", "Φ": "O", "Χ": "X", "Ψ": "W",
-    "Ω": "O", "α": "a", "β": "B", "γ": "y", "δ": "s", "ε": "E", "ζ": "C", "η": "n", "θ": "O", "ι": "l",
-    "κ": "k", "λ": "A", "μ": "u", "ν": "v", "ξ": "E", "π": "n", "ρ": "p", "ς": "s", "σ": "o", "τ": "t",
-    "υ": "v", "φ": "O", "χ": "X", "ψ": "U", "ω": "w", "ö": "o", "é": "e", "Å": "A", "Ö": "O", "ē": "e",
-    "ō": "o", "Ἀ": "A", "ό": "o", "Б": "B", "Г": "r", "Д": "A", "Ё": "E", "Ж": "K", "З": "3", "И": "N",
-    "Й": "N", "К": "K", "Л": "n", "П": "n", "Ф": "O", "Ц": "U", "Ч": "u", "Ш": "W", "Щ": "W", "Ъ": "b",
-    "Ы": "b", "Ь": "b", "Э": "3", "Ю": "O", "Я": "R", "б": "6", "в": "B", "г": "r", "д": "A", "ё": "e",
-    "ж": "x", "з": "3", "и": "N", "й": "N", "к": "k", "л": "n", "м": "M", "н": "H", "п": "n", "т": "T",
-    "ф": "o", "ц": "u", "ч": "u", "ш": "w", "щ": "w", "ъ": "b", "ы": "b", "ь": "b", "э": "3", "ю": "o",
-    "я": "R", "ø": "e",
-    **HEURISTIC_CORRECTION_TABLE
 }
 
 
@@ -116,6 +78,15 @@ class OcrResponse:
     error: str = ""
     pixmap: QtGui.QPixmap | None = None
     recognition: OcrRecognition | None = None
+
+
+@dataclass(frozen=True)
+class OcrTextAdapter:
+    """Language-specific text composition rules kept separate from OCR IO."""
+    name: str
+    matches_language: Callable[[str], bool]
+    compose_line: Callable[[OcrLine], str]
+    finalize_text: Callable[[str], str]
 
 
 class WindowsOcrEngine:
@@ -453,11 +424,6 @@ def _is_space_joining_word(token: str) -> bool:
     return False
 
 
-def _is_space_joining_language(language_tag: str) -> bool:
-    lang = (language_tag or "").lower()
-    return not (lang.startswith("zh") or lang == "ja" or lang.startswith("ja-"))
-
-
 def _cleanup_ocr_text_line(text: str) -> str:
     """Normalize spacing around punctuation and CJK scripts."""
     text = re.sub(rf"(?<=[{NO_SPACE_SCRIPT_CHAR_CLASS}])\s+(?=[{NO_SPACE_SCRIPT_CHAR_CLASS}])", "", text)
@@ -466,31 +432,30 @@ def _cleanup_ocr_text_line(text: str) -> str:
     return text
 
 
-def _compose_line_text(line: OcrLine, is_space_joining_lang: bool = True) -> str:
+def _normalize_token_text(token: str) -> str:
+    return unicodedata.normalize("NFKC", (token or "").strip())
+
+
+def _compose_default_line_text(line: OcrLine) -> str:
+    return _cleanup_ocr_text_line((line.text or "").strip())
+
+
+def _compose_spaced_line_text(line: OcrLine) -> str:
+    return _compose_default_line_text(line)
+
+
+def _compose_cjk_line_text(line: OcrLine) -> str:
     if not line.words:
-        return _cleanup_ocr_text_line((line.text or "").strip())
+        return _compose_default_line_text(line)
 
-    if is_space_joining_lang:
-        # Standard Latin-style joining
-        text = (line.text or "").strip()
-        # Heuristic correction is applied per-line for Latin
-        return _cleanup_ocr_text_line(text)
-
-    # CJK-style joining logic from Text-Grab
     parts = []
     is_first_word = True
     is_prev_word_space_joining = False
 
     for word in line.words:
-        token = (word.text or "").strip()
+        token = _normalize_token_text(word.text)
         if not token:
             continue
-
-        # Convert full-width punctuation to half-width and apply basic heuristic
-        token = unicodedata.normalize("NFKC", token)
-        
-        # Heuristic correction is applied per-word for CJK
-        token = _replace_with_map(token, GREEK_CYRILLIC_LATIN_MAP)
 
         is_this_word_space_joining = _is_space_joining_word(token)
 
@@ -532,9 +497,9 @@ def _try_fix_number_letter_errors(token: str) -> str:
         return token
     total_numbers = sum(1 for ch in token if ch.isdigit())
     total_letters = sum(1 for ch in token if ch.isalpha())
-    if total_numbers / max(1, len(token)) > 0.6:
+    if total_numbers / max(1, len(token)) >= 0.6:
         return _replace_with_map(token, LETTERS_TO_NUMBERS)
-    if total_letters / max(1, len(token)) > 0.6:
+    if total_letters / max(1, len(token)) >= 0.6:
         return _replace_with_map(token, NUMBERS_TO_LETTERS)
     return token
 
@@ -547,33 +512,68 @@ def _try_fix_every_word_letter_number_errors(text: str) -> str:
     return joined.strip()
 
 
-def _replace_greek_cyrillic_with_latin(text: str) -> str:
-    return _replace_with_map(text, GREEK_CYRILLIC_LATIN_MAP)
+def _matches_chinese(language_tag: str) -> bool:
+    return (language_tag or "").lower().startswith("zh")
+
+
+def _matches_english(language_tag: str) -> bool:
+    return (language_tag or "").lower().startswith("en")
+
+
+def _finalize_default_text(text: str) -> str:
+    return _normalize_ocr_text(text)
+
+
+def _finalize_english_text(text: str) -> str:
+    return _try_fix_every_word_letter_number_errors(_normalize_ocr_text(text))
+
+
+LANGUAGE_TEXT_ADAPTERS = (
+    OcrTextAdapter(
+        name="chinese",
+        matches_language=_matches_chinese,
+        compose_line=_compose_cjk_line_text,
+        finalize_text=_finalize_default_text,
+    ),
+    OcrTextAdapter(
+        name="english",
+        matches_language=_matches_english,
+        compose_line=_compose_spaced_line_text,
+        finalize_text=_finalize_english_text,
+    ),
+    OcrTextAdapter(
+        name="default",
+        matches_language=lambda _language_tag: True,
+        compose_line=_compose_default_line_text,
+        finalize_text=_finalize_default_text,
+    ),
+)
+
+
+def _select_text_adapter(language_tag: str) -> OcrTextAdapter:
+    for adapter in LANGUAGE_TEXT_ADAPTERS:
+        if adapter.matches_language(language_tag):
+            return adapter
+    return LANGUAGE_TEXT_ADAPTERS[-1]
 
 
 def _compose_text_from_result(result: OcrRecognition, language_tag: str = "") -> str:
-    if not result.lines:
-        return _normalize_ocr_text(result.text)
+    adapter = _select_text_adapter(language_tag)
 
-    is_space_joining_lang = _is_space_joining_language(language_tag)
+    if not result.lines:
+        return adapter.finalize_text(result.text)
+
     built_lines = []
     for line in result.lines:
-        joined = _compose_line_text(line, is_space_joining_lang=is_space_joining_lang)
+        joined = adapter.compose_line(line)
         if joined:
             built_lines.append(joined)
 
     if not built_lines:
-        return _normalize_ocr_text(result.text)
+        return adapter.finalize_text(result.text)
 
     output = "\n".join(built_lines).strip()
-    
-    # Text-Grab heuristic: only fix numbers/letters if it's primarily a Latin-based language
-    if is_space_joining_lang:
-        output = _try_fix_every_word_letter_number_errors(output)
-        # Final pass for Greek/Cyrillic to Latin
-        output = _replace_greek_cyrillic_with_latin(output)
-    
-    return output
+    return adapter.finalize_text(output)
 
 
 def _save_debug_preprocessed_image(image: QtGui.QImage, debug_dir: str | Path | None) -> None:
