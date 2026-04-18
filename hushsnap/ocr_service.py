@@ -1,10 +1,3 @@
-"""
-Python Text-Grab OCR module.
-
-This module is intentionally UI-agnostic and can be reused as a standalone OCR
-service from other Python code.
-"""
-
 import logging
 import re
 import tempfile
@@ -28,12 +21,12 @@ MIN_RESCALE_DELTA = 0.15
 NO_SPACE_SCRIPT_CHAR_CLASS = r"\u3040-\u30ff\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff"
 
 NUMBERS_TO_LETTERS = {
-    "0": "o", "4": "h", "9": "g", "1": "l", "8": "B", "5": "S", "6": "b", "2": "z",
+    # Heuristic correction table for OCR errors (digit -> letter).
+    # Intentionally empty: keeping interface but removing heuristics for now.
 }
 LETTERS_TO_NUMBERS = {
-    "o": "0", "O": "0", "Q": "0", "c": "0", "C": "0", "i": "1", "I": "1", "l": "1",
-    "g": "9", "G": "9", "h": "4", "H": "4", "s": "5", "S": "5", "B": "8", "b": "6",
-    "z": "2", "Z": "2",
+    # Heuristic correction table for OCR errors (letter -> digit).
+    # Intentionally empty: keeping interface but removing heuristics for now.
 }
 
 

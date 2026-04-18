@@ -23,6 +23,7 @@ from .ui.tray import create_tray
 from .config import get_user_data_dir
 from .constants import CAPTURE_DEBUG_LOG_FILENAME
 from .logging_config import setup_logging
+from .startup_profiler import StartupProfiler
 
 
 def exception_hook(exctype, value, tb):
@@ -62,7 +63,6 @@ def main(boot_start_time=None):
     8. Start Qt event loop.
     """
     overall_start = time.perf_counter()
-    boot_duration = (overall_start - boot_start_time) if boot_start_time else 0.0
     
     # 1. Parse CLI arguments
     parser = argparse.ArgumentParser(add_help=False)
@@ -78,16 +78,15 @@ def main(boot_start_time=None):
         force_level=logging.DEBUG if force_debug else None
     )
     logger = logging.getLogger(__name__)
-    logger.info(f"--- STARTUP PERFORMANCE AUDIT ---")
-    logger.info(f"OS/Import overhead: {boot_duration:.4f}s")
-    logger.debug(f"STEP 1&2: Args parsed and logging setup. Elapsed inside main: {time.perf_counter() - overall_start:.4f}s")
+    startup_profiler = StartupProfiler(logger, overall_start, boot_start_time)
+    startup_profiler.log_header()
+    startup_profiler.log_elapsed("STEP 1&2: Args parsed and logging setup")
 
     # 3. Install global exception hook as early as possible after logging is ready.
     sys.excepthook = exception_hook
 
-    step_start = time.perf_counter()
-    hotkey_modifier, hotkey_virtual_key, hotkey_name, config_path = load_hotkey_setting()
-    logger.debug(f"STEP 4: Hotkey setting loaded. Duration: {time.perf_counter() - step_start:.4f}s")
+    with startup_profiler.step("STEP 4: Hotkey setting loaded"):
+        hotkey_modifier, hotkey_virtual_key, hotkey_name, config_path = load_hotkey_setting()
     
     if force_debug:
         logger.info("DEBUG MODE ENABLED.")
@@ -97,9 +96,8 @@ def main(boot_start_time=None):
 
 
     # Enforce single instance via lock/mutex.
-    step_start = time.perf_counter()
-    instance_lock = is_already_running()
-    logger.debug(f"STEP 5: Single instance check. Duration: {time.perf_counter() - step_start:.4f}s")
+    with startup_profiler.step("STEP 5: Single instance check"):
+        instance_lock = is_already_running()
     
     if not instance_lock:
         message = "HushSnap is already running. Exiting this launch."
@@ -109,17 +107,15 @@ def main(boot_start_time=None):
 
     # Create the Qt application instance with argv0 and any remaining CLI arguments.
     # (currently usually none unless Qt args are provided).
-    step_start = time.perf_counter()
-    app = QtWidgets.QApplication([sys.argv[0], *qt_args])
-    logger.debug(f"STEP 6: QApplication created. Duration: {time.perf_counter() - step_start:.4f}s")
+    with startup_profiler.step("STEP 6: QApplication created"):
+        app = QtWidgets.QApplication([sys.argv[0], *qt_args])
 
     # Keep the process alive after all windows are closed.
     app.setQuitOnLastWindowClosed(False)
 
     # Load config: current hotkey binding and language preference.
-    step_start = time.perf_counter()
-    ui_language = resolve_ui_lang(config_path)
-    logger.debug(f"STEP 7: UI language resolved. Duration: {time.perf_counter() - step_start:.4f}s")
+    with startup_profiler.step("STEP 7: UI language resolved"):
+        ui_language = resolve_ui_lang(config_path)
 
     def translate(key, **kwargs):
         return ui_text(ui_language, key, **kwargs)
@@ -128,15 +124,14 @@ def main(boot_start_time=None):
     capture_bridge = SignalBridge()
     capture_bridge.win = None
 
-    step_start = time.perf_counter()
-    ocr_controller = OcrController(
-        app=app,
-        translate=translate,
-        config_path=config_path,
-        user_data_dir=user_data_dir,
-        save_debug_image=save_ocr_debug_image,
-    )
-    logger.debug(f"STEP 8: OCR Popup & Service initialized. Duration: {time.perf_counter() - step_start:.4f}s")
+    with startup_profiler.step("STEP 8: OCR Popup & Service initialized"):
+        ocr_controller = OcrController(
+            app=app,
+            translate=translate,
+            config_path=config_path,
+            user_data_dir=user_data_dir,
+            save_debug_image=save_ocr_debug_image,
+        )
 
     ocr_action = None
 
@@ -186,62 +181,56 @@ def main(boot_start_time=None):
         launch_uninstaller(translate, app.quit)
 
     # Create system tray icon and right-click menu entry points.
-    step_start = time.perf_counter()
-    tray_icon, settings_action, ocr_action = create_tray(
-        app,
-        translate,
-        capture_bridge.signal.emit,  # Allow screenshot trigger from tray menu.
-        None,
-        open_config_dir,
-        app.quit,
-    )
-    logger.debug(f"STEP 10: Tray icon created. Duration: {time.perf_counter() - step_start:.4f}s")
+    with startup_profiler.step("STEP 10: Tray icon created"):
+        tray_icon, settings_action, ocr_action = create_tray(
+            app,
+            translate,
+            capture_bridge.signal.emit,  # Allow screenshot trigger from tray menu.
+            None,
+            open_config_dir,
+            app.quit,
+        )
 
     ocr_controller.attach_tray(tray_icon, ocr_action)
 
     # Hotkey manager handles registration/unregistration with Windows.
-    step_start = time.perf_counter()
-    hotkey_manager = HotkeyManager(
-        tray_icon,
-        translate,
-        config_path,
-        hotkey_modifier,
-        hotkey_virtual_key,
-        hotkey_name,
-    )
-    hotkey_manager.register_initial()
-    hotkey_manager.start_watch(app) # Start config-change watcher.
-    logger.debug(f"STEP 11: HotkeyManager init & registered. Duration: {time.perf_counter() - step_start:.4f}s")
-
-    # Initialize settings dialog controller.
-    step_start = time.perf_counter()
-    try:
-        settings_controller = SettingsDialogController(
+    with startup_profiler.step("STEP 11: HotkeyManager init & registered"):
+        hotkey_manager = HotkeyManager(
+            tray_icon,
             translate,
             config_path,
-            hotkey_manager,
-            on_uninstall,
+            hotkey_modifier,
+            hotkey_virtual_key,
+            hotkey_name,
         )
-    except Exception as exc:
-        logging.getLogger(__name__).exception(f"Failed to initialize settings dialog: {exc}")
-        QtWidgets.QMessageBox.warning(
-            None,
-            translate("error"),
-            translate("settings_init_failed"),
-        )
-        settings_action.setEnabled(False)
-    else:
-        # Connect tray "Settings" action to controller show method.
-        settings_action.triggered.connect(settings_controller.show)
-    logger.debug(f"STEP 12: SettingsDialogController initialized. Duration: {time.perf_counter() - step_start:.4f}s")
+        hotkey_manager.register_initial()
+        hotkey_manager.start_watch(app) # Start config-change watcher.
+
+    # Initialize settings dialog controller.
+    with startup_profiler.step("STEP 12: SettingsDialogController initialized"):
+        try:
+            settings_controller = SettingsDialogController(
+                translate,
+                config_path,
+                hotkey_manager,
+                on_uninstall,
+            )
+        except Exception as exc:
+            logging.getLogger(__name__).exception(f"Failed to initialize settings dialog: {exc}")
+            QtWidgets.QMessageBox.warning(
+                None,
+                translate("error"),
+                translate("settings_init_failed"),
+            )
+            settings_action.setEnabled(False)
+        else:
+            # Connect tray "Settings" action to controller show method.
+            settings_action.triggered.connect(settings_controller.show)
 
     # Unregister hotkey before app exit.
     app.aboutToQuit.connect(hotkey_manager.unregister_current_hotkey)
 
-    logic_init_duration = time.perf_counter() - overall_start
-    total_wall_time = time.perf_counter() - boot_start_time if boot_start_time else logic_init_duration
-    logger.info(f"Application logic init: {logic_init_duration:.4f}s")
-    logger.info(f"Initialization complete. Total wall-clock startup time: {total_wall_time:.4f}s")
+    startup_profiler.log_summary()
 
     # Enter event loop (build_installer.ps1 checks LASTEXITCODE).
     sys.exit(app.exec())
