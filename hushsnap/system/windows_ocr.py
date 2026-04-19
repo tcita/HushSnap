@@ -46,10 +46,13 @@ if ($bitmap.BitmapPixelFormat -ne [Windows.Graphics.Imaging.BitmapPixelFormat]::
 }}
 
 $engine = $null
+$requestedLanguageSupported = $false
+$usedUserProfileFallback = $false
 if ('{escaped_language_tag}') {{
     try {{
         $lang = [Windows.Globalization.Language]::new('{escaped_language_tag}')
         if ([Windows.Media.Ocr.OcrEngine]::IsLanguageSupported($lang)) {{
+            $requestedLanguageSupported = $true
             $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage($lang)
         }}
     }} catch {{
@@ -57,6 +60,7 @@ if ('{escaped_language_tag}') {{
 }}
 if ($null -eq $engine) {{
     $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
+    $usedUserProfileFallback = $true
 }}
 if ($null -eq $engine) {{
     throw 'Windows OCR engine unavailable.'
@@ -67,6 +71,10 @@ $result = Await ($engine.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult]
 $payload = [ordered]@{{
     Text = $result.Text
     Angle = $(if ($null -ne $result.TextAngle) {{ [double]$result.TextAngle }} else {{ 0.0 }})
+    RequestedLanguageTag = '{escaped_language_tag}'
+    RequestedLanguageSupported = $requestedLanguageSupported
+    UsedUserProfileFallback = $usedUserProfileFallback
+    EngineLanguageTag = $(if ($null -ne $engine.RecognizerLanguage) {{ $engine.RecognizerLanguage.LanguageTag }} else {{ '' }})
     Lines = @()
 }}
 
@@ -145,7 +153,23 @@ def run_windows_ocr_json(image_path: Path, language_tag: str = "") -> dict:
         return {}
 
     try:
-        return json.loads(stdout)
+        payload = json.loads(stdout)
     except Exception as exc:
         logger.warning(f"Failed to parse OCR JSON payload: {exc}")
         return {"Text": stdout}
+
+    if language_tag and isinstance(payload, dict):
+        requested_supported = payload.get("RequestedLanguageSupported")
+        used_fallback = payload.get("UsedUserProfileFallback")
+        engine_language_tag = str(payload.get("EngineLanguageTag", "") or "").strip()
+
+        if requested_supported is False and used_fallback:
+            fallback_target = engine_language_tag or "user profile language"
+            logger.warning(
+                "Requested OCR language '%s' is not installed or supported by Windows OCR; "
+                "falling back to '%s'. Install the matching Windows language pack to use it.",
+                language_tag,
+                fallback_target,
+            )
+
+    return payload

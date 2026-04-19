@@ -4,6 +4,15 @@ HushSnap is a lightweight screenshot tool built to stay quietly in the backgroun
 
 Designed around global shortcuts, HushSnap can capture from anywhere in Windows while staying out of sight and out of the way. The experience is intentionally minimal, silent, and fast, with customizable hotkeys that let you shape the workflow around your own habits. OCR is already supported, and as the project continues to evolve, some parts of this README may occasionally lag behind the latest behavior or features.
 
+## OCR Language Support
+
+HushSnap uses `Windows.Media.Ocr`, so available OCR languages depend on the language data already installed in Windows.
+
+- If you select an OCR language that Windows does not currently support on that machine, HushSnap will fall back to the user's profile language instead of using the requested one.
+- In practice, this means a Chinese Windows install may not be able to run English OCR until the English language pack / OCR support is installed in Windows.
+- When this fallback happens, HushSnap now writes a warning to the log so the cause is easier to diagnose.
+- If OCR results look wrong or empty after switching languages, check the log first and confirm the corresponding Windows language pack is installed.
+
 ## Third-Party Acknowledgment
 
 The OCR workflow and product ideas in this project were inspired by the

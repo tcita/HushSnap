@@ -18,6 +18,8 @@ INITIAL_SCALE_FACTOR = 1.0
 IDEAL_LINE_HEIGHT_PX = 40.0
 MAX_OCR_IMAGE_DIMENSION = 2600
 MIN_RESCALE_DELTA = 0.15
+
+# Character class for scripts that typically do not use spaces (Hiragana, Katakana, CJK Ideographs).
 NO_SPACE_SCRIPT_CHAR_CLASS = r"\u3040-\u30ff\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff"
 
 NUMBERS_TO_LETTERS = {
