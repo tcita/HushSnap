@@ -7,7 +7,7 @@ from .config import (
     update_ocr_lang_in_config,
 )
 from .constants import TRAY_MSG_MEDIUM_MS
-from .ocr_service import OcrRequest, OcrService
+from .ocr import OcrRequest, OcrService
 from .signal_bridge import SignalBridge
 from .ui.ocr_popup import OcrPopup
 
