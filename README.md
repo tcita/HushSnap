@@ -6,12 +6,10 @@ Designed around global shortcuts, HushSnap can capture from anywhere in Windows 
 
 ## OCR Language Support
 
-HushSnap uses `Windows.Media.Ocr`, so available OCR languages depend on the language data already installed in Windows.
+HushSnap relies on Windows.Media.Ocr for its default OCR functionality. This requires the relevant Windows language packs to be installed on your system.
 
-- If you select an OCR language that Windows does not currently support on that machine, HushSnap will fall back to the user's profile language instead of using the requested one.
-- In practice, this means a Chinese Windows install may not be able to run English OCR until the English language pack / OCR support is installed in Windows.
-- When this fallback happens, HushSnap now writes a warning to the log so the cause is easier to diagnose.
-- If OCR results look wrong or empty after switching languages, check the log first and confirm the corresponding Windows language pack is installed.
+- **Supported Languages:** English, Simplified Chinese.
+- **Requirement:** If the required language pack or OCR component is missing from Windows, the recognition process will fail.
 
 ## Third-Party Acknowledgment
 
