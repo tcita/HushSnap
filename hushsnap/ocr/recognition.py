@@ -5,9 +5,11 @@ from pathlib import Path
 
 from PyQt6 import QtGui
 
-from .engine import WindowsOcrEngine
 from .models import OcrRecognition
+from .parsing import parse_ocr_payload
 from .preprocess import preprocess_for_ocr
+from .text import compose_text_from_result
+from ..system.windows_ocr import run_windows_ocr_json
 
 logger = logging.getLogger(__name__)
 
@@ -20,18 +22,16 @@ MIN_RESCALE_DELTA = 0.15
 def recognize_qimage(
     image: QtGui.QImage,
     language_tag: str = "",
-    engine: WindowsOcrEngine | None = None,
 ) -> OcrRecognition:
     """Run OCR on a temporary file generated from QImage."""
-    engine = engine or WindowsOcrEngine()
-
     temp_path = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".bmp", delete=False) as temp_file:
             temp_path = Path(temp_file.name)
         if not image.save(str(temp_path), "BMP"):
             return OcrRecognition()
-        return engine.recognize(temp_path, language_tag=language_tag)
+        payload = run_windows_ocr_json(temp_path, language_tag)
+        return parse_ocr_payload(payload)
     finally:
         if temp_path and temp_path.exists():
             temp_path.unlink(missing_ok=True)
@@ -83,12 +83,10 @@ def recognize_result_from_pixmap(
     if pixmap.isNull():
         return OcrRecognition()
 
-    engine = WindowsOcrEngine()
-
     initial_image = preprocess_for_ocr(pixmap, INITIAL_SCALE_FACTOR)
     save_debug_preprocessed_image(initial_image, debug_dir)
 
-    initial_result = recognize_qimage(initial_image, language_tag=language_tag, engine=engine)
+    initial_result = recognize_qimage(initial_image, language_tag=language_tag)
     if not initial_result.text and not initial_result.lines:
         logger.info(f"OCR Completed in {time.perf_counter() - total_start:.2f}s (empty result)")
         return OcrRecognition()
@@ -98,7 +96,7 @@ def recognize_result_from_pixmap(
 
     if abs(recommended_scale - INITIAL_SCALE_FACTOR) >= MIN_RESCALE_DELTA:
         rescaled_image = preprocess_for_ocr(pixmap, recommended_scale)
-        rescaled_result = recognize_qimage(rescaled_image, language_tag=language_tag, engine=engine)
+        rescaled_result = recognize_qimage(rescaled_image, language_tag=language_tag)
         if rescaled_result.text or rescaled_result.lines:
             final_result = rescaled_result
 
@@ -107,3 +105,16 @@ def recognize_result_from_pixmap(
         f"(engine=windows, scale={recommended_scale:.2f}, lines={len(final_result.lines)})"
     )
     return final_result
+
+
+def recognize_text_from_pixmap(
+    pixmap: QtGui.QPixmap,
+    language_tag: str = "",
+    debug_dir: str | Path | None = None,
+) -> str:
+    result = recognize_result_from_pixmap(
+        pixmap,
+        language_tag=language_tag,
+        debug_dir=debug_dir,
+    )
+    return compose_text_from_result(result, language_tag=language_tag)
