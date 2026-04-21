@@ -14,15 +14,15 @@ class HotkeyFilter(QtCore.QAbstractNativeEventFilter):
     Native Windows event filter.
     Listens to system-broadcast messages and extracts hotkey activation events.
     """
-    def __init__(self, trigger_signal):
+    def __init__(self, on_trigger):
         """
         Initialize the filter.
         
         Args:
-            trigger_signal (QtCore.pyqtSignal): Signal emitted when hotkey is triggered.
+            on_trigger (callable): Callback invoked with the captured screen pixmap.
         """
         super().__init__()
-        self.trigger_signal = trigger_signal
+        self.on_trigger = on_trigger
 
     def nativeEventFilter(self, event_type, message):
         """
@@ -49,8 +49,8 @@ class HotkeyFilter(QtCore.QAbstractNativeEventFilter):
                     screen_pixmap = screen.grabWindow(0)
                     screen_pixmap.setDevicePixelRatio(device_pixel_ratio)
                     
-                    # Emit screenshot data to the UI thread (launch_capture_window).
-                    self.trigger_signal.emit(screen_pixmap)
+                    # Forward screenshot data to the UI thread callback.
+                    self.on_trigger(screen_pixmap)
                 
                 # Return True to stop propagation to other filters.
                 return True, 0

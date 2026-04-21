@@ -77,14 +77,19 @@ def main(boot_start_time=None):
         force_level=logging.DEBUG if force_debug else None
     )
     logger = logging.getLogger(__name__)
-    startup_profiler = StartupProfiler(logger, overall_start, boot_start_time)
+    startup_profiler = StartupProfiler(
+        logger,
+        overall_start,
+        boot_start_time,
+        detailed_enabled=force_debug,
+    )
     startup_profiler.log_header()
-    startup_profiler.log_elapsed("STEP 1&2: Args parsed and logging setup")
+    startup_profiler.log_elapsed("Args parsed and logging setup")
 
     # 3. Install global exception hook as early as possible after logging is ready.
     sys.excepthook = exception_hook
 
-    with startup_profiler.step("STEP 4: Hotkey setting loaded"):
+    with startup_profiler.step("Startup config loaded"):
         hotkey_modifier, hotkey_virtual_key, hotkey_name, config_path = load_hotkey_setting()
     
     if force_debug:
@@ -95,7 +100,7 @@ def main(boot_start_time=None):
 
 
     # Enforce single instance via lock/mutex.
-    with startup_profiler.step("STEP 5: Single instance check"):
+    with startup_profiler.step("Process bootstrap ready"):
         instance_lock = is_already_running()
     
     if not instance_lock:
@@ -104,22 +109,20 @@ def main(boot_start_time=None):
         print(message)
         return
 
-    # Create the Qt application instance with argv0 and any remaining CLI arguments.
-    # (currently usually none unless Qt args are provided).
-    with startup_profiler.step("STEP 6: QApplication created"):
+    with startup_profiler.step("UI services initialized"):
+        # Create the Qt application instance with argv0 and any remaining CLI arguments.
+        # (currently usually none unless Qt args are provided).
         app = QtWidgets.QApplication([sys.argv[0], *qt_args])
 
-    # Keep the process alive after all windows are closed.
-    app.setQuitOnLastWindowClosed(False)
+        # Keep the process alive after all windows are closed.
+        app.setQuitOnLastWindowClosed(False)
 
-    # Load config: current hotkey binding and language preference.
-    with startup_profiler.step("STEP 7: UI language resolved"):
+        # Load config: current hotkey binding and language preference.
         ui_language = resolve_ui_lang(config_path)
 
-    def translate(key, **kwargs):
-        return ui_text(ui_language, key, **kwargs)
+        def translate(key, **kwargs):
+            return ui_text(ui_language, key, **kwargs)
 
-    with startup_profiler.step("STEP 8: OCR Popup & Service initialized"):
         ocr_controller = OcrController(
             app=app,
             translate=translate,
@@ -158,8 +161,8 @@ def main(boot_start_time=None):
         """Uninstall callback."""
         launch_uninstaller(translate, app.quit)
 
-    # Create system tray icon and right-click menu entry points.
-    with startup_profiler.step("STEP 10: Tray icon created"):
+    with startup_profiler.step("Shell integration initialized"):
+        # Create system tray icon and right-click menu entry points.
         tray_icon, settings_action, ocr_action = create_tray(
             app,
             translate,
@@ -169,10 +172,9 @@ def main(boot_start_time=None):
             app.quit,
         )
 
-    ocr_controller.attach_tray(tray_icon, ocr_action)
+        ocr_controller.attach_tray(tray_icon, ocr_action)
 
-    # Hotkey manager handles registration/unregistration with Windows.
-    with startup_profiler.step("STEP 11: HotkeyManager init & registered"):
+        # Hotkey manager handles registration/unregistration with Windows.
         hotkey_manager = HotkeyManager(
             tray_icon,
             translate,
@@ -184,8 +186,7 @@ def main(boot_start_time=None):
         hotkey_manager.register_initial()
         hotkey_manager.start_watch(app) # Start config-change watcher.
 
-    # Initialize settings dialog controller.
-    with startup_profiler.step("STEP 12: SettingsDialogController initialized"):
+        # Initialize settings dialog controller.
         try:
             settings_controller = SettingsDialogController(
                 translate,

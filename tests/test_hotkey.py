@@ -17,26 +17,26 @@ def mock_app():
 
 def test_hotkey_filter_inheritance():
     """Verify that HotkeyFilter correctly inherits from QAbstractNativeEventFilter."""
-    mock_signal = MagicMock()
-    filter = HotkeyFilter(mock_signal)
+    mock_callback = MagicMock()
+    filter = HotkeyFilter(mock_callback)
     # This check ensures the class is compatible with installNativeEventFilter
     assert isinstance(filter, QtCore.QAbstractNativeEventFilter)
 
 def test_hotkey_filter_ignore_other_events():
     """Verify that the filter ignores non-Windows/non-hotkey events."""
-    mock_signal = MagicMock()
-    filter = HotkeyFilter(mock_signal)
+    mock_callback = MagicMock()
+    filter = HotkeyFilter(mock_callback)
     
     # Test non-windows event
     handled, ret = filter.nativeEventFilter(b"other_event", None)
     assert handled is False
-    mock_signal.emit.assert_not_called()
+    mock_callback.assert_not_called()
 
 @patch("ctypes.wintypes.MSG.from_address")
 def test_hotkey_filter_handle_wm_hotkey(mock_from_address, mock_app):
     """Test handling of the WM_HOTKEY message and screenshot capture trigger."""
-    mock_signal = MagicMock()
-    filter = HotkeyFilter(mock_signal)
+    mock_callback = MagicMock()
+    filter = HotkeyFilter(mock_callback)
     
     # Mock MSG
     mock_msg = MagicMock()
@@ -57,4 +57,4 @@ def test_hotkey_filter_handle_wm_hotkey(mock_from_address, mock_app):
     assert ret == 0
     mock_screen.grabWindow.assert_called_once_with(0)
     mock_pixmap.setDevicePixelRatio.assert_called_once_with(1.0)
-    mock_signal.emit.assert_called_once_with(mock_pixmap)
+    mock_callback.assert_called_once_with(mock_pixmap)

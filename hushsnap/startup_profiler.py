@@ -11,10 +11,17 @@ from typing import Iterator
 class StartupProfiler:
     """Track startup timing without cluttering the main boot flow."""
 
-    def __init__(self, logger: logging.Logger, overall_start: float, boot_start_time=None):
+    def __init__(
+        self,
+        logger: logging.Logger,
+        overall_start: float,
+        boot_start_time=None,
+        detailed_enabled: bool = False,
+    ):
         self.logger = logger
         self.overall_start = overall_start
         self.boot_start_time = boot_start_time
+        self.detailed_enabled = detailed_enabled
 
     def log_header(self) -> None:
         """Emit the startup audit header."""
@@ -26,12 +33,18 @@ class StartupProfiler:
 
     def log_elapsed(self, label: str) -> None:
         """Log elapsed time since entering main()."""
+        if not self.detailed_enabled:
+            return
         elapsed = time.perf_counter() - self.overall_start
         self.logger.debug(f"{label}. Elapsed inside main: {elapsed:.4f}s")
 
     @contextmanager
     def step(self, label: str) -> Iterator[None]:
         """Measure and log the duration of a startup step."""
+        if not self.detailed_enabled:
+            yield
+            return
+
         step_start = time.perf_counter()
         try:
             yield
