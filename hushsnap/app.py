@@ -6,7 +6,7 @@ import time
 
 from PyQt6 import QtWidgets
 
-from .capture_window import CaptureWindow
+from .capture_session import CaptureSession
 from .config import (
     is_already_running,
     load_hotkey_setting,
@@ -15,7 +15,6 @@ from .config import (
 )
 from .hotkey import HotkeyFilter
 from .ocr_controller import OcrController
-from .signal_bridge import SignalBridge
 from .system.hotkey_manager import HotkeyManager
 from .system.uninstall import launch_uninstaller
 from .ui.settings_dialog import SettingsDialogController
@@ -120,10 +119,6 @@ def main(boot_start_time=None):
     def translate(key, **kwargs):
         return ui_text(ui_language, key, **kwargs)
 
-    # Hotkey event -> Qt signal bridge -> UI callback
-    capture_bridge = SignalBridge()
-    capture_bridge.win = None
-
     with startup_profiler.step("STEP 8: OCR Popup & Service initialized"):
         ocr_controller = OcrController(
             app=app,
@@ -141,27 +136,10 @@ def main(boot_start_time=None):
         """
         ocr_controller.handle_capture_completed(captured_pixmap)
 
-    def launch_capture_window(screen_pixmap):
-        """
-        Callback that launches the capture window.
-        :param screen_pixmap: Pre-captured fullscreen bitmap from HotkeyFilter.
-        """
-        if capture_bridge.win:
-            return
-
-        # Create capture window instance.
-        capture_bridge.win = CaptureWindow(screen_pixmap, on_captured=on_capture_completed)
-
-        # Reset capture_bridge.win to None when CaptureWindow is destroyed.
-        capture_bridge.win.destroyed.connect(lambda: setattr(capture_bridge, "win", None))
-        capture_bridge.win.show()
-
-
-    # Connect launch_capture_window to capture bridge signal.
-    capture_bridge.signal.connect(launch_capture_window)
+    capture_session = CaptureSession(on_capture_completed)
 
     # Install HotkeyFilter to intercept WM_HOTKEY before Qt window event delivery.
-    native_hotkey_filter = HotkeyFilter(capture_bridge.signal)
+    native_hotkey_filter = HotkeyFilter(capture_session.request_capture)
     app.installNativeEventFilter(native_hotkey_filter)
 
     def open_config_dir():
@@ -185,7 +163,7 @@ def main(boot_start_time=None):
         tray_icon, settings_action, ocr_action = create_tray(
             app,
             translate,
-            capture_bridge.signal.emit,  # Allow screenshot trigger from tray menu.
+            capture_session.request_capture,  # Allow screenshot trigger from tray menu.
             None,
             open_config_dir,
             app.quit,
