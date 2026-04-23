@@ -104,6 +104,16 @@ def _hotkey_warning_note():
     return "Note: You can edit hotkey manually (including single-key). Some keys may conflict with system/apps; use at your own discretion."
 
 
+def _default_ocr_language_for_ui_language(ui_language):
+    """Map the resolved UI language to the best default OCR language tag."""
+    return "zh-CN" if ui_language == UI_LANG_ZH else "en-US"
+
+
+def _resolve_default_ocr_language(config_path):
+    """Resolve the default OCR language for first run or missing config fields."""
+    return _default_ocr_language_for_ui_language(resolve_ui_lang(config_path))
+
+
 def _ensure_default_config_exists(config_path):
     """
     Create an initial config file with defaults if it does not exist.
@@ -118,7 +128,7 @@ def _ensure_default_config_exists(config_path):
             "hotkey": DEFAULT_HOTKEY,
             "language": UI_LANG_AUTO,
             "ocr_enabled": False,
-            "ocr_language": "en-US",
+            "ocr_language": _resolve_default_ocr_language(config_path),
             "_hotkey_note": _hotkey_warning_note(),
         }
         config_path.write_text(
@@ -292,9 +302,12 @@ def get_ocr_lang_from_config(config_path):
     """Read OCR language preference from config."""
     try:
         config_data = _load_config_data(config_path)
-        return config_data.get("ocr_language", "en-US")
+        ocr_language = config_data.get("ocr_language")
+        if isinstance(ocr_language, str) and ocr_language.strip():
+            return ocr_language.strip()
     except Exception:
-        return "en-US"
+        pass
+    return _resolve_default_ocr_language(config_path)
 
 
 def update_ocr_lang_in_config(config_path, ocr_lang):

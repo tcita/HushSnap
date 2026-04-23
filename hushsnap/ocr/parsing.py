@@ -73,4 +73,7 @@ def parse_ocr_payload(payload: Any) -> OcrRecognition:
         text=str(payload.get("Text", "") or ""),
         lines=lines,
         angle=float(payload.get("Angle", 0.0) or 0.0),
+        requested_language_supported=payload.get("RequestedLanguageSupported"),
+        used_user_profile_fallback=bool(payload.get("UsedUserProfileFallback", False)),
+        engine_language_tag=str(payload.get("EngineLanguageTag", "") or ""),
     )

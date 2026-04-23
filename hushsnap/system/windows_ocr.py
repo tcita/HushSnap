@@ -2,8 +2,6 @@ import json
 import logging
 import subprocess
 from pathlib import Path
-from typing import Any
-from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +144,8 @@ def run_windows_ocr_json(image_path: Path, language_tag: str = "") -> dict:
         stderr = (completed.stderr or "").strip()
         if stderr:
             logger.error(f"Windows OCR failed: {stderr}")
-        return {}
+            return {"Error": stderr}
+        return {"Error": "Windows OCR process failed."}
 
     stdout = (completed.stdout or "").strip()
     if not stdout:

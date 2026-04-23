@@ -4,6 +4,7 @@ import pytest
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from hushsnap import ocr_controller
+from hushsnap.ocr import OcrRecognition, OcrResponse
 
 
 @pytest.fixture
@@ -27,6 +28,17 @@ def _translate(key, **kwargs):
         "ocr_copy_btn": "Copy",
         "ocr_failed_title": "Failed",
         "ocr_failed_body": "OCR failed",
+        "ocr_engine_unavailable_title": "Engine unavailable",
+        "ocr_engine_unavailable_body": "Windows OCR unavailable on this system",
+        "ocr_lang_missing_title": "Missing language pack",
+        "ocr_lang_missing_body": "{requested_lang} not installed; switch language or install it",
+        "ocr_lang_missing_switch_btn": "Switch to {available_lang}",
+        "ocr_lang_missing_open_settings_btn": "Open language settings",
+        "ocr_lang_missing_cancel_btn": "Not now",
+        "ocr_lang_installed_fallback": "Installed language",
+        "ocr_open_settings_failed_title": "Cannot open settings",
+        "ocr_open_settings_failed_body": "Cannot open settings",
+        "ocr_lang_system_default": "system language",
         "ocr_empty_title": "Empty",
         "ocr_empty_body": "No text found",
         "ocr_empty_popup_hint": "Switch language and try again",
@@ -133,12 +145,47 @@ def test_ocr_finished_copies_text_and_updates_popup(monkeypatch, qapp, tmp_path,
     controller.popup.show_text = _show_text
     qapp.clipboard().clear()
 
-    controller.on_ocr_finished((" hello world ", "", sample_pixmap))
+    controller.on_ocr_finished(
+        OcrResponse(text=" hello world ", error="", pixmap=sample_pixmap, recognition=OcrRecognition())
+    )
 
     assert qapp.clipboard().text() == "hello world"
     assert shown["text"] == "hello world"
     assert shown["pixmap"] is sample_pixmap
     assert shown["lang"] == "en-US"
+
+
+def test_ocr_finished_prompts_every_time_when_selected_language_is_not_installed(
+    monkeypatch, qapp, tmp_path, sample_pixmap
+):
+    controller, tray_icon, action = _build_controller(monkeypatch, qapp, tmp_path)
+    action.toggle_to(True)
+    tray_icon.messages.clear()
+    prompts = []
+    controller.popup.show_text = lambda *args, **kwargs: prompts.append(("show_text", args, kwargs))
+    monkeypatch.setattr(
+        controller,
+        "_show_missing_language_dialog",
+        lambda requested_lang, available_lang: prompts.append((requested_lang, available_lang)) or "cancel",
+    )
+
+    response = OcrResponse(
+        text="hello",
+        error="",
+        pixmap=sample_pixmap,
+        recognition=OcrRecognition(
+            text="hello",
+            requested_language_supported=False,
+            used_user_profile_fallback=True,
+            engine_language_tag="zh-CN",
+        ),
+    )
+
+    controller.on_ocr_finished(response)
+    controller.on_ocr_finished(response)
+
+    assert tray_icon.messages == []
+    assert prompts == [("EN", "ZH"), ("EN", "ZH")]
 
 
 def test_ocr_lang_changed_persists_and_reruns(monkeypatch, qapp, tmp_path, sample_pixmap):
@@ -154,6 +201,113 @@ def test_ocr_lang_changed_persists_and_reruns(monkeypatch, qapp, tmp_path, sampl
     controller.popup._last_pixmap = sample_pixmap
 
     controller.on_ocr_lang_changed("zh-CN")
+
+    assert saved["lang"] == "zh-CN"
+    assert len(service.requests) == 1
+    assert service.requests[0].language_tag == "zh-CN"
+
+
+def test_ocr_finished_warns_once_when_engine_is_unavailable(monkeypatch, qapp, tmp_path, sample_pixmap):
+    controller, tray_icon, action = _build_controller(monkeypatch, qapp, tmp_path)
+    action.toggle_to(True)
+
+    response = OcrResponse(
+        text="",
+        error="Windows OCR engine unavailable.",
+        pixmap=sample_pixmap,
+        recognition=None,
+    )
+
+    controller.on_ocr_finished(response)
+    controller.on_ocr_finished(response)
+
+    assert tray_icon.messages == []
+    assert controller._warned_engine_unavailable is True
+
+
+def test_ocr_missing_language_switches_and_reruns(monkeypatch, qapp, tmp_path, sample_pixmap):
+    saved = {}
+    service = FakeService()
+    controller, _, action = _build_controller(monkeypatch, qapp, tmp_path, service=service)
+    action.toggle_to(True)
+    monkeypatch.setattr(
+        ocr_controller,
+        "update_ocr_lang_in_config",
+        lambda path, lang: saved.update({"path": path, "lang": lang}),
+    )
+    monkeypatch.setattr(controller, "_show_missing_language_dialog", lambda requested_lang, available_lang: "switch")
+
+    response = OcrResponse(
+        text="hello",
+        error="",
+        pixmap=sample_pixmap,
+        recognition=OcrRecognition(
+            text="hello",
+            requested_language_supported=False,
+            used_user_profile_fallback=True,
+            engine_language_tag="zh-CN",
+        ),
+    )
+
+    controller.on_ocr_finished(response)
+
+    assert saved["lang"] == "zh-CN"
+    assert len(service.requests) == 1
+    assert service.requests[0].language_tag == "zh-CN"
+    assert controller.popup.last_pixmap is sample_pixmap
+
+
+def test_ocr_missing_language_can_open_settings(monkeypatch, qapp, tmp_path, sample_pixmap):
+    controller, _, action = _build_controller(monkeypatch, qapp, tmp_path)
+    action.toggle_to(True)
+    opened = {}
+    monkeypatch.setattr(controller, "_show_missing_language_dialog", lambda requested_lang, available_lang: "settings")
+    monkeypatch.setattr(controller, "_open_windows_language_settings", lambda: opened.update({"called": True}))
+
+    response = OcrResponse(
+        text="hello",
+        error="",
+        pixmap=sample_pixmap,
+        recognition=OcrRecognition(
+            text="hello",
+            requested_language_supported=False,
+            used_user_profile_fallback=True,
+            engine_language_tag="zh-CN",
+        ),
+    )
+
+    controller.on_ocr_finished(response)
+
+    assert opened["called"] is True
+
+
+def test_ocr_missing_language_switch_falls_back_to_other_combo_language(
+    monkeypatch, qapp, tmp_path, sample_pixmap
+):
+    saved = {}
+    service = FakeService()
+    controller, _, action = _build_controller(monkeypatch, qapp, tmp_path, service=service)
+    action.toggle_to(True)
+    monkeypatch.setattr(
+        ocr_controller,
+        "update_ocr_lang_in_config",
+        lambda path, lang: saved.update({"path": path, "lang": lang}),
+    )
+    monkeypatch.setattr(controller, "_show_missing_language_dialog", lambda requested_lang, available_lang: "switch")
+
+    response = OcrResponse(
+        text="hello",
+        error="",
+        pixmap=sample_pixmap,
+        recognition=OcrRecognition(
+            text="hello",
+            requested_language_supported=False,
+            used_user_profile_fallback=True,
+            engine_language_tag="",
+        ),
+    )
+
+    controller.on_ocr_finished(response)
 
     assert saved["lang"] == "zh-CN"
     assert len(service.requests) == 1

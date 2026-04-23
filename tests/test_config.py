@@ -3,10 +3,18 @@ Unit tests for the configuration module.
 Covers hotkey parsing, path resolution, and UI text translations.
 """
 
+import json
 import pytest
 from pathlib import Path
 from unittest.mock import patch
-from hushsnap.config import parse_hotkey, get_user_data_dir, resolve_ui_lang, ui_text
+from hushsnap.config import (
+    _ensure_default_config_exists,
+    get_ocr_lang_from_config,
+    get_user_data_dir,
+    parse_hotkey,
+    resolve_ui_lang,
+    ui_text,
+)
 from hushsnap.constants import MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN
 
 def test_parse_hotkey_valid():
@@ -98,3 +106,21 @@ def test_resolve_ui_lang_from_installer_hint_when_config_auto():
             mock_hint.return_value = "zh"
             lang = resolve_ui_lang(Path("dummy_path"))
             assert lang == "zh"
+
+
+def test_default_config_uses_chinese_ocr_when_installer_hint_is_chinese(tmp_path):
+    config_path = tmp_path / "hushsnap_config.json"
+    (tmp_path / "hushsnap_installer_lang.txt").write_text("zh", encoding="utf-8")
+
+    _ensure_default_config_exists(config_path)
+
+    config_data = json.loads(config_path.read_text(encoding="utf-8"))
+    assert config_data["ocr_language"] == "zh-CN"
+
+
+def test_get_ocr_lang_from_config_falls_back_to_installer_hint(tmp_path):
+    config_path = tmp_path / "hushsnap_config.json"
+    config_path.write_text(json.dumps({"language": "auto"}), encoding="utf-8")
+    (tmp_path / "hushsnap_installer_lang.txt").write_text("zh", encoding="utf-8")
+
+    assert get_ocr_lang_from_config(config_path) == "zh-CN"

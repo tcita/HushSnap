@@ -31,6 +31,8 @@ def recognize_qimage(
         if not image.save(str(temp_path), "BMP"):
             return OcrRecognition()
         payload = run_windows_ocr_json(temp_path, language_tag)
+        if isinstance(payload, dict) and payload.get("Error"):
+            raise RuntimeError(str(payload["Error"]).strip())
         return parse_ocr_payload(payload)
     finally:
         if temp_path and temp_path.exists():

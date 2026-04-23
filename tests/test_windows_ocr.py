@@ -44,5 +44,5 @@ def test_run_windows_ocr_json_logs_process_failure(monkeypatch, tmp_path, caplog
 
     result = windows_ocr.run_windows_ocr_json(tmp_path / "sample.bmp", "en-US")
 
-    assert result == {}
+    assert result == {"Error": "boom"}
     assert "Windows OCR failed: boom" in caplog.text

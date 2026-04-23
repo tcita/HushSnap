@@ -37,6 +37,8 @@ TRAY_MSG_SHORT_MS = 2000
 TRAY_MSG_MEDIUM_MS = 3000
 # Tray message duration (long)
 TRAY_MSG_LONG_MS = 4000
+# Disable tray balloon notifications entirely to avoid Windows notification sounds.
+TRAY_NOTIFICATIONS_ENABLED = False
 # Small topmost audit delay in debug mode
 DEBUG_TOPMOST_DELAY_MS = 120
 
