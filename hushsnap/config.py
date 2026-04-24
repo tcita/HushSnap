@@ -306,8 +306,8 @@ def get_ocr_lang_from_config(config_path):
         normalized_ocr_language = _normalize_ocr_language_tag(ocr_language)
         if normalized_ocr_language:
             return normalized_ocr_language
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed to read OCR language from config: {e}")
     return _resolve_default_ocr_language(config_path)
 
 
@@ -326,7 +326,8 @@ def get_ocr_enabled_from_config(config_path):
     try:
         config_data = _load_config_data(config_path)
         return bool(config_data.get("ocr_enabled", False))
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Failed to read OCR enabled state from config: {e}")
         return False
 
 

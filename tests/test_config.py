@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 from hushsnap.config import (
     _ensure_default_config_exists,
+    get_ocr_enabled_from_config,
     get_ocr_lang_from_config,
     get_user_data_dir,
     parse_hotkey,
@@ -138,3 +139,31 @@ def test_get_ocr_lang_from_config_normalizes_traditional_chinese_tag(tmp_path):
     config_path.write_text(json.dumps({"ocr_language": "zh-HK"}), encoding="utf-8")
 
     assert get_ocr_lang_from_config(config_path) == "zh-TW"
+
+
+def test_get_ocr_lang_from_config_logs_and_falls_back_on_error(tmp_path):
+    config_path = tmp_path / "hushsnap_config.json"
+
+    with patch("hushsnap.config._load_config_data", side_effect=RuntimeError("boom")):
+        with patch("hushsnap.config._resolve_default_ocr_language", return_value="zh-CN") as mock_default:
+            with patch("hushsnap.config.logger.debug") as mock_debug:
+                assert get_ocr_lang_from_config(config_path) == "zh-CN"
+
+    mock_default.assert_called_once_with(config_path)
+    assert any(
+        "Failed to read OCR language from config" in call.args[0]
+        for call in mock_debug.call_args_list
+    )
+
+
+def test_get_ocr_enabled_from_config_logs_and_falls_back_on_error(tmp_path):
+    config_path = tmp_path / "hushsnap_config.json"
+
+    with patch("hushsnap.config._load_config_data", side_effect=RuntimeError("boom")):
+        with patch("hushsnap.config.logger.debug") as mock_debug:
+            assert get_ocr_enabled_from_config(config_path) is False
+
+    assert any(
+        "Failed to read OCR enabled state from config" in call.args[0]
+        for call in mock_debug.call_args_list
+    )
