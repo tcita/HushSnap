@@ -134,6 +134,7 @@ class OcrController:
 
     def _start_request(self, pixmap, language_tag):
         debug_dir = self.user_data_dir if self.save_debug_image else None
+        
         request = OcrRequest(
             pixmap=pixmap,
             language_tag=language_tag,

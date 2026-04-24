@@ -4,7 +4,7 @@ import pytest
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from hushsnap import ocr
-from hushsnap.ocr import service as ocr_service_module
+from hushsnap.ocr import ocr_service as ocr_service_module
 
 
 @pytest.fixture
