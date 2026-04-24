@@ -124,3 +124,17 @@ def test_get_ocr_lang_from_config_falls_back_to_installer_hint(tmp_path):
     (tmp_path / "hushsnap_installer_lang.txt").write_text("zh", encoding="utf-8")
 
     assert get_ocr_lang_from_config(config_path) == "zh-CN"
+
+
+def test_get_ocr_lang_from_config_normalizes_legacy_chinese_tag(tmp_path):
+    config_path = tmp_path / "hushsnap_config.json"
+    config_path.write_text(json.dumps({"ocr_language": "zh-CN"}), encoding="utf-8")
+
+    assert get_ocr_lang_from_config(config_path) == "zh-CN"
+
+
+def test_get_ocr_lang_from_config_normalizes_traditional_chinese_tag(tmp_path):
+    config_path = tmp_path / "hushsnap_config.json"
+    config_path.write_text(json.dumps({"ocr_language": "zh-HK"}), encoding="utf-8")
+
+    assert get_ocr_lang_from_config(config_path) == "zh-TW"

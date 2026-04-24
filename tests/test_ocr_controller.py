@@ -39,6 +39,10 @@ def _translate(key, **kwargs):
         "ocr_open_settings_failed_title": "Cannot open settings",
         "ocr_open_settings_failed_body": "Cannot open settings",
         "ocr_lang_system_default": "system language",
+        "ocr_lang_english": "Lang: EN",
+        "ocr_lang_chinese_simplified": "Simplified Chinese",
+        "ocr_lang_chinese_traditional": "Traditional Chinese",
+        "ocr_lang_selector_tooltip": "Select OCR language",
         "ocr_empty_title": "Empty",
         "ocr_empty_body": "No text found",
         "ocr_empty_popup_hint": "Switch language and try again",
@@ -155,19 +159,14 @@ def test_ocr_finished_copies_text_and_updates_popup(monkeypatch, qapp, tmp_path,
     assert shown["lang"] == "en-US"
 
 
-def test_ocr_finished_prompts_every_time_when_selected_language_is_not_installed(
+def test_ocr_finished_shows_notice_when_selected_language_is_not_installed(
     monkeypatch, qapp, tmp_path, sample_pixmap
 ):
     controller, tray_icon, action = _build_controller(monkeypatch, qapp, tmp_path)
     action.toggle_to(True)
     tray_icon.messages.clear()
-    prompts = []
-    controller.popup.show_text = lambda *args, **kwargs: prompts.append(("show_text", args, kwargs))
-    monkeypatch.setattr(
-        controller,
-        "_show_missing_language_dialog",
-        lambda requested_lang, available_lang: prompts.append((requested_lang, available_lang)) or "cancel",
-    )
+    shown = {}
+    controller.popup.show_text = lambda *args, **kwargs: shown.update({"shown": True})
 
     response = OcrResponse(
         text="hello",
@@ -185,7 +184,10 @@ def test_ocr_finished_prompts_every_time_when_selected_language_is_not_installed
     controller.on_ocr_finished(response)
 
     assert tray_icon.messages == []
-    assert prompts == [("EN", "ZH"), ("EN", "ZH")]
+    assert shown["shown"] is True
+    assert controller.popup.notice_frame.isHidden() is False
+    assert "EN" in controller.popup.notice_label.text()
+    assert controller.popup.notice_switch_btn.property("target_lang") == "zh-CN"
 
 
 def test_ocr_lang_changed_persists_and_reruns(monkeypatch, qapp, tmp_path, sample_pixmap):
@@ -230,13 +232,12 @@ def test_ocr_missing_language_switches_and_reruns(monkeypatch, qapp, tmp_path, s
     service = FakeService()
     controller, _, action = _build_controller(monkeypatch, qapp, tmp_path, service=service)
     action.toggle_to(True)
+    controller.popup.lang_combo.setCurrentIndex(controller.popup.lang_combo.findData("zh-CN"))
     monkeypatch.setattr(
         ocr_controller,
         "update_ocr_lang_in_config",
         lambda path, lang: saved.update({"path": path, "lang": lang}),
     )
-    monkeypatch.setattr(controller, "_show_missing_language_dialog", lambda requested_lang, available_lang: "switch")
-
     response = OcrResponse(
         text="hello",
         error="",
@@ -245,24 +246,25 @@ def test_ocr_missing_language_switches_and_reruns(monkeypatch, qapp, tmp_path, s
             text="hello",
             requested_language_supported=False,
             used_user_profile_fallback=True,
-            engine_language_tag="zh-CN",
+            engine_language_tag="zh-TW",
         ),
     )
 
     controller.on_ocr_finished(response)
+    controller.popup.notice_switch_btn.click()
 
-    assert saved["lang"] == "zh-CN"
+    assert saved["lang"] == "zh-TW"
     assert len(service.requests) == 1
-    assert service.requests[0].language_tag == "zh-CN"
+    assert service.requests[0].language_tag == "zh-TW"
     assert controller.popup.last_pixmap is sample_pixmap
 
 
 def test_ocr_missing_language_can_open_settings(monkeypatch, qapp, tmp_path, sample_pixmap):
     controller, _, action = _build_controller(monkeypatch, qapp, tmp_path)
     action.toggle_to(True)
+    controller.popup.lang_combo.setCurrentIndex(controller.popup.lang_combo.findData("zh-CN"))
     opened = {}
-    monkeypatch.setattr(controller, "_show_missing_language_dialog", lambda requested_lang, available_lang: "settings")
-    monkeypatch.setattr(controller, "_open_windows_language_settings", lambda: opened.update({"called": True}))
+    monkeypatch.setattr(ocr_controller.os, "startfile", lambda uri: opened.update({"called": uri}))
 
     response = OcrResponse(
         text="hello",
@@ -272,13 +274,14 @@ def test_ocr_missing_language_can_open_settings(monkeypatch, qapp, tmp_path, sam
             text="hello",
             requested_language_supported=False,
             used_user_profile_fallback=True,
-            engine_language_tag="zh-CN",
+            engine_language_tag="zh-TW",
         ),
     )
 
     controller.on_ocr_finished(response)
+    controller.popup.notice_settings_btn.click()
 
-    assert opened["called"] is True
+    assert opened["called"] == "ms-settings:regionlanguage"
 
 
 def test_ocr_missing_language_switch_falls_back_to_other_combo_language(
@@ -293,8 +296,6 @@ def test_ocr_missing_language_switch_falls_back_to_other_combo_language(
         "update_ocr_lang_in_config",
         lambda path, lang: saved.update({"path": path, "lang": lang}),
     )
-    monkeypatch.setattr(controller, "_show_missing_language_dialog", lambda requested_lang, available_lang: "switch")
-
     response = OcrResponse(
         text="hello",
         error="",
@@ -308,7 +309,93 @@ def test_ocr_missing_language_switch_falls_back_to_other_combo_language(
     )
 
     controller.on_ocr_finished(response)
+    controller.popup.notice_switch_btn.click()
 
     assert saved["lang"] == "zh-CN"
     assert len(service.requests) == 1
     assert service.requests[0].language_tag == "zh-CN"
+
+
+def test_chinese_family_fallback_does_not_prompt_when_variant_is_available(
+    monkeypatch, qapp, tmp_path, sample_pixmap
+):
+    controller, tray_icon, action = _build_controller(monkeypatch, qapp, tmp_path)
+    action.toggle_to(True)
+    controller.popup.lang_combo.setCurrentIndex(controller.popup.lang_combo.findData("zh-TW"))
+
+    response = OcrResponse(
+        text="hello",
+        error="",
+        pixmap=sample_pixmap,
+        recognition=OcrRecognition(
+            text="hello",
+            requested_language_supported=False,
+            used_user_profile_fallback=True,
+            engine_language_tag="zh-TW",
+        ),
+    )
+
+    controller.on_ocr_finished(response)
+
+    assert controller.popup.notice_frame.isHidden() is True
+    assert tray_icon.messages == []
+
+
+def test_simplified_chinese_family_fallback_does_not_prompt_when_variant_is_available(
+    monkeypatch, qapp, tmp_path, sample_pixmap
+):
+    controller, tray_icon, action = _build_controller(monkeypatch, qapp, tmp_path)
+    action.toggle_to(True)
+    controller.popup.lang_combo.setCurrentIndex(controller.popup.lang_combo.findData("zh-CN"))
+
+    response = OcrResponse(
+        text="hello",
+        error="",
+        pixmap=sample_pixmap,
+        recognition=OcrRecognition(
+            text="hello",
+            requested_language_supported=False,
+            used_user_profile_fallback=True,
+            engine_language_tag="zh-SG",
+        ),
+    )
+
+    controller.on_ocr_finished(response)
+
+    assert controller.popup.notice_frame.isHidden() is True
+    assert tray_icon.messages == []
+
+
+def test_notice_hides_after_compatible_response(monkeypatch, qapp, tmp_path, sample_pixmap):
+    controller, _, action = _build_controller(monkeypatch, qapp, tmp_path)
+    action.toggle_to(True)
+    controller.popup.lang_combo.setCurrentIndex(controller.popup.lang_combo.findData("zh-CN"))
+
+    incompatible_response = OcrResponse(
+        text="hello",
+        error="",
+        pixmap=sample_pixmap,
+        recognition=OcrRecognition(
+            text="hello",
+            requested_language_supported=False,
+            used_user_profile_fallback=True,
+            engine_language_tag="zh-TW",
+        ),
+    )
+    compatible_response = OcrResponse(
+        text="hello",
+        error="",
+        pixmap=sample_pixmap,
+        recognition=OcrRecognition(
+            text="hello",
+            requested_language_supported=True,
+            used_user_profile_fallback=False,
+            engine_language_tag="zh-CN",
+        ),
+    )
+
+    controller.on_ocr_finished(incompatible_response)
+    assert controller.popup.notice_frame.isHidden() is False
+
+    controller.on_ocr_finished(compatible_response)
+    assert controller.popup.notice_frame.isHidden() is True

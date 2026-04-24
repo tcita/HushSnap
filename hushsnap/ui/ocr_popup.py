@@ -8,6 +8,8 @@ from PyQt6 import QtCore, QtWidgets
 class OcrPopup(QtWidgets.QWidget):
     """Semi-transparent floating popup for recognized OCR text."""
     language_changed = QtCore.pyqtSignal(str)
+    switch_language_requested = QtCore.pyqtSignal(str)
+    open_language_settings_requested = QtCore.pyqtSignal()
 
     def __init__(self, translate, parent=None):
         super().__init__(parent)
@@ -46,10 +48,10 @@ class OcrPopup(QtWidgets.QWidget):
         # Language Selector
         self.lang_combo = QtWidgets.QComboBox()
         self.lang_combo.setObjectName("ocrLangCombo")
-        self.lang_combo.addItem("Lang: EN", "en-US")
-        self.lang_combo.addItem("Lang: ZH", "zh-CN")
-        self.lang_combo.setToolTip("Select OCR Language")
-        self.lang_combo.setFixedWidth(85)
+        self.lang_combo.addItem("", "en-US")
+        self.lang_combo.addItem("", "zh-CN")
+        self.lang_combo.addItem("", "zh-TW")
+        self.lang_combo.setFixedWidth(140)
         self.lang_combo.currentIndexChanged.connect(self._on_lang_changed_idx)
         header.addWidget(self.lang_combo)
 
@@ -65,6 +67,33 @@ class OcrPopup(QtWidgets.QWidget):
         close_btn.clicked.connect(self.hide)
         header.addWidget(close_btn)
         layout.addLayout(header)
+
+        self.notice_frame = QtWidgets.QFrame()
+        self.notice_frame.setObjectName("ocrNotice")
+        self.notice_frame.hide()
+        notice_layout = QtWidgets.QVBoxLayout(self.notice_frame)
+        notice_layout.setContentsMargins(12, 10, 12, 10)
+        notice_layout.setSpacing(8)
+
+        self.notice_label = QtWidgets.QLabel("")
+        self.notice_label.setObjectName("ocrNoticeLabel")
+        self.notice_label.setWordWrap(True)
+        notice_layout.addWidget(self.notice_label)
+
+        notice_actions = QtWidgets.QHBoxLayout()
+        notice_actions.setSpacing(8)
+        self.notice_switch_btn = QtWidgets.QPushButton("")
+        self.notice_switch_btn.setObjectName("ocrNoticeSwitchBtn")
+        self.notice_switch_btn.clicked.connect(self._emit_switch_language_requested)
+        notice_actions.addWidget(self.notice_switch_btn)
+
+        self.notice_settings_btn = QtWidgets.QPushButton("")
+        self.notice_settings_btn.setObjectName("ocrNoticeSettingsBtn")
+        self.notice_settings_btn.clicked.connect(self.open_language_settings_requested.emit)
+        notice_actions.addWidget(self.notice_settings_btn)
+        notice_actions.addStretch(1)
+        notice_layout.addLayout(notice_actions)
+        layout.addWidget(self.notice_frame)
 
         self.text_edit = QtWidgets.QPlainTextEdit()
         self.text_edit.setReadOnly(False)
@@ -114,6 +143,25 @@ class OcrPopup(QtWidgets.QWidget):
             " font-size: 16px;"
             " padding: 10px;"
             "}"
+            "#ocrNotice {"
+            " background: rgba(255, 197, 61, 26);"
+            " border: 1px solid rgba(255, 197, 61, 90);"
+            " border-radius: 10px;"
+            "}"
+            "#ocrNoticeLabel {"
+            " color: #FFF4CC;"
+            " font-size: 13px;"
+            "}"
+            "#ocrNoticeSwitchBtn, #ocrNoticeSettingsBtn {"
+            " color: #FFF7DD;"
+            " border: 1px solid rgba(255, 214, 122, 120);"
+            " border-radius: 8px;"
+            " background: rgba(255, 214, 122, 20);"
+            " padding: 4px 10px;"
+            "}"
+            "#ocrNoticeSwitchBtn:hover, #ocrNoticeSettingsBtn:hover {"
+            " background: rgba(255, 214, 122, 32);"
+            "}"
             "#ocrCloseBtn {"
             " color: #E1F7E7;"
             " border: none;"
@@ -124,12 +172,42 @@ class OcrPopup(QtWidgets.QWidget):
             " background: rgba(190, 255, 212, 34);"
             "}"
         )
+        self._refresh_language_labels()
+
+    def _refresh_language_labels(self):
+        english_index = self.lang_combo.findData("en-US")
+        if english_index >= 0:
+            self.lang_combo.setItemText(
+                english_index,
+                self.translate("ocr_lang_english"),
+            )
+
+        simplified_index = self.lang_combo.findData("zh-CN")
+        if simplified_index >= 0:
+            self.lang_combo.setItemText(
+                simplified_index,
+                self.translate("ocr_lang_chinese_simplified"),
+            )
+
+        traditional_index = self.lang_combo.findData("zh-TW")
+        if traditional_index >= 0:
+            self.lang_combo.setItemText(
+                traditional_index,
+                self.translate("ocr_lang_chinese_traditional"),
+            )
+
+        self.lang_combo.setToolTip(self.translate("ocr_lang_selector_tooltip"))
 
     def _on_lang_changed_idx(self, index):
         if not self._is_refreshing:
             lang_data = self.lang_combo.itemData(index)
             if lang_data:
                 self.language_changed.emit(lang_data)
+
+    def _emit_switch_language_requested(self):
+        target_lang = self.notice_switch_btn.property("target_lang") or ""
+        if target_lang:
+            self.switch_language_requested.emit(str(target_lang))
 
     def show_text(self, text, pixmap=None, lang=None):
         """Display OCR text and show popup near bottom-right corner."""
@@ -140,8 +218,19 @@ class OcrPopup(QtWidgets.QWidget):
             idx = self.lang_combo.findData(lang)
             if idx >= 0:
                 self.lang_combo.setCurrentIndex(idx)
+            else:
+                lowered = (lang or "").lower()
+                if lowered.startswith(("zh-tw", "zh-hk", "zh-mo", "zh-hant")):
+                    traditional_idx = self.lang_combo.findData("zh-TW")
+                    if traditional_idx >= 0:
+                        self.lang_combo.setCurrentIndex(traditional_idx)
+                elif lowered.startswith("zh"):
+                    simplified_idx = self.lang_combo.findData("zh-CN")
+                    if simplified_idx >= 0:
+                        self.lang_combo.setCurrentIndex(simplified_idx)
         self.title_label.setText(self.translate("ocr_popup_title"))
         self.copy_btn.setText(self.translate("ocr_copy_btn"))
+        self._refresh_language_labels()
         self.text_edit.setPlainText(text)
         self._is_refreshing = False
         
@@ -151,6 +240,23 @@ class OcrPopup(QtWidgets.QWidget):
         
         self.raise_()
         self.activateWindow()
+
+    def show_language_notice(self, message, available_lang=""):
+        self.notice_label.setText(message)
+        switch_label = self.translate(
+            "ocr_lang_missing_switch_btn",
+            available_lang=available_lang or self.translate("ocr_lang_installed_fallback"),
+        )
+        self.notice_switch_btn.setText(switch_label)
+        self.notice_switch_btn.setProperty("target_lang", available_lang)
+        self.notice_switch_btn.setEnabled(bool(available_lang))
+        self.notice_settings_btn.setText(self.translate("ocr_lang_missing_open_settings_btn"))
+        self.notice_frame.show()
+
+    def hide_language_notice(self):
+        self.notice_label.clear()
+        self.notice_switch_btn.setProperty("target_lang", "")
+        self.notice_frame.hide()
 
     @property
     def last_pixmap(self):

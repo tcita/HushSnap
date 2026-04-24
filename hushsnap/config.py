@@ -303,8 +303,9 @@ def get_ocr_lang_from_config(config_path):
     try:
         config_data = _load_config_data(config_path)
         ocr_language = config_data.get("ocr_language")
-        if isinstance(ocr_language, str) and ocr_language.strip():
-            return ocr_language.strip()
+        normalized_ocr_language = _normalize_ocr_language_tag(ocr_language)
+        if normalized_ocr_language:
+            return normalized_ocr_language
     except Exception:
         pass
     return _resolve_default_ocr_language(config_path)
@@ -314,7 +315,7 @@ def update_ocr_lang_in_config(config_path, ocr_lang):
     """Update OCR language preference in config."""
     try:
         config_data = _load_config_data(config_path)
-        config_data["ocr_language"] = ocr_lang
+        config_data["ocr_language"] = _normalize_ocr_language_tag(ocr_lang) or ocr_lang
         _write_config_data(config_path, config_data)
     except Exception as e:
         logger.error(f"Failed to update OCR language in config: {e}")
@@ -400,6 +401,27 @@ def _normalize_ui_language_code(raw_value, allow_auto=False):
     if primary_subtag in SUPPORTED_LANGUAGES:
         return primary_subtag
     return None
+
+
+def _normalize_ocr_language_tag(raw_value):
+    """Normalize OCR language values into the app's supported OCR options."""
+    if not isinstance(raw_value, str):
+        return None
+
+    normalized = raw_value.strip().replace("_", "-")
+    if not normalized:
+        return None
+
+    lowered = normalized.lower()
+    if lowered == "en" or lowered.startswith("en-"):
+        return "en-US"
+    if lowered == "zh":
+        return "zh-CN"
+    if lowered in ("zh-cn", "zh-sg", "zh-hans"):
+        return "zh-CN"
+    if lowered in ("zh-tw", "zh-hk", "zh-mo", "zh-hant"):
+        return "zh-TW"
+    return normalized
 
 
 def _read_ui_lang_from_installer_hint(config_path):

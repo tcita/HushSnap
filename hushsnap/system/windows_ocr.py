@@ -46,14 +46,38 @@ if ($bitmap.BitmapPixelFormat -ne [Windows.Graphics.Imaging.BitmapPixelFormat]::
 $engine = $null
 $requestedLanguageSupported = $false
 $usedUserProfileFallback = $false
+$requestedLanguageCandidates = @()
 if ('{escaped_language_tag}') {{
-    try {{
-        $lang = [Windows.Globalization.Language]::new('{escaped_language_tag}')
-        if ([Windows.Media.Ocr.OcrEngine]::IsLanguageSupported($lang)) {{
-            $requestedLanguageSupported = $true
-            $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage($lang)
+    $requestedLanguageCandidates += '{escaped_language_tag}'
+    $normalizedRequestedTag = '{escaped_language_tag}'.ToLowerInvariant()
+    if ($normalizedRequestedTag -in @('zh-cn', 'zh-sg', 'zh-hans', 'zh')) {{
+        $requestedLanguageCandidates += @(
+            'zh-CN',
+            'zh-SG',
+            'zh-Hans'
+        )
+    }} elseif ($normalizedRequestedTag -in @('zh-tw', 'zh-hk', 'zh-mo', 'zh-hant')) {{
+        $requestedLanguageCandidates += @(
+            'zh-TW',
+            'zh-HK',
+            'zh-MO',
+            'zh-Hant'
+        )
+    }}
+    $requestedLanguageCandidates = $requestedLanguageCandidates | Select-Object -Unique
+
+    foreach ($candidateTag in $requestedLanguageCandidates) {{
+        try {{
+            $lang = [Windows.Globalization.Language]::new($candidateTag)
+            if ([Windows.Media.Ocr.OcrEngine]::IsLanguageSupported($lang)) {{
+                $requestedLanguageSupported = $true
+                $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage($lang)
+                if ($null -ne $engine) {{
+                    break
+                }}
+            }}
+        }} catch {{
         }}
-    }} catch {{
     }}
 }}
 if ($null -eq $engine) {{

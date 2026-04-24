@@ -47,6 +47,8 @@ class OcrController:
 
         self.bridge.signal.connect(self.on_ocr_finished)
         self.popup.language_changed.connect(self.on_ocr_lang_changed)
+        self.popup.switch_language_requested.connect(self._handle_notice_switch_requested)
+        self.popup.open_language_settings_requested.connect(self._open_windows_language_settings)
 
     def attach_tray(self, tray_icon, ocr_action):
         self.tray_icon = tray_icon
@@ -71,8 +73,7 @@ class OcrController:
         error = response.error
         pixmap = response.pixmap
 
-        if self._handle_missing_language_pack(response):
-            return
+        self._update_missing_language_notice(response)
 
         if error:
             if self._show_specific_ocr_error(error):
@@ -143,81 +144,52 @@ class OcrController:
             lambda response: self.bridge.signal.emit(response),
         )
 
-    def _handle_missing_language_pack(self, response):
+    def _update_missing_language_notice(self, response):
         recognition = response.recognition
         if recognition is None:
-            return False
+            self.popup.hide_language_notice()
+            return
 
         current_lang = self.popup.lang_combo.itemData(self.popup.lang_combo.currentIndex())
         if not current_lang:
-            return False
+            self.popup.hide_language_notice()
+            return
 
         if recognition.requested_language_supported is not False:
-            return False
+            self.popup.hide_language_notice()
+            return
         if not recognition.used_user_profile_fallback:
-            return False
+            self.popup.hide_language_notice()
+            return
+        if self._is_compatible_language_family(current_lang, recognition.engine_language_tag):
+            self.popup.hide_language_notice()
+            return
 
         available_lang = self._resolve_available_language_tag(recognition.engine_language_tag, current_lang)
-        action = self._show_missing_language_dialog(
-            requested_lang=self._describe_language(current_lang),
-            available_lang=self._describe_language(available_lang) if available_lang else "",
+        self.popup.show_language_notice(
+            message=self.translate(
+                "ocr_lang_missing_body",
+                requested_lang=self._describe_language(current_lang),
+            ),
+            available_lang=available_lang,
         )
-        if action == "switch" and available_lang and response.pixmap is not None:
-            self._switch_ocr_language(available_lang, response.pixmap)
-        elif action == "settings":
-            self._open_windows_language_settings()
-        return True
 
     def _resolve_available_language_tag(self, engine_language_tag, current_lang):
-        if engine_language_tag:
-            idx = self.popup.lang_combo.findData(engine_language_tag)
-            if idx >= 0 and engine_language_tag != current_lang:
-                return engine_language_tag
+        normalized_engine_lang = self._normalize_combo_language_tag(engine_language_tag)
+        normalized_current_lang = self._normalize_combo_language_tag(current_lang)
+
+        if normalized_engine_lang:
+            idx = self.popup.lang_combo.findData(normalized_engine_lang)
+            if idx >= 0 and normalized_engine_lang != normalized_current_lang:
+                return normalized_engine_lang
         for idx in range(self.popup.lang_combo.count()):
             candidate = self.popup.lang_combo.itemData(idx)
-            if candidate and candidate != current_lang:
+            if candidate and candidate != normalized_current_lang:
                 return candidate
         return ""
 
-    def _show_missing_language_dialog(self, requested_lang, available_lang):
-        dialog = QtWidgets.QMessageBox(self.popup)
-        dialog.setIcon(QtWidgets.QMessageBox.Icon.Warning)
-        dialog.setWindowTitle(self.translate("ocr_lang_missing_title"))
-        dialog.setText(
-            self.translate(
-                "ocr_lang_missing_body",
-                requested_lang=requested_lang,
-            )
-        )
-
-        switch_label = self.translate(
-            "ocr_lang_missing_switch_btn",
-            available_lang=available_lang or self.translate("ocr_lang_installed_fallback"),
-        )
-        switch_button = dialog.addButton(
-            switch_label,
-            QtWidgets.QMessageBox.ButtonRole.AcceptRole,
-        )
-        settings_button = dialog.addButton(
-            self.translate("ocr_lang_missing_open_settings_btn"),
-            QtWidgets.QMessageBox.ButtonRole.ActionRole,
-        )
-        dialog.addButton(
-            self.translate("ocr_lang_missing_cancel_btn"),
-            QtWidgets.QMessageBox.ButtonRole.RejectRole,
-        )
-        if not available_lang:
-            switch_button.setEnabled(False)
-
-        dialog.exec()
-        clicked = dialog.clickedButton()
-        if clicked is switch_button:
-            return "switch"
-        if clicked is settings_button:
-            return "settings"
-        return "cancel"
-
     def _switch_ocr_language(self, language_tag, pixmap):
+        language_tag = self._normalize_combo_language_tag(language_tag)
         update_ocr_lang_in_config(self.config_path, language_tag)
         idx = self.popup.lang_combo.findData(language_tag)
         if idx >= 0:
@@ -225,7 +197,14 @@ class OcrController:
             self.popup.lang_combo.setCurrentIndex(idx)
             self.popup._is_refreshing = False
         self.popup._last_pixmap = pixmap
+        self.popup.hide_language_notice()
         self._start_request(pixmap, language_tag)
+
+    def _handle_notice_switch_requested(self, language_tag):
+        pixmap = self.popup.last_pixmap
+        if not pixmap or pixmap.isNull():
+            return
+        self._switch_ocr_language(language_tag, pixmap)
 
     def _open_windows_language_settings(self):
         try:
@@ -242,10 +221,28 @@ class OcrController:
         if not language_tag:
             return self.translate("ocr_lang_system_default")
 
-        idx = self.popup.lang_combo.findData(language_tag)
+        normalized_language_tag = self._normalize_combo_language_tag(language_tag)
+        idx = self.popup.lang_combo.findData(normalized_language_tag)
         if idx >= 0:
             return self.popup.lang_combo.itemText(idx).replace("Lang: ", "")
+        return normalized_language_tag or language_tag
+
+    def _normalize_combo_language_tag(self, language_tag):
+        lowered = str(language_tag or "").strip().lower()
+        if not lowered:
+            return ""
+        if lowered.startswith("en"):
+            return "en-US"
+        if lowered.startswith(("zh-tw", "zh-hk", "zh-mo", "zh-hant")):
+            return "zh-TW"
+        if lowered.startswith(("zh-cn", "zh-sg", "zh-hans", "zh")):
+            return "zh-CN"
         return language_tag
+
+    def _is_compatible_language_family(self, requested_lang, engine_language_tag):
+        normalized_requested = self._normalize_combo_language_tag(requested_lang)
+        normalized_engine = self._normalize_combo_language_tag(engine_language_tag)
+        return bool(normalized_requested and normalized_requested == normalized_engine)
 
     def _show_specific_ocr_error(self, error):
         lowered = (error or "").lower()
