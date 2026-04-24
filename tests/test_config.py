@@ -117,6 +117,7 @@ def test_default_config_uses_chinese_ocr_when_installer_hint_is_chinese(tmp_path
 
     config_data = json.loads(config_path.read_text(encoding="utf-8"))
     assert config_data["ocr_language"] == "zh-CN"
+    assert "_hotkey_note" not in config_data
 
 
 def test_get_ocr_lang_from_config_falls_back_to_installer_hint(tmp_path):

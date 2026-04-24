@@ -99,11 +99,6 @@ def get_config_path():
     return CONFIG_PATH
 
 
-def _hotkey_warning_note():
-    """Return the hotkey guidance text shown in the config file."""
-    return "Note: You can edit hotkey manually (including single-key). Some keys may conflict with system/apps; use at your own discretion."
-
-
 def _default_ocr_language_for_ui_language(ui_language):
     """Map the resolved UI language to the best default OCR language tag."""
     return "zh-CN" if ui_language == UI_LANG_ZH else "en-US"
@@ -129,7 +124,6 @@ def _ensure_default_config_exists(config_path):
             "language": UI_LANG_AUTO,
             "ocr_enabled": False,
             "ocr_language": _resolve_default_ocr_language(config_path),
-            "_hotkey_note": _hotkey_warning_note(),
         }
         config_path.write_text(
             json.dumps(config_data, ensure_ascii=False, indent=2),
@@ -258,19 +252,6 @@ def _write_config_data(config_path, config_data):
     )
 
 
-def _ensure_hotkey_note_field(config_path):
-    """Ensure the hotkey note field exists so manual editors can see guidance."""
-    config_data = _load_config_data(config_path)
-    note = _hotkey_warning_note()
-    if config_data.get("_hotkey_note") == note:
-        return
-    config_data["_hotkey_note"] = note
-    try:
-        _write_config_data(config_path, config_data)
-    except Exception as e:
-        logger.debug(f"Failed to update hotkey note: {e}")
-
-
 def read_hotkey_text_from_config(config_path):
     """Read hotkey text from config file."""
     config_data = json.loads(config_path.read_text(encoding="utf-8"))
@@ -290,7 +271,6 @@ def update_hotkey_in_config(config_path, hotkey_text):
     language_value = config_data.get("language")
     if not isinstance(language_value, str) or not language_value.strip():
         config_data["language"] = UI_LANG_AUTO
-    config_data["_hotkey_note"] = _hotkey_warning_note()
 
     try:
         _write_config_data(config_path, config_data)
@@ -350,7 +330,6 @@ def load_hotkey_setting():
     """
     config_path = get_config_path()
     _ensure_default_config_exists(config_path)
-    _ensure_hotkey_note_field(config_path)
 
     try:
         modifier_mask, virtual_key, canonical_hotkey = parse_hotkey(
