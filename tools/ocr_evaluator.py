@@ -62,36 +62,53 @@ def run_baseline_ocr(pixmap: QtGui.QPixmap, lang: str):
     result = recognize_qimage(image, language_tag=lang)
     return compose_text_from_result(result, language_tag=lang)
 
-def evaluate_hushsnap(pixmap: QtGui.QPixmap, lang: str, debug_img_path: Path):
+def evaluate_hushsnap(
+    pixmap: QtGui.QPixmap,
+    lang: str,
+    initial_debug_img_path: Path,
+    rescaled_debug_img_path: Path,
+):
     """
-    Run full HushSnap logic and save the final preprocessed image.
-    Returns: (final_text, scale_used, was_rescaled)
+    Run full HushSnap logic and save the first/second pass preprocessed images.
+    Returns diagnostic data without changing the current selection logic.
     """
     # 1. Initial Pass
     initial_img = preprocess_for_ocr(pixmap, INITIAL_SCALE_FACTOR)
     initial_result = recognize_qimage(initial_img, language_tag=lang)
+    initial_img.save(str(initial_debug_img_path), "PNG")
+    initial_text = compose_text_from_result(initial_result, language_tag=lang)
     
     final_result = initial_result
-    final_img = initial_img
     scale_used = INITIAL_SCALE_FACTOR
     was_rescaled = False
+    rescaled_text = ""
+    rescaled_scale = 0.0
+    rescaled_debug_available = False
     
     # 2. Adaptive Logic
     recommended_scale = recommend_scale_factor(initial_result, initial_img.width(), initial_img.height())
     if abs(recommended_scale - INITIAL_SCALE_FACTOR) >= MIN_RESCALE_DELTA:
         rescaled_img = preprocess_for_ocr(pixmap, recommended_scale)
         rescaled_result = recognize_qimage(rescaled_img, language_tag=lang)
+        rescaled_img.save(str(rescaled_debug_img_path), "PNG")
+        rescaled_text = compose_text_from_result(rescaled_result, language_tag=lang)
+        rescaled_scale = recommended_scale
+        rescaled_debug_available = True
         if rescaled_result.text or rescaled_result.lines:
             final_result = rescaled_result
-            final_img = rescaled_img
             scale_used = recommended_scale
             was_rescaled = True
-            
-    # Save the final preprocessed image for visual inspection
-    final_img.save(str(debug_img_path), "PNG")
     
-    text = compose_text_from_result(final_result, language_tag=lang)
-    return text, scale_used, was_rescaled
+    return {
+        "pass1_text": initial_text,
+        "pass1_scale": INITIAL_SCALE_FACTOR,
+        "pass2_text": rescaled_text,
+        "pass2_scale": rescaled_scale,
+        "pass2_ran": rescaled_debug_available,
+        "chosen_pass": "pass2" if was_rescaled else "pass1",
+        "chosen_scale": scale_used,
+        "was_rescaled": was_rescaled,
+    }
 
 def generate_html_report(results, output_path):
     html_content = [
@@ -101,21 +118,24 @@ def generate_html_report(results, output_path):
         ".case { background: white; border-radius: 12px; margin-bottom: 50px; padding: 30px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); border: 1px solid #e9ecef; }",
         ".filename { font-size: 1.5em; font-weight: 700; margin-bottom: 20px; color: #1a73e8; border-bottom: 2px solid #e8f0fe; padding-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }",
         ".meta { font-size: 0.85em; background: #f1f3f4; padding: 5px 12px; border-radius: 20px; color: #5f6368; font-weight: normal; }",
-        ".image-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-bottom: 25px; }",
+        ".image-layout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr); gap: 30px; margin-bottom: 25px; align-items: start; }",
         ".img-container { text-align: center; }",
+        ".img-panel { background: #fff; border: 1px solid #dee2e6; border-radius: 12px; padding: 20px; }",
+        ".img-stack { display: grid; gap: 20px; }",
         ".img-label { font-weight: 600; margin-bottom: 10px; color: #444; font-size: 0.9em; text-transform: uppercase; letter-spacing: 0.5px; }",
         ".img-wrapper { background: #111; padding: 10px; border-radius: 8px; display: inline-block; max-width: 100%; box-shadow: inset 0 2px 4px rgba(0,0,0,0.2); }",
-        ".image-grid img { max-height: 400px; max-width: 100%; display: block; }",
-        ".text-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }",
+        ".img-wrapper img { max-height: 520px; max-width: 100%; display: block; }",
+        ".text-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 30px; }",
         ".text-box { background: #fff; border: 1px solid #dee2e6; border-radius: 8px; overflow: hidden; }",
         ".text-header { background: #f8f9fa; border-bottom: 1px solid #dee2e6; padding: 10px 15px; font-weight: 600; font-size: 0.9em; display: flex; justify-content: space-between; }",
         ".text-content { padding: 15px; font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 13px; white-space: pre-wrap; line-height: 1.6; min-height: 120px; color: #3c4043; }",
         ".rescaled-badge { background: #fff7e6; color: #d46b08; border: 1px solid #ffd591; padding: 2px 6px; border-radius: 4px; font-size: 0.8em; }",
+        ".muted-note { color: #868e96; font-style: italic; }",
         "h1 { color: #202124; margin-bottom: 10px; }",
         ".summary { margin-bottom: 40px; color: #70757a; border-left: 4px solid #1a73e8; padding-left: 15px; }",
         "</style></head><body>",
         "<h1>HushSnap OCR Depth Evaluation</h1>",
-        f"<div class='summary'>Analyzing <b>{len(results)}</b> cases. Preprocessed images reflect what the OCR engine actually sees.</div>"
+        f"<div class='summary'>Analyzing <b>{len(results)}</b> cases. The layout keeps source images large while grouping both preprocessing passes together for direct visual inspection.</div>"
     ]
 
     for item in results:
@@ -123,18 +143,42 @@ def generate_html_report(results, output_path):
         html_content.append(f'<div class="case">')
         html_content.append(f'  <div class="filename">')
         html_content.append(f'    <span>{html.escape(item["name"])}</span>')
-        html_content.append(f'    <span class="meta">Engine: {item["lang"] or "Auto"} | Scale: {item["scale"]:.2f} {rescaled_html}</span>')
+        html_content.append(
+            f'    <span class="meta">Engine: {item["lang"] or "Auto"} | '
+            f'Chosen: {item["chosen_pass"]} @ {item["chosen_scale"]:.2f} {rescaled_html}</span>'
+        )
         html_content.append(f'  </div>')
         
         # Images Comparison
-        html_content.append(f'  <div class="image-grid">')
-        html_content.append(f'    <div class="img-container">')
+        html_content.append(f'  <div class="image-layout">')
+        html_content.append(f'    <div class="img-panel img-container">')
         html_content.append(f'      <div class="img-label">Source Capture</div>')
-        html_content.append(f'      <div class="img-wrapper"><img src="{item["src_rel"]}"></div>')
+        html_content.append(
+            f'      <a class="img-wrapper" href="{item["src_rel"]}" target="_blank" rel="noopener noreferrer">'
+            f'<img src="{item["src_rel"]}"></a>'
+        )
         html_content.append(f'    </div>')
-        html_content.append(f'    <div class="img-container">')
-        html_content.append(f'      <div class="img-label">Preprocessed (to Engine)</div>')
-        html_content.append(f'      <div class="img-wrapper"><img src="{item["pre_rel"]}"></div>')
+        html_content.append(f'    <div class="img-panel">')
+        html_content.append(f'      <div class="img-label">Preprocessing Review</div>')
+        html_content.append(f'      <div class="img-stack">')
+        html_content.append(f'        <div class="img-container">')
+        html_content.append(f'          <div class="img-label">Pass 1 Preprocessed</div>')
+        html_content.append(
+            f'          <a class="img-wrapper" href="{item["pass1_rel"]}" target="_blank" rel="noopener noreferrer">'
+            f'<img src="{item["pass1_rel"]}"></a>'
+        )
+        html_content.append(f'        </div>')
+        html_content.append(f'        <div class="img-container">')
+        html_content.append(f'          <div class="img-label">Pass 2 Preprocessed</div>')
+        if item["pass2_rel"]:
+            html_content.append(
+                f'          <a class="img-wrapper" href="{item["pass2_rel"]}" target="_blank" rel="noopener noreferrer">'
+                f'<img src="{item["pass2_rel"]}"></a>'
+            )
+        else:
+            html_content.append(f'          <div class="text-content muted-note">No second pass was run.</div>')
+        html_content.append(f'        </div>')
+        html_content.append(f'      </div>')
         html_content.append(f'    </div>')
         html_content.append(f'  </div>')
 
@@ -144,9 +188,17 @@ def generate_html_report(results, output_path):
         html_content.append(f'      <div class="text-header">Baseline (Raw Image)</div>')
         html_content.append(f'      <div class="text-content">{html.escape(item["baseline"] or "[No text]")}</div>')
         html_content.append(f'    </div>')
-        html_content.append(f'    <div class="text-box" style="border-color: #1a73e8;">')
-        html_content.append(f'      <div class="text-header" style="background: #e8f0fe; border-color: #d2e3fc;">HushSnap Logic</div>')
-        html_content.append(f'      <div class="text-content">{html.escape(item["hushsnap"] or "[No text]")}</div>')
+        html_content.append(f'    <div class="text-box">')
+        html_content.append(f'      <div class="text-header">Pass 1 OCR <span>Scale: {item["pass1_scale"]:.2f}</span></div>')
+        html_content.append(f'      <div class="text-content">{html.escape(item["pass1_text"] or "[No text]")}</div>')
+        html_content.append(f'    </div>')
+        html_content.append(f'    <div class="text-box">')
+        if item["pass2_ran"]:
+            html_content.append(f'      <div class="text-header">Pass 2 OCR <span>Scale: {item["pass2_scale"]:.2f}</span></div>')
+            html_content.append(f'      <div class="text-content">{html.escape(item["pass2_text"] or "[No text]")}</div>')
+        else:
+            html_content.append(f'      <div class="text-header">Pass 2 OCR</div>')
+            html_content.append(f'      <div class="text-content muted-note">No second pass was run.</div>')
         html_content.append(f'    </div>')
         html_content.append(f'  </div>')
         
@@ -186,27 +238,36 @@ def main():
             
         baseline_text = run_baseline_ocr(pixmap, lang)
         
-        pre_img_name = f"pre_{img_file.stem}_{i}.png"
-        pre_img_path = debug_dir / pre_img_name
+        pass1_img_name = f"pass1_{img_file.stem}_{i}.png"
+        pass2_img_name = f"pass2_{img_file.stem}_{i}.png"
+        pass1_img_path = debug_dir / pass1_img_name
+        pass2_img_path = debug_dir / pass2_img_name
         
-        hushsnap_text, scale, rescaled = evaluate_hushsnap(pixmap, lang, pre_img_path)
+        eval_data = evaluate_hushsnap(pixmap, lang, pass1_img_path, pass2_img_path)
         
         # Relative paths for HTML
         report_dir = output_report.parent
         src_rel = os.path.relpath(img_file, report_dir)
-        pre_rel = os.path.relpath(pre_img_path, report_dir)
+        pass1_rel = os.path.relpath(pass1_img_path, report_dir)
+        pass2_rel = os.path.relpath(pass2_img_path, report_dir) if eval_data["pass2_ran"] else ""
 
         results.append({
             "name": img_file.name,
             "src_rel": src_rel,
-            "pre_rel": pre_rel,
+            "pass1_rel": pass1_rel,
+            "pass2_rel": pass2_rel,
             "baseline": baseline_text.strip(),
-            "hushsnap": hushsnap_text.strip(),
+            "pass1_text": eval_data["pass1_text"].strip(),
+            "pass1_scale": eval_data["pass1_scale"],
+            "pass2_text": eval_data["pass2_text"].strip(),
+            "pass2_scale": eval_data["pass2_scale"],
+            "pass2_ran": eval_data["pass2_ran"],
+            "chosen_pass": eval_data["chosen_pass"],
+            "chosen_scale": eval_data["chosen_scale"],
             "lang": lang,
-            "scale": scale,
-            "was_rescaled": rescaled
+            "was_rescaled": eval_data["was_rescaled"],
         })
-        print(f"Done (Scale: {scale:.2f})")
+        print(f"Done (Chosen scale: {eval_data['chosen_scale']:.2f})")
 
     generate_html_report(results, args.output)
     
