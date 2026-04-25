@@ -3,7 +3,7 @@ Unit tests for the configuration module.
 Covers hotkey parsing, path resolution, and UI text translations.
 """
 
-import json
+import tomllib
 import pytest
 from pathlib import Path
 from unittest.mock import patch
@@ -110,40 +110,40 @@ def test_resolve_ui_lang_from_installer_hint_when_config_auto():
 
 
 def test_default_config_uses_chinese_ocr_when_installer_hint_is_chinese(tmp_path):
-    config_path = tmp_path / "hushsnap_config.json"
+    config_path = tmp_path / "hushsnap_config.toml"
     (tmp_path / "hushsnap_installer_lang.txt").write_text("zh", encoding="utf-8")
 
     _ensure_default_config_exists(config_path)
 
-    config_data = json.loads(config_path.read_text(encoding="utf-8"))
+    config_data = tomllib.loads(config_path.read_text(encoding="utf-8"))
     assert config_data["ocr_language"] == "zh-CN"
-    assert "_hotkey_note" not in config_data
+    assert "avoid conflicts with Windows or other system shortcuts" in config_path.read_text(encoding="utf-8")
 
 
 def test_get_ocr_lang_from_config_falls_back_to_installer_hint(tmp_path):
-    config_path = tmp_path / "hushsnap_config.json"
-    config_path.write_text(json.dumps({"language": "auto"}), encoding="utf-8")
+    config_path = tmp_path / "hushsnap_config.toml"
+    config_path.write_text('language = "auto"\n', encoding="utf-8")
     (tmp_path / "hushsnap_installer_lang.txt").write_text("zh", encoding="utf-8")
 
     assert get_ocr_lang_from_config(config_path) == "zh-CN"
 
 
 def test_get_ocr_lang_from_config_normalizes_legacy_chinese_tag(tmp_path):
-    config_path = tmp_path / "hushsnap_config.json"
-    config_path.write_text(json.dumps({"ocr_language": "zh-CN"}), encoding="utf-8")
+    config_path = tmp_path / "hushsnap_config.toml"
+    config_path.write_text('ocr_language = "zh-CN"\n', encoding="utf-8")
 
     assert get_ocr_lang_from_config(config_path) == "zh-CN"
 
 
 def test_get_ocr_lang_from_config_normalizes_traditional_chinese_tag(tmp_path):
-    config_path = tmp_path / "hushsnap_config.json"
-    config_path.write_text(json.dumps({"ocr_language": "zh-HK"}), encoding="utf-8")
+    config_path = tmp_path / "hushsnap_config.toml"
+    config_path.write_text('ocr_language = "zh-HK"\n', encoding="utf-8")
 
     assert get_ocr_lang_from_config(config_path) == "zh-TW"
 
 
 def test_get_ocr_lang_from_config_logs_and_falls_back_on_error(tmp_path):
-    config_path = tmp_path / "hushsnap_config.json"
+    config_path = tmp_path / "hushsnap_config.toml"
 
     with patch("hushsnap.config._load_config_data", side_effect=RuntimeError("boom")):
         with patch("hushsnap.config._resolve_default_ocr_language", return_value="zh-CN") as mock_default:
@@ -158,7 +158,7 @@ def test_get_ocr_lang_from_config_logs_and_falls_back_on_error(tmp_path):
 
 
 def test_get_ocr_enabled_from_config_logs_and_falls_back_on_error(tmp_path):
-    config_path = tmp_path / "hushsnap_config.json"
+    config_path = tmp_path / "hushsnap_config.toml"
 
     with patch("hushsnap.config._load_config_data", side_effect=RuntimeError("boom")):
         with patch("hushsnap.config.logger.debug") as mock_debug:

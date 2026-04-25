@@ -3,11 +3,11 @@ HushSnap configuration management module.
 Handles config read/write, path resolution, i18n, and single-instance detection.
 """
 
-import json
 import os
 import sys
 import ctypes
 import logging
+import tomllib
 from ctypes import wintypes
 from pathlib import Path
 
@@ -125,10 +125,7 @@ def _ensure_default_config_exists(config_path):
             "ocr_enabled": False,
             "ocr_language": _resolve_default_ocr_language(config_path),
         }
-        config_path.write_text(
-            json.dumps(config_data, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        _write_config_data(config_path, config_data)
     except Exception as e:
         logger.debug(f"Failed to ensure default config exists at {config_path}: {e}")
 
@@ -234,9 +231,9 @@ def parse_hotkey(hotkey_text):
 
 
 def _load_config_data(config_path):
-    """Load JSON config data from disk."""
+    """Load TOML config data from disk."""
     try:
-        config_data = json.loads(config_path.read_text(encoding="utf-8"))
+        config_data = tomllib.loads(config_path.read_text(encoding="utf-8"))
         if isinstance(config_data, dict):
             return config_data
     except Exception as e:
@@ -244,19 +241,46 @@ def _load_config_data(config_path):
     return {}
 
 
+def _format_toml_string(value):
+    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def _serialize_config_data(config_data):
+    """Serialize flat config values into a stable TOML document."""
+    hotkey = str(config_data.get("hotkey", DEFAULT_HOTKEY) or DEFAULT_HOTKEY).strip() or DEFAULT_HOTKEY
+
+    language_value = config_data.get("language", UI_LANG_AUTO)
+    if not isinstance(language_value, str) or not language_value.strip():
+        language_value = UI_LANG_AUTO
+
+    ocr_enabled = bool(config_data.get("ocr_enabled", False))
+
+    ocr_language_value = config_data.get("ocr_language", "")
+    if not isinstance(ocr_language_value, str) or not ocr_language_value.strip():
+        ocr_language_value = ""
+
+    lines = [
+        "# If you change this hotkey, avoid conflicts with Windows or other system shortcuts.",
+        f"hotkey = {_format_toml_string(hotkey)}",
+        f"language = {_format_toml_string(language_value.strip())}",
+        f"ocr_enabled = {str(ocr_enabled).lower()}",
+        f"ocr_language = {_format_toml_string(ocr_language_value.strip())}",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def _write_config_data(config_path, config_data):
-    """Write config data to disk as JSON."""
-    config_path.write_text(
-        json.dumps(config_data, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    """Write config data to disk as TOML."""
+    config_path.write_text(_serialize_config_data(config_data), encoding="utf-8")
 
 
 def read_hotkey_text_from_config(config_path):
     """Read hotkey text from config file."""
-    config_data = json.loads(config_path.read_text(encoding="utf-8"))
+    config_data = _load_config_data(config_path)
     if not isinstance(config_data, dict):
-        raise ValueError("Config must be a JSON object.")
+        raise ValueError("Config must be a TOML table.")
     hotkey_value = config_data.get("hotkey")
     if not isinstance(hotkey_value, str) or not hotkey_value.strip():
         raise ValueError("hotkey must be a non-empty string.")
@@ -346,7 +370,7 @@ def load_hotkey_setting():
 def _read_ui_lang_from_config(config_path):
     """Read UI language setting from config."""
     try:
-        config_data = json.loads(config_path.read_text(encoding="utf-8"))
+        config_data = _load_config_data(config_path)
         if not isinstance(config_data, dict):
             return UI_LANG_AUTO
         configured_language = config_data.get("language", UI_LANG_AUTO)

@@ -16,7 +16,7 @@ DEFAULT_HOTKEY = "Alt+Q"
 
 # --- 2. File and system constants ---
 # Config filename
-APP_CONFIG_FILENAME = "hushsnap_config.json"
+APP_CONFIG_FILENAME = "hushsnap_config.toml"
 # Installer-provided language hint filename
 INSTALLER_LANG_FILENAME = "hushsnap_installer_lang.txt"
 # Debug log filename
