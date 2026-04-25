@@ -15,7 +15,7 @@ dist-installer/
 .vscode/
 .vs/
 
-#test data
+#ocr test data
 /ocr_eval_data
 /tools/ocr_debug
 tools/ocr_report.html
