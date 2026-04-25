@@ -321,7 +321,7 @@ def generate_html_report(results, output_path):
 def main():
     parser = argparse.ArgumentParser(description="Pipeline evaluation for HushSnap OCR")
     parser.add_argument("--input", default="ocr_eval_data", help="Input image directory")
-    parser.add_argument("--output", default="ocr_report.html", help="HTML report output path")
+    parser.add_argument("--output", default="tools/ocr_report.html", help="HTML report output path")
     args = parser.parse_args()
 
     input_path = PROJECT_ROOT / args.input

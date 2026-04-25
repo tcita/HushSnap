@@ -17,5 +17,7 @@ dist-installer/
 
 #test data
 /ocr_eval_data
+/ocr_debug
+/ocr_report.html
 /tools/ocr_debug
 tools/ocr_report.html
