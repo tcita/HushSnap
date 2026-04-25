@@ -7,16 +7,16 @@ from PyQt6 import QtGui
 
 from .models import OcrRecognition
 from .parsing import parse_ocr_payload
-from .preprocess import preprocess_for_ocr
+from .preprocess import (
+    DEFAULT_OCR_SCALE_FACTOR,
+    OcrPreprocessSettings,
+    default_preprocess_settings,
+    run_preprocess_pipeline,
+)
 from .text import compose_text_from_result
 from ..system.windows_ocr import run_windows_ocr_json
 
 logger = logging.getLogger(__name__)
-
-INITIAL_SCALE_FACTOR = 1.0
-IDEAL_LINE_HEIGHT_PX = 40.0
-MAX_OCR_IMAGE_DIMENSION = 2600
-MIN_RESCALE_DELTA = 0.15
 
 
 def recognize_qimage(
@@ -39,26 +39,6 @@ def recognize_qimage(
             temp_path.unlink(missing_ok=True)
 
 
-def recommend_scale_factor(result: OcrRecognition, width: int, height: int) -> float:
-    """Estimate a second-pass OCR scale based on detected word heights."""
-    heights = [
-        word.bounding_box.height
-        for line in result.lines
-        for word in line.words
-        if word.bounding_box.height > 0
-    ]
-
-    line_height = (sum(heights) / len(heights)) if heights else 10.0
-    if line_height <= 0:
-        return INITIAL_SCALE_FACTOR
-
-    scale_factor = IDEAL_LINE_HEIGHT_PX / line_height
-    larger_dimension = max(width, height, 1)
-    max_allowed_scale = MAX_OCR_IMAGE_DIMENSION / larger_dimension
-    scale_factor = min(scale_factor, max_allowed_scale)
-    return max(0.25, min(scale_factor, 4.0))
-
-
 def save_debug_preprocessed_image(image: QtGui.QImage, debug_dir: str | Path | None) -> None:
     """Best-effort debug image dump; failures are logged but non-fatal."""
     if not debug_dir:
@@ -75,48 +55,48 @@ def recognize_result_from_pixmap(
     pixmap: QtGui.QPixmap,
     language_tag: str = "",
     debug_dir: str | Path | None = None,
+    preprocess_settings: OcrPreprocessSettings | None = None,
 ) -> OcrRecognition:
     """
-    Run OCR with optional adaptive second pass.
-    First pass is fast baseline; second pass is used only when scale estimate differs enough.
+    Run OCR once against a single configurable preprocessing pipeline.
     """
     total_start = time.perf_counter()
 
     if pixmap.isNull():
         return OcrRecognition()
 
-    initial_image = preprocess_for_ocr(pixmap, INITIAL_SCALE_FACTOR)
-    save_debug_preprocessed_image(initial_image, debug_dir)
+    active_settings = preprocess_settings or default_preprocess_settings()
+    preprocess_result = run_preprocess_pipeline(pixmap, settings=active_settings)
+    save_debug_preprocessed_image(preprocess_result.image, debug_dir)
 
-    initial_result = recognize_qimage(initial_image, language_tag=language_tag)
-    if not initial_result.text and not initial_result.lines:
+    recognition = recognize_qimage(preprocess_result.image, language_tag=language_tag)
+    if not recognition.text and not recognition.lines:
         logger.info(f"OCR Completed in {time.perf_counter() - total_start:.2f}s (empty result)")
         return OcrRecognition()
 
-    recommended_scale = recommend_scale_factor(initial_result, initial_image.width(), initial_image.height())
-    final_result = initial_result
-
-    if abs(recommended_scale - INITIAL_SCALE_FACTOR) >= MIN_RESCALE_DELTA:
-        rescaled_image = preprocess_for_ocr(pixmap, recommended_scale)
-        rescaled_result = recognize_qimage(rescaled_image, language_tag=language_tag)
-        if rescaled_result.text or rescaled_result.lines:
-            final_result = rescaled_result
-
     logger.info(
-        f"OCR Completed in {time.perf_counter() - total_start:.2f}s "
-        f"(engine=windows, scale={recommended_scale:.2f}, lines={len(final_result.lines)})"
+        "OCR Completed in %.2fs (engine=windows, scale=%.2f, pipeline=%s, lines=%d)",
+        time.perf_counter() - total_start,
+        active_settings.scale_factor,
+        preprocess_result.summary() or "raw",
+        len(recognition.lines),
     )
-    return final_result
+    return recognition
 
 
 def recognize_text_from_pixmap(
     pixmap: QtGui.QPixmap,
     language_tag: str = "",
     debug_dir: str | Path | None = None,
+    preprocess_settings: OcrPreprocessSettings | None = None,
 ) -> str:
     result = recognize_result_from_pixmap(
         pixmap,
         language_tag=language_tag,
         debug_dir=debug_dir,
+        preprocess_settings=preprocess_settings,
     )
     return compose_text_from_result(result, language_tag=language_tag)
+
+
+INITIAL_SCALE_FACTOR = DEFAULT_OCR_SCALE_FACTOR

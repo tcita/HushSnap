@@ -20,6 +20,7 @@ class OcrService:
                 request.pixmap,
                 language_tag=request.language_tag,
                 debug_dir=request.debug_dir,
+                preprocess_settings=request.preprocess_settings,
             )
             text = compose_text_from_result(recognition, language_tag=request.language_tag)
             return OcrResponse(

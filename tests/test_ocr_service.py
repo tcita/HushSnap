@@ -74,6 +74,36 @@ def test_ocr_service_async_callback(monkeypatch, sample_pixmap):
     assert result_holder["response"].text == "async"
 
 
+def test_ocr_service_forwards_preprocess_settings(monkeypatch, sample_pixmap):
+    captured = {}
+
+    def _recognize(pixmap, language_tag="", debug_dir=None, preprocess_settings=None):
+        captured["pixmap"] = pixmap
+        captured["language_tag"] = language_tag
+        captured["debug_dir"] = debug_dir
+        captured["preprocess_settings"] = preprocess_settings
+        return ocr.OcrRecognition(text="configured")
+
+    monkeypatch.setattr(ocr_service_module, "recognize_result_from_pixmap", _recognize)
+
+    settings = ocr.OcrPreprocessSettings(scale_factor=1.25, auto_invert=False)
+    service = ocr.OcrService()
+    response = service.recognize(
+        ocr.OcrRequest(
+            pixmap=sample_pixmap,
+            language_tag="en-US",
+            debug_dir="debug",
+            preprocess_settings=settings,
+        )
+    )
+
+    assert response.text == "configured"
+    assert captured["pixmap"] is sample_pixmap
+    assert captured["language_tag"] == "en-US"
+    assert captured["debug_dir"] == "debug"
+    assert captured["preprocess_settings"] == settings
+
+
 def test_compose_text_from_result_keeps_chinese_tokens_intact():
     result = ocr.OcrRecognition(
         lines=[

@@ -1,0 +1,8 @@
+[preprocess]
+scale_factor = 1.0
+normalize_source = true
+add_padding = true
+padding_px = 32
+bolden_text = true
+auto_invert = true
+high_contrast = true
