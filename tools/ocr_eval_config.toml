@@ -1,9 +1,10 @@
 [preprocess]
 
-auto_scale = true
+# Execution order matches hushsnap.ocr.preprocess.run_preprocess_pipeline
 normalize_source = true
+auto_scale = true
 auto_add_padding = true
-
+bolden_text = false
+smooth = false
 auto_invert = true
 high_contrast = false
-bolden_text = false

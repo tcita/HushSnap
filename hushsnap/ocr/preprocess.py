@@ -12,6 +12,7 @@ class OcrPreprocessSettings:
     auto_scale: bool = True
     normalize_source: bool = True
     auto_add_padding: bool = True
+    smooth: bool = True
     bolden_text: bool = True
     auto_invert: bool = True
     high_contrast: bool = True
@@ -188,26 +189,38 @@ def stretch_grayscale_contrast(grayscale_image: QtGui.QImage) -> QtGui.QImage:
 
 def preprocess_grayscale(
     image: QtGui.QImage,
+    grayscale_smooth: bool = True,
     auto_invert: bool = True,
 ) -> tuple[QtGui.QImage, bool]:
-    """Smooth grayscale input and optionally invert dark-background captures."""
-    smoothed = smooth_grayscale_image(image)
-    threshold = otsu_threshold(smoothed)
+    """Smooth grayscale input and optionally invert dark-background captures. Assumes input is already Grayscale8."""
+    if grayscale_smooth:
+        # smooth_grayscale_image already handles scaling up/down and ensures Grayscale8
+        grayscale = smooth_grayscale_image(image)
+    else:
+        grayscale = image.convertToFormat(QtGui.QImage.Format.Format_Grayscale8)
+
+    threshold = otsu_threshold(grayscale)
     was_inverted = False
 
-    if auto_invert and should_invert_grayscale(smoothed, threshold):
-        invert_grayscale_in_place(smoothed)
+    if auto_invert and should_invert_grayscale(grayscale, threshold):
+        invert_grayscale_in_place(grayscale)
         was_inverted = True
 
-    return smoothed, was_inverted
+    return grayscale, was_inverted
 
 
 def to_high_contrast(
     image: QtGui.QImage,
+    grayscale_smooth: bool = True,
     auto_invert: bool = True,
 ) -> tuple[QtGui.QImage, bool]:
     """Convert image to OCR-friendly high-contrast RGB output."""
-    grayscale, was_inverted = preprocess_grayscale(image, auto_invert=auto_invert)
+    grayscale = image.convertToFormat(QtGui.QImage.Format.Format_Grayscale8)
+    grayscale, was_inverted = preprocess_grayscale(
+        grayscale,
+        grayscale_smooth=grayscale_smooth,
+        auto_invert=auto_invert,
+    )
     contrasted = stretch_grayscale_contrast(grayscale)
     return contrasted.convertToFormat(QtGui.QImage.Format.Format_RGB32), was_inverted
 
@@ -217,7 +230,8 @@ def normalize_source_image(pixmap: QtGui.QPixmap) -> QtGui.QImage:
     image = pixmap.toImage().convertToFormat(QtGui.QImage.Format.Format_ARGB32)
     if image.devicePixelRatio() != 1.0:
         image.setDevicePixelRatio(1.0)
-    return image
+    # Optimization: Early conversion to Grayscale8 for the entire pipeline
+    return image.convertToFormat(QtGui.QImage.Format.Format_Grayscale8)
 
 
 def scale_image(image: QtGui.QImage, scale_factor: float) -> QtGui.QImage:
@@ -245,7 +259,7 @@ def create_padded_canvas(image: QtGui.QImage) -> tuple[QtGui.QImage, int]:
     canvas = QtGui.QImage(
         max(image.width() + (pad * 2), DEFAULT_AUTO_PADDING_MIN_SIZE_PX + (pad * 2)),
         max(image.height() + (pad * 2), DEFAULT_AUTO_PADDING_MIN_SIZE_PX + (pad * 2)),
-        QtGui.QImage.Format.Format_RGB32,
+        image.format(),
     )
     canvas.fill(background_color)
     return canvas, pad
@@ -258,6 +272,9 @@ def draw_boldened_text(dst: QtGui.QImage, src: QtGui.QImage, pad: int) -> None:
     """
     painter = QtGui.QPainter(dst)
     try:
+        if dst.format() != src.format():
+            # Ensure consistent drawing behavior
+            src = src.convertToFormat(dst.format())
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
         painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform, True)
         painter.setOpacity(1.0)
@@ -283,87 +300,112 @@ def run_preprocess_pipeline(
     active_settings = settings or DEFAULT_OCR_PREPROCESS_SETTINGS
     steps: list[OcrPreprocessStep] = []
 
+    # 1. Normalize and Convert to Grayscale early
     if active_settings.normalize_source:
         image = normalize_source_image(pixmap)
     else:
-        image = pixmap.toImage().convertToFormat(QtGui.QImage.Format.Format_ARGB32)
+        image = pixmap.toImage().convertToFormat(QtGui.QImage.Format.Format_Grayscale8)
     steps.append(
         OcrPreprocessStep(
             key="normalize_source",
-            label="Normalize Source",
-            enabled=active_settings.normalize_source,
+            label="Grayscale",
+            enabled=True,
+            details="8-bit",
         )
     )
 
+    # 2. Scale
     effective_scale_factor, scale_mode = resolve_scale_factor(active_settings, auto_scale_factor=resolved_scale_factor)
     image = scale_image(image, effective_scale_factor)
-    scale_details = f"auto->{effective_scale_factor:.2f}x" if active_settings.auto_scale else "off"
     steps.append(
         OcrPreprocessStep(
             key="scale",
-            label="Auto Scale",
+            label="Scale",
             enabled=active_settings.auto_scale,
-            details=scale_details,
+            details=f"{effective_scale_factor:.2f}x" if active_settings.auto_scale else "1.00x",
         )
     )
 
+    # 3. Padding
     pad = 0
     padding_applied = False
     if active_settings.auto_add_padding:
         padded_canvas, pad = create_padded_canvas(image)
         padding_applied = pad > 0
-        if active_settings.bolden_text:
-            draw_boldened_text(padded_canvas, image, pad)
-        else:
+        if not active_settings.bolden_text:
             painter = QtGui.QPainter(padded_canvas)
             try:
                 painter.drawImage(pad, pad, image)
             finally:
                 painter.end()
         image = padded_canvas
-    elif active_settings.bolden_text:
-        boldened_image = QtGui.QImage(image.size(), QtGui.QImage.Format.Format_RGB32)
-        fill_color = image.pixelColor(0, 0)
-        if fill_color.alpha() < 255:
-            fill_color.setAlpha(255)
-        boldened_image.fill(fill_color)
-        draw_boldened_text(boldened_image, image, 0)
-        image = boldened_image
     steps.append(
         OcrPreprocessStep(
             key="padding",
-            label="Auto Add Padding",
+            label="Padding",
             enabled=active_settings.auto_add_padding,
-            details=f"{pad}px (min 64px)" if padding_applied else ("no-op" if active_settings.auto_add_padding else "off"),
-        )
-    )
-    steps.append(
-        OcrPreprocessStep(
-            key="bolden",
-            label="Bolden Text",
-            enabled=active_settings.bolden_text,
-            details="triple-draw",
+            details=f"+{pad}px" if padding_applied else "none",
         )
     )
 
-    grayscale_image, was_auto_inverted = preprocess_grayscale(image, auto_invert=active_settings.auto_invert)
-    if active_settings.high_contrast:
-        image = stretch_grayscale_contrast(grayscale_image).convertToFormat(QtGui.QImage.Format.Format_RGB32)
-    else:
-        image = grayscale_image.convertToFormat(QtGui.QImage.Format.Format_RGB32)
+    # 4. Bolden
+    if active_settings.bolden_text:
+        if active_settings.auto_add_padding:
+            draw_boldened_text(image, image, 0)
+        else:
+            boldened_image = QtGui.QImage(image.size(), image.format())
+            boldened_image.fill(image.pixelColor(0, 0))
+            draw_boldened_text(boldened_image, image, 0)
+            image = boldened_image
+    steps.append(
+        OcrPreprocessStep(
+            key="bolden",
+            label="Bolden",
+            enabled=active_settings.bolden_text,
+            details="triple-draw" if active_settings.bolden_text else "off",
+        )
+    )
+
+    # 5. Smooth
+    if active_settings.smooth:
+        image = smooth_grayscale_image(image)
+    steps.append(
+        OcrPreprocessStep(
+            key="smooth",
+            label="Smooth",
+            enabled=active_settings.smooth,
+            details="bilinear-resampling" if active_settings.smooth else "off",
+        )
+    )
+
+    # 6. Auto Invert
+    threshold = otsu_threshold(image)
+    was_auto_inverted = False
+    if active_settings.auto_invert and should_invert_grayscale(image, threshold):
+        invert_grayscale_in_place(image)
+        was_auto_inverted = True
     steps.append(
         OcrPreprocessStep(
             key="auto_invert",
-            label="Auto Invert",
-            enabled=active_settings.auto_invert and was_auto_inverted,
-            details="dark background detected" if was_auto_inverted else "",
+            label="Invert",
+            enabled=active_settings.auto_invert,
+            details="inverted" if was_auto_inverted else "normal",
         )
     )
+
+    # 7. High Contrast
+    if active_settings.high_contrast:
+        image = stretch_grayscale_contrast(image)
+    
+    # Final conversion to RGB32 for OCR engine compatibility
+    image = image.convertToFormat(QtGui.QImage.Format.Format_RGB32)
+
     steps.append(
         OcrPreprocessStep(
             key="high_contrast",
             label="High Contrast",
             enabled=active_settings.high_contrast,
+            details="otsu-stretch" if active_settings.high_contrast else "off",
         )
     )
 

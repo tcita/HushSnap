@@ -24,6 +24,7 @@ import re
 import shutil
 import sys
 import tomllib
+from dataclasses import fields
 from difflib import SequenceMatcher
 from pathlib import Path
 
@@ -33,7 +34,7 @@ sys.path.append(str(PROJECT_ROOT))
 
 from PyQt6 import QtGui, QtWidgets
 
-from hushsnap.ocr.preprocess import OcrPreprocessSettings
+from hushsnap.ocr.preprocess import OcrPreprocessSettings, OcrPreprocessStep
 from hushsnap.ocr.recognition import prepare_preprocess_result, recognize_qimage
 from hushsnap.ocr.text import compose_text_from_result
 
@@ -58,6 +59,8 @@ LANG_MAP = {
 
 TOKEN_PATTERN = re.compile(r"\w+|[^\w\s]+|\s+", re.UNICODE)
 CONFIG_PATH = Path(__file__).with_name("ocr_eval_config.toml")
+PREPROCESS_CONFIG_KEYS = [field.name for field in fields(OcrPreprocessSettings)]
+DEFAULT_EVAL_PREPROCESS_SETTINGS = OcrPreprocessSettings()
 
 
 def get_language_tag(file_path: Path, override_lang: str = None) -> str:
@@ -109,16 +112,20 @@ def load_eval_preprocess_settings(config_path: Path = CONFIG_PATH) -> OcrPreproc
     if not isinstance(preprocess_data, dict):
         raise ValueError("Missing [preprocess] section in OCR evaluator config.")
 
-    try:
-        return OcrPreprocessSettings(
-            auto_scale=bool(preprocess_data.get("auto_scale", True)),
-            normalize_source=bool(preprocess_data.get("normalize_source", True)),
-            auto_add_padding=bool(preprocess_data.get("auto_add_padding", True)),
-            bolden_text=bool(preprocess_data.get("bolden_text", True)),
-            auto_invert=bool(preprocess_data.get("auto_invert", True)),
-            high_contrast=bool(preprocess_data.get("high_contrast", True)),
+    unknown_keys = sorted(set(preprocess_data) - set(PREPROCESS_CONFIG_KEYS))
+    if unknown_keys:
+        raise ValueError(
+            "Unknown [preprocess] keys in OCR evaluator config: "
+            + ", ".join(unknown_keys)
         )
-    except (TypeError, ValueError) as exc:
+
+    try:
+        config_kwargs = {
+            key: bool(preprocess_data.get(key, getattr(DEFAULT_EVAL_PREPROCESS_SETTINGS, key)))
+            for key in PREPROCESS_CONFIG_KEYS
+        }
+        return OcrPreprocessSettings(**config_kwargs)
+    except (TypeError, ValueError, AttributeError) as exc:
         raise ValueError(f"Invalid OCR evaluator config in {config_path}: {exc}") from exc
 
 
@@ -217,13 +224,86 @@ def combine_token_html(text: str, html_groups: list[list[str]], diff_mask: list[
 
 
 def format_pipeline_steps(steps) -> str:
-    if not steps:
+    display_steps = build_display_pipeline_steps(steps)
+    if not display_steps:
         return "<span class='muted-note'>No preprocessing steps enabled.</span>"
     badges = []
-    for step in steps:
+    for step in display_steps:
         details = f" <span class='step-detail'>{html.escape(step.details)}</span>" if step.details else ""
         badges.append(f"<span class='step-chip'>{html.escape(step.label)}{details}</span>")
     return "".join(badges)
+
+
+def format_pipeline_summary(steps: list[OcrPreprocessStep]) -> str:
+    display_steps = build_display_pipeline_steps(steps)
+    if not display_steps:
+        return "No preprocessing"
+
+    parts: list[str] = []
+    for step in display_steps:
+        if step.details:
+            parts.append(f"{step.label} ({step.details})")
+        else:
+            parts.append(step.label)
+    return " -> ".join(parts)
+
+
+def build_display_pipeline_steps(steps: list[OcrPreprocessStep]) -> list[OcrPreprocessStep]:
+    display_steps: list[OcrPreprocessStep] = []
+    for step in steps or []:
+        if not step.enabled:
+            continue
+
+        normalized = normalize_pipeline_step_for_display(step)
+        if normalized is None:
+            continue
+        display_steps.append(normalized)
+    return display_steps
+
+
+def normalize_pipeline_step_for_display(step: OcrPreprocessStep) -> OcrPreprocessStep | None:
+    detail = normalize_pipeline_step_detail(step)
+
+    if step.key == "normalize_source":
+        return OcrPreprocessStep(step.key, "Normalize & Grayscale", True, detail)
+    if step.key == "scale":
+        label = "Auto Scale" if detail.startswith("auto->") else "Scale"
+        return OcrPreprocessStep(step.key, label, True, detail)
+    if step.key == "padding":
+        return OcrPreprocessStep(step.key, "Auto Add Padding", True, detail)
+    if step.key == "smooth":
+        return OcrPreprocessStep(step.key, "Smooth", True, detail)
+    if step.key == "bolden":
+        return OcrPreprocessStep(step.key, "Bolden Text", True, detail)
+    if step.key == "auto_invert":
+        if detail == "normal":
+            return None
+        return OcrPreprocessStep(step.key, "Auto Invert", True, detail)
+    if step.key == "high_contrast":
+        return OcrPreprocessStep(step.key, "High Contrast", True, detail)
+    return OcrPreprocessStep(step.key, step.label, True, detail)
+
+
+def normalize_pipeline_step_detail(step: OcrPreprocessStep) -> str:
+    detail = (step.details or "").strip()
+
+    if step.key == "normalize_source":
+        return ""
+    if step.key == "scale":
+        if not detail:
+            return ""
+        if detail == "1.00x":
+            return "1.00x"
+        return f"auto->{detail}"
+    if step.key == "padding":
+        return "no-op" if detail in {"none", "0px", "+0px"} else detail
+    if step.key == "smooth":
+        return ""
+    if step.key == "bolden":
+        return ""
+    if step.key == "high_contrast":
+        return ""
+    return detail
 
 
 def generate_html_report(results, output_path):
@@ -373,7 +453,7 @@ def main():
                 "processed_text": pipeline_data["processed_text"].strip(),
                 "processed_scale": pipeline_data["processed_scale"],
                 "auto_scale": pipeline_data["auto_scale"],
-                "pipeline_summary": pipeline_data["pipeline_summary"],
+                "pipeline_summary": format_pipeline_summary(pipeline_data["pipeline_steps"]),
                 "pipeline_steps": pipeline_data["pipeline_steps"],
                 "lang": lang,
             }

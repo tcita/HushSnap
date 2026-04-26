@@ -266,7 +266,13 @@ class OcrPopup(QtWidgets.QWidget):
         """Copy the current text editor content to the system clipboard."""
         clipboard = QtWidgets.QApplication.clipboard()
         if clipboard is not None:
-            clipboard.setText(self.text_edit.toPlainText())
+            text = self.text_edit.toPlainText()
+            for _ in range(5):
+                clipboard.setText(text)
+                QtWidgets.QApplication.processEvents()
+                if clipboard.text() == text:
+                    break
+                QtCore.QThread.msleep(10)
 
     def mousePressEvent(self, event):
         """Enable dragging the window."""
