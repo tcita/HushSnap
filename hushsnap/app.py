@@ -16,7 +16,6 @@ from .config import (
 from .hotkey import HotkeyFilter
 from .ocr_controller import OcrController
 from .system.hotkey_manager import HotkeyManager
-from .system.uninstall import launch_uninstaller
 from .ui.settings_dialog import SettingsDialogController
 from .ui.tray import create_tray
 from .config import get_user_data_dir
@@ -157,10 +156,6 @@ def main(boot_start_time=None):
                 translate("open_dir_failed_body"),
             )
 
-    def on_uninstall():
-        """Uninstall callback."""
-        launch_uninstaller(translate, app.quit)
-
     with startup_profiler.step("Shell integration initialized"):
         # Create system tray icon and right-click menu entry points.
         tray_icon, settings_action, ocr_action = create_tray(
@@ -192,7 +187,6 @@ def main(boot_start_time=None):
                 translate,
                 config_path,
                 hotkey_manager,
-                on_uninstall,
             )
         except Exception as exc:
             logging.getLogger(__name__).exception(f"Failed to initialize settings dialog: {exc}")

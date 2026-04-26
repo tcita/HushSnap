@@ -1,6 +1,6 @@
 """
 HushSnap settings dialog module.
-Provides UI to view current hotkey, capture/change a new hotkey, and launch uninstall.
+Provides UI to view current hotkey and capture/change a new hotkey.
 """
 
 import logging
@@ -12,8 +12,6 @@ from .styles import (
     SETTINGS_CAPTURE_DIALOG_MIN_WIDTH,
     SETTINGS_CHANGE_BUTTON_MAX_WIDTH,
     SETTINGS_ERROR_COLOR,
-    SETTINGS_UNINSTALL_BUTTON_MAX_WIDTH,
-    SETTINGS_UNINSTALL_BUTTON_STYLE,
 )
 
 logger = logging.getLogger(__name__)
@@ -186,7 +184,7 @@ class SettingsDialogController:
     Settings dialog controller.
     Manages settings window lifecycle, UI refresh, and user action callbacks.
     """
-    def __init__(self, translate, config_path, hotkey_manager, on_uninstall):
+    def __init__(self, translate, config_path, hotkey_manager):
         """
         Initialize controller.
         
@@ -194,12 +192,10 @@ class SettingsDialogController:
             translate (callable): Translation function.
             config_path (Path): Config file path.
             hotkey_manager (HotkeyManager): Hotkey manager instance.
-            on_uninstall (callable): Uninstall callback.
         """
         self.translate = translate
         self.config_path = config_path
         self.hotkey_manager = hotkey_manager
-        self.on_uninstall = on_uninstall
         self._dialog = None
         self._hotkey_label = None
 
@@ -301,14 +297,6 @@ class SettingsDialogController:
         change_hotkey_button.setMaximumWidth(SETTINGS_CHANGE_BUTTON_MAX_WIDTH)
         change_hotkey_button.setMaximumHeight(SETTINGS_BUTTON_HEIGHT)
         button_row.addWidget(change_hotkey_button)
-
-        uninstall_button = QtWidgets.QPushButton(self.translate("uninstall_btn"))
-        uninstall_button.clicked.connect(self.on_uninstall)
-        uninstall_button.setMaximumWidth(SETTINGS_UNINSTALL_BUTTON_MAX_WIDTH)
-        uninstall_button.setMaximumHeight(SETTINGS_BUTTON_HEIGHT)
-        uninstall_button.setFlat(True)
-        uninstall_button.setStyleSheet(SETTINGS_UNINSTALL_BUTTON_STYLE)
-        button_row.addWidget(uninstall_button)
 
         layout.addLayout(button_row)
         
