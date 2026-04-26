@@ -29,9 +29,9 @@ def recognize_qimage(
     """Run OCR on a temporary file generated from QImage."""
     temp_path = None
     try:
-        with tempfile.NamedTemporaryFile(suffix=".bmp", delete=False) as temp_file:
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp_file:
             temp_path = Path(temp_file.name)
-        if not image.save(str(temp_path), "BMP"):
+        if not image.save(str(temp_path), "PNG"):
             return OcrRecognition()
         payload = run_windows_ocr_json(temp_path, language_tag)
         if isinstance(payload, dict) and payload.get("Error"):

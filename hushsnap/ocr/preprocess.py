@@ -270,6 +270,9 @@ def draw_boldened_text(dst: QtGui.QImage, src: QtGui.QImage, pad: int) -> None:
     Draw source image with small offsets to thicken OCR strokes.
     Triple drawing is a pragmatic heuristic that improves OCR confidence.
     """
+    if dst is src:
+        src = src.copy()
+
     painter = QtGui.QPainter(dst)
     try:
         if dst.format() != src.format():
@@ -327,18 +330,12 @@ def run_preprocess_pipeline(
     )
 
     # 3. Padding
+    source_before_padding = image
     pad = 0
     padding_applied = False
     if active_settings.auto_add_padding:
-        padded_canvas, pad = create_padded_canvas(image)
+        image, pad = create_padded_canvas(source_before_padding)
         padding_applied = pad > 0
-        if not active_settings.bolden_text:
-            painter = QtGui.QPainter(padded_canvas)
-            try:
-                painter.drawImage(pad, pad, image)
-            finally:
-                painter.end()
-        image = padded_canvas
     steps.append(
         OcrPreprocessStep(
             key="padding",
@@ -350,13 +347,15 @@ def run_preprocess_pipeline(
 
     # 4. Bolden
     if active_settings.bolden_text:
-        if active_settings.auto_add_padding:
-            draw_boldened_text(image, image, 0)
-        else:
-            boldened_image = QtGui.QImage(image.size(), image.format())
-            boldened_image.fill(image.pixelColor(0, 0))
-            draw_boldened_text(boldened_image, image, 0)
-            image = boldened_image
+        draw_boldened_text(image, source_before_padding, pad)
+    elif padding_applied:
+        # If we added padding but NOT boldening, we still need to draw the original image onto the canvas
+        painter = QtGui.QPainter(image)
+        try:
+            painter.drawImage(pad, pad, source_before_padding)
+        finally:
+            painter.end()
+
     steps.append(
         OcrPreprocessStep(
             key="bolden",
