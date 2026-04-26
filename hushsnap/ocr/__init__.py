@@ -7,9 +7,15 @@ from .preprocess import (
     OcrPreprocessStep,
     default_preprocess_settings,
     preprocess_for_ocr,
+    resolve_scale_factor,
     run_preprocess_pipeline,
 )
-from .recognition import recognize_result_from_pixmap, recognize_text_from_pixmap
+from .recognition import (
+    estimate_auto_scale_factor,
+    prepare_preprocess_result,
+    recognize_result_from_pixmap,
+    recognize_text_from_pixmap,
+)
 from .ocr_service import OcrService
 from .text import OcrTextAdapter, compose_text_from_result, select_text_adapter
 
@@ -29,9 +35,12 @@ __all__ = [
     "DEFAULT_OCR_SCALE_FACTOR",
     "compose_text_from_result",
     "default_preprocess_settings",
+    "estimate_auto_scale_factor",
+    "prepare_preprocess_result",
     "preprocess_for_ocr",
     "recognize_result_from_pixmap",
     "recognize_text_from_pixmap",
+    "resolve_scale_factor",
     "run_preprocess_pipeline",
     "select_text_adapter",
 ]

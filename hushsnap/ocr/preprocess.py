@@ -1,17 +1,17 @@
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 
 from PyQt6 import QtCore, QtGui
 
-DEFAULT_PADDING_PX = 32
+DEFAULT_AUTO_PADDING_OFFSET_PX = 8
+DEFAULT_AUTO_PADDING_MIN_SIZE_PX = 64
 DEFAULT_OCR_SCALE_FACTOR = 1.0
 
 
 @dataclass(frozen=True)
 class OcrPreprocessSettings:
-    scale_factor: float = DEFAULT_OCR_SCALE_FACTOR
+    auto_scale: bool = True
     normalize_source: bool = True
-    add_padding: bool = True
-    padding_px: int = DEFAULT_PADDING_PX
+    auto_add_padding: bool = True
     bolden_text: bool = True
     auto_invert: bool = True
     high_contrast: bool = True
@@ -29,6 +29,7 @@ class OcrPreprocessStep:
 class OcrPreprocessResult:
     image: QtGui.QImage
     settings: OcrPreprocessSettings
+    resolved_scale_factor: float = DEFAULT_OCR_SCALE_FACTOR
     steps: list[OcrPreprocessStep] = field(default_factory=list)
 
     @property
@@ -46,6 +47,17 @@ class OcrPreprocessResult:
 
 
 DEFAULT_OCR_PREPROCESS_SETTINGS = OcrPreprocessSettings()
+
+
+def resolve_scale_factor(
+    settings: OcrPreprocessSettings,
+    auto_scale_factor: float | None = None,
+) -> tuple[float, str]:
+    if not settings.auto_scale:
+        return 1.0, "off"
+    if auto_scale_factor is not None and auto_scale_factor > 0:
+        return auto_scale_factor, "auto"
+    return 1.0, "auto"
 
 
 def image_bytes(image: QtGui.QImage) -> memoryview:
@@ -174,11 +186,11 @@ def stretch_grayscale_contrast(grayscale_image: QtGui.QImage) -> QtGui.QImage:
     return grayscale_image
 
 
-def to_high_contrast(
+def preprocess_grayscale(
     image: QtGui.QImage,
     auto_invert: bool = True,
 ) -> tuple[QtGui.QImage, bool]:
-    """Convert image to OCR-friendly high-contrast RGB output."""
+    """Smooth grayscale input and optionally invert dark-background captures."""
     smoothed = smooth_grayscale_image(image)
     threshold = otsu_threshold(smoothed)
     was_inverted = False
@@ -187,7 +199,16 @@ def to_high_contrast(
         invert_grayscale_in_place(smoothed)
         was_inverted = True
 
-    contrasted = stretch_grayscale_contrast(smoothed)
+    return smoothed, was_inverted
+
+
+def to_high_contrast(
+    image: QtGui.QImage,
+    auto_invert: bool = True,
+) -> tuple[QtGui.QImage, bool]:
+    """Convert image to OCR-friendly high-contrast RGB output."""
+    grayscale, was_inverted = preprocess_grayscale(image, auto_invert=auto_invert)
+    contrasted = stretch_grayscale_contrast(grayscale)
     return contrasted.convertToFormat(QtGui.QImage.Format.Format_RGB32), was_inverted
 
 
@@ -211,18 +232,19 @@ def scale_image(image: QtGui.QImage, scale_factor: float) -> QtGui.QImage:
     )
 
 
-def create_padded_canvas(image: QtGui.QImage, pad: int = DEFAULT_PADDING_PX) -> tuple[QtGui.QImage, int]:
-    """
-    Create centered quiet-zone padding using sampled background color.
-    The returned image is opaque to avoid alpha-blended gray text.
-    """
+def create_padded_canvas(image: QtGui.QImage) -> tuple[QtGui.QImage, int]:
+    """Add a small quiet zone only when the image is below the target minimum size."""
+    if image.width() >= DEFAULT_AUTO_PADDING_MIN_SIZE_PX and image.height() >= DEFAULT_AUTO_PADDING_MIN_SIZE_PX:
+        return image, 0
+
     background_color = image.pixelColor(0, 0)
     if background_color.alpha() < 255:
         background_color.setAlpha(255)
 
+    pad = DEFAULT_AUTO_PADDING_OFFSET_PX
     canvas = QtGui.QImage(
-        image.width() + (pad * 2),
-        image.height() + (pad * 2),
+        max(image.width() + (pad * 2), DEFAULT_AUTO_PADDING_MIN_SIZE_PX + (pad * 2)),
+        max(image.height() + (pad * 2), DEFAULT_AUTO_PADDING_MIN_SIZE_PX + (pad * 2)),
         QtGui.QImage.Format.Format_RGB32,
     )
     canvas.fill(background_color)
@@ -246,15 +268,14 @@ def draw_boldened_text(dst: QtGui.QImage, src: QtGui.QImage, pad: int) -> None:
         painter.end()
 
 
-def default_preprocess_settings(scale_factor: float | None = None) -> OcrPreprocessSettings:
-    if scale_factor is None:
-        return DEFAULT_OCR_PREPROCESS_SETTINGS
-    return replace(DEFAULT_OCR_PREPROCESS_SETTINGS, scale_factor=scale_factor)
+def default_preprocess_settings() -> OcrPreprocessSettings:
+    return DEFAULT_OCR_PREPROCESS_SETTINGS
 
 
 def run_preprocess_pipeline(
     pixmap: QtGui.QPixmap,
     settings: OcrPreprocessSettings | None = None,
+    resolved_scale_factor: float | None = None,
 ) -> OcrPreprocessResult:
     """
     Prepare an OCR-oriented image through a configurable single-path pipeline.
@@ -274,20 +295,23 @@ def run_preprocess_pipeline(
         )
     )
 
-    scale_applied = abs(active_settings.scale_factor - 1.0) > 0.01
-    image = scale_image(image, active_settings.scale_factor)
+    effective_scale_factor, scale_mode = resolve_scale_factor(active_settings, auto_scale_factor=resolved_scale_factor)
+    image = scale_image(image, effective_scale_factor)
+    scale_details = f"auto->{effective_scale_factor:.2f}x" if active_settings.auto_scale else "off"
     steps.append(
         OcrPreprocessStep(
             key="scale",
-            label="Scale",
-            enabled=scale_applied,
-            details=f"{active_settings.scale_factor:.2f}x" if scale_applied else "1.00x",
+            label="Auto Scale",
+            enabled=active_settings.auto_scale,
+            details=scale_details,
         )
     )
 
     pad = 0
-    if active_settings.add_padding:
-        padded_canvas, pad = create_padded_canvas(image, active_settings.padding_px)
+    padding_applied = False
+    if active_settings.auto_add_padding:
+        padded_canvas, pad = create_padded_canvas(image)
+        padding_applied = pad > 0
         if active_settings.bolden_text:
             draw_boldened_text(padded_canvas, image, pad)
         else:
@@ -308,9 +332,9 @@ def run_preprocess_pipeline(
     steps.append(
         OcrPreprocessStep(
             key="padding",
-            label="Add Padding",
-            enabled=active_settings.add_padding,
-            details=f"{active_settings.padding_px}px" if active_settings.add_padding else "",
+            label="Auto Add Padding",
+            enabled=active_settings.auto_add_padding,
+            details=f"{pad}px (min 64px)" if padding_applied else ("no-op" if active_settings.auto_add_padding else "off"),
         )
     )
     steps.append(
@@ -322,16 +346,16 @@ def run_preprocess_pipeline(
         )
     )
 
-    was_auto_inverted = False
+    grayscale_image, was_auto_inverted = preprocess_grayscale(image, auto_invert=active_settings.auto_invert)
     if active_settings.high_contrast:
-        image, was_auto_inverted = to_high_contrast(image, auto_invert=active_settings.auto_invert)
-    elif image.format() != QtGui.QImage.Format.Format_RGB32:
-        image = image.convertToFormat(QtGui.QImage.Format.Format_RGB32)
+        image = stretch_grayscale_contrast(grayscale_image).convertToFormat(QtGui.QImage.Format.Format_RGB32)
+    else:
+        image = grayscale_image.convertToFormat(QtGui.QImage.Format.Format_RGB32)
     steps.append(
         OcrPreprocessStep(
             key="auto_invert",
             label="Auto Invert",
-            enabled=active_settings.high_contrast and active_settings.auto_invert and was_auto_inverted,
+            enabled=active_settings.auto_invert and was_auto_inverted,
             details="dark background detected" if was_auto_inverted else "",
         )
     )
@@ -346,17 +370,17 @@ def run_preprocess_pipeline(
     return OcrPreprocessResult(
         image=image,
         settings=active_settings,
+        resolved_scale_factor=effective_scale_factor,
         steps=steps,
     )
 
 
 def preprocess_for_ocr(
     pixmap: QtGui.QPixmap,
-    scale_factor: float | None = None,
     settings: OcrPreprocessSettings | None = None,
 ) -> QtGui.QImage:
     """
     Backward-compatible helper that returns the processed image only.
     """
-    active_settings = settings or default_preprocess_settings(scale_factor=scale_factor)
+    active_settings = settings or default_preprocess_settings()
     return run_preprocess_pipeline(pixmap, settings=active_settings).image

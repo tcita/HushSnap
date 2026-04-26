@@ -33,8 +33,8 @@ sys.path.append(str(PROJECT_ROOT))
 
 from PyQt6 import QtGui, QtWidgets
 
-from hushsnap.ocr.preprocess import OcrPreprocessSettings, run_preprocess_pipeline
-from hushsnap.ocr.recognition import recognize_qimage
+from hushsnap.ocr.preprocess import OcrPreprocessSettings
+from hushsnap.ocr.recognition import prepare_preprocess_result, recognize_qimage
 from hushsnap.ocr.text import compose_text_from_result
 
 # Initialize QApplication
@@ -82,14 +82,19 @@ def run_pipeline_ocr(
     debug_img_path: Path,
     settings: OcrPreprocessSettings,
 ):
-    preprocess_result = run_preprocess_pipeline(pixmap, settings=settings)
+    preprocess_result = prepare_preprocess_result(
+        pixmap,
+        language_tag=lang,
+        preprocess_settings=settings,
+    )
     preprocess_result.image.save(str(debug_img_path), "PNG")
     recognition = recognize_qimage(preprocess_result.image, language_tag=lang)
     pipeline_text = compose_text_from_result(recognition, language_tag=lang)
 
     return {
         "processed_text": pipeline_text,
-        "processed_scale": preprocess_result.settings.scale_factor,
+        "processed_scale": preprocess_result.resolved_scale_factor,
+        "auto_scale": preprocess_result.settings.auto_scale,
         "pipeline_summary": preprocess_result.summary(),
         "pipeline_steps": preprocess_result.applied_steps,
         "settings": preprocess_result.settings,
@@ -106,10 +111,9 @@ def load_eval_preprocess_settings(config_path: Path = CONFIG_PATH) -> OcrPreproc
 
     try:
         return OcrPreprocessSettings(
-            scale_factor=float(preprocess_data.get("scale_factor", 1.0)),
+            auto_scale=bool(preprocess_data.get("auto_scale", True)),
             normalize_source=bool(preprocess_data.get("normalize_source", True)),
-            add_padding=bool(preprocess_data.get("add_padding", True)),
-            padding_px=int(preprocess_data.get("padding_px", 32)),
+            auto_add_padding=bool(preprocess_data.get("auto_add_padding", True)),
             bolden_text=bool(preprocess_data.get("bolden_text", True)),
             auto_invert=bool(preprocess_data.get("auto_invert", True)),
             high_contrast=bool(preprocess_data.get("high_contrast", True)),
@@ -274,7 +278,7 @@ def generate_html_report(results, output_path):
         html_content.append("  <div class='filename'>")
         html_content.append(f"    <span>{html.escape(item['name'])}</span>")
         html_content.append(
-            f"    <span class='meta'>Engine: {item['lang'] or 'Auto'} | Pipeline scale: {item['processed_scale']:.2f}</span>"
+                f"    <span class='meta'>Engine: {item['lang'] or 'Auto'} | Pipeline scale: {item['processed_scale']:.2f} ({'auto' if item['auto_scale'] else 'off'})</span>"
         )
         html_content.append("  </div>")
 
@@ -368,6 +372,7 @@ def main():
                 "baseline": baseline_text.strip(),
                 "processed_text": pipeline_data["processed_text"].strip(),
                 "processed_scale": pipeline_data["processed_scale"],
+                "auto_scale": pipeline_data["auto_scale"],
                 "pipeline_summary": pipeline_data["pipeline_summary"],
                 "pipeline_steps": pipeline_data["pipeline_steps"],
                 "lang": lang,

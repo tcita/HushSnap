@@ -1,6 +1,7 @@
 import logging
 import tempfile
 import time
+from statistics import fmean
 from pathlib import Path
 
 from PyQt6 import QtGui
@@ -11,12 +12,14 @@ from .preprocess import (
     DEFAULT_OCR_SCALE_FACTOR,
     OcrPreprocessSettings,
     default_preprocess_settings,
+    normalize_source_image,
     run_preprocess_pipeline,
 )
 from .text import compose_text_from_result
 from ..system.windows_ocr import run_windows_ocr_json
 
 logger = logging.getLogger(__name__)
+IDEAL_OCR_WORD_HEIGHT_PX = 40.0
 
 
 def recognize_qimage(
@@ -51,6 +54,53 @@ def save_debug_preprocessed_image(image: QtGui.QImage, debug_dir: str | Path | N
         logger.warning(f"Failed to save OCR debug image: {exc}")
 
 
+def estimate_auto_scale_factor(
+    pixmap: QtGui.QPixmap,
+    language_tag: str = "",
+    preprocess_settings: OcrPreprocessSettings | None = None,
+) -> float:
+    if pixmap.isNull():
+        return DEFAULT_OCR_SCALE_FACTOR
+
+    active_settings = preprocess_settings or default_preprocess_settings()
+    if active_settings.normalize_source:
+        image = normalize_source_image(pixmap)
+    else:
+        image = pixmap.toImage().convertToFormat(QtGui.QImage.Format.Format_ARGB32)
+
+    recognition = recognize_qimage(image, language_tag=language_tag)
+    heights = [
+        word.bounding_box.height
+        for line in recognition.lines
+        for word in line.words
+        if word.bounding_box.height > 0
+    ]
+
+    average_height = fmean(heights) if heights else 10.0
+    scale_factor = IDEAL_OCR_WORD_HEIGHT_PX / max(1.0, average_height)
+    return max(1.0, scale_factor)
+
+
+def prepare_preprocess_result(
+    pixmap: QtGui.QPixmap,
+    language_tag: str = "",
+    preprocess_settings: OcrPreprocessSettings | None = None,
+):
+    active_settings = preprocess_settings or default_preprocess_settings()
+    resolved_scale_factor = None
+    if active_settings.auto_scale:
+        resolved_scale_factor = estimate_auto_scale_factor(
+            pixmap,
+            language_tag=language_tag,
+            preprocess_settings=active_settings,
+        )
+    return run_preprocess_pipeline(
+        pixmap,
+        settings=active_settings,
+        resolved_scale_factor=resolved_scale_factor,
+    )
+
+
 def recognize_result_from_pixmap(
     pixmap: QtGui.QPixmap,
     language_tag: str = "",
@@ -65,8 +115,11 @@ def recognize_result_from_pixmap(
     if pixmap.isNull():
         return OcrRecognition()
 
-    active_settings = preprocess_settings or default_preprocess_settings()
-    preprocess_result = run_preprocess_pipeline(pixmap, settings=active_settings)
+    preprocess_result = prepare_preprocess_result(
+        pixmap,
+        language_tag=language_tag,
+        preprocess_settings=preprocess_settings,
+    )
     save_debug_preprocessed_image(preprocess_result.image, debug_dir)
 
     recognition = recognize_qimage(preprocess_result.image, language_tag=language_tag)
@@ -77,7 +130,7 @@ def recognize_result_from_pixmap(
     logger.info(
         "OCR Completed in %.2fs (engine=windows, scale=%.2f, pipeline=%s, lines=%d)",
         time.perf_counter() - total_start,
-        active_settings.scale_factor,
+        preprocess_result.resolved_scale_factor,
         preprocess_result.summary() or "raw",
         len(recognition.lines),
     )
