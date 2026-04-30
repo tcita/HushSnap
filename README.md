@@ -13,6 +13,12 @@ HushSnap relies on Windows.Media.Ocr for its default OCR functionality. This req
 - **Traditional Chinese OCR:** Prefers `zh-TW`, and also accepts compatible Windows OCR packs such as `zh-HK`, `zh-MO`, and `zh-Hant`.
 - **Requirement:** If Windows does not have a matching OCR language pack or OCR component installed, recognition will fall back to another available Windows OCR language or fail.
 
+## OCR Scope and Limitations
+
+HushSnap uses Windows' built-in OCR engine through `Windows.Media.Ocr`. Its preprocessing and recognition flow are mainly tuned for webpage, app, and other standard screen-capture text scenarios.
+
+Because of that focus, OCR quality may be less reliable for non-standard fonts, heavily stylized text, low-contrast images, distorted captures, or handwriting.
+
 ## Third-Party Acknowledgment
 
 The OCR workflow and product ideas in this project were inspired by the

@@ -17,8 +17,8 @@ def _translate(key, **kwargs):
         "ocr_popup_title": "OCR Text",
         "ocr_copy_btn": "Copy",
         "ocr_lang_english": "Lang: EN",
-        "ocr_lang_chinese_simplified": "简体中文",
-        "ocr_lang_chinese_traditional": "繁體中文",
+        "ocr_lang_chinese_simplified": "Chinese (Simplified)",
+        "ocr_lang_chinese_traditional": "Chinese (Traditional)",
         "ocr_lang_selector_tooltip": "Select OCR language",
         "ocr_lang_missing_switch_btn": "Switch to {available_lang}",
         "ocr_lang_missing_open_settings_btn": "Open language settings",
@@ -50,6 +50,8 @@ def test_ocr_popup_updates_copy_button_text_on_show(qapp):
 
     assert popup.copy_btn.text() == "Copy"
     assert popup.title_label.text() == "OCR Text"
+    assert popup.lang_combo.itemText(popup.lang_combo.findData("zh-CN")) == "Chinese (Simplified)"
+    assert popup.lang_combo.itemText(popup.lang_combo.findData("zh-TW")) == "Chinese (Traditional)"
 
 
 def test_ocr_popup_maps_traditional_chinese_variants_to_traditional_option(qapp):
