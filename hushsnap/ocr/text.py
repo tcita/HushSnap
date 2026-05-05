@@ -35,6 +35,10 @@ def is_space_joining_word(token: str) -> bool:
     if not token:
         return False
 
+    # CJK tokens should never trigger space joining logic, regardless of length
+    if re.search(f"[{NO_SPACE_SCRIPT_CHAR_CLASS}]", token):
+        return False
+
     if len(token) >= 2:
         return True
 

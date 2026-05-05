@@ -12,10 +12,10 @@ class OcrPreprocessSettings:
     auto_scale: bool = True
     normalize_source: bool = True
     auto_add_padding: bool = True
-    smooth: bool = True
-    bolden_text: bool = True
+    smooth: bool = False
+    bolden_text: bool = False
     auto_invert: bool = True
-    high_contrast: bool = True
+    high_contrast: bool = False
 
 
 @dataclass(frozen=True)

@@ -267,8 +267,42 @@ def _serialize_config_data(config_data):
         f"ocr_enabled = {str(ocr_enabled).lower()}",
         f"ocr_language = {_format_toml_string(ocr_language_value.strip())}",
         "",
+        "[ocr_preprocess]",
     ]
+
+    preprocess = config_data.get("ocr_preprocess", {})
+    if not isinstance(preprocess, dict):
+        preprocess = {}
+
+    # Define the fields and their default values to ensure clean serialization
+    preprocess_fields = [
+        ("auto_scale", True),
+        ("normalize_source", True),
+        ("auto_add_padding", True),
+        ("smooth", False),
+        ("bolden_text", False),
+        ("auto_invert", True),
+        ("high_contrast", False),
+    ]
+
+    for key, default in preprocess_fields:
+        val = preprocess.get(key, default)
+        lines.append(f"{key} = {str(bool(val)).lower()}")
+
+    lines.append("")
     return "\n".join(lines)
+
+
+def get_ocr_preprocess_settings_from_config(config_path):
+    """Read OCR preprocess settings from config and return as a dict."""
+    try:
+        config_data = _load_config_data(config_path)
+        preprocess = config_data.get("ocr_preprocess")
+        if isinstance(preprocess, dict):
+            return preprocess
+    except Exception as e:
+        logger.debug(f"Failed to read OCR preprocess settings from config: {e}")
+    return {}
 
 
 def _write_config_data(config_path, config_data):
