@@ -42,11 +42,11 @@ a = Analysis(
         'openai', 'requests', 'httpx', 'pydantic', 'anyio', 'httpcore', 'urllib3',
         'tkinter', 'tcl', 'tk', '_tkinter', 'lib2to3',
         'unittest', 'pydoc', 'email', 'html', 'http', 'xml',
-        'PyQt6.QtNetwork', 'PyQt6.QtSql', 'PyQt6.QtWebEngine', 'PyQt6.QtQml', 
-        'PyQt6.QtQuick', 'PyQt6.QtMultimedia', 'PyQt6.QtBluetooth', 
-        'PyQt6.QtNfc', 'PyQt6.QtSerialPort', 'PyQt6.QtDesigner', 
+        'PyQt6.QtNetwork', 'PyQt6.QtSql', 'PyQt6.QtWebEngine', 'PyQt6.QtQml',
+        'PyQt6.QtQuick', 'PyQt6.QtMultimedia', 'PyQt6.QtBluetooth',
+        'PyQt6.QtNfc', 'PyQt6.QtSerialPort', 'PyQt6.QtDesigner',
         'PyQt6.QtHelp', 'PyQt6.QtTest', 'PyQt6.QtXml', 'PyQt6.QtSvg',
-        'aido'
+        'aido', 'openvino', 'openvino_telemetry', 'shapely', 'pyclipper',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -65,9 +65,20 @@ def filter_binaries(binaries):
 
 def filter_datas(datas):
     # Keep only the core Chinese Qt translation pack; remove other translation modules.
-    return [d for d in datas if not (
-        'translations' in d[0].lower() and not ('qtbase_zh_cn' in d[0].lower())
-    )]
+    # Also strip rapidocr infer model variants (only mobile models are used).
+    out = []
+    for d in datas:
+        src = d[0].lower()
+        if 'translations' in src and 'qtbase_zh_cn' not in src:
+            continue
+        if 'rapidocr/models/' in src.replace('\\', '/'):
+            basename = src.replace('\\', '/').rsplit('/', 1)[-1]
+            if '_infer.onnx' in basename:
+                continue
+            if 'ppocrv5_dict' in basename:
+                continue
+        out.append(d)
+    return out
 
 a.binaries = filter_binaries(a.binaries)
 a.datas = filter_datas(a.datas)
