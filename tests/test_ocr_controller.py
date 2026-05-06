@@ -43,6 +43,8 @@ def _translate(key, **kwargs):
         "ocr_lang_chinese_simplified": "Simplified Chinese",
         "ocr_lang_chinese_traditional": "Traditional Chinese",
         "ocr_lang_selector_tooltip": "Select OCR language",
+        "ocr_engine_windows": "WindowsOCR",
+        "ocr_engine_rapid": "RapidOCR",
         "ocr_empty_title": "Empty",
         "ocr_empty_body": "No text found",
         "ocr_empty_popup_hint": "Switch language and try again",
@@ -141,10 +143,11 @@ def test_ocr_finished_copies_text_and_updates_popup(monkeypatch, qapp, tmp_path,
 
     shown = {}
 
-    def _show_text(text, pixmap=None, lang=None):
+    def _show_text(text, pixmap=None, lang=None, engine=None):
         shown["text"] = text
         shown["pixmap"] = pixmap
         shown["lang"] = lang
+        shown["engine"] = engine
 
     controller.popup.show_text = _show_text
     qapp.clipboard().clear()

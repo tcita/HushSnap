@@ -4,6 +4,7 @@ import pytest
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from hushsnap import ocr
+from hushsnap.constants import OCR_ENGINE_WINDOWS
 from hushsnap.ocr import ocr_service as ocr_service_module
 
 
@@ -25,7 +26,7 @@ def sample_pixmap(qapp):
 def test_ocr_service_sync_success(monkeypatch, sample_pixmap):
     monkeypatch.setattr(
         ocr_service_module,
-        "recognize_result_from_pixmap",
+        "recognize_rapidocr_result_from_pixmap",
         lambda *args, **kwargs: ocr.OcrRecognition(text=" hello world "),
     )
 
@@ -43,7 +44,7 @@ def test_ocr_service_sync_error(monkeypatch, sample_pixmap):
     def _raise(*args, **kwargs):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(ocr_service_module, "recognize_result_from_pixmap", _raise)
+    monkeypatch.setattr(ocr_service_module, "recognize_rapidocr_result_from_pixmap", _raise)
 
     service = ocr.OcrService()
     response = service.recognize(ocr.OcrRequest(pixmap=sample_pixmap))
@@ -56,7 +57,7 @@ def test_ocr_service_sync_error(monkeypatch, sample_pixmap):
 def test_ocr_service_async_callback(monkeypatch, sample_pixmap):
     monkeypatch.setattr(
         ocr_service_module,
-        "recognize_result_from_pixmap",
+        "recognize_rapidocr_result_from_pixmap",
         lambda *args, **kwargs: ocr.OcrRecognition(text="async"),
     )
 
@@ -92,6 +93,7 @@ def test_ocr_service_forwards_preprocess_settings(monkeypatch, sample_pixmap):
         ocr.OcrRequest(
             pixmap=sample_pixmap,
             language_tag="en-US",
+            engine=OCR_ENGINE_WINDOWS,
             debug_dir="debug",
             preprocess_settings=settings,
         )

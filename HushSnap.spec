@@ -5,15 +5,9 @@ block_cipher = None
 spec_file = globals().get('SPEC') or globals().get('__file__')
 project_root = Path(spec_file).resolve().parent if spec_file else Path.cwd()
 
-_rapidocr_datas = []
-_runtime_dir = project_root / 'rapidocr'
-if _runtime_dir.exists():
-    for _entry in _runtime_dir.rglob('*'):
-        if _entry.is_file():
-            _dest = str(_entry.parent.relative_to(project_root))
-            _rapidocr_datas.append((str(_entry), _dest))
+from PyInstaller.utils.hooks import collect_data_files
 
-bundle_datas = [('ico.ico', '.')] + _rapidocr_datas
+bundle_datas = [('ico.ico', '.')] + collect_data_files('rapidocr')
 
 a = Analysis(
     ['HushSnap.py'],

@@ -4,20 +4,28 @@ HushSnap is a lightweight screenshot tool built to stay quietly in the backgroun
 
 Designed around global shortcuts, HushSnap can capture from anywhere in Windows while staying out of sight and out of the way. The experience is intentionally minimal, silent, and fast, with customizable hotkeys that let you shape the workflow around your own habits. OCR is already supported, and as the project continues to evolve, some parts of this README may occasionally lag behind the latest behavior or features.
 
-## OCR Language Support
+## OCR Engine
 
-HushSnap relies on Windows.Media.Ocr for its default OCR functionality. This requires the relevant Windows language packs to be installed on your system.
+HushSnap ships with two OCR engines, selectable from the OCR popup:
 
-- **Supported Languages:** English, Simplified Chinese, Traditional Chinese.
-- **Simplified Chinese OCR:** Prefers `zh-CN`, and also accepts compatible Windows OCR packs such as `zh-SG` and `zh-Hans`.
-- **Traditional Chinese OCR:** Prefers `zh-TW`, and also accepts compatible Windows OCR packs such as `zh-HK`, `zh-MO`, and `zh-Hant`.
-- **Requirement:** If Windows does not have a matching OCR language pack or OCR component installed, recognition will fall back to another available Windows OCR language or fail.
+- **RapidOCR (default):** Runs PP-OCRv4 ONNX models in-process via the [`rapidocr`](https://github.com/RapidAI/RapidOCR) Python package (Apache 2.0). No external dependencies or language packs needed. Works offline.
+- **Windows OCR:** Uses `Windows.Media.Ocr`. Requires the relevant Windows language packs to be installed.
+
+### Language Support
+
+| Engine | Supported Languages |
+|--------|-------------------|
+| RapidOCR | Chinese (Simplified & Traditional), English, Japanese, Korean |
+| Windows OCR | English, Simplified Chinese, Traditional Chinese |
+
+- **RapidOCR** uses a unified PP-OCRv4 model that handles CJK + Latin characters natively. The language selector is hidden when RapidOCR is active — no language configuration is needed.
+- **Windows OCR** language support depends on installed Windows language packs. `zh-CN` also accepts compatible packs (`zh-SG`, `zh-Hans`); `zh-TW` accepts `zh-HK`, `zh-MO`, `zh-Hant`.
 
 ## OCR Scope and Limitations
 
-HushSnap uses Windows' built-in OCR engine through `Windows.Media.Ocr`. Its preprocessing and recognition flow are mainly tuned for webpage, app, and other standard screen-capture text scenarios.
+RapidOCR (PP-OCRv4) has been tested and performs well on standard screen captures including web pages, apps, and UIs. It is the recommended default engine.
 
-Because of that focus, OCR quality may be less reliable for non-standard fonts, heavily stylized text, low-contrast images, distorted captures, or handwriting.
+Windows OCR relies on the built-in `Windows.Media.Ocr` library and may offer more predictable behavior in certain system configurations, though it requires the relevant language packs to be installed.
 
 ## Third-Party Acknowledgment
 
@@ -30,6 +38,13 @@ applies to HushSnap's original code and assets. Third-party projects keep their
 own licenses; see `THIRD_PARTY_NOTICES.md` for attribution details.
 
 ## Development & Debugging
+
+Install dependencies:
+
+```powershell
+pip install -r requirements.txt
+```
+
 Run from source:
 
 ```powershell

@@ -20,6 +20,8 @@ def _translate(key, **kwargs):
         "ocr_lang_chinese_simplified": "Chinese (Simplified)",
         "ocr_lang_chinese_traditional": "Chinese (Traditional)",
         "ocr_lang_selector_tooltip": "Select OCR language",
+        "ocr_engine_windows": "WindowsOCR",
+        "ocr_engine_rapid": "RapidOCR",
         "ocr_lang_missing_switch_btn": "Switch to {available_lang}",
         "ocr_lang_missing_open_settings_btn": "Open language settings",
         "ocr_lang_installed_fallback": "Installed language",

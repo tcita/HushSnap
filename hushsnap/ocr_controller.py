@@ -254,7 +254,11 @@ class OcrController:
             self.popup._is_refreshing = False
         self.popup._last_pixmap = pixmap
         self.popup.hide_language_notice()
-        self._start_request(pixmap, language_tag)
+        self._start_request(
+            pixmap,
+            language_tag,
+            self.popup.engine_combo.itemData(self.popup.engine_combo.currentIndex()),
+        )
 
     def _handle_notice_switch_requested(self, language_tag):
         pixmap = self.popup.last_pixmap
