@@ -19,3 +19,4 @@ dist-installer/
 /ocr_eval_data
 /tools/ocr_debug
 tools/ocr_report.html
+.claude/settings.local.json
