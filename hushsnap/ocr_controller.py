@@ -19,6 +19,7 @@ from .constants import (
     TRAY_NOTIFICATIONS_ENABLED,
 )
 from .ocr import OcrPreprocessSettings, OcrRequest, OcrService
+from .ocr.rapidocr import release_engine
 from .signal_bridge import SignalBridge
 from .ui.ocr_popup import OcrPopup
 
@@ -83,7 +84,8 @@ class OcrController:
 
     def on_ocr_finished(self, response):
         engine_name = response.recognition.engine_type if response.recognition else "unknown"
-        logging.info(f"OCR finished (engine={engine_name}). Error: {response.error}, Text length: {len(response.text or '')}")
+        error_part = f", Error: {response.error}" if response.error else ""
+        logging.info(f"OCR finished (engine={engine_name}){error_part}, Text length: {len(response.text or '')}")
         if not self._ocr_enabled():
             return
 
@@ -152,6 +154,9 @@ class OcrController:
     def on_ocr_engine_changed(self, engine):
         """Persist engine changes and re-run OCR for the most recent capture."""
         update_ocr_engine_in_config(self.config_path, engine)
+
+        if engine == OCR_ENGINE_WINDOWS:
+            release_engine()
 
         pixmap = self.popup.last_pixmap
         if not pixmap or pixmap.isNull():

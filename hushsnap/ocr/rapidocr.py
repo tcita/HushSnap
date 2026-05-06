@@ -132,6 +132,38 @@ def _get_engine() -> RapidOCR:
     return _engine
 
 
+def release_engine():
+    """Release the RapidOCR engine singleton to free memory.
+
+    Nulls out the three ONNX InferenceSessions held by RapidOCR's
+    text_det / text_cls / text_rec sub-engines, then trims the
+    Windows process working set so the freed pages are returned to
+    the OS (not just retained by the C runtime heap).
+
+    The engine will be lazily re-initialized on the next OCR call.
+    """
+    global _engine
+    with _engine_lock:
+        if _engine is None:
+            return
+        for attr in ("text_det", "text_cls", "text_rec"):
+            sub = getattr(_engine, attr, None)
+            if sub is not None and getattr(sub, "session", None) is not None:
+                sub.session.session = None  # onnxruntime.InferenceSession
+        _engine = None
+
+    import gc
+    gc.collect()
+
+    try:
+        import ctypes
+        ctypes.windll.kernel32.SetProcessWorkingSetSize(
+            ctypes.windll.kernel32.GetCurrentProcess(), -1, -1
+        )
+    except Exception:
+        logger.debug("SetProcessWorkingSetSize failed", exc_info=True)
+
+
 # ── public API ────────────────────────────────────────────────────────
 
 def recognize_rapidocr_qimage(image: QtGui.QImage, language_tag: str = "") -> OcrRecognition:

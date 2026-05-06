@@ -9,7 +9,7 @@ Designed around global shortcuts, HushSnap can capture from anywhere in Windows 
 HushSnap ships with two OCR engines, selectable from the OCR popup:
 
 - **RapidOCR (default):** Runs PP-OCRv4 ONNX models in-process via the [`rapidocr`](https://github.com/RapidAI/RapidOCR) Python package (Apache 2.0). No external dependencies or language packs needed. Works offline.
-- **Windows OCR:** Uses `Windows.Media.Ocr`. Requires the relevant Windows language packs to be installed.
+- **Windows OCR:** Uses `Windows.Media.Ocr`. Requires the relevant Windows language packs to be installed. Has a much smaller memory footprint (no ML model loaded), making it a good choice for leaving OCR always enabled in the background.
 
 ### Language Support
 
