@@ -8,6 +8,7 @@ from PyQt6 import QtCore, QtWidgets
 class OcrPopup(QtWidgets.QWidget):
     """Semi-transparent floating popup for recognized OCR text."""
     language_changed = QtCore.pyqtSignal(str)
+    engine_changed = QtCore.pyqtSignal(str)
     switch_language_requested = QtCore.pyqtSignal(str)
     open_language_settings_requested = QtCore.pyqtSignal()
 
@@ -44,6 +45,13 @@ class OcrPopup(QtWidgets.QWidget):
         self.title_label.setObjectName("ocrTitle")
         header.addWidget(self.title_label)
         header.addStretch(1)
+
+        # Engine Selector
+        self.engine_combo = QtWidgets.QComboBox()
+        self.engine_combo.setObjectName("ocrEngineCombo")
+        self.engine_combo.setFixedWidth(120)
+        self.engine_combo.currentIndexChanged.connect(self._on_engine_changed_idx)
+        header.addWidget(self.engine_combo)
 
         # Language Selector
         self.lang_combo = QtWidgets.QComboBox()
@@ -118,7 +126,7 @@ class OcrPopup(QtWidgets.QWidget):
             " font-size: 18px;"
             " font-weight: 600;"
             "}"
-            "#ocrLangCombo {"
+            "#ocrEngineCombo, #ocrLangCombo {"
             " background: rgba(190, 255, 212, 22);"
             " border: 1px solid rgba(190, 255, 212, 42);"
             " border-radius: 6px;"
@@ -172,9 +180,22 @@ class OcrPopup(QtWidgets.QWidget):
             " background: rgba(190, 255, 212, 34);"
             "}"
         )
-        self._refresh_language_labels()
+        self._refresh_labels()
 
-    def _refresh_language_labels(self):
+    def _refresh_labels(self):
+        # Refresh Engine Combo
+        current_engine = self.engine_combo.currentData()
+        self.engine_combo.blockSignals(True)
+        self.engine_combo.clear()
+        from ..constants import OCR_ENGINE_WINDOWS, OCR_ENGINE_RAPID
+        self.engine_combo.addItem(self.translate("ocr_engine_windows"), OCR_ENGINE_WINDOWS)
+        self.engine_combo.addItem(self.translate("ocr_engine_rapid"), OCR_ENGINE_RAPID)
+        idx = self.engine_combo.findData(current_engine)
+        if idx >= 0:
+            self.engine_combo.setCurrentIndex(idx)
+        self.engine_combo.blockSignals(False)
+
+        # Refresh Language Combo
         english_index = self.lang_combo.findData("en-US")
         if english_index >= 0:
             self.lang_combo.setItemText(
@@ -204,16 +225,32 @@ class OcrPopup(QtWidgets.QWidget):
             if lang_data:
                 self.language_changed.emit(lang_data)
 
+    def _on_engine_changed_idx(self, index):
+        if not self._is_refreshing:
+            engine_data = self.engine_combo.itemData(index)
+            if engine_data:
+                from ..constants import OCR_ENGINE_RAPID
+                self.lang_combo.setVisible(engine_data != OCR_ENGINE_RAPID)
+                self.engine_changed.emit(engine_data)
+
     def _emit_switch_language_requested(self):
         target_lang = self.notice_switch_btn.property("target_lang") or ""
         if target_lang:
             self.switch_language_requested.emit(str(target_lang))
 
-    def show_text(self, text, pixmap=None, lang=None):
+    def show_text(self, text, pixmap=None, lang=None, engine=None):
         """Display OCR text and show popup near bottom-right corner."""
         self._is_refreshing = True
         if pixmap is not None:
             self._last_pixmap = pixmap
+        
+        if engine:
+            idx = self.engine_combo.findData(engine)
+            if idx >= 0:
+                self.engine_combo.setCurrentIndex(idx)
+                from ..constants import OCR_ENGINE_RAPID
+                self.lang_combo.setVisible(engine != OCR_ENGINE_RAPID)
+
         if lang:
             idx = self.lang_combo.findData(lang)
             if idx >= 0:
@@ -230,7 +267,7 @@ class OcrPopup(QtWidgets.QWidget):
                         self.lang_combo.setCurrentIndex(simplified_idx)
         self.title_label.setText(self.translate("ocr_popup_title"))
         self.copy_btn.setText(self.translate("ocr_copy_btn"))
-        self._refresh_language_labels()
+        self._refresh_labels()
         self.text_edit.setPlainText(text)
         self._is_refreshing = False
         

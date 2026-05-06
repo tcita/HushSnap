@@ -39,6 +39,9 @@ TRAY_MSG_MEDIUM_MS = 3000
 TRAY_MSG_LONG_MS = 4000
 # Disable tray balloon notifications entirely to avoid Windows notification sounds.
 TRAY_NOTIFICATIONS_ENABLED = False
+# OCR engine identifiers.
+OCR_ENGINE_WINDOWS = "windows"
+OCR_ENGINE_RAPID = "rapidocr"
 # Small topmost audit delay in debug mode
 DEBUG_TOPMOST_DELAY_MS = 120
 

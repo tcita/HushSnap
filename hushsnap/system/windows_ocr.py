@@ -90,6 +90,7 @@ if ($null -eq $engine) {{
 
 $result = Await ($engine.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
 
+
 $payload = [ordered]@{{
     Text = $result.Text
     Angle = $(if ($null -ne $result.TextAngle) {{ [double]$result.TextAngle }} else {{ 0.0 }})

@@ -19,6 +19,8 @@ from .constants import (
     MOD_CONTROL,
     MOD_SHIFT,
     MOD_WIN,
+    OCR_ENGINE_RAPID,
+    OCR_ENGINE_WINDOWS,
     SINGLE_INSTANCE_MUTEX,
 )
 from .translations import (
@@ -123,6 +125,7 @@ def _ensure_default_config_exists(config_path):
             "hotkey": DEFAULT_HOTKEY,
             "language": UI_LANG_AUTO,
             "ocr_enabled": False,
+            "ocr_engine": OCR_ENGINE_RAPID,
             "ocr_language": _resolve_default_ocr_language(config_path),
         }
         _write_config_data(config_path, config_data)
@@ -255,6 +258,7 @@ def _serialize_config_data(config_data):
         language_value = UI_LANG_AUTO
 
     ocr_enabled = bool(config_data.get("ocr_enabled", False))
+    ocr_engine = _normalize_ocr_engine(config_data.get("ocr_engine")) or OCR_ENGINE_RAPID
 
     ocr_language_value = config_data.get("ocr_language", "")
     if not isinstance(ocr_language_value, str) or not ocr_language_value.strip():
@@ -265,6 +269,7 @@ def _serialize_config_data(config_data):
         f"hotkey = {_format_toml_string(hotkey)}",
         f"language = {_format_toml_string(language_value.strip())}",
         f"ocr_enabled = {str(ocr_enabled).lower()}",
+        f"ocr_engine = {_format_toml_string(ocr_engine)}",
         f"ocr_language = {_format_toml_string(ocr_language_value.strip())}",
         "",
         "[ocr_preprocess]",
@@ -379,6 +384,26 @@ def update_ocr_enabled_in_config(config_path, enabled):
         logger.error(f"Failed to update OCR enabled state in config: {e}")
 
 
+def get_ocr_engine_from_config(config_path):
+    """Read OCR engine preference from config."""
+    try:
+        config_data = _load_config_data(config_path)
+        return _normalize_ocr_engine(config_data.get("ocr_engine")) or OCR_ENGINE_RAPID
+    except Exception as e:
+        logger.debug(f"Failed to read OCR engine from config: {e}")
+        return OCR_ENGINE_WINDOWS
+
+
+def update_ocr_engine_in_config(config_path, engine):
+    """Update OCR engine preference in config."""
+    try:
+        config_data = _load_config_data(config_path)
+        config_data["ocr_engine"] = _normalize_ocr_engine(engine) or OCR_ENGINE_RAPID
+        _write_config_data(config_path, config_data)
+    except Exception as e:
+        logger.error(f"Failed to update OCR engine in config: {e}")
+
+
 def load_hotkey_setting():
     """
     Entry point for loading hotkey settings, with initialization and fault tolerance.
@@ -460,6 +485,18 @@ def _normalize_ocr_language_tag(raw_value):
     if lowered in ("zh-tw", "zh-hk", "zh-mo", "zh-hant"):
         return "zh-TW"
     return normalized
+
+
+def _normalize_ocr_engine(raw_value):
+    if not isinstance(raw_value, str):
+        return None
+
+    normalized = raw_value.strip().lower().replace("-", "").replace("_", "")
+    if normalized in {"rapidocr", "rapid"}:
+        return OCR_ENGINE_RAPID
+    if normalized in {"windows", "win", "windowsocr"}:
+        return OCR_ENGINE_WINDOWS
+    return None
 
 
 def _read_ui_lang_from_installer_hint(config_path):
