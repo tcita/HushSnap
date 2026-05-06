@@ -140,10 +140,11 @@ class OcrController:
 
         pixmap = self.popup.last_pixmap
         if not pixmap or pixmap.isNull():
+            logging.debug("on_ocr_lang_changed: no pixmap to re-OCR")
             return
 
         self._start_request(
-            pixmap, 
+            pixmap,
             lang,
             self.popup.engine_combo.itemData(self.popup.engine_combo.currentIndex())
         )
@@ -154,6 +155,7 @@ class OcrController:
 
         pixmap = self.popup.last_pixmap
         if not pixmap or pixmap.isNull():
+            logging.debug("on_ocr_engine_changed: no pixmap to re-OCR")
             return
 
         self._start_request(
@@ -263,6 +265,7 @@ class OcrController:
     def _handle_notice_switch_requested(self, language_tag):
         pixmap = self.popup.last_pixmap
         if not pixmap or pixmap.isNull():
+            logging.debug("_handle_notice_switch_requested: no pixmap to re-OCR")
             return
         self._switch_ocr_language(language_tag, pixmap)
 

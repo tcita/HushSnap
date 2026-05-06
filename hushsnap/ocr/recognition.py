@@ -32,9 +32,11 @@ def recognize_qimage(
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp_file:
             temp_path = Path(temp_file.name)
         if not image.save(str(temp_path), "PNG"):
+            logger.warning("Failed to save QImage to temp PNG for Windows OCR")
             return OcrRecognition()
         payload = run_windows_ocr_json(temp_path, language_tag)
         if isinstance(payload, dict) and payload.get("Error"):
+            logger.error("Windows OCR error: %s", payload["Error"])
             raise RuntimeError(str(payload["Error"]).strip())
         return parse_ocr_payload(payload)
     finally:
@@ -113,6 +115,7 @@ def recognize_result_from_pixmap(
     total_start = time.perf_counter()
 
     if pixmap.isNull():
+        logger.debug("recognize_result_from_pixmap called with null pixmap")
         return OcrRecognition()
 
     preprocess_result = prepare_preprocess_result(

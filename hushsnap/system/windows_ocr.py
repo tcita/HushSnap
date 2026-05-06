@@ -174,6 +174,7 @@ def run_windows_ocr_json(image_path: Path, language_tag: str = "") -> dict:
 
     stdout = (completed.stdout or "").strip()
     if not stdout:
+        logger.warning("Windows OCR process succeeded but produced no output")
         return {}
 
     try:

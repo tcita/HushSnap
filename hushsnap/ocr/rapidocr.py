@@ -142,6 +142,7 @@ def recognize_rapidocr_qimage(image: QtGui.QImage, language_tag: str = "") -> Oc
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
             temp_path = Path(f.name)
         if not image.save(str(temp_path), "PNG"):
+            logger.warning("Failed to save QImage to temp PNG for RapidOCR")
             return OcrRecognition(engine_type=OCR_ENGINE_RAPID)
 
         engine = _get_engine()
@@ -149,6 +150,7 @@ def recognize_rapidocr_qimage(image: QtGui.QImage, language_tag: str = "") -> Oc
         json_data = result.to_json()
 
         if json_data is None:
+            logger.debug("RapidOCR returned no text (to_json is None)")
             return OcrRecognition(
                 requested_language_supported=True,
                 engine_language_tag="zh-CN",
@@ -176,6 +178,7 @@ def recognize_rapidocr_result_from_pixmap(
     language_tag: str = "",
 ) -> OcrRecognition:
     if pixmap.isNull():
+        logger.debug("recognize_rapidocr_result_from_pixmap called with null pixmap")
         return OcrRecognition()
     image = pixmap.toImage().convertToFormat(QtGui.QImage.Format.Format_ARGB32)
     return recognize_rapidocr_qimage(image, language_tag=language_tag)
