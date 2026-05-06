@@ -1,7 +1,7 @@
 import logging
 import threading
 
-from ..constants import OCR_ENGINE_RAPID
+from ..constants import OCR_ENGINE_RAPID, OCR_ENGINE_WINDOWS
 from .models import OcrRequest, OcrResponse
 from .rapidocr import recognize_rapidocr_result_from_pixmap
 from .recognition import recognize_result_from_pixmap
