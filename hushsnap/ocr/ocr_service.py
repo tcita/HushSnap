@@ -1,10 +1,8 @@
 import logging
 import threading
 
-from ..constants import OCR_ENGINE_RAPID, OCR_ENGINE_WINDOWS
+from .engine import get_default_engine, get_recognize_fn
 from .models import OcrRequest, OcrResponse
-from .rapidocr import recognize_rapidocr_result_from_pixmap
-from .recognition import recognize_result_from_pixmap
 from .text import compose_text_from_result
 
 logger = logging.getLogger(__name__)
@@ -18,26 +16,19 @@ class OcrService:
 
     def recognize(self, request: OcrRequest) -> OcrResponse:
         try:
-            if request.engine == OCR_ENGINE_RAPID:
-                recognition = recognize_rapidocr_result_from_pixmap(
-                    request.pixmap,
-                    language_tag=request.language_tag,
-                )
-                if recognition:
-                    recognition.engine_type = OCR_ENGINE_RAPID
-            else:
-                recognition = recognize_result_from_pixmap(
-                    request.pixmap,
-                    language_tag=request.language_tag,
-                    debug_dir=request.debug_dir,
-                    preprocess_settings=request.preprocess_settings,
-                )
-                if recognition:
-                    recognition.engine_type = OCR_ENGINE_WINDOWS
-            
-            # Ensure engine_type is set even for empty results
-            if recognition and not recognition.engine_type:
-                recognition.engine_type = request.engine or OCR_ENGINE_WINDOWS
+            engine_id = request.engine or get_default_engine()
+            recognize_fn = get_recognize_fn(engine_id)
+            if recognize_fn is None:
+                raise ValueError(f"Unknown OCR engine: {engine_id}")
+
+            recognition = recognize_fn(
+                request.pixmap,
+                language_tag=request.language_tag,
+                debug_dir=request.debug_dir,
+                preprocess_settings=request.preprocess_settings,
+            )
+            if recognition:
+                recognition.engine_type = engine_id
 
             text = compose_text_from_result(recognition, language_tag=request.language_tag)
             return OcrResponse(

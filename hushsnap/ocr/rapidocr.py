@@ -208,9 +208,24 @@ def recognize_rapidocr_qimage(image: QtGui.QImage, language_tag: str = "") -> Oc
 def recognize_rapidocr_result_from_pixmap(
     pixmap: QtGui.QPixmap,
     language_tag: str = "",
+    **_kwargs,  # accept debug_dir / preprocess_settings from unified dispatch
 ) -> OcrRecognition:
     if pixmap.isNull():
         logger.debug("recognize_rapidocr_result_from_pixmap called with null pixmap")
         return OcrRecognition()
     image = pixmap.toImage().convertToFormat(QtGui.QImage.Format.Format_ARGB32)
     return recognize_rapidocr_qimage(image, language_tag=language_tag)
+
+
+# Register RapidOCR engine
+from .engine import register_engine  # noqa: E402
+from ..constants import OCR_ENGINE_RAPID  # noqa: E402
+register_engine(
+    OCR_ENGINE_RAPID,
+    recognize=recognize_rapidocr_result_from_pixmap,
+    release=release_engine,
+    metadata={
+        "display_name": "RapidOCR",
+        "error_prefixes": [],
+    },
+)

@@ -13,13 +13,11 @@ from .config import (
     update_ocr_lang_in_config,
 )
 from .constants import (
-    OCR_ENGINE_RAPID,
-    OCR_ENGINE_WINDOWS,
     TRAY_MSG_MEDIUM_MS,
     TRAY_NOTIFICATIONS_ENABLED,
 )
 from .ocr import OcrPreprocessSettings, OcrRequest, OcrService
-from .ocr.rapidocr import release_engine
+from .ocr.engine import identify_engine_error, release_engine
 from .signal_bridge import SignalBridge
 from .ui.ocr_popup import OcrPopup
 
@@ -47,7 +45,7 @@ class OcrController:
         self.bridge = SignalBridge()
         self.tray_icon = None
         self.ocr_action = None
-        self._warned_engine_unavailable = False
+        self._warned_engine_unavailable: set[str] = set()
 
         initial_lang = get_ocr_lang_from_config(config_path)
         lang_idx = self.popup.lang_combo.findData(initial_lang)
@@ -55,6 +53,7 @@ class OcrController:
             self.popup.lang_combo.setCurrentIndex(lang_idx)
 
         initial_engine = get_ocr_engine_from_config(config_path)
+        self._current_engine = initial_engine
         engine_idx = self.popup.engine_combo.findData(initial_engine)
         if engine_idx >= 0:
             self.popup.engine_combo.setCurrentIndex(engine_idx)
@@ -155,8 +154,8 @@ class OcrController:
         """Persist engine changes and re-run OCR for the most recent capture."""
         update_ocr_engine_in_config(self.config_path, engine)
 
-        if engine == OCR_ENGINE_WINDOWS:
-            release_engine()
+        release_engine(self._current_engine)
+        self._current_engine = engine
 
         pixmap = self.popup.last_pixmap
         if not pixmap or pixmap.isNull():
@@ -313,14 +312,14 @@ class OcrController:
         return bool(normalized_requested and normalized_requested == normalized_engine)
 
     def _show_specific_ocr_error(self, error):
-        lowered = (error or "").lower()
-        if "windows ocr engine unavailable" not in lowered:
+        engine_id = identify_engine_error(error)
+        if engine_id is None:
             return False
 
-        if self._warned_engine_unavailable:
+        if engine_id in self._warned_engine_unavailable:
             return True
 
-        self._warned_engine_unavailable = True
+        self._warned_engine_unavailable.add(engine_id)
         self._show_tray_message(
             self.translate("ocr_engine_unavailable_title"),
             self.translate("ocr_engine_unavailable_body"),

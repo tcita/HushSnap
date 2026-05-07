@@ -4,7 +4,6 @@ from pathlib import Path
 from PyQt6 import QtGui
 
 from .preprocess import OcrPreprocessSettings
-from ..constants import OCR_ENGINE_RAPID
 
 
 @dataclass
@@ -43,7 +42,7 @@ class OcrRecognition:
 class OcrRequest:
     pixmap: QtGui.QPixmap
     language_tag: str = ""
-    engine: str = OCR_ENGINE_RAPID
+    engine: str = ""
     debug_dir: str | Path | None = None
     preprocess_settings: OcrPreprocessSettings | None = None
 

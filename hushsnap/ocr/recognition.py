@@ -20,6 +20,7 @@ from ..system.windows_ocr import run_windows_ocr_json
 
 logger = logging.getLogger(__name__)
 IDEAL_OCR_WORD_HEIGHT_PX = 40.0
+_ENGINE_ID = "windows"
 
 
 def recognize_qimage(
@@ -131,8 +132,9 @@ def recognize_result_from_pixmap(
         return OcrRecognition()
 
     logger.info(
-        "OCR Completed in %.2fs (engine=windows, scale=%.2f, pipeline=%s, lines=%d)",
+        "OCR Completed in %.2fs (engine=%s, scale=%.2f, pipeline=%s, lines=%d)",
         time.perf_counter() - total_start,
+        _ENGINE_ID,
         preprocess_result.resolved_scale_factor,
         preprocess_result.summary() or "raw",
         len(recognition.lines),
@@ -156,3 +158,16 @@ def recognize_text_from_pixmap(
 
 
 INITIAL_SCALE_FACTOR = DEFAULT_OCR_SCALE_FACTOR
+
+# Register Windows OCR engine
+from .engine import register_engine  # noqa: E402
+from ..constants import OCR_ENGINE_WINDOWS  # noqa: E402
+register_engine(
+    OCR_ENGINE_WINDOWS,
+    recognize=recognize_result_from_pixmap,
+    release=None,
+    metadata={
+        "display_name": "WindowsOCR",
+        "error_prefixes": ["windows ocr engine unavailable"],
+    },
+)

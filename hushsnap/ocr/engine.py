@@ -1,0 +1,63 @@
+"""Lightweight OCR engine registry. Each engine module self-registers at import time."""
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+_ENGINES: dict[str, dict] = {}
+_DEFAULT_ENGINE: str | None = None
+
+
+def register_engine(engine_id: str, *, recognize, release=None, metadata=None):
+    """Register an OCR engine implementation.
+
+    Args:
+        engine_id: Unique identifier (e.g. "windows", "rapidocr").
+        recognize: Callable(pixmap, language_tag, **kwargs) -> OcrRecognition.
+        release: Optional zero-arg callable to free engine resources.
+        metadata: Optional dict (display_name, error_prefixes list, etc.).
+    """
+    global _DEFAULT_ENGINE
+    existing = _ENGINES.get(engine_id)
+    _ENGINES[engine_id] = {
+        "recognize": recognize,
+        "release": release if release is not None else (existing["release"] if existing else None),
+        "metadata": metadata if metadata is not None else (existing["metadata"] if existing else {}),
+    }
+    if _DEFAULT_ENGINE is None:
+        _DEFAULT_ENGINE = engine_id
+    logger.debug("OCR engine registered: %s", engine_id)
+
+
+def get_default_engine() -> str | None:
+    return _DEFAULT_ENGINE
+
+
+def get_recognize_fn(engine_id: str):
+    entry = _ENGINES.get(engine_id)
+    return entry["recognize"] if entry else None
+
+
+def release_engine(engine_id: str):
+    """Release resources for a specific engine (no-op if engine has no release hook)."""
+    entry = _ENGINES.get(engine_id)
+    if entry and entry["release"]:
+        entry["release"]()
+
+
+def identify_engine_error(error_message: str) -> str | None:
+    """Check if an error message matches a known engine-specific error pattern.
+
+    Returns the engine ID if matched, None otherwise.
+    """
+    lowered = (error_message or "").lower()
+    for eid, entry in _ENGINES.items():
+        for prefix in entry.get("metadata", {}).get("error_prefixes", []):
+            if prefix in lowered:
+                return eid
+    return None
+
+
+def registered_engines() -> dict[str, dict]:
+    """Return dict of registered engine IDs to their metadata."""
+    return {eid: entry["metadata"] for eid, entry in _ENGINES.items()}

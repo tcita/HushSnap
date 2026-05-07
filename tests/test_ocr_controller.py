@@ -227,7 +227,7 @@ def test_ocr_finished_warns_once_when_engine_is_unavailable(monkeypatch, qapp, t
     controller.on_ocr_finished(response)
 
     assert tray_icon.messages == []
-    assert controller._warned_engine_unavailable is True
+    assert "windows" in controller._warned_engine_unavailable
 
 
 def test_ocr_missing_language_switches_and_reruns(monkeypatch, qapp, tmp_path, sample_pixmap):

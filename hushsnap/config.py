@@ -391,7 +391,7 @@ def get_ocr_engine_from_config(config_path):
         return _normalize_ocr_engine(config_data.get("ocr_engine")) or OCR_ENGINE_RAPID
     except Exception as e:
         logger.debug(f"Failed to read OCR engine from config: {e}")
-        return OCR_ENGINE_WINDOWS
+        return OCR_ENGINE_RAPID
 
 
 def update_ocr_engine_in_config(config_path, engine):

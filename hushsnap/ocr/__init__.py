@@ -10,6 +10,8 @@ from .preprocess import (
     resolve_scale_factor,
     run_preprocess_pipeline,
 )
+from . import rapidocr  # noqa: F401  # triggers engine self-registration (must precede recognition to be default)
+
 from .recognition import (
     estimate_auto_scale_factor,
     prepare_preprocess_result,
