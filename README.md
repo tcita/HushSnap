@@ -9,7 +9,15 @@ Designed around global shortcuts, HushSnap can capture from anywhere in Windows 
 HushSnap ships with two OCR engines, selectable from the OCR popup:
 
 - **RapidOCR (default):** Runs PP-OCRv4 ONNX models in-process via the [`rapidocr`](https://github.com/RapidAI/RapidOCR) Python package (Apache 2.0). No external dependencies or language packs needed. Works offline.
-- **Windows OCR:** Uses `Windows.Media.Ocr`. Requires the relevant Windows language packs to be installed. Has a much smaller memory footprint (no ML model loaded), making it a good choice for leaving OCR always enabled in the background.
+- **Windows OCR:** Uses the built-in `Windows.Media.Ocr` API. Requires the relevant Windows language packs to be installed.
+
+### Resource Footprint
+
+Windows OCR is the lighter option for background use. It runs within the existing process at a stable ~100–150 MiB RSS with no model-load spike, ~40 threads, and ~550 handles. This stays flat across repeated captures — there is no persistent engine state to grow.
+
+RapidOCR loads three ONNX models on first use (~500 MiB total on disk), producing a one-time RSS spike of ~200 MiB at initialisation. Each inference run uses extra temporary memory, pushing RSS into the 220–380 MiB range with thread and handle counts that scale with ONNX's internal parallelism. Releasing the engine recovers most of the working set, but the ONNX runtime arena allocator retains some committed pages, so baseline RSS after use settles higher than a fresh start.
+
+For a "leave OCR on in the tray" workflow, Windows OCR's flat profile makes it the better fit. RapidOCR is better suited for on-demand use where its language breadth and offline capability matter more than the extra memory.
 
 ### Language Support
 
