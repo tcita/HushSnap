@@ -1,19 +1,19 @@
 """
-HushSnap OCR Evaluator
---------------------------------
-A diagnostic tool to compare raw-image OCR against the current HushSnap
-single-path preprocessing pipeline.
+HushSnap Windows OCR Evaluator
+-------------------------------
+A diagnostic tool to compare raw-image Windows OCR against the current
+HushSnap single-path preprocessing pipeline.
 
 Usage:
-    0. Edit `tools/ocr_eval_config.toml` to turn preprocessing steps on/off.
-    1. Create an `ocr_eval_data` folder in the project root.
-    2. Add images to `ocr_eval_data/` (or subfolders like `sc/`, `en/`).
-    3. Run: python tools/ocr_evaluator.py
+    0. Edit `tools/windows_ocr_eval_config.toml` to turn preprocessing steps on/off.
+    1. Create a `windows_ocr_eval_data` folder in the project root.
+    2. Add images to `windows_ocr_eval_data/` (or subfolders like `sc/`, `en/`).
+    3. Run: python tools/windows_ocr_evaluator.py
 
 The report will show:
     - Original image and the generated pipeline image.
     - Active preprocessing chain.
-    - Baseline OCR text vs pipeline OCR text.
+    - Baseline Windows OCR text vs pipeline Windows OCR text.
 """
 
 import argparse
@@ -42,7 +42,7 @@ from hushsnap.ocr.text import compose_text_from_result
 app = QtWidgets.QApplication(sys.argv)
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-logger = logging.getLogger("ocr_evaluator")
+logger = logging.getLogger("windows_ocr_evaluator")
 
 LANG_MAP = {
     "sc": "zh-Hans",
@@ -58,7 +58,7 @@ LANG_MAP = {
 }
 
 TOKEN_PATTERN = re.compile(r"\w+|[^\w\s]+|\s+", re.UNICODE)
-CONFIG_PATH = Path(__file__).with_name("ocr_eval_config.toml")
+CONFIG_PATH = Path(__file__).with_name("windows_ocr_eval_config.toml")
 PREPROCESS_CONFIG_KEYS = [field.name for field in fields(OcrPreprocessSettings)]
 DEFAULT_EVAL_PREPROCESS_SETTINGS = OcrPreprocessSettings()
 
@@ -71,7 +71,7 @@ def get_language_tag(file_path: Path, override_lang: str = None) -> str:
 
 
 def run_baseline_ocr(pixmap: QtGui.QPixmap, lang: str) -> str:
-    """Run OCR directly on raw image."""
+    """Run Windows OCR directly on raw image."""
     if pixmap.isNull():
         return ""
     image = pixmap.toImage().convertToFormat(QtGui.QImage.Format.Format_ARGB32)
@@ -110,12 +110,12 @@ def load_eval_preprocess_settings(config_path: Path = CONFIG_PATH) -> OcrPreproc
 
     preprocess_data = data.get("preprocess")
     if not isinstance(preprocess_data, dict):
-        raise ValueError("Missing [preprocess] section in OCR evaluator config.")
+        raise ValueError("Missing [preprocess] section in Windows OCR evaluator config.")
 
     unknown_keys = sorted(set(preprocess_data) - set(PREPROCESS_CONFIG_KEYS))
     if unknown_keys:
         raise ValueError(
-            "Unknown [preprocess] keys in OCR evaluator config: "
+            "Unknown [preprocess] keys in Windows OCR evaluator config: "
             + ", ".join(unknown_keys)
         )
 
@@ -126,7 +126,7 @@ def load_eval_preprocess_settings(config_path: Path = CONFIG_PATH) -> OcrPreproc
         }
         return OcrPreprocessSettings(**config_kwargs)
     except (TypeError, ValueError, AttributeError) as exc:
-        raise ValueError(f"Invalid OCR evaluator config in {config_path}: {exc}") from exc
+        raise ValueError(f"Invalid Windows OCR evaluator config in {config_path}: {exc}") from exc
 
 
 def tokenize_for_diff(text: str) -> list[str]:
@@ -308,7 +308,7 @@ def normalize_pipeline_step_detail(step: OcrPreprocessStep) -> str:
 
 def generate_html_report(results, output_path):
     html_content = [
-        "<html><head><title>HushSnap OCR Pipeline Report</title>",
+        "<html><head><title>HushSnap Windows OCR Pipeline Report</title>",
         "<style>",
         "body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 30px; background: #f8f9fa; color: #212529; }",
         ".case { background: white; border-radius: 12px; margin-bottom: 50px; padding: 30px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); border: 1px solid #e9ecef; }",
@@ -336,8 +336,8 @@ def generate_html_report(results, output_path):
         "h1 { color: #202124; margin-bottom: 10px; }",
         ".summary { margin-bottom: 40px; color: #70757a; border-left: 4px solid #1a73e8; padding-left: 15px; }",
         "</style></head><body>",
-        "<h1>HushSnap OCR Pipeline Evaluation</h1>",
-        f"<div class='summary'>Analyzing <b>{len(results)}</b> cases with a single OCR pass driven by the current preprocessing pipeline.</div>",
+        "<h1>HushSnap Windows OCR Pipeline Evaluation</h1>",
+        f"<div class='summary'>Analyzing <b>{len(results)}</b> cases with a single Windows OCR pass driven by the current preprocessing pipeline.</div>",
         "<div class='diff-legend'>Light highlight marks changed tokens. Darker highlight marks changed characters inside a token.</div>",
     ]
 
@@ -358,7 +358,7 @@ def generate_html_report(results, output_path):
         html_content.append("  <div class='filename'>")
         html_content.append(f"    <span>{html.escape(item['name'])}</span>")
         html_content.append(
-                f"    <span class='meta'>Engine: {item['lang'] or 'Auto'} | Pipeline scale: {item['processed_scale']:.2f} ({'auto' if item['auto_scale'] else 'off'})</span>"
+                f"    <span class='meta'>Engine: Windows OCR ({item['lang'] or 'Auto'}) | Pipeline scale: {item['processed_scale']:.2f} ({'auto' if item['auto_scale'] else 'off'})</span>"
         )
         html_content.append("  </div>")
 
@@ -403,14 +403,14 @@ def generate_html_report(results, output_path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Pipeline evaluation for HushSnap OCR")
-    parser.add_argument("--input", default="ocr_eval_data", help="Input image directory")
-    parser.add_argument("--output", default="tools/ocr_report.html", help="HTML report output path")
+    parser = argparse.ArgumentParser(description="Windows OCR pipeline evaluation for HushSnap")
+    parser.add_argument("--input", default="windows_ocr_eval_data", help="Input image directory")
+    parser.add_argument("--output", default="tools/windows_ocr_report.html", help="HTML report output path")
     args = parser.parse_args()
 
     input_path = PROJECT_ROOT / args.input
     output_report = Path(args.output).absolute()
-    debug_dir = output_report.parent / "ocr_debug"
+    debug_dir = output_report.parent / "windows_ocr_debug"
 
     if debug_dir.exists():
         shutil.rmtree(debug_dir)
@@ -424,7 +424,7 @@ def main():
         return
 
     settings = load_eval_preprocess_settings()
-    print(f"\n>>> Starting Pipeline Evaluation ({len(files)} images)...")
+    print(f"\n>>> Starting Windows OCR Pipeline Evaluation ({len(files)} images)...")
     results = []
     for index, img_file in enumerate(files, 1):
         lang = get_language_tag(img_file)
@@ -465,7 +465,7 @@ def main():
     report_path = Path(args.output).absolute()
     report_uri = report_path.as_uri()
 
-    print("\n[Success] Pipeline report generated!")
+    print("\n[Success] Windows OCR pipeline report generated!")
     print(f"Report: {report_uri}")
 
 

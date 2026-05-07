@@ -15,8 +15,8 @@ dist-installer/
 .vscode/
 .vs/
 
-#ocr test data
-/ocr_eval_data
-/tools/ocr_debug
-tools/ocr_report.html
+# Windows OCR evaluation data
+/windows_ocr_eval_data
+/tools/windows_ocr_debug
+tools/windows_ocr_report.html
 .claude/settings.local.json
