@@ -121,6 +121,21 @@ def compose_rapidocr_text(blocks: list[dict]) -> str:
 
 _engine = None
 _engine_lock = threading.Lock()
+_active_requests = 0
+_active_requests_cv = threading.Condition()
+
+
+def _acquire_request():
+    global _active_requests
+    with _active_requests_cv:
+        _active_requests += 1
+
+
+def _release_request():
+    global _active_requests
+    with _active_requests_cv:
+        _active_requests -= 1
+        _active_requests_cv.notify_all()
 
 
 def _get_engine() -> RapidOCR:
@@ -135,25 +150,34 @@ def _get_engine() -> RapidOCR:
 def release_engine():
     """Release the RapidOCR engine singleton to free memory.
 
-    Nulls out the three ONNX InferenceSessions held by RapidOCR's
-    text_det / text_cls / text_rec sub-engines, then trims the
-    Windows process working set so the freed pages are returned to
-    the OS (not just retained by the C runtime heap).
-
-    The engine will be lazily re-initialized on the next OCR call.
+    Waits for in-flight requests, tears down ONNX sessions and their
+    sub-engine wrappers, then forces garbage collection and a working-set
+    trim.  The engine is lazily re-initialized on the next OCR call.
     """
     global _engine
-    with _engine_lock:
-        if _engine is None:
-            return
-        for attr in ("text_det", "text_cls", "text_rec"):
-            sub = getattr(_engine, attr, None)
-            if sub is not None and getattr(sub, "session", None) is not None:
-                sub.session.session = None  # onnxruntime.InferenceSession
-        _engine = None
+    with _active_requests_cv:
+        while _active_requests > 0:
+            _active_requests_cv.wait()
 
+        with _engine_lock:
+            if _engine is None:
+                return
+            # Tear down ONNX InferenceSessions and clear sub-engine refs
+            for attr in ("text_det", "text_cls", "text_rec"):
+                sub = getattr(_engine, attr, None)
+                if sub is None:
+                    continue
+                session = getattr(sub, "session", None)
+                if session is not None:
+                    session.session = None
+                    sub.session = None
+                setattr(_engine, attr, None)
+            _engine = None
+
+    # Multiple passes: nested C++ wrappers may take >1 collection to finalise
     import gc
-    gc.collect()
+    for _ in range(3):
+        gc.collect()
 
     try:
         import ctypes
@@ -178,7 +202,11 @@ def recognize_rapidocr_qimage(image: QtGui.QImage, language_tag: str = "") -> Oc
             return OcrRecognition(engine_type=OCR_ENGINE_RAPID)
 
         engine = _get_engine()
-        result = engine(str(temp_path))
+        _acquire_request()
+        try:
+            result = engine(str(temp_path))
+        finally:
+            _release_request()
         json_data = result.to_json()
 
         if json_data is None:

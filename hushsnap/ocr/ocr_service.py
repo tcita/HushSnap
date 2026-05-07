@@ -12,7 +12,13 @@ class OcrService:
     """
     Async/sync OCR service abstraction.
     Keeps threading and error handling outside UI modules.
+
+    Only the most recent async request delivers its result; older requests
+    that are still running when a new one arrives are silently dropped.
     """
+
+    def __init__(self):
+        self._seq = 0
 
     def recognize(self, request: OcrRequest) -> OcrResponse:
         try:
@@ -47,17 +53,23 @@ class OcrService:
             )
 
     def recognize_async(self, request: OcrRequest, done_callback):
+        self._seq += 1
+        seq = self._seq
+
         def worker():
+            if seq != self._seq:
+                return  # a newer request arrived before this one started
             try:
                 response = self.recognize(request)
-                done_callback(response)
             except Exception as exc:
                 logger.exception(f"Unexpected error in OCR worker thread: {exc}")
-                done_callback(OcrResponse(
+                response = OcrResponse(
                     text="",
                     error=str(exc),
                     pixmap=request.pixmap,
                     recognition=None,
-                ))
+                )
+            if seq == self._seq:
+                done_callback(response)
 
         threading.Thread(target=worker, daemon=True).start()

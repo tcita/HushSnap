@@ -152,6 +152,7 @@ class OcrController:
 
     def on_ocr_engine_changed(self, engine):
         """Persist engine changes and re-run OCR for the most recent capture."""
+        logging.info("Engine switched: %s -> %s", self._current_engine, engine)
         update_ocr_engine_in_config(self.config_path, engine)
 
         release_engine(self._current_engine)
