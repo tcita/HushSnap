@@ -1,11 +1,5 @@
 [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 
-### Third-Party Notice
-
-This repository references ideas from the MIT-licensed Text-Grab project.
-See `THIRD_PARTY_NOTICES.md` for attribution and third-party license notes.
-
-### License & Personal Note
 
 This project is licensed under **[CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)**.
 
