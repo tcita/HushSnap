@@ -13,10 +13,14 @@ MOD_SHIFT = 0x0004
 MOD_WIN = 0x0008
 # Default activation hotkey
 DEFAULT_HOTKEY = "Alt+Q"
+# OCR screenshot hotkey (always runs OCR regardless of toggle state)
+DEFAULT_OCR_HOTKEY = "Alt+Shift+Q"
 
 # --- 2. File and system constants ---
-# Config filename
+# Config filename (user-editable)
 APP_CONFIG_FILENAME = "hushsnap_config.toml"
+# State filename (internal persistence, not user-editable)
+APP_STATE_FILENAME = "hushsnap_state.toml"
 # Installer-provided language hint filename
 INSTALLER_LANG_FILENAME = "hushsnap_installer_lang.txt"
 # Debug log filename

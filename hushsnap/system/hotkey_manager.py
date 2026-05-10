@@ -24,10 +24,11 @@ class HotkeyManager:
     Manager for Windows global hotkeys.
     Supports registration, unregistration, dynamic updates, and auto-reload on config changes.
     """
-    def __init__(self, tray_icon, translate, config_path, modifier, virtual_key, name):
+    def __init__(self, tray_icon, translate, config_path, modifier, virtual_key, name,
+                 ocr_modifier=None, ocr_virtual_key=None, ocr_name=None):
         """
         Initialize hotkey manager.
-        
+
         Args:
             tray_icon (QSystemTrayIcon): Tray icon instance for notifications.
             translate (callable): Translation function for i18n text.
@@ -35,11 +36,15 @@ class HotkeyManager:
             modifier (int): Initial modifier mask.
             virtual_key (int): Initial virtual key code.
             name (str): Initial human-readable hotkey name.
+            ocr_modifier (int): OCR screenshot hotkey modifier mask.
+            ocr_virtual_key (int): OCR screenshot hotkey virtual key code.
+            ocr_name (str): OCR screenshot hotkey human-readable name.
         """
         self.tray_icon = tray_icon
         self.translate = translate
         self.config_path = config_path
         self.hotkey_registered = False
+        self.ocr_hotkey_registered = False
 
         # Use GlobalAddAtom to generate a system-unique hotkey ID.
         # "HushSnap_Hotkey_Atom" generates an atom in the 0xC000-0xFFFF range,
@@ -49,9 +54,18 @@ class HotkeyManager:
             # Fallback to a fixed ID if atom creation fails.
             self.hotkey_id = 0xBFFF
 
+        # Second hotkey ID for OCR screenshot.
+        self.ocr_hotkey_id = ctypes.windll.kernel32.GlobalAddAtomW("HushSnap_OCR_Hotkey_Atom")
+        if not self.ocr_hotkey_id:
+            self.ocr_hotkey_id = 0xBFFE
+
         self.current_hotkey_modifier = modifier
         self.current_hotkey_virtual_key = virtual_key
         self.current_hotkey_name = name
+
+        self.current_ocr_hotkey_modifier = ocr_modifier
+        self.current_ocr_hotkey_virtual_key = ocr_virtual_key
+        self.current_ocr_hotkey_name = ocr_name
 
         self._watcher = None
         self._reload_timer = None
@@ -86,21 +100,48 @@ class HotkeyManager:
         self.hotkey_registered = True
         return True
 
+    def register_ocr_initial(self):
+        """Register the OCR screenshot hotkey (Alt+Shift+Q by default)."""
+        if self.current_ocr_hotkey_virtual_key is None:
+            return False
+        if not ctypes.windll.user32.RegisterHotKey(
+            None,
+            self.ocr_hotkey_id,
+            self.current_ocr_hotkey_modifier,
+            self.current_ocr_hotkey_virtual_key,
+        ):
+            logger.warning(
+                "OCR hotkey %s could not be registered (may be in use by another app).",
+                self.current_ocr_hotkey_name,
+            )
+            self.ocr_hotkey_registered = False
+            return False
+
+        self.ocr_hotkey_registered = True
+        return True
+
     def _show_tray_message(self, title, body, icon, timeout):
         if self.tray_icon is None or not TRAY_NOTIFICATIONS_ENABLED:
             return
         self.tray_icon.showMessage(title, body, icon, timeout)
 
     def unregister_current_hotkey(self):
-        """Unregister current hotkey and release system resources."""
+        """Unregister both hotkeys and release system resources."""
         if self.hotkey_registered:
             ctypes.windll.user32.UnregisterHotKey(None, self.hotkey_id)
             self.hotkey_registered = False
-        
-        # Release atom ID.
+
+        if self.ocr_hotkey_registered:
+            ctypes.windll.user32.UnregisterHotKey(None, self.ocr_hotkey_id)
+            self.ocr_hotkey_registered = False
+
+        # Release atom IDs.
         if hasattr(self, "hotkey_id") and self.hotkey_id:
             ctypes.windll.kernel32.GlobalDeleteAtom(self.hotkey_id)
             self.hotkey_id = 0
+        if hasattr(self, "ocr_hotkey_id") and self.ocr_hotkey_id:
+            ctypes.windll.kernel32.GlobalDeleteAtom(self.ocr_hotkey_id)
+            self.ocr_hotkey_id = 0
 
     def register_hotkey(self, modifier, virtual_key, name):
         """
@@ -129,12 +170,51 @@ class HotkeyManager:
         if self.config_path.exists() and self._config_file_path_str not in self._watcher.files():
             self._watcher.addPath(self._config_file_path_str)
 
+    def _reload_ocr_hotkey_from_config(self):
+        """Read OCR hotkey from config and re-register if changed."""
+        from ..config import read_ocr_hotkey_text_from_config
+        if self.current_ocr_hotkey_virtual_key is None:
+            return
+        try:
+            new_modifier, new_virtual_key, new_name = parse_hotkey(
+                read_ocr_hotkey_text_from_config(self.config_path)
+            )
+        except Exception:
+            return
+
+        if (
+            new_modifier == self.current_ocr_hotkey_modifier
+            and new_virtual_key == self.current_ocr_hotkey_virtual_key
+            and self.ocr_hotkey_registered
+        ):
+            return
+
+        if self.ocr_hotkey_registered:
+            ctypes.windll.user32.UnregisterHotKey(None, self.ocr_hotkey_id)
+            self.ocr_hotkey_registered = False
+
+        self.current_ocr_hotkey_modifier = new_modifier
+        self.current_ocr_hotkey_virtual_key = new_virtual_key
+        self.current_ocr_hotkey_name = new_name
+
+        if ctypes.windll.user32.RegisterHotKey(
+            None, self.ocr_hotkey_id, new_modifier, new_virtual_key
+        ):
+            self.ocr_hotkey_registered = True
+
+    def apply_ocr_hotkey_reload(self):
+        """Public method to reload OCR hotkey from config (called by settings dialog)."""
+        self._reload_ocr_hotkey_from_config()
+
     def apply_hotkey_reload(self):
         """
         Execute hotkey reload flow.
         Read new config, unregister old hotkey, and register new one.
         If new registration fails, attempt rollback to old hotkey.
         """
+        # Always sync OCR hotkey first (may have changed independently).
+        self._reload_ocr_hotkey_from_config()
+
         self._ensure_watch_targets()
         try:
             new_modifier, new_virtual_key, new_name = parse_hotkey(
@@ -181,6 +261,7 @@ class HotkeyManager:
             self.current_hotkey_name,
         )
         self.unregister_current_hotkey()
+        re_registered_ocr = self.register_ocr_initial()
         if self.register_hotkey(new_modifier, new_virtual_key, new_name):
             self._show_tray_message(
                 self.translate("hotkey_updated_title"),
@@ -199,6 +280,10 @@ class HotkeyManager:
                 TRAY_MSG_LONG_MS,
             )
             return
+
+        # Re-register OCR hotkey after rollback.
+        if not re_registered_ocr:
+            self.register_ocr_initial()
 
         # Restoration succeeded; notify user that new hotkey is occupied.
         self._show_tray_message(
