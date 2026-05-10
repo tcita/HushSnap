@@ -77,22 +77,6 @@ class FakeSignal:
             handler(value)
 
 
-class FakeAction:
-    def __init__(self):
-        self._checked = False
-        self.toggled = FakeSignal()
-
-    def setChecked(self, checked):
-        self._checked = checked
-
-    def isChecked(self):
-        return self._checked
-
-    def toggle_to(self, checked):
-        self._checked = checked
-        self.toggled.emit(checked)
-
-
 class FakeTrayIcon:
     def __init__(self):
         self.messages = []
@@ -102,8 +86,7 @@ class FakeTrayIcon:
 
 
 def _build_controller(monkeypatch, qapp, tmp_path, service=None):
-    monkeypatch.setattr(ocr_controller, "get_ocr_lang_from_config", lambda path: "en-US")
-    monkeypatch.setattr(ocr_controller, "get_ocr_enabled_from_config", lambda path: True)
+    monkeypatch.setattr(ocr_controller, "get_ocr_lang", lambda state_path=None, config_path=None: "en-US")
 
     popup = ocr_controller.OcrPopup(_translate)
     popup.show = lambda: None
@@ -120,15 +103,14 @@ def _build_controller(monkeypatch, qapp, tmp_path, service=None):
         service=service or FakeService(),
     )
     tray_icon = FakeTrayIcon()
-    action = FakeAction()
-    controller.attach_tray(tray_icon, action)
-    return controller, tray_icon, action
+    controller.tray_icon = tray_icon
+    return controller, tray_icon
 
 
 def test_capture_completed_starts_ocr_request(monkeypatch, qapp, tmp_path, sample_pixmap):
     service = FakeService()
-    controller, _, action = _build_controller(monkeypatch, qapp, tmp_path, service=service)
-    action.toggle_to(True)
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path, service=service)
+    controller.force_ocr_next_capture()
 
     controller.handle_capture_completed(sample_pixmap)
 
@@ -138,8 +120,8 @@ def test_capture_completed_starts_ocr_request(monkeypatch, qapp, tmp_path, sampl
 
 
 def test_ocr_finished_copies_text_and_updates_popup(monkeypatch, qapp, tmp_path, sample_pixmap):
-    controller, _, action = _build_controller(monkeypatch, qapp, tmp_path)
-    action.toggle_to(True)
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+    controller.force_ocr_next_capture()
 
     shown = {}
 
@@ -165,8 +147,8 @@ def test_ocr_finished_copies_text_and_updates_popup(monkeypatch, qapp, tmp_path,
 def test_ocr_finished_shows_notice_when_selected_language_is_not_installed(
     monkeypatch, qapp, tmp_path, sample_pixmap
 ):
-    controller, tray_icon, action = _build_controller(monkeypatch, qapp, tmp_path)
-    action.toggle_to(True)
+    controller, tray_icon = _build_controller(monkeypatch, qapp, tmp_path)
+    controller.force_ocr_next_capture()
     tray_icon.messages.clear()
     shown = {}
     controller.popup.show_text = lambda *args, **kwargs: shown.update({"shown": True})
@@ -196,12 +178,12 @@ def test_ocr_finished_shows_notice_when_selected_language_is_not_installed(
 def test_ocr_lang_changed_persists_and_reruns(monkeypatch, qapp, tmp_path, sample_pixmap):
     saved = {}
     service = FakeService()
-    controller, _, action = _build_controller(monkeypatch, qapp, tmp_path, service=service)
-    action.toggle_to(True)
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path, service=service)
+    controller.force_ocr_next_capture()
     monkeypatch.setattr(
         ocr_controller,
-        "update_ocr_lang_in_config",
-        lambda path, lang: saved.update({"path": path, "lang": lang}),
+        "update_ocr_lang",
+        lambda lang, state_path=None: saved.update({"lang": lang}),
     )
     controller.popup._last_pixmap = sample_pixmap
 
@@ -213,8 +195,8 @@ def test_ocr_lang_changed_persists_and_reruns(monkeypatch, qapp, tmp_path, sampl
 
 
 def test_ocr_finished_warns_once_when_engine_is_unavailable(monkeypatch, qapp, tmp_path, sample_pixmap):
-    controller, tray_icon, action = _build_controller(monkeypatch, qapp, tmp_path)
-    action.toggle_to(True)
+    controller, tray_icon = _build_controller(monkeypatch, qapp, tmp_path)
+    controller.force_ocr_next_capture()
 
     response = OcrResponse(
         text="",
@@ -233,13 +215,13 @@ def test_ocr_finished_warns_once_when_engine_is_unavailable(monkeypatch, qapp, t
 def test_ocr_missing_language_switches_and_reruns(monkeypatch, qapp, tmp_path, sample_pixmap):
     saved = {}
     service = FakeService()
-    controller, _, action = _build_controller(monkeypatch, qapp, tmp_path, service=service)
-    action.toggle_to(True)
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path, service=service)
+    controller.force_ocr_next_capture()
     controller.popup.lang_combo.setCurrentIndex(controller.popup.lang_combo.findData("zh-CN"))
     monkeypatch.setattr(
         ocr_controller,
-        "update_ocr_lang_in_config",
-        lambda path, lang: saved.update({"path": path, "lang": lang}),
+        "update_ocr_lang",
+        lambda lang, state_path=None: saved.update({"lang": lang}),
     )
     response = OcrResponse(
         text="hello",
@@ -263,8 +245,8 @@ def test_ocr_missing_language_switches_and_reruns(monkeypatch, qapp, tmp_path, s
 
 
 def test_ocr_missing_language_can_open_settings(monkeypatch, qapp, tmp_path, sample_pixmap):
-    controller, _, action = _build_controller(monkeypatch, qapp, tmp_path)
-    action.toggle_to(True)
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+    controller.force_ocr_next_capture()
     controller.popup.lang_combo.setCurrentIndex(controller.popup.lang_combo.findData("zh-CN"))
     opened = {}
     monkeypatch.setattr(ocr_controller.os, "startfile", lambda uri: opened.update({"called": uri}))
@@ -292,12 +274,12 @@ def test_ocr_missing_language_switch_falls_back_to_other_combo_language(
 ):
     saved = {}
     service = FakeService()
-    controller, _, action = _build_controller(monkeypatch, qapp, tmp_path, service=service)
-    action.toggle_to(True)
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path, service=service)
+    controller.force_ocr_next_capture()
     monkeypatch.setattr(
         ocr_controller,
-        "update_ocr_lang_in_config",
-        lambda path, lang: saved.update({"path": path, "lang": lang}),
+        "update_ocr_lang",
+        lambda lang, state_path=None: saved.update({"lang": lang}),
     )
     response = OcrResponse(
         text="hello",
@@ -322,8 +304,8 @@ def test_ocr_missing_language_switch_falls_back_to_other_combo_language(
 def test_chinese_family_fallback_does_not_prompt_when_variant_is_available(
     monkeypatch, qapp, tmp_path, sample_pixmap
 ):
-    controller, tray_icon, action = _build_controller(monkeypatch, qapp, tmp_path)
-    action.toggle_to(True)
+    controller, tray_icon = _build_controller(monkeypatch, qapp, tmp_path)
+    controller.force_ocr_next_capture()
     controller.popup.lang_combo.setCurrentIndex(controller.popup.lang_combo.findData("zh-TW"))
 
     response = OcrResponse(
@@ -347,8 +329,8 @@ def test_chinese_family_fallback_does_not_prompt_when_variant_is_available(
 def test_simplified_chinese_family_fallback_does_not_prompt_when_variant_is_available(
     monkeypatch, qapp, tmp_path, sample_pixmap
 ):
-    controller, tray_icon, action = _build_controller(monkeypatch, qapp, tmp_path)
-    action.toggle_to(True)
+    controller, tray_icon = _build_controller(monkeypatch, qapp, tmp_path)
+    controller.force_ocr_next_capture()
     controller.popup.lang_combo.setCurrentIndex(controller.popup.lang_combo.findData("zh-CN"))
 
     response = OcrResponse(
@@ -370,8 +352,7 @@ def test_simplified_chinese_family_fallback_does_not_prompt_when_variant_is_avai
 
 
 def test_notice_hides_after_compatible_response(monkeypatch, qapp, tmp_path, sample_pixmap):
-    controller, _, action = _build_controller(monkeypatch, qapp, tmp_path)
-    action.toggle_to(True)
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
     controller.popup.lang_combo.setCurrentIndex(controller.popup.lang_combo.findData("zh-CN"))
 
     incompatible_response = OcrResponse(
@@ -397,8 +378,51 @@ def test_notice_hides_after_compatible_response(monkeypatch, qapp, tmp_path, sam
         ),
     )
 
+    controller._force_ocr = True
     controller.on_ocr_finished(incompatible_response)
     assert controller.popup.notice_frame.isHidden() is False
 
+    controller._force_ocr = True
     controller.on_ocr_finished(compatible_response)
     assert controller.popup.notice_frame.isHidden() is True
+
+
+def test_force_ocr_next_capture_sets_flag(monkeypatch, qapp, tmp_path):
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+    assert controller._force_ocr is False
+
+    controller.force_ocr_next_capture()
+    assert controller._force_ocr is True
+
+
+def test_handle_capture_completed_skips_when_not_forced(monkeypatch, qapp, tmp_path, sample_pixmap):
+    service = FakeService()
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path, service=service)
+
+    controller.handle_capture_completed(sample_pixmap)
+
+    assert len(service.requests) == 0
+
+
+def test_on_ocr_finished_clears_force_flag(monkeypatch, qapp, tmp_path, sample_pixmap):
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+    qapp.clipboard().clear()
+
+    controller._force_ocr = True
+    controller.on_ocr_finished(
+        OcrResponse(text="test", error="", pixmap=sample_pixmap, recognition=OcrRecognition())
+    )
+
+    assert controller._force_ocr is False
+
+
+def test_on_ocr_finished_skips_when_not_forced(monkeypatch, qapp, tmp_path, sample_pixmap):
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+    qapp.clipboard().clear()
+
+    controller._force_ocr = False
+    controller.on_ocr_finished(
+        OcrResponse(text="should not appear", error="", pixmap=sample_pixmap, recognition=OcrRecognition())
+    )
+
+    assert qapp.clipboard().text() == ""
