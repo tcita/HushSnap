@@ -13,7 +13,9 @@ from pathlib import Path
 
 from .constants import (
     APP_CONFIG_FILENAME,
+    APP_STATE_FILENAME,
     DEFAULT_HOTKEY,
+    DEFAULT_OCR_HOTKEY,
     INSTALLER_LANG_FILENAME,
     MOD_ALT,
     MOD_CONTROL,
@@ -82,6 +84,8 @@ def get_user_data_dir():
 
 # Store config in user data directory to avoid install-directory write permission issues.
 CONFIG_PATH = get_user_data_dir() / APP_CONFIG_FILENAME
+# Internal state file (engine, language) — persisted but not user-editable.
+STATE_PATH = get_user_data_dir() / APP_STATE_FILENAME
 # Resource directory (for PyInstaller, read from _MEIPASS; otherwise APP_DIR).
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR)) if _is_frozen else APP_DIR
 
@@ -99,6 +103,11 @@ def get_resource_dir():
 def get_config_path():
     """Get the absolute config file path."""
     return CONFIG_PATH
+
+
+def get_state_path():
+    """Get the absolute state file path (internal persistence)."""
+    return STATE_PATH
 
 
 def _default_ocr_language_for_ui_language(ui_language):
@@ -123,10 +132,8 @@ def _ensure_default_config_exists(config_path):
     try:
         config_data = {
             "hotkey": DEFAULT_HOTKEY,
+            "ocr_hotkey": DEFAULT_OCR_HOTKEY,
             "language": UI_LANG_AUTO,
-            "ocr_enabled": False,
-            "ocr_engine": OCR_ENGINE_RAPID,
-            "ocr_language": _resolve_default_ocr_language(config_path),
         }
         _write_config_data(config_path, config_data)
     except Exception as e:
@@ -250,51 +257,22 @@ def _format_toml_string(value):
 
 
 def _serialize_config_data(config_data):
-    """Serialize flat config values into a stable TOML document."""
+    """Serialize user-facing config values into a stable TOML document."""
     hotkey = str(config_data.get("hotkey", DEFAULT_HOTKEY) or DEFAULT_HOTKEY).strip() or DEFAULT_HOTKEY
+    ocr_hotkey = str(config_data.get("ocr_hotkey", DEFAULT_OCR_HOTKEY) or DEFAULT_OCR_HOTKEY).strip() or DEFAULT_OCR_HOTKEY
 
     language_value = config_data.get("language", UI_LANG_AUTO)
     if not isinstance(language_value, str) or not language_value.strip():
         language_value = UI_LANG_AUTO
 
-    ocr_enabled = bool(config_data.get("ocr_enabled", False))
-    ocr_engine = _normalize_ocr_engine(config_data.get("ocr_engine")) or OCR_ENGINE_RAPID
-
-    ocr_language_value = config_data.get("ocr_language", "")
-    if not isinstance(ocr_language_value, str) or not ocr_language_value.strip():
-        ocr_language_value = ""
-
     lines = [
-        "# If you change this hotkey, avoid conflicts with Windows or other system shortcuts.",
+        "# If you change a hotkey, avoid conflicts with Windows or other system shortcuts.",
         f"hotkey = {_format_toml_string(hotkey)}",
+        f"ocr_hotkey = {_format_toml_string(ocr_hotkey)}",
         f"language = {_format_toml_string(language_value.strip())}",
-        f"ocr_enabled = {str(ocr_enabled).lower()}",
-        f"ocr_engine = {_format_toml_string(ocr_engine)}",
-        f"ocr_language = {_format_toml_string(ocr_language_value.strip())}",
         "",
-        "[ocr_preprocess]",
     ]
 
-    preprocess = config_data.get("ocr_preprocess", {})
-    if not isinstance(preprocess, dict):
-        preprocess = {}
-
-    # Define the fields and their default values to ensure clean serialization
-    preprocess_fields = [
-        ("auto_scale", True),
-        ("normalize_source", True),
-        ("auto_add_padding", True),
-        ("smooth", False),
-        ("bolden_text", False),
-        ("auto_invert", True),
-        ("high_contrast", False),
-    ]
-
-    for key, default in preprocess_fields:
-        val = preprocess.get(key, default)
-        lines.append(f"{key} = {str(bool(val)).lower()}")
-
-    lines.append("")
     return "\n".join(lines)
 
 
@@ -341,67 +319,132 @@ def update_hotkey_in_config(config_path, hotkey_text):
         logger.error(f"Failed to update hotkey in config: {e}")
 
 
-def get_ocr_lang_from_config(config_path):
-    """Read OCR language preference from config."""
+# ── Internal state file (OCR engine + language persistence) ──────────
+
+def _load_state_data(state_path=None):
+    """Load TOML state data from disk."""
+    if state_path is None:
+        state_path = STATE_PATH
     try:
-        config_data = _load_config_data(config_path)
-        ocr_language = config_data.get("ocr_language")
-        normalized_ocr_language = _normalize_ocr_language_tag(ocr_language)
-        if normalized_ocr_language:
-            return normalized_ocr_language
+        data = tomllib.loads(state_path.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return data
     except Exception as e:
-        logger.debug(f"Failed to read OCR language from config: {e}")
-    return _resolve_default_ocr_language(config_path)
+        logger.debug(f"Failed to load state data from {state_path}: {e}")
+    return {}
 
 
-def update_ocr_lang_in_config(config_path, ocr_lang):
-    """Update OCR language preference in config."""
+def _write_state_data(state_data, state_path=None):
+    """Write state data to disk as a minimal TOML file (no comments, not user-editable)."""
+    if state_path is None:
+        state_path = STATE_PATH
+    engine = _normalize_ocr_engine(state_data.get("ocr_engine")) or OCR_ENGINE_RAPID
+    lang = _normalize_ocr_language_tag(state_data.get("ocr_language")) or ""
+    lines = [
+        f'ocr_engine = "{engine}"',
+        f'ocr_language = "{lang}"',
+        "",
+    ]
+    state_path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def _ensure_default_state_exists(state_path=None):
+    """Create state file with defaults if it does not exist."""
+    if state_path is None:
+        state_path = STATE_PATH
+    if state_path.exists():
+        return
     try:
-        config_data = _load_config_data(config_path)
-        config_data["ocr_language"] = _normalize_ocr_language_tag(ocr_lang) or ocr_lang
-        _write_config_data(config_path, config_data)
+        _write_state_data({"ocr_engine": OCR_ENGINE_RAPID, "ocr_language": ""}, state_path)
     except Exception as e:
-        logger.error(f"Failed to update OCR language in config: {e}")
+        logger.debug(f"Failed to ensure default state exists at {state_path}: {e}")
 
 
-def get_ocr_enabled_from_config(config_path):
-    """Read OCR toggle state from config."""
+def _migrate_ocr_from_config(state_data, config_path):
+    """One-shot: pull ocr_engine / ocr_language from old config TOML into state dict."""
+    config_data = _load_config_data(config_path)
+    if not config_data:
+        return state_data
+    migrated = False
+    if "ocr_engine" not in state_data:
+        engine = _normalize_ocr_engine(config_data.get("ocr_engine"))
+        if engine:
+            state_data["ocr_engine"] = engine
+            migrated = True
+    if "ocr_language" not in state_data:
+        lang = _normalize_ocr_language_tag(config_data.get("ocr_language"))
+        if lang:
+            state_data["ocr_language"] = lang
+            migrated = True
+    if migrated:
+        try:
+            _write_state_data(state_data)
+            logger.debug("Migrated OCR settings from config to state file")
+        except Exception:
+            pass
+    return state_data
+
+
+def get_ocr_lang(state_path=None, config_path=None):
+    """Read OCR language from state file, with migration fallback from config."""
+    if state_path is None:
+        state_path = STATE_PATH
+    _ensure_default_state_exists(state_path)
+    state_data = _load_state_data(state_path)
+    ocr_language = state_data.get("ocr_language")
+    normalized = _normalize_ocr_language_tag(ocr_language)
+    if normalized:
+        return normalized
+    # Migration: try old config location
+    state_data = _migrate_ocr_from_config(state_data, config_path or get_config_path())
+    ocr_language = state_data.get("ocr_language")
+    normalized = _normalize_ocr_language_tag(ocr_language)
+    if normalized:
+        return normalized
+    return _resolve_default_ocr_language(config_path or get_config_path())
+
+
+def update_ocr_lang(ocr_lang, state_path=None):
+    """Persist OCR language to state file."""
+    if state_path is None:
+        state_path = STATE_PATH
+    _ensure_default_state_exists(state_path)
     try:
-        config_data = _load_config_data(config_path)
-        return bool(config_data.get("ocr_enabled", False))
+        state_data = _load_state_data(state_path)
+        state_data["ocr_language"] = _normalize_ocr_language_tag(ocr_lang) or ocr_lang
+        _write_state_data(state_data, state_path)
     except Exception as e:
-        logger.debug(f"Failed to read OCR enabled state from config: {e}")
-        return False
+        logger.error(f"Failed to update OCR language in state: {e}")
 
 
-def update_ocr_enabled_in_config(config_path, enabled):
-    """Update OCR toggle state in config."""
+def get_ocr_engine(state_path=None, config_path=None):
+    """Read OCR engine from state file, with migration fallback from config."""
+    if state_path is None:
+        state_path = STATE_PATH
+    _ensure_default_state_exists(state_path)
+    state_data = _load_state_data(state_path)
+    engine = _normalize_ocr_engine(state_data.get("ocr_engine"))
+    if engine:
+        return engine
+    # Migration: try old config location
+    state_data = _migrate_ocr_from_config(state_data, config_path or get_config_path())
+    engine = _normalize_ocr_engine(state_data.get("ocr_engine"))
+    if engine:
+        return engine
+    return OCR_ENGINE_RAPID
+
+
+def update_ocr_engine(engine, state_path=None):
+    """Persist OCR engine to state file."""
+    if state_path is None:
+        state_path = STATE_PATH
+    _ensure_default_state_exists(state_path)
     try:
-        config_data = _load_config_data(config_path)
-        config_data["ocr_enabled"] = bool(enabled)
-        _write_config_data(config_path, config_data)
+        state_data = _load_state_data(state_path)
+        state_data["ocr_engine"] = _normalize_ocr_engine(engine) or OCR_ENGINE_RAPID
+        _write_state_data(state_data, state_path)
     except Exception as e:
-        logger.error(f"Failed to update OCR enabled state in config: {e}")
-
-
-def get_ocr_engine_from_config(config_path):
-    """Read OCR engine preference from config."""
-    try:
-        config_data = _load_config_data(config_path)
-        return _normalize_ocr_engine(config_data.get("ocr_engine")) or OCR_ENGINE_RAPID
-    except Exception as e:
-        logger.debug(f"Failed to read OCR engine from config: {e}")
-        return OCR_ENGINE_RAPID
-
-
-def update_ocr_engine_in_config(config_path, engine):
-    """Update OCR engine preference in config."""
-    try:
-        config_data = _load_config_data(config_path)
-        config_data["ocr_engine"] = _normalize_ocr_engine(engine) or OCR_ENGINE_RAPID
-        _write_config_data(config_path, config_data)
-    except Exception as e:
-        logger.error(f"Failed to update OCR engine in config: {e}")
+        logger.error(f"Failed to update OCR engine in state: {e}")
 
 
 def load_hotkey_setting():
@@ -423,6 +466,43 @@ def load_hotkey_setting():
         # Fallback to default system hotkey if parsing fails.
         logger.warning(f"Failed to load hotkey from config, falling back to default: {e}")
         modifier_mask, virtual_key, canonical_hotkey = parse_hotkey(DEFAULT_HOTKEY)
+        return modifier_mask, virtual_key, canonical_hotkey, config_path
+
+
+def read_ocr_hotkey_text_from_config(config_path):
+    """Read OCR screenshot hotkey text from config file."""
+    config_data = _load_config_data(config_path)
+    if not isinstance(config_data, dict):
+        raise ValueError("Config must be a TOML table.")
+    ocr_hotkey_value = config_data.get("ocr_hotkey")
+    if not isinstance(ocr_hotkey_value, str) or not ocr_hotkey_value.strip():
+        return DEFAULT_OCR_HOTKEY
+    return ocr_hotkey_value.strip()
+
+
+def update_ocr_hotkey_in_config(config_path, hotkey_text):
+    """Update and persist the OCR screenshot hotkey in the config file."""
+    config_data = _load_config_data(config_path)
+    config_data["ocr_hotkey"] = hotkey_text
+    try:
+        _write_config_data(config_path, config_data)
+    except Exception as e:
+        logger.error(f"Failed to update OCR hotkey in config: {e}")
+
+
+def load_ocr_hotkey_setting(config_path=None):
+    """Load OCR screenshot hotkey settings, with initialization and fault tolerance."""
+    if config_path is None:
+        config_path = get_config_path()
+    _ensure_default_config_exists(config_path)
+    try:
+        modifier_mask, virtual_key, canonical_hotkey = parse_hotkey(
+            read_ocr_hotkey_text_from_config(config_path)
+        )
+        return modifier_mask, virtual_key, canonical_hotkey, config_path
+    except Exception as e:
+        logger.warning(f"Failed to load OCR hotkey from config, falling back to default: {e}")
+        modifier_mask, virtual_key, canonical_hotkey = parse_hotkey(DEFAULT_OCR_HOTKEY)
         return modifier_mask, virtual_key, canonical_hotkey, config_path
 
 

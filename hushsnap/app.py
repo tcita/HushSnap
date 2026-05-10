@@ -10,6 +10,7 @@ from .capture_session import CaptureSession
 from .config import (
     is_already_running,
     load_hotkey_setting,
+    load_ocr_hotkey_setting,
     resolve_ui_lang,
     ui_text,
 )
@@ -90,7 +91,8 @@ def main(boot_start_time=None):
 
     with startup_profiler.step("Startup config loaded"):
         hotkey_modifier, hotkey_virtual_key, hotkey_name, config_path = load_hotkey_setting()
-    
+        ocr_hotkey_modifier, ocr_hotkey_virtual_key, ocr_hotkey_name, _ = load_ocr_hotkey_setting(config_path)
+
     if force_debug:
         logger.info("DEBUG MODE ENABLED.")
         print("\n" + "="*80)
@@ -130,18 +132,22 @@ def main(boot_start_time=None):
             save_debug_image=save_ocr_debug_image,
         )
 
-    ocr_action = None
-
     def on_capture_completed(captured_pixmap):
-        """
-        Optional OCR flow after screenshot is already copied to clipboard.
-        """
+        """Callback after screenshot is copied to clipboard."""
         ocr_controller.handle_capture_completed(captured_pixmap)
+
+    def on_ocr_hotkey_triggered(screen_pixmap):
+        """OCR screenshot: always run OCR regardless of global toggle state."""
+        ocr_controller.force_ocr_next_capture()
+        capture_session.request_capture(screen_pixmap)
 
     capture_session = CaptureSession(on_capture_completed)
 
     # Install HotkeyFilter to intercept WM_HOTKEY before Qt window event delivery.
-    native_hotkey_filter = HotkeyFilter(capture_session.request_capture)
+    native_hotkey_filter = HotkeyFilter(
+        on_trigger=capture_session.request_capture,
+        on_ocr_trigger=on_ocr_hotkey_triggered,
+    )
     app.installNativeEventFilter(native_hotkey_filter)
 
     def open_config_dir():
@@ -158,7 +164,7 @@ def main(boot_start_time=None):
 
     with startup_profiler.step("Shell integration initialized"):
         # Create system tray icon and right-click menu entry points.
-        tray_icon, settings_action, ocr_action = create_tray(
+        tray_icon, settings_action = create_tray(
             app,
             translate,
             capture_session.request_capture,  # Allow screenshot trigger from tray menu.
@@ -167,7 +173,7 @@ def main(boot_start_time=None):
             app.quit,
         )
 
-        ocr_controller.attach_tray(tray_icon, ocr_action)
+        ocr_controller.tray_icon = tray_icon
 
         # Hotkey manager handles registration/unregistration with Windows.
         hotkey_manager = HotkeyManager(
@@ -177,9 +183,17 @@ def main(boot_start_time=None):
             hotkey_modifier,
             hotkey_virtual_key,
             hotkey_name,
+            ocr_modifier=ocr_hotkey_modifier,
+            ocr_virtual_key=ocr_hotkey_virtual_key,
+            ocr_name=ocr_hotkey_name,
         )
         hotkey_manager.register_initial()
+        hotkey_manager.register_ocr_initial()
         hotkey_manager.start_watch(app) # Start config-change watcher.
+
+        # Set hotkey IDs on the native event filter so it can route WM_HOTKEY events.
+        native_hotkey_filter.hotkey_id = hotkey_manager.hotkey_id
+        native_hotkey_filter.ocr_hotkey_id = hotkey_manager.ocr_hotkey_id
 
         # Initialize settings dialog controller.
         try:

@@ -4,13 +4,12 @@ import os
 from PyQt6 import QtWidgets
 
 from .config import (
-    get_ocr_enabled_from_config,
-    get_ocr_engine_from_config,
-    get_ocr_lang_from_config,
+    get_ocr_engine,
+    get_ocr_lang,
     get_ocr_preprocess_settings_from_config,
-    update_ocr_enabled_in_config,
-    update_ocr_engine_in_config,
-    update_ocr_lang_in_config,
+    update_ocr_engine,
+    update_ocr_lang,
+    get_config_path,
 )
 from .constants import (
     TRAY_MSG_MEDIUM_MS,
@@ -44,15 +43,15 @@ class OcrController:
         self.service = service or OcrService()
         self.bridge = SignalBridge()
         self.tray_icon = None
-        self.ocr_action = None
         self._warned_engine_unavailable: set[str] = set()
+        self._force_ocr = False
 
-        initial_lang = get_ocr_lang_from_config(config_path)
+        initial_lang = get_ocr_lang(config_path=config_path)
         lang_idx = self.popup.lang_combo.findData(initial_lang)
         if lang_idx >= 0:
             self.popup.lang_combo.setCurrentIndex(lang_idx)
 
-        initial_engine = get_ocr_engine_from_config(config_path)
+        initial_engine = get_ocr_engine(config_path=config_path)
         self._current_engine = initial_engine
         engine_idx = self.popup.engine_combo.findData(initial_engine)
         if engine_idx >= 0:
@@ -64,16 +63,14 @@ class OcrController:
         self.popup.switch_language_requested.connect(self._handle_notice_switch_requested)
         self.popup.open_language_settings_requested.connect(self._open_windows_language_settings)
 
-    def attach_tray(self, tray_icon, ocr_action, rapid_ocr_action=None):
-        self.tray_icon = tray_icon
-        self.ocr_action = ocr_action
-        self.ocr_action.setChecked(get_ocr_enabled_from_config(self.config_path))
-        self.ocr_action.toggled.connect(self.on_ocr_toggled)
+    def force_ocr_next_capture(self):
+        """Flag the next capture to always run OCR (used by OCR hotkey)."""
+        self._force_ocr = True
 
     def handle_capture_completed(self, captured_pixmap):
-        """Start OCR after a screenshot has already been copied to the clipboard."""
-        logging.info(f"Capture completed. OCR enabled: {self._ocr_enabled()}")
-        if not self._ocr_enabled():
+        """Start OCR after a screenshot if triggered via OCR hotkey."""
+        logging.info(f"Capture completed. force_ocr: {self._force_ocr}")
+        if not self._force_ocr:
             return
         self._start_request(
             captured_pixmap.copy(),
@@ -85,8 +82,10 @@ class OcrController:
         engine_name = response.recognition.engine_type if response.recognition else "unknown"
         error_part = f", Error: {response.error}" if response.error else ""
         logging.info(f"OCR finished (engine={engine_name}){error_part}, Text length: {len(response.text or '')}")
-        if not self._ocr_enabled():
+        if not self._force_ocr:
             return
+
+        self._force_ocr = False
 
         text = response.text
         error = response.error
@@ -137,7 +136,7 @@ class OcrController:
 
     def on_ocr_lang_changed(self, lang):
         """Persist language changes and re-run OCR for the most recent capture."""
-        update_ocr_lang_in_config(self.config_path, lang)
+        update_ocr_lang(lang)
 
         pixmap = self.popup.last_pixmap
         if not pixmap or pixmap.isNull():
@@ -153,7 +152,7 @@ class OcrController:
     def on_ocr_engine_changed(self, engine):
         """Persist engine changes and re-run OCR for the most recent capture."""
         logging.info("Engine switched: %s -> %s", self._current_engine, engine)
-        update_ocr_engine_in_config(self.config_path, engine)
+        update_ocr_engine(engine)
 
         release_engine(self._current_engine)
         self._current_engine = engine
@@ -168,18 +167,6 @@ class OcrController:
             self.popup.lang_combo.itemData(self.popup.lang_combo.currentIndex()),
             engine
         )
-
-    def on_ocr_toggled(self, enabled):
-        update_ocr_enabled_in_config(self.config_path, enabled)
-        
-        self._show_tray_message(
-            self.translate("ocr_toggle_title"),
-            self.translate("ocr_enabled_body") if enabled else self.translate("ocr_disabled_body"),
-            QtWidgets.QSystemTrayIcon.MessageIcon.Information,
-        )
-
-    def _ocr_enabled(self):
-        return self.ocr_action is not None and self.ocr_action.isChecked()
 
     def _start_request(self, pixmap, language_tag, engine):
         debug_dir = self.user_data_dir if self.save_debug_image else None
@@ -253,7 +240,7 @@ class OcrController:
 
     def _switch_ocr_language(self, language_tag, pixmap):
         language_tag = self._normalize_combo_language_tag(language_tag)
-        update_ocr_lang_in_config(self.config_path, language_tag)
+        update_ocr_lang(language_tag)
         idx = self.popup.lang_combo.findData(language_tag)
         if idx >= 0:
             self.popup._is_refreshing = True
