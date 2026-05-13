@@ -47,7 +47,7 @@ def _translate(key, **kwargs):
         "ocr_engine_rapid": "RapidOCR",
         "ocr_empty_title": "Empty",
         "ocr_empty_body": "No text found",
-        "ocr_empty_popup_hint": "Switch language and try again",
+        "ocr_empty_popup_hint": "No text recognized. Try selecting a larger area or making sure the screenshot contains clear text.",
         "ocr_toggle_title": "OCR",
         "ocr_enabled_body": "Enabled",
         "ocr_disabled_body": "Disabled",
