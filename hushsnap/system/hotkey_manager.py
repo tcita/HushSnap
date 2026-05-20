@@ -214,6 +214,8 @@ class HotkeyManager:
     def apply_ocr_hotkey_reload(self):
         """Public method to reload OCR hotkey from config (called by settings dialog)."""
         self._reload_ocr_hotkey_from_config()
+        if hasattr(self.tray_icon, "update_shortcuts"):
+            self.tray_icon.update_shortcuts(self.current_hotkey_name, self.current_ocr_hotkey_name)
 
     def apply_hotkey_reload(self):
         """
@@ -221,6 +223,13 @@ class HotkeyManager:
         Read new config, unregister old hotkey, and register new one.
         If new registration fails, attempt rollback to old hotkey.
         """
+        try:
+            self._apply_hotkey_reload_core()
+        finally:
+            if hasattr(self.tray_icon, "update_shortcuts"):
+                self.tray_icon.update_shortcuts(self.current_hotkey_name, self.current_ocr_hotkey_name)
+
+    def _apply_hotkey_reload_core(self):
         # Always sync OCR hotkey first (may have changed independently).
         self._reload_ocr_hotkey_from_config()
 

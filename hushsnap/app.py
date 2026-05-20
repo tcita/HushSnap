@@ -185,6 +185,9 @@ def main(boot_start_time=None):
             None,
             open_config_dir,
             app.quit,
+            on_ocr_trigger=on_ocr_hotkey_triggered,
+            initial_hotkey=hotkey_name,
+            initial_ocr_hotkey=ocr_hotkey_name,
         )
 
         ocr_controller.tray_icon = tray_icon
