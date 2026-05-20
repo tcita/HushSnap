@@ -214,8 +214,8 @@ def main(boot_start_time=None):
             # Connect tray "Settings" action to controller show method.
             settings_action.triggered.connect(settings_controller.show)
 
-    # Unregister hotkey before app exit.
-    app.aboutToQuit.connect(hotkey_manager.unregister_current_hotkey)
+    # Unregister hotkey and release system resources before app exit.
+    app.aboutToQuit.connect(hotkey_manager.release_resources)
 
     startup_profiler.log_summary()
 

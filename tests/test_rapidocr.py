@@ -313,12 +313,31 @@ def test_recognize_rapidocr_result_from_pixmap_null(monkeypatch, qapp):
 
 def test_recognize_rapidocr_result_from_pixmap_with_text(monkeypatch, qapp):
     import hushsnap.ocr.rapidocr as rapidocr_module
+    from hushsnap.ocr.preprocess import OcrPreprocessResult, OcrPreprocessSettings
 
     fake_engine = _FakeRapidOCREngine([
         ([[0, 0], [60, 0], [60, 25], [0, 25]], "hello world", 0.99),
     ])
     monkeypatch.setattr(rapidocr_module, "_get_engine", lambda: fake_engine)
     monkeypatch.setattr(rapidocr_module, "_engine", fake_engine)
+
+    # Mock dependencies at their source to handle local imports inside rapidocr.py
+    monkeypatch.setattr(
+        "hushsnap.ocr.recognition.estimate_auto_scale_factor",
+        lambda *args, **kwargs: 1.0
+    )
+
+    def mock_minimal_pipeline(pixmap, **kwargs):
+        return OcrPreprocessResult(
+            image=pixmap.toImage(),
+            settings=OcrPreprocessSettings(),
+            resolved_scale_factor=1.0
+        )
+
+    monkeypatch.setattr(
+        "hushsnap.ocr.preprocess.run_minimal_pipeline",
+        mock_minimal_pipeline
+    )
 
     pixmap = QtGui.QPixmap(100, 100)
     pixmap.fill(QtCore.Qt.GlobalColor.white)

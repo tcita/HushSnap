@@ -2,5 +2,16 @@ PyQt6>=6.5
 pyinstaller>=6.0
 pytest>=7.0
 rapidocr>=3.8.0
+PyQt6>=6.5
+pyinstaller>=6.0
+pytest>=7.0
+rapidocr>=3.8.0
 numpy>=1.24
 onnxruntime==1.20.0
+winrt-runtime
+winrt-Windows.Foundation
+winrt-Windows.Media.Ocr
+winrt-Windows.Graphics.Imaging
+winrt-Windows.Storage
+winrt-Windows.Streams
+winrt-Windows.Globalization

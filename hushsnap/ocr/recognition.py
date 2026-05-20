@@ -4,7 +4,7 @@ import time
 from statistics import fmean
 from pathlib import Path
 
-from PyQt6 import QtGui
+from PyQt6 import QtGui, QtCore
 
 from .models import OcrRecognition
 from .parsing import parse_ocr_payload
@@ -14,9 +14,12 @@ from .preprocess import (
     default_preprocess_settings,
     normalize_source_image,
     run_preprocess_pipeline,
+    run_minimal_pipeline,
 )
 from .text import compose_text_from_result
 from ..system.windows_ocr import run_windows_ocr_json
+from ..config import get_ocr_engine
+from ..constants import OCR_ENGINE_RAPID
 
 logger = logging.getLogger(__name__)
 IDEAL_OCR_WORD_HEIGHT_PX = 40.0
@@ -71,11 +74,27 @@ def estimate_auto_scale_factor(
     else:
         image = pixmap.toImage().convertToFormat(QtGui.QImage.Format.Format_ARGB32)
 
+    # Downscale for faster estimation
+    orig_w = image.width()
+    orig_h = image.height()
+    max_dim = 1000
+    if orig_w > max_dim or orig_h > max_dim:
+        image = image.scaled(
+            max_dim, max_dim, 
+            QtCore.Qt.AspectRatioMode.KeepAspectRatio, 
+            QtCore.Qt.TransformationMode.SmoothTransformation
+        )
+    
     recognition = recognize_qimage(image, language_tag=language_tag)
+    if not recognition.lines:
+        return 1.0
+
+    # Adjust heights back to original scale
+    scale_back = orig_w / image.width()
     heights = [
-        word.bounding_box.height
-        for line in recognition.lines
-        for word in line.words
+        word.bounding_box.height * scale_back 
+        for line in recognition.lines 
+        for word in line.words 
         if word.bounding_box.height > 0
     ]
 
@@ -124,6 +143,7 @@ def recognize_result_from_pixmap(
         language_tag=language_tag,
         preprocess_settings=preprocess_settings,
     )
+
     save_debug_preprocessed_image(preprocess_result.image, debug_dir)
 
     recognition = recognize_qimage(preprocess_result.image, language_tag=language_tag)

@@ -416,6 +416,57 @@ def run_preprocess_pipeline(
     )
 
 
+def run_minimal_pipeline(
+    pixmap: QtGui.QPixmap,
+    settings: OcrPreprocessSettings | None = None,
+    resolved_scale_factor: float | None = None,
+) -> OcrPreprocessResult:
+    """
+    Minimal pipeline for modern deep-learning engines.
+    Only performs normalization and scaling, skipping binarization/inversion.
+    """
+    active_settings = settings or DEFAULT_OCR_PREPROCESS_SETTINGS
+    steps: list[OcrPreprocessStep] = []
+
+    # 1. Normalize (Ensure 1.0 DPR and 8-bit grayscale for speed, or RGB if needed)
+    # We use Grayscale8 as it's sufficient for most deep learning models and faster
+    if active_settings.normalize_source:
+        image = normalize_source_image(pixmap)
+    else:
+        image = pixmap.toImage().convertToFormat(QtGui.QImage.Format.Format_Grayscale8)
+    
+    steps.append(
+        OcrPreprocessStep(
+            key="normalize_source",
+            label="Minimal Norm",
+            enabled=True,
+            details="Grayscale8",
+        )
+    )
+
+    # 2. Scale
+    effective_scale_factor, _ = resolve_scale_factor(active_settings, auto_scale_factor=resolved_scale_factor)
+    image = scale_image(image, effective_scale_factor)
+    steps.append(
+        OcrPreprocessStep(
+            key="scale",
+            label="Scale",
+            enabled=active_settings.auto_scale,
+            details=f"{effective_scale_factor:.2f}x" if active_settings.auto_scale else "1.00x",
+        )
+    )
+
+    # Final conversion to RGB32 for OCR engine compatibility
+    image = image.convertToFormat(QtGui.QImage.Format.Format_RGB32)
+
+    return OcrPreprocessResult(
+        image=image,
+        settings=active_settings,
+        resolved_scale_factor=effective_scale_factor,
+        steps=steps,
+    )
+
+
 def preprocess_for_ocr(
     pixmap: QtGui.QPixmap,
     settings: OcrPreprocessSettings | None = None,

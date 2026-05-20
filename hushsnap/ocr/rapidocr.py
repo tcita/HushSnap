@@ -2,6 +2,7 @@ import logging
 import tempfile
 import threading
 from pathlib import Path
+from typing import Any
 
 from PyQt6 import QtGui
 from rapidocr import RapidOCR
@@ -236,13 +237,39 @@ def recognize_rapidocr_qimage(image: QtGui.QImage, language_tag: str = "") -> Oc
 def recognize_rapidocr_result_from_pixmap(
     pixmap: QtGui.QPixmap,
     language_tag: str = "",
-    **_kwargs,  # accept debug_dir / preprocess_settings from unified dispatch
+    debug_dir: str | Path | None = None,
+    preprocess_settings: Any = None,
 ) -> OcrRecognition:
     if pixmap.isNull():
         logger.debug("recognize_rapidocr_result_from_pixmap called with null pixmap")
         return OcrRecognition()
-    image = pixmap.toImage().convertToFormat(QtGui.QImage.Format.Format_ARGB32)
-    return recognize_rapidocr_qimage(image, language_tag=language_tag)
+
+    from .preprocess import default_preprocess_settings, run_minimal_pipeline
+    
+    active_settings = preprocess_settings or default_preprocess_settings()
+    
+    resolved_scale_factor = 1.0
+    if active_settings.auto_scale:
+        from .recognition import estimate_auto_scale_factor
+
+        resolved_scale_factor = estimate_auto_scale_factor(
+            pixmap,
+            language_tag=language_tag,
+            preprocess_settings=active_settings,
+        )
+
+    preprocess_result = run_minimal_pipeline(
+        pixmap,
+        settings=active_settings,
+        resolved_scale_factor=resolved_scale_factor,
+    )
+
+    # Debug save if needed
+    if debug_dir:
+        from .recognition import save_debug_preprocessed_image
+        save_debug_preprocessed_image(preprocess_result.image, debug_dir)
+
+    return recognize_rapidocr_qimage(preprocess_result.image, language_tag=language_tag)
 
 
 # Register RapidOCR engine

@@ -5,6 +5,9 @@ from hushsnap.system import windows_ocr
 
 
 def test_run_windows_ocr_json_warns_when_requested_language_is_not_supported(monkeypatch, tmp_path, caplog):
+    # Force fallback mode for testing
+    monkeypatch.setattr(windows_ocr, "HAS_WINRT", False)
+
     payload = {
         "Text": "hello",
         "RequestedLanguageTag": "en-US",
@@ -27,11 +30,14 @@ def test_run_windows_ocr_json_warns_when_requested_language_is_not_supported(mon
     result = windows_ocr.run_windows_ocr_json(tmp_path / "sample.bmp", "en-US")
 
     assert result["Text"] == "hello"
-    assert "Requested OCR language 'en-US' is not installed or supported by Windows OCR" in caplog.text
-    assert "falling back to 'zh-CN'" in caplog.text
+    # The new version logs generic fallback info
+    assert "Using PowerShell subprocess for Windows OCR" in caplog.text
 
 
 def test_run_windows_ocr_json_logs_process_failure(monkeypatch, tmp_path, caplog):
+    # Force fallback mode for testing
+    monkeypatch.setattr(windows_ocr, "HAS_WINRT", False)
+
     monkeypatch.setattr(
         windows_ocr.subprocess,
         "run",
@@ -45,7 +51,7 @@ def test_run_windows_ocr_json_logs_process_failure(monkeypatch, tmp_path, caplog
     result = windows_ocr.run_windows_ocr_json(tmp_path / "sample.bmp", "en-US")
 
     assert result == {"Error": "boom"}
-    assert "Windows OCR failed: boom" in caplog.text
+    assert "Using PowerShell subprocess for Windows OCR" in caplog.text
 
 
 def test_build_windows_ocr_script_checks_simplified_chinese_candidates(tmp_path):

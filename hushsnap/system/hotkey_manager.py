@@ -126,7 +126,10 @@ class HotkeyManager:
         self.tray_icon.showMessage(title, body, icon, timeout)
 
     def unregister_current_hotkey(self):
-        """Unregister both hotkeys and release system resources."""
+        """
+        Unregister both hotkeys from the Windows system.
+        Keeps the Atom IDs alive for potential re-registration.
+        """
         if self.hotkey_registered:
             ctypes.windll.user32.UnregisterHotKey(None, self.hotkey_id)
             self.hotkey_registered = False
@@ -135,7 +138,13 @@ class HotkeyManager:
             ctypes.windll.user32.UnregisterHotKey(None, self.ocr_hotkey_id)
             self.ocr_hotkey_registered = False
 
-        # Release atom IDs.
+    def release_resources(self):
+        """
+        Final cleanup: unregister hotkeys and permanently delete Atom IDs.
+        Should only be called when the application is shutting down.
+        """
+        self.unregister_current_hotkey()
+
         if hasattr(self, "hotkey_id") and self.hotkey_id:
             ctypes.windll.kernel32.GlobalDeleteAtom(self.hotkey_id)
             self.hotkey_id = 0

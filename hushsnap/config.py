@@ -251,29 +251,56 @@ def _load_config_data(config_path):
     return {}
 
 
-def _format_toml_string(value):
+def _format_toml_value(value):
+    """Format a Python value into a TOML-compatible string."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int | float):
+        return str(value)
+    # String formatting with basic escaping
     escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
 
 
 def _serialize_config_data(config_data):
-    """Serialize user-facing config values into a stable TOML document."""
-    hotkey = str(config_data.get("hotkey", DEFAULT_HOTKEY) or DEFAULT_HOTKEY).strip() or DEFAULT_HOTKEY
-    ocr_hotkey = str(config_data.get("ocr_hotkey", DEFAULT_OCR_HOTKEY) or DEFAULT_OCR_HOTKEY).strip() or DEFAULT_OCR_HOTKEY
-
-    language_value = config_data.get("language", UI_LANG_AUTO)
-    if not isinstance(language_value, str) or not language_value.strip():
-        language_value = UI_LANG_AUTO
-
+    """
+    Serialize config dictionary into a valid TOML document.
+    Iterates over all keys to preserve user-added or future fields.
+    """
     lines = [
-        "# If you change a hotkey, avoid conflicts with Windows or other system shortcuts.",
-        f"hotkey = {_format_toml_string(hotkey)}",
-        f"ocr_hotkey = {_format_toml_string(ocr_hotkey)}",
-        f"language = {_format_toml_string(language_value.strip())}",
-        "",
+        "# HushSnap Configuration File",
+        "# If you modify this manually, ensure the syntax is valid TOML.",
+        ""
     ]
 
-    return "\n".join(lines)
+    # Define preferred order for core settings for better readability
+    preferred_order = ["hotkey", "ocr_hotkey", "language"]
+    processed_keys = set()
+
+    # 1. Write preferred top-level keys first
+    for key in preferred_order:
+        if key in config_data and not isinstance(config_data[key], dict):
+            lines.append(f"{key} = {_format_toml_value(config_data[key])}")
+            processed_keys.add(key)
+
+    # 2. Write remaining top-level keys (alphabetical)
+    for key in sorted(config_data.keys()):
+        if key not in processed_keys and not isinstance(config_data[key], dict):
+            lines.append(f"{key} = {_format_toml_value(config_data[key])}")
+            processed_keys.add(key)
+
+    lines.append("")
+
+    # 3. Write nested tables (dictionaries)
+    for key in sorted(config_data.keys()):
+        val = config_data[key]
+        if isinstance(val, dict):
+            lines.append(f"[{key}]")
+            for sub_key, sub_val in sorted(val.items()):
+                lines.append(f"{sub_key} = {_format_toml_value(sub_val)}")
+            lines.append("")
+
+    return "\n".join(lines).strip() + "\n"
 
 
 def get_ocr_preprocess_settings_from_config(config_path):
