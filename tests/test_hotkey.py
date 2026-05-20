@@ -111,3 +111,25 @@ def test_hotkey_filter_ignores_ocr_when_id_is_none(mock_from_address, mock_app):
 
     mock_callback.assert_called_once_with(mock_pixmap)
     mock_ocr_callback.assert_not_called()
+
+
+@patch("ctypes.wintypes.MSG.from_address")
+def test_hotkey_filter_handle_taskbar_created(mock_from_address, mock_app):
+    """Test handling of the WM_TASKBARCREATED message and tray icon restoration."""
+    mock_callback = MagicMock()
+    filter = HotkeyFilter(on_trigger=MagicMock(), on_taskbar_created=mock_callback)
+    
+    # We patch WM_TASKBARCREATED to a non-zero test value
+    with patch("hushsnap.hotkey.WM_TASKBARCREATED", 0xC003):
+        # Mock MSG
+        mock_msg = MagicMock()
+        mock_msg.message = 0xC003
+        mock_from_address.return_value = mock_msg
+        
+        # Simulate WM_TASKBARCREATED native event
+        handled, ret = filter.nativeEventFilter(b"windows_generic_MSG", 12345)
+        
+        assert handled is False  # TaskbarCreated shouldn't block the message propagation
+        assert ret == 0
+        mock_callback.assert_called_once()
+

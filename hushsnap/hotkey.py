@@ -9,23 +9,36 @@ from PyQt6 import QtCore, QtWidgets
 from .constants import WM_HOTKEY
 
 
+import ctypes
+
+WM_TASKBARCREATED = 0
+if hasattr(ctypes, "windll"):
+    try:
+        WM_TASKBARCREATED = ctypes.windll.user32.RegisterWindowMessageW("TaskbarCreated")
+    except Exception:
+        pass
+
+
 class HotkeyFilter(QtCore.QAbstractNativeEventFilter):
     """
     Native Windows event filter.
     Listens to system-broadcast messages and extracts hotkey activation events.
     Supports two hotkeys: the main screenshot hotkey and an OCR-dedicated screenshot hotkey.
+    Also handles Explorer crash/restart by listening to the 'TaskbarCreated' message.
     """
-    def __init__(self, on_trigger, on_ocr_trigger=None):
+    def __init__(self, on_trigger, on_ocr_trigger=None, on_taskbar_created=None):
         """
         Initialize the filter.
 
         Args:
             on_trigger (callable): Callback for the main screenshot hotkey.
             on_ocr_trigger (callable): Callback for the OCR screenshot hotkey (always-OCR).
+            on_taskbar_created (callable): Callback when the Windows Explorer taskbar is recreated.
         """
         super().__init__()
         self.on_trigger = on_trigger
         self.on_ocr_trigger = on_ocr_trigger
+        self.on_taskbar_created = on_taskbar_created
         self.hotkey_id = None
         self.ocr_hotkey_id = None
 
@@ -68,4 +81,14 @@ class HotkeyFilter(QtCore.QAbstractNativeEventFilter):
 
                 # Return True to stop propagation to other filters.
                 return True, 0
+            
+            elif (
+                WM_TASKBARCREATED != 0
+                and message_struct.message == WM_TASKBARCREATED
+                and self.on_taskbar_created is not None
+            ):
+                self.on_taskbar_created()
+                # Do not return True so other native filters can also receive this message if they wish.
+                
         return False, 0
+

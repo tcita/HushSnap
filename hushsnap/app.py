@@ -141,12 +141,26 @@ def main(boot_start_time=None):
         ocr_controller.force_ocr_next_capture()
         capture_session.request_capture(screen_pixmap)
 
+    def handle_taskbar_created():
+        logger.info("Windows Explorer taskbar recreated. Restoring system tray icon.")
+        try:
+            # Reference tray_icon, which is bound in the outer scope of main()
+            if tray_icon is not None:
+                tray_icon.hide()
+                tray_icon.show()
+        except NameError:
+            # tray_icon might not be defined yet during very early startup if a message is received
+            pass
+        except Exception as exc:
+            logger.exception(f"Failed to restore system tray icon: {exc}")
+
     capture_session = CaptureSession(on_capture_completed)
 
     # Install HotkeyFilter to intercept WM_HOTKEY before Qt window event delivery.
     native_hotkey_filter = HotkeyFilter(
         on_trigger=capture_session.request_capture,
         on_ocr_trigger=on_ocr_hotkey_triggered,
+        on_taskbar_created=handle_taskbar_created,
     )
     app.installNativeEventFilter(native_hotkey_filter)
 

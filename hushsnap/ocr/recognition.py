@@ -116,7 +116,7 @@ def prepare_preprocess_result(
             language_tag=language_tag,
             preprocess_settings=active_settings,
         )
-    return run_preprocess_pipeline(
+    return run_minimal_pipeline(
         pixmap,
         settings=active_settings,
         resolved_scale_factor=resolved_scale_factor,
