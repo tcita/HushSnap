@@ -61,18 +61,21 @@ def save_debug_preprocessed_image(image: QtGui.QImage, debug_dir: str | Path | N
 
 
 def estimate_auto_scale_factor(
-    pixmap: QtGui.QPixmap,
+    image_or_pixmap: QtGui.QImage | QtGui.QPixmap,
     language_tag: str = "",
     preprocess_settings: OcrPreprocessSettings | None = None,
 ) -> float:
-    if pixmap.isNull():
+    if image_or_pixmap.isNull():
         return DEFAULT_OCR_SCALE_FACTOR
 
     active_settings = preprocess_settings or default_preprocess_settings()
     if active_settings.normalize_source:
-        image = normalize_source_image(pixmap)
+        image = normalize_source_image(image_or_pixmap)
     else:
-        image = pixmap.toImage().convertToFormat(QtGui.QImage.Format.Format_ARGB32)
+        if isinstance(image_or_pixmap, QtGui.QPixmap):
+            image = image_or_pixmap.toImage().convertToFormat(QtGui.QImage.Format.Format_ARGB32)
+        else:
+            image = image_or_pixmap.convertToFormat(QtGui.QImage.Format.Format_ARGB32)
 
     # Downscale for faster estimation
     orig_w = image.width()
@@ -104,7 +107,7 @@ def estimate_auto_scale_factor(
 
 
 def prepare_preprocess_result(
-    pixmap: QtGui.QPixmap,
+    image_or_pixmap: QtGui.QImage | QtGui.QPixmap,
     language_tag: str = "",
     preprocess_settings: OcrPreprocessSettings | None = None,
 ):
@@ -112,19 +115,19 @@ def prepare_preprocess_result(
     resolved_scale_factor = None
     if active_settings.auto_scale:
         resolved_scale_factor = estimate_auto_scale_factor(
-            pixmap,
+            image_or_pixmap,
             language_tag=language_tag,
             preprocess_settings=active_settings,
         )
     return run_minimal_pipeline(
-        pixmap,
+        image_or_pixmap,
         settings=active_settings,
         resolved_scale_factor=resolved_scale_factor,
     )
 
 
 def recognize_result_from_pixmap(
-    pixmap: QtGui.QPixmap,
+    image_or_pixmap: QtGui.QImage | QtGui.QPixmap,
     language_tag: str = "",
     debug_dir: str | Path | None = None,
     preprocess_settings: OcrPreprocessSettings | None = None,
@@ -134,12 +137,12 @@ def recognize_result_from_pixmap(
     """
     total_start = time.perf_counter()
 
-    if pixmap.isNull():
-        logger.debug("recognize_result_from_pixmap called with null pixmap")
+    if image_or_pixmap.isNull():
+        logger.debug("recognize_result_from_pixmap called with null image_or_pixmap")
         return OcrRecognition()
 
     preprocess_result = prepare_preprocess_result(
-        pixmap,
+        image_or_pixmap,
         language_tag=language_tag,
         preprocess_settings=preprocess_settings,
     )
@@ -163,13 +166,13 @@ def recognize_result_from_pixmap(
 
 
 def recognize_text_from_pixmap(
-    pixmap: QtGui.QPixmap,
+    image_or_pixmap: QtGui.QImage | QtGui.QPixmap,
     language_tag: str = "",
     debug_dir: str | Path | None = None,
     preprocess_settings: OcrPreprocessSettings | None = None,
 ) -> str:
     result = recognize_result_from_pixmap(
-        pixmap,
+        image_or_pixmap,
         language_tag=language_tag,
         debug_dir=debug_dir,
         preprocess_settings=preprocess_settings,

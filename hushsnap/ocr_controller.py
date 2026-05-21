@@ -182,8 +182,12 @@ class OcrController:
 
         logging.info(f"Starting OCR request with engine: {engine}, language: {language_tag}")
 
+        # Convert QPixmap to QImage on the main GUI thread to prevent thread-safety issues
+        from PyQt6 import QtGui
+        image = pixmap.toImage() if isinstance(pixmap, QtGui.QPixmap) else pixmap
+
         request = OcrRequest(
-            pixmap=pixmap,
+            pixmap=image,
             language_tag=language_tag,
             engine=engine,
             debug_dir=debug_dir,

@@ -4,8 +4,9 @@ import threading
 from pathlib import Path
 from typing import Any
 
+# Defer rapidocr import to optimize application startup time
 from PyQt6 import QtGui
-from rapidocr import RapidOCR
+RapidOCR = None
 
 from .models import OcrRecognition
 
@@ -139,12 +140,17 @@ def _release_request():
         _active_requests_cv.notify_all()
 
 
-def _get_engine() -> RapidOCR:
+def _get_engine() -> "RapidOCR":
     global _engine
     if _engine is None:
         with _engine_lock:
             if _engine is None:
-                _engine = RapidOCR()
+                global RapidOCR
+                if RapidOCR is not None:
+                    local_RapidOCR = RapidOCR
+                else:
+                    from rapidocr import RapidOCR as local_RapidOCR
+                _engine = local_RapidOCR()
     return _engine
 
 
@@ -201,18 +207,21 @@ def release_engine():
 def recognize_rapidocr_qimage(image: QtGui.QImage, language_tag: str = "") -> OcrRecognition:
     from ..constants import OCR_ENGINE_RAPID
 
-    temp_path = None
+    result = None
     try:
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
-            temp_path = Path(f.name)
-        if not image.save(str(temp_path), "PNG"):
-            logger.warning("Failed to save QImage to temp PNG for RapidOCR")
-            return OcrRecognition(engine_type=OCR_ENGINE_RAPID)
+        # Convert QImage directly to an in-memory NumPy BGR array to bypass disk I/O entirely
+        import numpy as np
+        bgr_image = image.convertToFormat(QtGui.QImage.Format.Format_RGB32)
+        width = bgr_image.width()
+        height = bgr_image.height()
+        ptr = bgr_image.bits()
+        ptr.setsize(bgr_image.sizeInBytes())
+        arr = np.frombuffer(ptr, dtype=np.uint8).reshape((height, width, 4))[:, :, :3].copy()
 
         engine = _get_engine()
         _acquire_request()
         try:
-            result = engine(str(temp_path))
+            result = engine(arr)
         finally:
             _release_request()
         json_data = result.to_json()
@@ -237,12 +246,16 @@ def recognize_rapidocr_qimage(image: QtGui.QImage, language_tag: str = "") -> Oc
         logger.exception("RapidOCR engine call failed")
         return OcrRecognition(engine_type=OCR_ENGINE_RAPID)
     finally:
-        if temp_path and temp_path.exists():
-            temp_path.unlink(missing_ok=True)
+        # Clear large returned outputs and force garbage collection of circular references
+        # to ensure that operational memory remains flat.
+        if result is not None:
+            del result
+        import gc
+        gc.collect()
 
 
 def recognize_rapidocr_result_from_pixmap(
-    pixmap: QtGui.QPixmap,
+    pixmap: QtGui.QImage | QtGui.QPixmap,
     language_tag: str = "",
     debug_dir: str | Path | None = None,
     preprocess_settings: Any = None,

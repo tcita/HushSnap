@@ -7,16 +7,43 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# WinRT imports
-try:
-    import winrt.windows.foundation as foundation
-    import winrt.windows.graphics.imaging as imaging
-    import winrt.windows.media.ocr as ocr
-    import winrt.windows.storage as storage
-    import winrt.windows.globalization as globalization
-    HAS_WINRT = True
-except ImportError:
-    HAS_WINRT = False
+# WinRT imports (lazily imported to optimize application startup time)
+foundation = None
+imaging = None
+ocr = None
+storage = None
+globalization = None
+_HAS_WINRT_CACHE = None
+
+
+def _check_winrt() -> bool:
+    # If HAS_WINRT was monkeypatched/overwritten in globals, respect that value
+    if "HAS_WINRT" in globals():
+        return globals()["HAS_WINRT"]
+
+    global foundation, imaging, ocr, storage, globalization, _HAS_WINRT_CACHE
+    if _HAS_WINRT_CACHE is None:
+        try:
+            import winrt.windows.foundation as f
+            import winrt.windows.graphics.imaging as img
+            import winrt.windows.media.ocr as o
+            import winrt.windows.storage as s
+            import winrt.windows.globalization as glob
+            foundation = f
+            imaging = img
+            ocr = o
+            storage = s
+            globalization = glob
+            _HAS_WINRT_CACHE = True
+        except ImportError:
+            _HAS_WINRT_CACHE = False
+    return _HAS_WINRT_CACHE
+
+
+def __getattr__(name):
+    if name == "HAS_WINRT":
+        return _check_winrt()
+    raise AttributeError(f"module {__name__} has no attribute {name}")
 
 
 def _build_powershell_script(image_path: Path, language_tag: str) -> str:
@@ -237,7 +264,7 @@ def run_windows_ocr_json(image_path: Path, language_tag: str = "") -> dict[str, 
     Hybrid Windows OCR entry point.
     Uses direct WinRT API if available, otherwise falls back to PowerShell subprocess.
     """
-    if HAS_WINRT:
+    if _check_winrt():
         logger.debug("Using direct WinRT API for Windows OCR (Fast mode)")
         try:
             return asyncio.run(_run_windows_ocr_direct_async(image_path, language_tag))

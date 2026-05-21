@@ -269,9 +269,12 @@ def to_high_contrast(
     return contrasted.convertToFormat(QtGui.QImage.Format.Format_RGB32), was_inverted
 
 
-def normalize_source_image(pixmap: QtGui.QPixmap) -> QtGui.QImage:
+def normalize_source_image(image_or_pixmap) -> QtGui.QImage:
     """Normalize DPR and pixel format to avoid HiDPI offset artifacts."""
-    image = pixmap.toImage().convertToFormat(QtGui.QImage.Format.Format_ARGB32)
+    if isinstance(image_or_pixmap, QtGui.QPixmap):
+        image = image_or_pixmap.toImage().convertToFormat(QtGui.QImage.Format.Format_ARGB32)
+    else:
+        image = image_or_pixmap.convertToFormat(QtGui.QImage.Format.Format_ARGB32)
     if image.devicePixelRatio() != 1.0:
         image.setDevicePixelRatio(1.0)
     # Optimization: Early conversion to Grayscale8 for the entire pipeline
@@ -337,7 +340,7 @@ def default_preprocess_settings() -> OcrPreprocessSettings:
 
 
 def run_preprocess_pipeline(
-    pixmap: QtGui.QPixmap,
+    image_or_pixmap,
     settings: OcrPreprocessSettings | None = None,
     resolved_scale_factor: float | None = None,
 ) -> OcrPreprocessResult:
@@ -349,9 +352,12 @@ def run_preprocess_pipeline(
 
     # 1. Normalize and Convert to Grayscale early
     if active_settings.normalize_source:
-        image = normalize_source_image(pixmap)
+        image = normalize_source_image(image_or_pixmap)
     else:
-        image = pixmap.toImage().convertToFormat(QtGui.QImage.Format.Format_Grayscale8)
+        if isinstance(image_or_pixmap, QtGui.QPixmap):
+            image = image_or_pixmap.toImage().convertToFormat(QtGui.QImage.Format.Format_Grayscale8)
+        else:
+            image = image_or_pixmap.convertToFormat(QtGui.QImage.Format.Format_Grayscale8)
     steps.append(
         OcrPreprocessStep(
             key="normalize_source",
@@ -461,7 +467,7 @@ def run_preprocess_pipeline(
 
 
 def run_minimal_pipeline(
-    pixmap: QtGui.QPixmap,
+    image_or_pixmap,
     settings: OcrPreprocessSettings | None = None,
     resolved_scale_factor: float | None = None,
 ) -> OcrPreprocessResult:
@@ -475,9 +481,12 @@ def run_minimal_pipeline(
     # 1. Normalize (Ensure 1.0 DPR and 8-bit grayscale for speed, or RGB if needed)
     # We use Grayscale8 as it's sufficient for most deep learning models and faster
     if active_settings.normalize_source:
-        image = normalize_source_image(pixmap)
+        image = normalize_source_image(image_or_pixmap)
     else:
-        image = pixmap.toImage().convertToFormat(QtGui.QImage.Format.Format_Grayscale8)
+        if isinstance(image_or_pixmap, QtGui.QPixmap):
+            image = image_or_pixmap.toImage().convertToFormat(QtGui.QImage.Format.Format_Grayscale8)
+        else:
+            image = image_or_pixmap.convertToFormat(QtGui.QImage.Format.Format_Grayscale8)
     
     steps.append(
         OcrPreprocessStep(
@@ -512,11 +521,11 @@ def run_minimal_pipeline(
 
 
 def preprocess_for_ocr(
-    pixmap: QtGui.QPixmap,
+    image_or_pixmap,
     settings: OcrPreprocessSettings | None = None,
 ) -> QtGui.QImage:
     """
     Backward-compatible helper that returns the processed image only.
     """
     active_settings = settings or default_preprocess_settings()
-    return run_preprocess_pipeline(pixmap, settings=active_settings).image
+    return run_preprocess_pipeline(image_or_pixmap, settings=active_settings).image

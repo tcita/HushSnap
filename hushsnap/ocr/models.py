@@ -40,7 +40,7 @@ class OcrRecognition:
 
 @dataclass
 class OcrRequest:
-    pixmap: QtGui.QPixmap
+    pixmap: QtGui.QPixmap | QtGui.QImage
     language_tag: str = ""
     engine: str = ""
     debug_dir: str | Path | None = None
@@ -51,5 +51,5 @@ class OcrRequest:
 class OcrResponse:
     text: str = ""
     error: str = ""
-    pixmap: QtGui.QPixmap | None = None
+    pixmap: QtGui.QPixmap | QtGui.QImage | None = None
     recognition: OcrRecognition | None = None

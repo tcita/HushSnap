@@ -20,3 +20,5 @@ dist-installer/
 /tools/windows_ocr_debug
 tools/windows_ocr_report.html
 .claude/settings.local.json
+/tuna_report
+/tools/tuna_report
