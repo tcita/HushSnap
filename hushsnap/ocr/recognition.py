@@ -1,27 +1,21 @@
 import logging
 import tempfile
 import time
-from statistics import fmean
 from pathlib import Path
 
-from PyQt6 import QtGui, QtCore
+from PyQt6 import QtGui
 
 from .models import OcrRecognition
 from .parsing import parse_ocr_payload
 from .preprocess import (
-    DEFAULT_OCR_SCALE_FACTOR,
     OcrPreprocessSettings,
     default_preprocess_settings,
-    normalize_source_image,
     run_minimal_pipeline,
 )
 from .text import compose_text_from_result
 from ..system.windows_ocr import run_windows_ocr_json
-from ..config import get_ocr_engine
-from ..constants import OCR_ENGINE_RAPID
 
 logger = logging.getLogger(__name__)
-IDEAL_OCR_WORD_HEIGHT_PX = 40.0
 _ENGINE_ID = "windows"
 
 
@@ -59,72 +53,6 @@ def save_debug_preprocessed_image(image: QtGui.QImage, debug_dir: str | Path | N
         logger.warning(f"Failed to save OCR debug image: {exc}")
 
 
-def estimate_auto_scale_factor(
-    image_or_pixmap: QtGui.QImage | QtGui.QPixmap,
-    language_tag: str = "",
-    preprocess_settings: OcrPreprocessSettings | None = None,
-) -> float:
-    if image_or_pixmap.isNull():
-        return DEFAULT_OCR_SCALE_FACTOR
-
-    active_settings = preprocess_settings or default_preprocess_settings()
-    if active_settings.normalize_source:
-        image = normalize_source_image(image_or_pixmap)
-    else:
-        if isinstance(image_or_pixmap, QtGui.QPixmap):
-            image = image_or_pixmap.toImage().convertToFormat(QtGui.QImage.Format.Format_ARGB32)
-        else:
-            image = image_or_pixmap.convertToFormat(QtGui.QImage.Format.Format_ARGB32)
-
-    # Downscale for faster estimation
-    orig_w = image.width()
-    orig_h = image.height()
-    max_dim = 1000
-    if orig_w > max_dim or orig_h > max_dim:
-        image = image.scaled(
-            max_dim, max_dim, 
-            QtCore.Qt.AspectRatioMode.KeepAspectRatio, 
-            QtCore.Qt.TransformationMode.SmoothTransformation
-        )
-    
-    recognition = recognize_qimage(image, language_tag=language_tag)
-    if not recognition.lines:
-        return 1.0
-
-    # Adjust heights back to original scale
-    scale_back = orig_w / image.width()
-    heights = [
-        word.bounding_box.height * scale_back 
-        for line in recognition.lines 
-        for word in line.words 
-        if word.bounding_box.height > 0
-    ]
-
-    average_height = fmean(heights) if heights else 10.0
-    scale_factor = IDEAL_OCR_WORD_HEIGHT_PX / max(1.0, average_height)
-    return max(1.0, scale_factor)
-
-
-def prepare_preprocess_result(
-    image_or_pixmap: QtGui.QImage | QtGui.QPixmap,
-    language_tag: str = "",
-    preprocess_settings: OcrPreprocessSettings | None = None,
-):
-    active_settings = preprocess_settings or default_preprocess_settings()
-    resolved_scale_factor = None
-    if active_settings.auto_scale:
-        resolved_scale_factor = estimate_auto_scale_factor(
-            image_or_pixmap,
-            language_tag=language_tag,
-            preprocess_settings=active_settings,
-        )
-    return run_minimal_pipeline(
-        image_or_pixmap,
-        settings=active_settings,
-        resolved_scale_factor=resolved_scale_factor,
-    )
-
-
 def recognize_result_from_pixmap(
     image_or_pixmap: QtGui.QImage | QtGui.QPixmap,
     language_tag: str = "",
@@ -140,11 +68,8 @@ def recognize_result_from_pixmap(
         logger.debug("recognize_result_from_pixmap called with null image_or_pixmap")
         return OcrRecognition()
 
-    preprocess_result = prepare_preprocess_result(
-        image_or_pixmap,
-        language_tag=language_tag,
-        preprocess_settings=preprocess_settings,
-    )
+    active_settings = preprocess_settings or default_preprocess_settings()
+    preprocess_result = run_minimal_pipeline(image_or_pixmap, settings=active_settings)
 
     save_debug_preprocessed_image(preprocess_result.image, debug_dir)
 
@@ -178,8 +103,6 @@ def recognize_text_from_pixmap(
     )
     return compose_text_from_result(result, language_tag=language_tag)
 
-
-INITIAL_SCALE_FACTOR = DEFAULT_OCR_SCALE_FACTOR
 
 # Register Windows OCR engine
 from .engine import register_engine  # noqa: E402

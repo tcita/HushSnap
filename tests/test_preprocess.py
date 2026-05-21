@@ -9,9 +9,7 @@ from hushsnap.ocr.preprocess import (
     OcrPreprocessSettings,
     OcrPreprocessStep,
     OcrPreprocessResult,
-    resolve_scale_factor,
     normalize_source_image,
-    scale_image,
     run_minimal_pipeline,
 )
 
@@ -48,23 +46,6 @@ def test_preprocess_result_properties():
     assert res.summary() == "Step 1 (ok) -> Step 3"
 
 
-def test_resolve_scale_factor():
-    """Test resolve_scale_factor with different settings and inputs."""
-    settings_no_scale = OcrPreprocessSettings(auto_scale=False)
-    factor, mode = resolve_scale_factor(settings_no_scale, 2.5)
-    assert factor == 1.0
-    assert mode == "off"
-
-    settings_with_scale = OcrPreprocessSettings(auto_scale=True)
-    factor, mode = resolve_scale_factor(settings_with_scale, 2.5)
-    assert factor == 2.5
-    assert mode == "auto"
-
-    factor, mode = resolve_scale_factor(settings_with_scale, None)
-    assert factor == 1.0
-    assert mode == "auto"
-
-
 def test_normalize_source_image(qapp, sample_pixmap):
     """Test normalize_source_image converts to Grayscale8 and resets DPR."""
     sample_pixmap.setDevicePixelRatio(2.0)
@@ -73,37 +54,14 @@ def test_normalize_source_image(qapp, sample_pixmap):
     assert normalized.format() == QtGui.QImage.Format.Format_Grayscale8
 
 
-def test_scale_image(qapp):
-    """Test scale_image resizes images based on scale factor."""
-    image = QtGui.QImage(10, 10, QtGui.QImage.Format.Format_Grayscale8)
-
-    scaled_1 = scale_image(image, 1.0)
-    assert scaled_1.width() == 10
-
-    scaled_2 = scale_image(image, 2.5)
-    assert scaled_2.width() == 25
-
-
 def test_run_minimal_pipeline(qapp, sample_pixmap):
-    """Test run_minimal_pipeline scales and normalizes only."""
-    settings = OcrPreprocessSettings(auto_scale=True)
-    result = run_minimal_pipeline(sample_pixmap, settings=settings, resolved_scale_factor=1.5)
+    """Test run_minimal_pipeline normalizes source image."""
+    settings = OcrPreprocessSettings()
+    result = run_minimal_pipeline(sample_pixmap, settings=settings)
 
     assert isinstance(result, OcrPreprocessResult)
     assert result.image.format() == QtGui.QImage.Format.Format_RGB32
-    assert result.resolved_scale_factor == 1.5
+    assert result.resolved_scale_factor == 1.0
 
     step_keys = [step.key for step in result.applied_steps]
-    assert "scale" in step_keys
     assert "normalize_source" in step_keys
-
-
-def test_prepare_preprocess_result_uses_minimal_pipeline(qapp, sample_pixmap):
-    """Test that prepare_preprocess_result calls run_minimal_pipeline."""
-    from hushsnap.ocr.recognition import prepare_preprocess_result
-
-    settings = OcrPreprocessSettings(auto_scale=False)
-    result = prepare_preprocess_result(sample_pixmap, preprocess_settings=settings)
-
-    step_keys = [step.key for step in result.applied_steps]
-    assert "scale" in step_keys or "normalize_source" in step_keys

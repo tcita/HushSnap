@@ -1,13 +1,13 @@
 from dataclasses import dataclass, field
 
-from PyQt6 import QtCore, QtGui
+from PyQt6 import QtGui
 
 DEFAULT_OCR_SCALE_FACTOR = 1.0
 
 
 @dataclass(frozen=True)
 class OcrPreprocessSettings:
-    auto_scale: bool = True
+    auto_scale: bool = False
     normalize_source: bool = True
 
 
@@ -43,17 +43,6 @@ class OcrPreprocessResult:
 DEFAULT_OCR_PREPROCESS_SETTINGS = OcrPreprocessSettings()
 
 
-def resolve_scale_factor(
-    settings: OcrPreprocessSettings,
-    auto_scale_factor: float | None = None,
-) -> tuple[float, str]:
-    if not settings.auto_scale:
-        return 1.0, "off"
-    if auto_scale_factor is not None and auto_scale_factor > 0:
-        return auto_scale_factor, "auto"
-    return 1.0, "auto"
-
-
 def normalize_source_image(image_or_pixmap) -> QtGui.QImage:
     """Normalize DPR and pixel format to avoid HiDPI offset artifacts."""
     if isinstance(image_or_pixmap, QtGui.QPixmap):
@@ -65,18 +54,6 @@ def normalize_source_image(image_or_pixmap) -> QtGui.QImage:
     return image.convertToFormat(QtGui.QImage.Format.Format_Grayscale8)
 
 
-def scale_image(image: QtGui.QImage, scale_factor: float) -> QtGui.QImage:
-    """Resize with smooth interpolation when scale is meaningfully different."""
-    if abs(scale_factor - 1.0) <= 0.01:
-        return image
-    return image.scaled(
-        max(1, int(round(image.width() * scale_factor))),
-        max(1, int(round(image.height() * scale_factor))),
-        QtCore.Qt.AspectRatioMode.IgnoreAspectRatio,
-        QtCore.Qt.TransformationMode.SmoothTransformation,
-    )
-
-
 def default_preprocess_settings() -> OcrPreprocessSettings:
     return DEFAULT_OCR_PREPROCESS_SETTINGS
 
@@ -84,12 +61,8 @@ def default_preprocess_settings() -> OcrPreprocessSettings:
 def run_minimal_pipeline(
     image_or_pixmap,
     settings: OcrPreprocessSettings | None = None,
-    resolved_scale_factor: float | None = None,
 ) -> OcrPreprocessResult:
-    """
-    Minimal pipeline for modern deep-learning engines.
-    Only performs normalization and scaling, skipping binarization/inversion.
-    """
+    """Normalize source image to Grayscale8 then convert to RGB32 for OCR engine compatibility."""
     active_settings = settings or DEFAULT_OCR_PREPROCESS_SETTINGS
     steps: list[OcrPreprocessStep] = []
 
@@ -111,24 +84,12 @@ def run_minimal_pipeline(
         )
     )
 
-    # 2. Scale
-    effective_scale_factor, _ = resolve_scale_factor(active_settings, auto_scale_factor=resolved_scale_factor)
-    image = scale_image(image, effective_scale_factor)
-    steps.append(
-        OcrPreprocessStep(
-            key="scale",
-            label="Scale",
-            enabled=active_settings.auto_scale,
-            details=f"{effective_scale_factor:.2f}x" if active_settings.auto_scale else "1.00x",
-        )
-    )
-
     # Final conversion to RGB32 for OCR engine compatibility
     image = image.convertToFormat(QtGui.QImage.Format.Format_RGB32)
 
     return OcrPreprocessResult(
         image=image,
         settings=active_settings,
-        resolved_scale_factor=effective_scale_factor,
+        resolved_scale_factor=1.0,
         steps=steps,
     )

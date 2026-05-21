@@ -125,6 +125,29 @@ _engine = None
 _engine_lock = threading.Lock()
 _active_requests = 0
 _active_requests_cv = threading.Condition()
+_needs_initial_trim = False
+
+
+def _trim_working_set():
+    """Aggressively collect garbage and trim the process working set."""
+    import gc
+    for _ in range(3):
+        gc.collect()
+
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        # Must declare proper 64-bit types for process handles and sizes
+        # on 64-bit Windows; default ctypes returns c_int (32-bit) which
+        # silently truncates the handle and causes the trim to fail.
+        kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+        kernel32.SetProcessWorkingSetSize.argtypes = [
+            ctypes.c_void_p, ctypes.c_ssize_t, ctypes.c_ssize_t,
+        ]
+        kernel32.SetProcessWorkingSetSize.restype = ctypes.c_int
+        kernel32.SetProcessWorkingSetSize(kernel32.GetCurrentProcess(), -1, -1)
+    except Exception:
+        logger.debug("SetProcessWorkingSetSize failed", exc_info=True)
 
 
 def _acquire_request():
@@ -141,7 +164,7 @@ def _release_request():
 
 
 def _get_engine() -> "RapidOCR":
-    global _engine
+    global _engine, _needs_initial_trim
     if _engine is None:
         with _engine_lock:
             if _engine is None:
@@ -151,6 +174,10 @@ def _get_engine() -> "RapidOCR":
                 else:
                     from rapidocr import RapidOCR as local_RapidOCR
                 _engine = local_RapidOCR()
+                # Flag that we should trim after the first use to clear import-time bloat.
+                # We don't trim immediately here because we want the first request
+                # to run without unnecessary page faults.
+                _needs_initial_trim = True
     return _engine
 
 
@@ -181,25 +208,7 @@ def release_engine():
                 setattr(_engine, attr, None)
             _engine = None
 
-    # Multiple passes: nested C++ wrappers may take >1 collection to finalise
-    import gc
-    for _ in range(3):
-        gc.collect()
-
-    try:
-        import ctypes
-        kernel32 = ctypes.windll.kernel32
-        # Must declare proper 64-bit types for process handles and sizes
-        # on 64-bit Windows; default ctypes returns c_int (32-bit) which
-        # silently truncates the handle and causes the trim to fail.
-        kernel32.GetCurrentProcess.restype = ctypes.c_void_p
-        kernel32.SetProcessWorkingSetSize.argtypes = [
-            ctypes.c_void_p, ctypes.c_ssize_t, ctypes.c_ssize_t,
-        ]
-        kernel32.SetProcessWorkingSetSize.restype = ctypes.c_int
-        kernel32.SetProcessWorkingSetSize(kernel32.GetCurrentProcess(), -1, -1)
-    except Exception:
-        logger.debug("SetProcessWorkingSetSize failed", exc_info=True)
+    _trim_working_set()
 
 
 # ── public API ────────────────────────────────────────────────────────
@@ -224,6 +233,10 @@ def recognize_rapidocr_qimage(image: QtGui.QImage, language_tag: str = "") -> Oc
             result = engine(arr)
         finally:
             _release_request()
+            # Explicitly drop the large image buffers before text composition
+            del arr
+            del bgr_image
+
         json_data = result.to_json()
 
         if json_data is None:
@@ -250,8 +263,15 @@ def recognize_rapidocr_qimage(image: QtGui.QImage, language_tag: str = "") -> Oc
         # to ensure that operational memory remains flat.
         if result is not None:
             del result
-        import gc
-        gc.collect()
+        
+        global _needs_initial_trim
+        if _needs_initial_trim:
+            _needs_initial_trim = False
+            _trim_working_set()
+        else:
+            import gc
+            gc.collect()
+
 
 
 def recognize_rapidocr_result_from_pixmap(
@@ -265,24 +285,9 @@ def recognize_rapidocr_result_from_pixmap(
         return OcrRecognition()
 
     from .preprocess import default_preprocess_settings, run_minimal_pipeline
-    
+
     active_settings = preprocess_settings or default_preprocess_settings()
-    
-    resolved_scale_factor = 1.0
-    if active_settings.auto_scale:
-        from .recognition import estimate_auto_scale_factor
-
-        resolved_scale_factor = estimate_auto_scale_factor(
-            pixmap,
-            language_tag=language_tag,
-            preprocess_settings=active_settings,
-        )
-
-    preprocess_result = run_minimal_pipeline(
-        pixmap,
-        settings=active_settings,
-        resolved_scale_factor=resolved_scale_factor,
-    )
+    preprocess_result = run_minimal_pipeline(pixmap, settings=active_settings)
 
     # Debug save if needed
     if debug_dir:

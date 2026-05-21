@@ -13,12 +13,16 @@ class OcrService:
     Async/sync OCR service abstraction.
     Keeps threading and error handling outside UI modules.
 
-    Only the most recent async request delivers its result; older requests
-    that are still running when a new one arrives are silently dropped.
+    Uses a single worker thread. When a new request arrives while one is
+    processing, the in-flight result is dropped and the worker immediately
+    picks up the latest request — no wasted concurrent processing.
     """
 
     def __init__(self):
         self._seq = 0
+        self._lock = threading.Lock()
+        self._pending: tuple | None = None
+        self._busy = False
 
     def recognize(self, request: OcrRequest) -> OcrResponse:
         try:
@@ -53,12 +57,22 @@ class OcrService:
             )
 
     def recognize_async(self, request: OcrRequest, done_callback):
-        self._seq += 1
-        seq = self._seq
+        with self._lock:
+            self._seq += 1
+            self._pending = (request, done_callback, self._seq)
+            if not self._busy:
+                self._busy = True
+                threading.Thread(target=self._worker, daemon=True).start()
 
-        def worker():
-            if seq != self._seq:
-                return  # a newer request arrived before this one started
+    def _worker(self):
+        while True:
+            with self._lock:
+                if self._pending is None:
+                    self._busy = False
+                    return
+                request, callback, seq = self._pending
+                self._pending = None
+
             try:
                 response = self.recognize(request)
             except Exception as exc:
@@ -69,7 +83,7 @@ class OcrService:
                     pixmap=request.pixmap,
                     recognition=None,
                 )
-            if seq == self._seq:
-                done_callback(response)
 
-        threading.Thread(target=worker, daemon=True).start()
+            with self._lock:
+                if seq == self._seq:
+                    callback(response)

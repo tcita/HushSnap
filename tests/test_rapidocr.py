@@ -321,12 +321,6 @@ def test_recognize_rapidocr_result_from_pixmap_with_text(monkeypatch, qapp):
     monkeypatch.setattr(rapidocr_module, "_get_engine", lambda: fake_engine)
     monkeypatch.setattr(rapidocr_module, "_engine", fake_engine)
 
-    # Mock dependencies at their source to handle local imports inside rapidocr.py
-    monkeypatch.setattr(
-        "hushsnap.ocr.recognition.estimate_auto_scale_factor",
-        lambda *args, **kwargs: 1.0
-    )
-
     def mock_minimal_pipeline(pixmap, **kwargs):
         return OcrPreprocessResult(
             image=pixmap.toImage(),
