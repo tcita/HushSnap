@@ -143,6 +143,7 @@ class OcrController:
             logging.debug("on_ocr_lang_changed: no pixmap to re-OCR")
             return
 
+        self._force_ocr = True
         self._start_request(
             pixmap,
             lang,
@@ -162,6 +163,7 @@ class OcrController:
             logging.debug("on_ocr_engine_changed: no pixmap to re-OCR")
             return
 
+        self._force_ocr = True
         self._start_request(
             pixmap,
             self.popup.lang_combo.itemData(self.popup.lang_combo.currentIndex()),
