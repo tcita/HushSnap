@@ -75,6 +75,9 @@ class OcrService:
 
             try:
                 response = self.recognize(request)
+                with self._lock:
+                    if seq == self._seq:
+                        callback(response)
             except Exception as exc:
                 logger.exception(f"Unexpected error in OCR worker thread: {exc}")
                 response = OcrResponse(
@@ -83,7 +86,14 @@ class OcrService:
                     pixmap=request.pixmap,
                     recognition=None,
                 )
-
-            with self._lock:
-                if seq == self._seq:
-                    callback(response)
+                with self._lock:
+                    if seq == self._seq:
+                        callback(response)
+            finally:
+                # Explicitly clear all local references to ensure large pixmaps
+                # and recognition objects are eligible for GC immediately.
+                del request
+                del response
+                del callback
+                import gc
+                gc.collect()

@@ -183,19 +183,20 @@ class OcrPopup(QtWidgets.QWidget):
         self._refresh_labels()
 
     def _refresh_labels(self):
-        # Refresh Engine Combo
-        current_engine = self.engine_combo.currentData()
-        self.engine_combo.blockSignals(True)
-        self.engine_combo.clear()
+        # Only populate combos if they are empty to avoid object churn
         from ..constants import OCR_ENGINE_WINDOWS, OCR_ENGINE_RAPID
-        self.engine_combo.addItem(self.translate("ocr_engine_windows"), OCR_ENGINE_WINDOWS)
-        self.engine_combo.addItem(self.translate("ocr_engine_rapid"), OCR_ENGINE_RAPID)
-        idx = self.engine_combo.findData(current_engine)
-        if idx >= 0:
-            self.engine_combo.setCurrentIndex(idx)
-        self.engine_combo.blockSignals(False)
+        
+        if self.engine_combo.count() == 0:
+            self.engine_combo.blockSignals(True)
+            self.engine_combo.addItem(self.translate("ocr_engine_windows"), OCR_ENGINE_WINDOWS)
+            self.engine_combo.addItem(self.translate("ocr_engine_rapid"), OCR_ENGINE_RAPID)
+            self.engine_combo.blockSignals(False)
+        else:
+            # Update text for existing items in case language changed
+            self.engine_combo.setItemText(0, self.translate("ocr_engine_windows"))
+            self.engine_combo.setItemText(1, self.translate("ocr_engine_rapid"))
 
-        # Refresh Language Combo
+        # Refresh Language Combo labels
         english_index = self.lang_combo.findData("en-US")
         if english_index >= 0:
             self.lang_combo.setItemText(

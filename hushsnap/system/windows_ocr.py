@@ -182,6 +182,8 @@ def _run_windows_ocr_powershell(image_path: Path, language_tag: str = "") -> dic
 
 async def _run_windows_ocr_direct_async(image_path: Path, language_tag: str = "") -> dict[str, Any]:
     """Directly call Windows OCR WinRT APIs."""
+    stream = None
+    bitmap = None
     try:
         # 1. Load image
         file = await storage.StorageFile.get_file_from_path_async(str(image_path.absolute()))
@@ -258,6 +260,13 @@ async def _run_windows_ocr_direct_async(image_path: Path, language_tag: str = ""
     except Exception as exc:
         logger.exception(f"Direct Windows OCR failed: {exc}")
         return {"Error": str(exc)}
+    finally:
+        if bitmap:
+            try: bitmap.close()
+            except Exception: pass
+        if stream:
+            try: stream.close()
+            except Exception: pass
 
 def run_windows_ocr_json(image_path: Path, language_tag: str = "") -> dict[str, Any]:
     """
