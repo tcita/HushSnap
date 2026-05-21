@@ -14,12 +14,5 @@ dist-installer/
 
 .vscode/
 .vs/
-
-# Windows OCR evaluation data
-/windows_ocr_eval_data
-/tools/windows_ocr_debug
-tools/windows_ocr_report.html
 .claude/settings.local.json
-/tuna_report
-/tools/tuna_report
-/tools
+tools/health_idle.csv
