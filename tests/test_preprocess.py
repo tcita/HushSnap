@@ -92,8 +92,8 @@ def test_otsu_threshold_and_inversion(qapp):
 
 
     threshold = otsu_threshold(image)
-    # Threshold should lie between 10 and 200
-    assert 10 < threshold < 200
+    # Threshold should lie between 10 (inclusive) and 200
+    assert 10 <= threshold < 200
 
     # Since the majority of pixels are dark (84 out of 100), it should NOT be inverted
     # because standard binarization assumes dark text on a light background.

@@ -70,12 +70,22 @@ def image_bytes(image: QtGui.QImage) -> memoryview:
 
 def otsu_threshold(grayscale_image: QtGui.QImage) -> int:
     """Compute Otsu threshold for an 8-bit grayscale image."""
-    data = image_bytes(grayscale_image)
-    histogram = [0] * 256
-    for value in data:
-        histogram[value] += 1
+    width = grayscale_image.width()
+    height = grayscale_image.height()
+    bytes_per_line = grayscale_image.bytesPerLine()
 
-    total = len(data)
+    bits = grayscale_image.bits()
+    bits.setsize(grayscale_image.sizeInBytes())
+    data = memoryview(bits)
+
+    histogram = [0] * 256
+    for y in range(height):
+        row_start = y * bytes_per_line
+        row_data = data[row_start : row_start + width]
+        for value in row_data:
+            histogram[value] += 1
+
+    total = width * height
     if total == 0:
         return 160
 
@@ -126,27 +136,58 @@ def smooth_grayscale_image(image: QtGui.QImage) -> QtGui.QImage:
 
 
 def should_invert_grayscale(grayscale_image: QtGui.QImage, threshold: int) -> bool:
-    data = image_bytes(grayscale_image)
+    width = grayscale_image.width()
+    height = grayscale_image.height()
+    bytes_per_line = grayscale_image.bytesPerLine()
+
+    bits = grayscale_image.bits()
+    bits.setsize(grayscale_image.sizeInBytes())
+    data = memoryview(bits)
+
     dark_pixel_count = 0
-    for pixel in data:
-        if pixel <= threshold:
-            dark_pixel_count += 1
-    return dark_pixel_count > (len(data) // 2)
+    total_pixels = width * height
+    for y in range(height):
+        row_start = y * bytes_per_line
+        row_data = data[row_start : row_start + width]
+        for pixel in row_data:
+            if pixel <= threshold:
+                dark_pixel_count += 1
+    return dark_pixel_count > (total_pixels // 2)
 
 
 def invert_grayscale_in_place(grayscale_image: QtGui.QImage) -> None:
-    data = image_bytes(grayscale_image)
-    for index in range(len(data)):
-        data[index] = 255 - data[index]
+    width = grayscale_image.width()
+    height = grayscale_image.height()
+    bytes_per_line = grayscale_image.bytesPerLine()
+
+    bits = grayscale_image.bits()
+    bits.setsize(grayscale_image.sizeInBytes())
+    data = memoryview(bits)
+
+    for y in range(height):
+        row_start = y * bytes_per_line
+        for x in range(width):
+            idx = row_start + x
+            data[idx] = 255 - data[idx]
 
 
 def stretch_grayscale_contrast(grayscale_image: QtGui.QImage) -> QtGui.QImage:
-    data = image_bytes(grayscale_image)
-    histogram = [0] * 256
-    for pixel in data:
-        histogram[pixel] += 1
+    width = grayscale_image.width()
+    height = grayscale_image.height()
+    bytes_per_line = grayscale_image.bytesPerLine()
 
-    total = len(data)
+    bits = grayscale_image.bits()
+    bits.setsize(grayscale_image.sizeInBytes())
+    data = memoryview(bits)
+
+    histogram = [0] * 256
+    for y in range(height):
+        row_start = y * bytes_per_line
+        row_data = data[row_start : row_start + width]
+        for pixel in row_data:
+            histogram[pixel] += 1
+
+    total = width * height
     low_target = int(total * 0.02)
     high_target = int(total * 0.98)
 
@@ -170,19 +211,22 @@ def stretch_grayscale_contrast(grayscale_image: QtGui.QImage) -> QtGui.QImage:
         low, high = 0, 255
 
     scale = 255.0 / max(1, (high - low))
-    for index in range(len(data)):
-        value = int((data[index] - low) * scale)
-        if value < 0:
-            value = 0
-        elif value > 255:
-            value = 255
+    for y in range(height):
+        row_start = y * bytes_per_line
+        for x in range(width):
+            idx = row_start + x
+            value = int((data[idx] - low) * scale)
+            if value < 0:
+                value = 0
+            elif value > 255:
+                value = 255
 
-        if value > 178:
-            value = min(255, int(178 + (value - 178) * 1.9))
-        elif value < 120:
-            value = max(0, int(value * 0.88))
+            if value > 178:
+                value = min(255, int(178 + (value - 178) * 1.9))
+            elif value < 120:
+                value = max(0, int(value * 0.88))
 
-        data[index] = value
+            data[idx] = value
 
     return grayscale_image
 

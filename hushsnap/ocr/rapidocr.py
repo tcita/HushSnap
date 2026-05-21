@@ -182,9 +182,16 @@ def release_engine():
 
     try:
         import ctypes
-        ctypes.windll.kernel32.SetProcessWorkingSetSize(
-            ctypes.windll.kernel32.GetCurrentProcess(), -1, -1
-        )
+        kernel32 = ctypes.windll.kernel32
+        # Must declare proper 64-bit types for process handles and sizes
+        # on 64-bit Windows; default ctypes returns c_int (32-bit) which
+        # silently truncates the handle and causes the trim to fail.
+        kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+        kernel32.SetProcessWorkingSetSize.argtypes = [
+            ctypes.c_void_p, ctypes.c_ssize_t, ctypes.c_ssize_t,
+        ]
+        kernel32.SetProcessWorkingSetSize.restype = ctypes.c_int
+        kernel32.SetProcessWorkingSetSize(kernel32.GetCurrentProcess(), -1, -1)
     except Exception:
         logger.debug("SetProcessWorkingSetSize failed", exc_info=True)
 
