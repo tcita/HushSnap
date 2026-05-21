@@ -6,9 +6,7 @@ from .preprocess import (
     OcrPreprocessSettings,
     OcrPreprocessStep,
     default_preprocess_settings,
-    preprocess_for_ocr,
     resolve_scale_factor,
-    run_preprocess_pipeline,
 )
 from . import rapidocr  # noqa: F401  # triggers engine self-registration (must precede recognition to be default)
 
@@ -39,10 +37,8 @@ __all__ = [
     "default_preprocess_settings",
     "estimate_auto_scale_factor",
     "prepare_preprocess_result",
-    "preprocess_for_ocr",
     "recognize_result_from_pixmap",
     "recognize_text_from_pixmap",
     "resolve_scale_factor",
-    "run_preprocess_pipeline",
     "select_text_adapter",
 ]

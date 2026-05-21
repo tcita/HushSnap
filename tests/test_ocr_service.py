@@ -85,7 +85,7 @@ def test_ocr_service_forwards_preprocess_settings(monkeypatch, sample_pixmap):
 
     register_engine(OCR_ENGINE_WINDOWS, recognize=_recognize)
 
-    settings = ocr.OcrPreprocessSettings(auto_scale=True, auto_invert=False)
+    settings = ocr.OcrPreprocessSettings(auto_scale=True)
     service = ocr.OcrService()
     response = service.recognize(
         ocr.OcrRequest(
