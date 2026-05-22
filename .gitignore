@@ -16,3 +16,5 @@ dist-installer/
 .vs/
 .claude/settings.local.json
 tools/health_idle.csv
+tools/health_rapidocr_hot_idle.csv
+tools/health_reports/
