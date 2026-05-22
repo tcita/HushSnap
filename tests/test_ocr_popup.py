@@ -16,6 +16,7 @@ def _translate(key, **kwargs):
     table = {
         "ocr_popup_title": "OCR Text",
         "ocr_copy_btn": "Copy",
+        "ocr_recapture_tooltip": "Capture and OCR",
         "ocr_lang_english": "Lang: EN",
         "ocr_lang_chinese_simplified": "Chinese (Simplified)",
         "ocr_lang_chinese_traditional": "Chinese (Traditional)",
@@ -45,12 +46,23 @@ def test_ocr_popup_copy_button_copies_current_text(qapp):
     assert QtWidgets.QApplication.clipboard().text() == "edited text"
 
 
+def test_ocr_popup_recapture_button_emits_signal(qapp):
+    popup = OcrPopup(_translate)
+    emitted = []
+    popup.recapture_requested.connect(lambda: emitted.append(True))
+
+    popup.recapture_btn.click()
+
+    assert emitted == [True]
+
+
 def test_ocr_popup_updates_copy_button_text_on_show(qapp):
     popup = OcrPopup(_translate)
 
     popup.show_text("hello", lang="en-US")
 
     assert popup.copy_btn.text() == "Copy"
+    assert popup.recapture_btn.toolTip() == "Capture and OCR"
     assert popup.title_label.text() == "OCR Text"
     assert popup.lang_combo.itemText(popup.lang_combo.findData("zh-CN")) == "Chinese (Simplified)"
     assert popup.lang_combo.itemText(popup.lang_combo.findData("zh-TW")) == "Chinese (Traditional)"

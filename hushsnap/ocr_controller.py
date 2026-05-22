@@ -1,7 +1,7 @@
 import logging
 import os
 
-from PyQt6 import QtWidgets
+from PyQt6 import QtCore, QtWidgets
 
 from .config import (
     get_ocr_engine,
@@ -43,6 +43,7 @@ class OcrController:
         self.service = service or OcrService()
         self.bridge = SignalBridge()
         self.tray_icon = None
+        self.capture_requester = None
         self._warned_engine_unavailable: set[str] = set()
         self._force_ocr = False
 
@@ -62,10 +63,36 @@ class OcrController:
         self.popup.engine_changed.connect(self.on_ocr_engine_changed)
         self.popup.switch_language_requested.connect(self._handle_notice_switch_requested)
         self.popup.open_language_settings_requested.connect(self._open_windows_language_settings)
+        self.popup.recapture_requested.connect(self.on_recapture_requested)
+
+    def set_capture_requester(self, capture_requester):
+        """Set callback used by popup recapture button to open screenshot selection."""
+        self.capture_requester = capture_requester
 
     def force_ocr_next_capture(self):
         """Flag the next capture to always run OCR (used by OCR hotkey)."""
         self._force_ocr = True
+
+    def on_recapture_requested(self):
+        """Start a fresh screenshot selection from the OCR popup."""
+        if self.capture_requester is None:
+            logging.debug("on_recapture_requested: no capture requester is configured")
+            return
+
+        self.force_ocr_next_capture()
+        self.popup.hide()
+        QtCore.QTimer.singleShot(180, self._request_ocr_capture)
+
+    def _request_ocr_capture(self):
+        screen = QtWidgets.QApplication.primaryScreen()
+        if screen is None or self.capture_requester is None:
+            logging.debug("_request_ocr_capture: no screen or capture requester")
+            return
+
+        dpr = screen.devicePixelRatio()
+        pixmap = screen.grabWindow(0)
+        pixmap.setDevicePixelRatio(dpr)
+        self.capture_requester(pixmap)
 
     def handle_capture_completed(self, captured_pixmap):
         """Start OCR after a screenshot if triggered via OCR hotkey."""

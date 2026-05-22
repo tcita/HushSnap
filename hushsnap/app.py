@@ -155,6 +155,7 @@ def main(boot_start_time=None):
             logger.exception(f"Failed to restore system tray icon: {exc}")
 
     capture_session = CaptureSession(on_capture_completed)
+    ocr_controller.set_capture_requester(capture_session.request_capture)
 
     # Install HotkeyFilter to intercept WM_HOTKEY before Qt window event delivery.
     native_hotkey_filter = HotkeyFilter(

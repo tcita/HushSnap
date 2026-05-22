@@ -11,6 +11,7 @@ class OcrPopup(QtWidgets.QWidget):
     engine_changed = QtCore.pyqtSignal(str)
     switch_language_requested = QtCore.pyqtSignal(str)
     open_language_settings_requested = QtCore.pyqtSignal()
+    recapture_requested = QtCore.pyqtSignal()
 
     def __init__(self, translate, parent=None):
         super().__init__(parent)
@@ -62,6 +63,12 @@ class OcrPopup(QtWidgets.QWidget):
         self.lang_combo.setFixedWidth(140)
         self.lang_combo.currentIndexChanged.connect(self._on_lang_changed_idx)
         header.addWidget(self.lang_combo)
+
+        self.recapture_btn = QtWidgets.QPushButton("↻")
+        self.recapture_btn.setObjectName("ocrRecaptureBtn")
+        self.recapture_btn.setFixedSize(28, 24)
+        self.recapture_btn.clicked.connect(self.recapture_requested.emit)
+        header.addWidget(self.recapture_btn)
 
         self.copy_btn = QtWidgets.QPushButton(self.translate("ocr_copy_btn"))
         self.copy_btn.setObjectName("ocrCopyBtn")
@@ -133,14 +140,19 @@ class OcrPopup(QtWidgets.QWidget):
             " color: #F3FFF6;"
             " padding: 2px 5px;"
             "}"
-            "#ocrCopyBtn {"
+            "#ocrCopyBtn, #ocrRecaptureBtn {"
             " color: #E1F7E7;"
             " border: none;"
             " border-radius: 8px;"
             " background: rgba(190, 255, 212, 22);"
             " padding: 0 10px;"
             "}"
-            "#ocrCopyBtn:hover {"
+            "#ocrRecaptureBtn {"
+            " padding: 0;"
+            " font-size: 15px;"
+            " font-weight: 600;"
+            "}"
+            "#ocrCopyBtn:hover, #ocrRecaptureBtn:hover {"
             " background: rgba(190, 255, 212, 34);"
             "}"
             "#ocrText {"
@@ -219,6 +231,8 @@ class OcrPopup(QtWidgets.QWidget):
             )
 
         self.lang_combo.setToolTip(self.translate("ocr_lang_selector_tooltip"))
+        self.recapture_btn.setToolTip(self.translate("ocr_recapture_tooltip"))
+        self.recapture_btn.setAccessibleName(self.translate("ocr_recapture_tooltip"))
 
     def _on_lang_changed_idx(self, index):
         if not self._is_refreshing:

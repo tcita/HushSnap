@@ -26,6 +26,7 @@ def _translate(key, **kwargs):
     table = {
         "ocr_popup_title": "OCR Text",
         "ocr_copy_btn": "Copy",
+        "ocr_recapture_tooltip": "Capture and OCR",
         "ocr_failed_title": "Failed",
         "ocr_failed_body": "OCR failed",
         "ocr_engine_unavailable_title": "Engine unavailable",
@@ -393,6 +394,39 @@ def test_force_ocr_next_capture_sets_flag(monkeypatch, qapp, tmp_path):
 
     controller.force_ocr_next_capture()
     assert controller._force_ocr is True
+
+
+def test_recapture_button_requests_fresh_ocr_capture(monkeypatch, qapp, tmp_path, sample_pixmap):
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+    requested = []
+    hidden = []
+
+    controller.set_capture_requester(lambda pixmap: requested.append(pixmap))
+    controller.popup.hide = lambda: hidden.append(True)
+
+    class FakeScreen:
+        def devicePixelRatio(self):
+            return 1.0
+
+        def grabWindow(self, _window_id):
+            return sample_pixmap
+
+    monkeypatch.setattr(
+        ocr_controller.QtWidgets.QApplication,
+        "primaryScreen",
+        staticmethod(lambda: FakeScreen()),
+    )
+    monkeypatch.setattr(
+        ocr_controller.QtCore.QTimer,
+        "singleShot",
+        staticmethod(lambda _delay, callback: callback()),
+    )
+
+    controller.popup.recapture_btn.click()
+
+    assert hidden == [True]
+    assert controller._force_ocr is True
+    assert requested == [sample_pixmap]
 
 
 def test_handle_capture_completed_skips_when_not_forced(monkeypatch, qapp, tmp_path, sample_pixmap):
