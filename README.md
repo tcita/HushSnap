@@ -8,8 +8,6 @@ As the project continues to evolve, some parts of this README may occasionally l
 
 ## OCR Engine
 
-OCR processing is local-only: screenshots and recognized text are not uploaded to any cloud service.
-
 HushSnap ships with two OCR engines, selectable from the OCR popup:
 
 - **RapidOCR (default):** Runs PP-OCRv4 ONNX models in-process via the [`rapidocr`](https://github.com/RapidAI/RapidOCR) Python package (Apache 2.0). No external dependencies or language packs needed. Works offline.
@@ -86,6 +84,7 @@ Run packaged EXE in debug mode:
 ```
 
 **Key Features of Debug Mode:**
+
 - **Isolation:** Running from source uses `%LOCALAPPDATA%\HushSnap_Dev`, ensuring your production settings remain untouched.
 - **Traceability:** Sets log level to `DEBUG` and opens the log folder immediately upon startup.
 - **Live Output:** Real-time logs are streamed to the terminal via the logging console handler (`StreamHandler`).
