@@ -740,3 +740,12 @@ def is_already_running():
         return None
 
     return handle
+
+
+def release_instance_lock(handle):
+    """
+    Release the single-instance mutex handle.
+    Used during application restart to ensure the new process can start.
+    """
+    if handle:
+        _close_handle(handle)

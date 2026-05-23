@@ -13,6 +13,7 @@ from ..config import (
     get_configured_ui_lang,
     update_ui_lang_in_config,
 )
+from ..system import startup_manager
 from .styles import (
     CAPTURE_CANCEL_BUTTON_STYLE,
     CAPTURE_DIALOG_STYLE,
@@ -274,6 +275,99 @@ def _make_ghost_button(text, callback=None):
     return btn
 
 
+class SleekSwitch(QtWidgets.QAbstractButton):
+    def __init__(self, parent=None, track_radius=11, thumb_radius=8):
+        super().__init__(parent)
+        self.setCheckable(True)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
+        self._track_radius = track_radius
+        self._thumb_radius = thumb_radius
+        self._margin = (self._track_radius * 2 - self._thumb_radius * 2) // 2
+        self._base_offset = self._margin
+        self._offset = self._base_offset
+        self._color_off = QtGui.QColor("#D5D5D5")
+        self._color_on = QtGui.QColor("#4CD964")
+        self._thumb_color = QtGui.QColor("#FFFFFF")
+        self._animation = QtCore.QVariantAnimation(
+            self,
+            startValue=self._base_offset,
+            endValue=self._track_radius * 2 - self._thumb_radius * 2 + self._base_offset,
+            duration=120,
+            valueChanged=self._update_offset,
+        )
+
+    def _update_offset(self, value):
+        self._offset = value
+        self.update()
+
+    def sizeHint(self):
+        return QtCore.QSize(self._track_radius * 4, self._track_radius * 2)
+
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        
+        # Draw track
+        track_color = self._color_on if self.isChecked() else self._color_off
+        painter.setBrush(track_color)
+        painter.drawRoundedRect(0, 0, self.width(), self.height(), self._track_radius, self._track_radius)
+        
+        # Draw thumb
+        painter.setBrush(self._thumb_color)
+        painter.drawEllipse(QtCore.QPointF(self._offset + self._thumb_radius, self.height() // 2), self._thumb_radius, self._thumb_radius)
+
+    def nextCheckState(self):
+        super().nextCheckState()
+        self._animation.setDirection(
+            QtCore.QVariantAnimation.Direction.Forward if self.isChecked() else QtCore.QVariantAnimation.Direction.Backward
+        )
+        self._animation.start()
+
+
+def _make_startup_card(label_text, subtitle_text, initial_state):
+    """Build startup setting card: label + subtitle on left, switch on right.
+
+    Returns (card_widget, switch).
+    """
+    card = QtWidgets.QFrame()
+    card.setObjectName("settingCard")
+    card.setStyleSheet(SETTING_CARD_STYLE)
+
+    card_layout = QtWidgets.QVBoxLayout(card)
+    card_layout.setContentsMargins(14, 10, 14, 10)
+    card_layout.setSpacing(2)
+
+    top_row = QtWidgets.QWidget()
+    top_row.setStyleSheet("background: transparent; border: none;")
+    top_layout = QtWidgets.QHBoxLayout(top_row)
+    top_layout.setContentsMargins(0, 0, 0, 0)
+    top_layout.setSpacing(8)
+
+    label = QtWidgets.QLabel(label_text)
+    label.setObjectName("rowLabel")
+    label.setStyleSheet(ROW_LABEL_STYLE)
+    top_layout.addWidget(label, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
+
+    top_layout.addStretch()
+
+    switch = SleekSwitch()
+    switch.setChecked(initial_state)
+    # Ensure animation starts at correct position
+    if initial_state:
+        switch._offset = switch._track_radius * 2 - switch._thumb_radius * 2 + switch._base_offset
+    top_layout.addWidget(switch, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
+
+    card_layout.addWidget(top_row)
+
+    subtitle = QtWidgets.QLabel(subtitle_text)
+    subtitle.setObjectName("subtitle")
+    subtitle.setStyleSheet(SUBTITLE_STYLE)
+    card_layout.addWidget(subtitle)
+
+    return card, switch
+
+
 def _make_setting_card(label_text, subtitle_text, hotkey_text, button_text):
     """Build one setting card: label + subtitle on left, kbd pills + ghost button on right.
 
@@ -525,10 +619,12 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
         event.accept()
 
 
-class SettingsDialogController:
+class SettingsDialogController(QtCore.QObject):
     """Settings panel with per-setting cards, per-key kbd pills, header bar."""
+    language_changed = QtCore.pyqtSignal()
 
     def __init__(self, translate, config_path, hotkey_manager):
+        super().__init__()
         self.translate = translate
         self.config_path = config_path
         self.hotkey_manager = hotkey_manager
@@ -668,14 +764,8 @@ class SettingsDialogController:
             selected_lang = combo3.itemData(index)
             try:
                 update_ui_lang_in_config(self.config_path, selected_lang)
-                _set_status(self.translate("language_changed_body"), False)
-                
-                msg = QtWidgets.QMessageBox(dialog)
-                msg.setWindowTitle(self.translate("language_changed_title"))
-                msg.setText(self.translate("language_changed_body"))
-                msg.setIcon(QtWidgets.QMessageBox.Icon.Information)
-                msg.setStyleSheet(MESSAGE_BOX_STYLE)
-                msg.exec()
+                self.language_changed.emit()
+                dialog.close()
             except Exception as exc:
                 logger.exception(f"Failed to save language setting: {exc}")
                 _set_status(self.translate("error"), True)
@@ -696,6 +786,32 @@ class SettingsDialogController:
         )
         combo3.currentIndexChanged.connect(change_language)
         body_layout.addWidget(card3)
+
+        # --- Startup card ---
+        async def toggle_startup(checked):
+            success = await startup_manager.set_startup_state(checked)
+            if not success and checked:
+                # If requested enable but failed (e.g. user denied or MSIX error),
+                # we should probably sync the UI back or show error.
+                # However, SleekSwitch handles its own state. 
+                # Let's just check the real state and update.
+                real_state = await startup_manager.get_startup_state()
+                card4_switch.setChecked(real_state)
+
+        # We need a wrapper to run async code from Qt signal
+        def on_startup_toggled(checked):
+            QtCore.QTimer.singleShot(0, lambda: asyncio.create_task(toggle_startup(checked)))
+
+        loop = asyncio.get_event_loop()
+        initial_startup = loop.run_until_complete(startup_manager.get_startup_state())
+        
+        card4, card4_switch = _make_startup_card(
+            self.translate("settings_startup_label"),
+            self.translate("settings_startup_subtitle"),
+            initial_startup,
+        )
+        card4_switch.clicked.connect(on_startup_toggled)
+        body_layout.addWidget(card4)
 
         outer_layout.addWidget(body)
 

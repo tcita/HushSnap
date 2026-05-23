@@ -15,3 +15,4 @@ winrt-Windows.Graphics.Imaging
 winrt-Windows.Storage
 winrt-Windows.Streams
 winrt-Windows.Globalization
+winrt-Windows.ApplicationModel

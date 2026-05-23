@@ -3,12 +3,14 @@ import sys
 import logging
 import argparse
 import time
+import subprocess
 
-from PyQt6 import QtWidgets
+from PyQt6 import QtWidgets, QtCore
 
 from .capture_session import CaptureSession
 from .config import (
     is_already_running,
+    release_instance_lock,
     load_hotkey_setting,
     load_ocr_hotkey_setting,
     resolve_ui_lang,
@@ -232,6 +234,14 @@ def main(boot_start_time=None):
             # Connect tray "Settings" action to controller show method.
             settings_action.triggered.connect(settings_controller.show)
 
+            def handle_restart():
+                logger.info("Language changed. Restarting application...")
+                hotkey_manager.release_resources()
+                # Use QTimer to ensure the event loop processes the close before restart
+                QtCore.QTimer.singleShot(0, lambda: _restart_app(app, instance_lock))
+
+            settings_controller.language_changed.connect(handle_restart)
+
     # Unregister hotkey and release system resources before app exit.
     app.aboutToQuit.connect(hotkey_manager.release_resources)
 
@@ -239,3 +249,23 @@ def main(boot_start_time=None):
 
     # Enter event loop (build_installer.ps1 checks LASTEXITCODE).
     sys.exit(app.exec())
+
+
+def _restart_app(app, instance_lock):
+    """Restart the current application process."""
+    logger = logging.getLogger(__name__)
+    logger.info("Application is restarting due to language change.")
+
+    executable = sys.executable
+    args = sys.argv[:]
+    
+    # CRITICAL: Release the single-instance lock so the NEW process can start.
+    from .config import release_instance_lock
+    release_instance_lock(instance_lock)
+    
+    app.quit()
+    
+    # On Windows, subprocess.Popen is more reliable for restarts as it ensures
+    # the new process starts independently while this one finishes exiting.
+    subprocess.Popen([executable] + args)
+    sys.exit(0)

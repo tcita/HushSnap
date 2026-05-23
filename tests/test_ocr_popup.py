@@ -27,9 +27,9 @@ def _translate(key, **kwargs):
         "ocr_lang_missing_switch_btn": "Switch to {available_lang}",
         "ocr_lang_missing_open_settings_btn": "Open language settings",
         "ocr_lang_installed_fallback": "Installed language",
-        "ocr_char_count": "{count} chars",
         "ocr_status_done": "Recognition complete",
         "ocr_status_paste_hint": "Ctrl+V to paste",
+        "ocr_editable_hint": "Text is editable",
     }
     return table[key].format(**kwargs)
 

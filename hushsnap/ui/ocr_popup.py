@@ -49,9 +49,9 @@ class OcrPopup(QtWidgets.QWidget):
         self.title_label.setObjectName("ocrTitle")
         header.addWidget(self.title_label)
 
-        self.char_count_label = QtWidgets.QLabel("")
-        self.char_count_label.setObjectName("ocrCharCount")
-        header.addWidget(self.char_count_label)
+        self.editable_hint_label = QtWidgets.QLabel("")
+        self.editable_hint_label.setObjectName("ocrEditableHint")
+        header.addWidget(self.editable_hint_label)
 
         header.addStretch(1)
 
@@ -174,12 +174,10 @@ class OcrPopup(QtWidgets.QWidget):
             " font-size: 18px;"
             " font-weight: 600;"
             "}"
-            "#ocrCharCount {"
-            " color: rgba(220, 240, 225, 180);"
-            " background: rgba(190, 255, 212, 18);"
-            " border-radius: 10px;"
-            " font-size: 12px;"
-            " padding: 2px 10px;"
+            "#ocrEditableHint {"
+            " color: rgba(220, 240, 225, 130);"
+            " font-size: 11px;"
+            " margin-left: 4px;"
             "}"
             "#ocrRecaptureBtn {"
             " color: #E1F7E7;"
@@ -314,7 +312,7 @@ class OcrPopup(QtWidgets.QWidget):
         self.recapture_btn.setToolTip(self.translate("ocr_recapture_tooltip"))
         self.recapture_btn.setAccessibleName(self.translate("ocr_recapture_tooltip"))
         self.copy_btn.setToolTip(self.translate("ocr_copy_btn"))
-        self._update_char_count()
+        self.editable_hint_label.setText(f"({self.translate('ocr_editable_hint')})")
 
     def _on_lang_changed_idx(self, index):
         if not self._is_refreshing:
@@ -435,15 +433,7 @@ class OcrPopup(QtWidgets.QWidget):
         self.engine_tab_windows.style().unpolish(self.engine_tab_windows)
         self.engine_tab_windows.style().polish(self.engine_tab_windows)
 
-    def _update_char_count(self):
-        text = self.text_edit.toPlainText()
-        count = len(text)
-        self.char_count_label.setText(
-            self.translate("ocr_char_count", count=count)
-        )
-
     def _on_text_changed(self):
-        self._update_char_count()
         QtCore.QTimer.singleShot(0, self._fit_text_edit_to_content)
 
     def _fit_text_edit_to_content(self):
