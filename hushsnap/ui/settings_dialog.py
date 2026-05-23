@@ -801,7 +801,14 @@ class SettingsDialogController(QtCore.QObject):
 
         # We need a wrapper to run async code from Qt signal
         def on_startup_toggled(checked):
-            QtCore.QTimer.singleShot(0, lambda: asyncio.create_task(toggle_startup(checked)))
+            # Using a one-off loop execution for simple state changes
+            # as there is no background asyncio event loop running.
+            try:
+                loop = asyncio.new_event_loop()
+                loop.run_until_complete(toggle_startup(checked))
+                loop.close()
+            except Exception as exc:
+                logger.exception(f"Failed to toggle startup state: {exc}")
 
         loop = asyncio.get_event_loop()
         initial_startup = loop.run_until_complete(startup_manager.get_startup_state())
