@@ -4,6 +4,7 @@ Provides UI to view current hotkey and capture/change a new hotkey.
 """
 
 import logging
+import asyncio
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from ..config import (
