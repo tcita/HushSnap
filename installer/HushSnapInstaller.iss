@@ -8,7 +8,7 @@
 #endif
 #define MyAppPublisher "HushSnap"
 #define MyAppExeName "HushSnap.exe"
-#define MyLogName "hushsnap_capture_debug.log"
+#define MyLogName "hushsnap.log"
 #define MyInstallerLangHintName "hushsnap_installer_lang.txt"
 
 [Setup]

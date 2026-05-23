@@ -24,7 +24,7 @@ APP_STATE_FILENAME = "hushsnap_state.toml"
 # Installer-provided language hint filename
 INSTALLER_LANG_FILENAME = "hushsnap_installer_lang.txt"
 # Debug log filename
-CAPTURE_DEBUG_LOG_FILENAME = "hushsnap_capture_debug.log"
+CAPTURE_DEBUG_LOG_FILENAME = "hushsnap.log"
 # Tray icon filename
 APP_ICON_FILENAME = "ico.ico"
 # Uninstaller lookup glob
