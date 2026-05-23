@@ -16,6 +16,7 @@ def _translate(key, **kwargs):
     table = {
         "ocr_popup_title": "OCR Text",
         "ocr_copy_btn": "Copy",
+        "ocr_copied": "✓ Copied!",
         "ocr_recapture_tooltip": "Capture and OCR",
         "ocr_lang_english": "Lang: EN",
         "ocr_lang_chinese_simplified": "Chinese (Simplified)",
@@ -26,6 +27,9 @@ def _translate(key, **kwargs):
         "ocr_lang_missing_switch_btn": "Switch to {available_lang}",
         "ocr_lang_missing_open_settings_btn": "Open language settings",
         "ocr_lang_installed_fallback": "Installed language",
+        "ocr_char_count": "{count} chars",
+        "ocr_status_done": "Recognition complete",
+        "ocr_status_paste_hint": "Ctrl+V to paste",
     }
     return table[key].format(**kwargs)
 
@@ -61,7 +65,8 @@ def test_ocr_popup_updates_copy_button_text_on_show(qapp):
 
     popup.show_text("hello", lang="en-US")
 
-    assert popup.copy_btn.text() == "Copy"
+    assert popup.copy_btn.text() == ""
+    assert popup.copy_btn.toolTip() == "Copy"
     assert popup.recapture_btn.toolTip() == "Capture and OCR"
     assert popup.title_label.text() == "OCR Text"
     assert popup.lang_combo.itemText(popup.lang_combo.findData("zh-CN")) == "Chinese (Simplified)"

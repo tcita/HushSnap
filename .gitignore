@@ -18,3 +18,5 @@ dist-installer/
 tools/health_idle.csv
 tools/health_rapidocr_hot_idle.csv
 tools/health_reports/
+installer/build_msix.ps1
+build_msix.bat

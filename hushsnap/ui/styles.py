@@ -222,3 +222,29 @@ QPushButton#cancelButton:pressed {{
     background: #EBEBEB;
 }}
 """
+
+
+COMBOBOX_STYLE = f"""
+QComboBox {{
+    background: #FFFFFF;
+    border: 0.5px solid {SETTINGS_GHOST_BORDER};
+    border-radius: 4px;
+    padding: 3px 10px;
+    color: {SETTINGS_GHOST_TEXT};
+    font-size: 11px;
+    margin-left: 6px;
+    min-width: 120px;
+}}
+QComboBox:hover {{
+    background: {SETTINGS_GHOST_HOVER_BG};
+    border-color: #BBBBBB;
+}}
+QComboBox QAbstractItemView {{
+    background-color: #FFFFFF;
+    border: 0.5px solid {SETTINGS_GHOST_BORDER};
+    selection-background-color: {SETTINGS_GHOST_HOVER_BG};
+    selection-color: {SETTINGS_LABEL_COLOR};
+    color: {SETTINGS_GHOST_TEXT};
+    outline: 0px;
+}}
+"""

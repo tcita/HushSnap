@@ -548,6 +548,21 @@ def _read_ui_lang_from_config(config_path):
     return UI_LANG_AUTO
 
 
+def get_configured_ui_lang(config_path):
+    """Read the configured UI language ('auto', 'en', or 'zh')."""
+    return _read_ui_lang_from_config(config_path)
+
+
+def update_ui_lang_in_config(config_path, language_code):
+    """Update and persist the UI language in the config file."""
+    config_data = _load_config_data(config_path)
+    config_data["language"] = language_code
+    try:
+        _write_config_data(config_path, config_data)
+    except Exception as e:
+        logger.error(f"Failed to update UI language in config: {e}")
+
+
 def _normalize_ui_language_code(raw_value, allow_auto=False):
     """
     Normalize incoming language values to supported ISO 639-1 codes.
@@ -628,10 +643,35 @@ def _read_ui_lang_from_installer_hint(config_path):
     return None
 
 
+def _get_system_ui_language():
+    """Get the user's default system UI language code ('zh' or 'en')."""
+    try:
+        # GetUserDefaultUILanguage returns the LCID (Language Identifier)
+        lcid = ctypes.windll.kernel32.GetUserDefaultUILanguage()
+        primary_lang = lcid & 0x3ff  # Primary language ID is the lower 10 bits
+        if primary_lang == 0x04:  # LANG_CHINESE
+            return UI_LANG_ZH
+    except Exception as e:
+        logger.debug(f"Failed to get system UI language via GetUserDefaultUILanguage: {e}")
+    
+    # Fallback to locale or environment variables
+    try:
+        import locale
+        lang, _ = locale.getdefaultlocale()
+        if lang:
+            lang = lang.lower()
+            if "zh" in lang or "chinese" in lang:
+                return UI_LANG_ZH
+    except Exception as e:
+        logger.debug(f"Failed to get system language via locale: {e}")
+        
+    return UI_LANG_EN
+
+
 def resolve_ui_lang(config_path):
     """
     Resolve the final UI language.
-    Priority: config file > installer hint > English fallback.
+    Priority: config file > installer hint > system default > English fallback.
     """
     config_language = _read_ui_lang_from_config(config_path)
     if config_language in SUPPORTED_LANGUAGES:
@@ -640,6 +680,11 @@ def resolve_ui_lang(config_path):
     installer_hint_language = _read_ui_lang_from_installer_hint(config_path)
     if installer_hint_language in SUPPORTED_LANGUAGES:
         return installer_hint_language
+
+    # Check system UI language (e.g. for MSIX / Store app installations without installer hint)
+    system_language = _get_system_ui_language()
+    if system_language in SUPPORTED_LANGUAGES:
+        return system_language
 
     # Final fallback: use English.
     return UI_LANG_EN

@@ -4,9 +4,15 @@ Provides UI to view current hotkey and capture/change a new hotkey.
 """
 
 import logging
-from PyQt6 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 
-from ..config import parse_hotkey, update_hotkey_in_config, update_ocr_hotkey_in_config
+from ..config import (
+    parse_hotkey,
+    update_hotkey_in_config,
+    update_ocr_hotkey_in_config,
+    get_configured_ui_lang,
+    update_ui_lang_in_config,
+)
 from .styles import (
     CAPTURE_CANCEL_BUTTON_STYLE,
     CAPTURE_DIALOG_STYLE,
@@ -28,9 +34,139 @@ from .styles import (
     SETTINGS_ERROR_COLOR,
     STATUS_LABEL_STYLE,
     SUBTITLE_STYLE,
+    COMBOBOX_STYLE,
 )
 
 logger = logging.getLogger(__name__)
+
+
+class CheckmarkDelegate(QtWidgets.QStyledItemDelegate):
+    def __init__(self, combo_box, parent=None):
+        super().__init__(parent)
+        self.combo_box = combo_box
+
+    def paint(self, painter, option, index):
+        is_popup_item = isinstance(option.widget, QtWidgets.QAbstractItemView)
+        super().paint(painter, option, index)
+
+        if is_popup_item and index.row() == self.combo_box.currentIndex():
+            painter.save()
+            painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+            rect = option.rect
+            checkmark_text = "✓"
+            
+            font = painter.font()
+            font.setBold(True)
+            font.setPointSize(11)
+            painter.setFont(font)
+            
+            painter.setPen(QtGui.QColor("#FFFFFF"))
+            text_rect = rect.adjusted(0, 0, -16, 0)
+            painter.drawText(
+                text_rect,
+                QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter,
+                checkmark_text
+            )
+            painter.restore()
+
+    def sizeHint(self, option, index):
+        size = super().sizeHint(option, index)
+        size.setHeight(max(size.height(), 32))
+        return size
+
+
+class SleekComboBox(QtWidgets.QComboBox):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.view().setContentsMargins(0, 4, 0, 4)
+
+    def showPopup(self):
+        popup = self.view().window()
+        if popup:
+            popup.setWindowFlags(QtCore.Qt.WindowType.Popup | QtCore.Qt.WindowType.FramelessWindowHint)
+            popup.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        super().showPopup()
+
+
+def create_system_icon():
+    pixmap = QtGui.QPixmap(20, 20)
+    pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+    painter = QtGui.QPainter(pixmap)
+    painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+    
+    pen = QtGui.QPen(QtGui.QColor("#CCCCCC"), 1.5)
+    painter.setPen(pen)
+    painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+    
+    painter.drawRoundedRect(2, 3, 16, 11, 1.5, 1.5)
+    painter.drawLine(10, 14, 10, 17)
+    painter.drawLine(7, 17, 13, 17)
+    
+    painter.end()
+    return QtGui.QIcon(pixmap)
+
+
+def create_language_icon():
+    pixmap = QtGui.QPixmap(20, 20)
+    pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+    painter = QtGui.QPainter(pixmap)
+    painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+    
+    pen = QtGui.QPen(QtGui.QColor("#CCCCCC"), 1.5)
+    painter.setPen(pen)
+    painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+    
+    painter.drawEllipse(2, 2, 16, 16)
+    painter.drawEllipse(6, 2, 8, 16)
+    painter.drawLine(2, 10, 18, 10)
+    
+    painter.end()
+    return QtGui.QIcon(pixmap)
+
+
+NEW_COMBOBOX_STYLE = """
+QComboBox#languageComboBox {
+    background-color: #252525;
+    border: 1px solid #4a4a4a;
+    border-radius: 6px;
+    padding: 7px 12px;
+    font-size: 14px;
+    min-width: 180px;
+    color: #E0E0E0;
+}
+QComboBox#languageComboBox:hover {
+    border-color: #666666;
+}
+QComboBox#languageComboBox::drop-down {
+    border: none;
+    width: 28px;
+}
+QComboBox#languageComboBox::down-arrow {
+    image: none;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 5px solid #888888;
+    width: 0;
+    height: 0;
+    subcontrol-position: center;
+}
+QComboBox#languageComboBox QAbstractItemView {
+    background-color: #252525;
+    border: 1px solid #4a4a4a;
+    border-radius: 6px;
+    outline: 0px;
+    selection-background-color: #2d2d2d;
+    color: #E0E0E0;
+}
+QComboBox#languageComboBox QAbstractItemView::item {
+    padding: 8px 14px;
+    min-height: 32px;
+    color: #E0E0E0;
+}
+QComboBox#languageComboBox QAbstractItemView::item:hover {
+    background-color: #333333;
+}
+"""
 
 
 def _qt_key_to_hotkey_token(key):
@@ -179,6 +315,70 @@ def _make_setting_card(label_text, subtitle_text, hotkey_text, button_text):
     card_layout.addWidget(subtitle)
 
     return card, pills_container, pills, btn
+
+
+def _make_language_card(label_text, subtitle_text, current_lang, languages_options):
+    """Build language setting card: label + subtitle on left, dropdown on right.
+
+    languages_options: list of tuples (display_text, lang_code)
+    Returns (card_widget, combo_box).
+    """
+    card = QtWidgets.QFrame()
+    card.setObjectName("settingCard")
+    card.setStyleSheet(SETTING_CARD_STYLE)
+
+    card_layout = QtWidgets.QVBoxLayout(card)
+    card_layout.setContentsMargins(14, 10, 14, 10)
+    card_layout.setSpacing(2)
+
+    # --- Top row: label (left) ... combo box (right) ---
+    top_row = QtWidgets.QWidget()
+    top_row.setStyleSheet("background: transparent; border: none;")
+    top_layout = QtWidgets.QHBoxLayout(top_row)
+    top_layout.setContentsMargins(0, 0, 0, 0)
+    top_layout.setSpacing(8)
+
+    label = QtWidgets.QLabel(label_text)
+    label.setObjectName("rowLabel")
+    label.setStyleSheet(ROW_LABEL_STYLE)
+    top_layout.addWidget(label, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
+
+    top_layout.addStretch()
+
+    combo = SleekComboBox()
+    combo.setObjectName("languageComboBox")
+    combo.setStyleSheet(NEW_COMBOBOX_STYLE)
+
+    # Set item delegate for checkmark custom paint and custom height
+    delegate = CheckmarkDelegate(combo)
+    combo.setItemDelegate(delegate)
+
+    # Populate combo box and set current index
+    for i, (display_text, lang_code) in enumerate(languages_options):
+        if lang_code == "auto":
+            icon = create_system_icon()
+        else:
+            icon = create_language_icon()
+        combo.addItem(display_text, lang_code)
+        
+        # Set the icon via model DecorationRole
+        model_index = combo.model().index(i, 0)
+        combo.model().setData(model_index, icon, QtCore.Qt.ItemDataRole.DecorationRole)
+        
+        if lang_code == current_lang:
+            combo.setCurrentIndex(combo.count() - 1)
+
+    top_layout.addWidget(combo, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
+
+    card_layout.addWidget(top_row)
+
+    # --- Bottom row: subtitle ---
+    subtitle = QtWidgets.QLabel(subtitle_text)
+    subtitle.setObjectName("subtitle")
+    subtitle.setStyleSheet(SUBTITLE_STYLE)
+    card_layout.addWidget(subtitle)
+
+    return card, combo
 
 
 class HotkeyCaptureDialog(QtWidgets.QDialog):
@@ -379,33 +579,11 @@ class SettingsDialogController:
         outer_layout.setContentsMargins(0, 0, 0, 0)
         outer_layout.setSpacing(0)
 
-        # --- Header bar ---
-        header = QtWidgets.QFrame()
-        header.setObjectName("headerBar")
-        header.setStyleSheet(HEADER_BAR_STYLE)
-        header.setFixedHeight(44)
-        header_layout = QtWidgets.QHBoxLayout(header)
-        header_layout.setContentsMargins(16, 0, 16, 0)
-        header_layout.setSpacing(8)
-
-        icon = QtWidgets.QLabel("⚙")  # gear
-        icon.setObjectName("headerIcon")
-        icon.setStyleSheet(HEADER_ICON_STYLE)
-        header_layout.addWidget(icon, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
-
-        title = QtWidgets.QLabel(self.translate("settings_title"))
-        title.setObjectName("headerTitle")
-        title.setStyleSheet(HEADER_TITLE_STYLE)
-        header_layout.addWidget(title, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
-
-        header_layout.addStretch()
-        outer_layout.addWidget(header)
-
         # --- Body ---
         body = QtWidgets.QWidget()
         body.setStyleSheet("background: transparent; border: none;")
         body_layout = QtWidgets.QVBoxLayout(body)
-        body_layout.setContentsMargins(16, 14, 16, 8)
+        body_layout.setContentsMargins(16, 16, 16, 8)
         body_layout.setSpacing(8)
 
         # --- Screenshot card ---
@@ -483,6 +661,38 @@ class SettingsDialogController:
         )
         btn2.clicked.connect(change_ocr_hotkey)
         body_layout.addWidget(card2)
+
+        # --- Language card ---
+        def change_language(index):
+            selected_lang = combo3.itemData(index)
+            try:
+                update_ui_lang_in_config(self.config_path, selected_lang)
+                _set_status(self.translate("language_changed_body"), False)
+                QtWidgets.QMessageBox.information(
+                    dialog,
+                    self.translate("language_changed_title"),
+                    self.translate("language_changed_body"),
+                )
+            except Exception as exc:
+                logger.exception(f"Failed to save language setting: {exc}")
+                _set_status(self.translate("error"), True)
+
+        lang_options = [
+            (self.translate("settings_language_auto"), "auto"),
+            (self.translate("settings_language_en"), "en"),
+            (self.translate("settings_language_zh"), "zh"),
+        ]
+
+        current_lang = get_configured_ui_lang(self.config_path)
+
+        card3, combo3 = _make_language_card(
+            self.translate("settings_language_label"),
+            self.translate("settings_language_subtitle"),
+            current_lang,
+            lang_options,
+        )
+        combo3.currentIndexChanged.connect(change_language)
+        body_layout.addWidget(card3)
 
         outer_layout.addWidget(body)
 

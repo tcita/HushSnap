@@ -17,6 +17,8 @@ from hushsnap.config import (
     resolve_ui_lang,
     ui_text,
     update_ocr_hotkey_in_config,
+    get_configured_ui_lang,
+    update_ui_lang_in_config,
 )
 from hushsnap.constants import MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN
 
@@ -89,8 +91,10 @@ def test_resolve_ui_lang_fallback_to_english():
         mock_config.return_value = "auto"
         with patch("hushsnap.config._read_ui_lang_from_installer_hint") as mock_hint:
             mock_hint.return_value = None
-            lang = resolve_ui_lang(Path("dummy_path"))
-            assert lang == "en"
+            with patch("hushsnap.config._get_system_ui_language") as mock_system:
+                mock_system.return_value = "en"
+                lang = resolve_ui_lang(Path("dummy_path"))
+                assert lang == "en"
 
 
 def test_resolve_ui_lang_from_config_bcp47():
@@ -107,8 +111,22 @@ def test_resolve_ui_lang_from_installer_hint_when_config_auto():
         mock_config.return_value = "auto"
         with patch("hushsnap.config._read_ui_lang_from_installer_hint") as mock_hint:
             mock_hint.return_value = "zh"
-            lang = resolve_ui_lang(Path("dummy_path"))
-            assert lang == "zh"
+            with patch("hushsnap.config._get_system_ui_language") as mock_system:
+                mock_system.return_value = "en"
+                lang = resolve_ui_lang(Path("dummy_path"))
+                assert lang == "zh"
+
+
+def test_resolve_ui_lang_from_system_default():
+    """Test system default language is used when config is auto and no installer hint exists."""
+    with patch("hushsnap.config._read_ui_lang_from_config") as mock_config:
+        mock_config.return_value = "auto"
+        with patch("hushsnap.config._read_ui_lang_from_installer_hint") as mock_hint:
+            mock_hint.return_value = None
+            with patch("hushsnap.config._get_system_ui_language") as mock_system:
+                mock_system.return_value = "zh"
+                lang = resolve_ui_lang(Path("dummy_path"))
+                assert lang == "zh"
 
 
 def test_default_config_omits_ocr_fields(tmp_path):
@@ -213,3 +231,24 @@ def test_update_ocr_hotkey_in_config_writes_to_disk(tmp_path):
 
     data = tomllib.loads(config_path.read_text(encoding="utf-8"))
     assert data["ocr_hotkey"] == "Ctrl+Shift+K"
+
+
+def test_get_configured_ui_lang(tmp_path):
+    config_path = tmp_path / "hushsnap_config.toml"
+    config_path.write_text('language = "zh"\n', encoding="utf-8")
+    assert get_configured_ui_lang(config_path) == "zh"
+
+    config_path.write_text('language = "auto"\n', encoding="utf-8")
+    assert get_configured_ui_lang(config_path) == "auto"
+
+    config_path.write_text('', encoding="utf-8")
+    assert get_configured_ui_lang(config_path) == "auto"
+
+
+def test_update_ui_lang_in_config(tmp_path):
+    config_path = tmp_path / "hushsnap_config.toml"
+    config_path.write_text('language = "auto"\n', encoding="utf-8")
+
+    update_ui_lang_in_config(config_path, "en")
+    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    assert data["language"] == "en"

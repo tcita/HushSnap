@@ -19,8 +19,8 @@ HushSnap ships with two OCR engines, selectable from the OCR popup:
 
 | Engine | Supported Languages |
 |--------|-------------------|
-| RapidOCR | Chinese (Simplified & Traditional), English, Japanese, Korean |
-| Windows OCR | English, Simplified Chinese, Traditional Chinese |
+| RapidOCR | Chinese (Simplified & Traditional), English |
+| Windows OCR | Chinese (Simplified & Traditional), English |
 
 - **RapidOCR** uses a unified PP-OCRv4 model that handles CJK + Latin characters natively. The language selector is hidden when RapidOCR is active — no language configuration is needed. **Note:** RapidOCR ships with an embedded Chinese model. Recognition is strongest for Simplified Chinese, Traditional Chinese, and English. For other languages (Japanese, Korean, etc.) accuracy may be significantly lower.
 - **Windows OCR** language support depends on installed Windows language packs. `zh-CN` also accepts compatible packs (`zh-SG`, `zh-Hans`); `zh-TW` accepts `zh-HK`, `zh-MO`, `zh-Hant`.
