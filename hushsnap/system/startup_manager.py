@@ -4,6 +4,7 @@ Handles "Launch at startup" functionality for both MSIX and traditional installa
 """
 
 import logging
+import os
 import sys
 import ctypes
 import asyncio
@@ -28,6 +29,13 @@ def is_running_as_package() -> bool:
     except (AttributeError, Exception):
         return False
 
+def _get_startup_shortcut_path() -> Path:
+    """Get the path to the HushSnap shortcut in the user's Startup folder."""
+    appdata = os.getenv("APPDATA")
+    if not appdata:
+        return Path()
+    return Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup" / "HushSnap.lnk"
+
 async def get_startup_state() -> bool:
     """
     Get the current "Launch at startup" state.
@@ -45,19 +53,28 @@ async def get_startup_state() -> bool:
             logger.error(f"Failed to get MSIX startup state: {e}")
             return False
     else:
-        # Fallback for traditional installations: check Registry
+        # Fallback for traditional installations: check BOTH Registry and Startup folder shortcut
+        # (Inno Setup uses the shortcut method).
+        
+        # 1. Check Registry
+        registry_enabled = False
         try:
             import winreg
             key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
             try:
                 with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_READ) as key:
                     winreg.QueryValueEx(key, "HushSnap")
-                    return True
+                    registry_enabled = True
             except FileNotFoundError:
-                return False
+                pass
         except Exception as e:
-            logger.error(f"Failed to get registry startup state: {e}")
-            return False
+            logger.error(f"Failed to check registry startup state: {e}")
+
+        # 2. Check Startup folder shortcut
+        shortcut_path = _get_startup_shortcut_path()
+        shortcut_enabled = shortcut_path.exists()
+        
+        return registry_enabled or shortcut_enabled
 
 async def set_startup_state(enable: bool) -> bool:
     """
@@ -83,10 +100,19 @@ async def set_startup_state(enable: bool) -> bool:
             logger.error(f"Failed to set MSIX startup state: {e}")
             return False
     else:
-        # Fallback for traditional installations: use Registry
+        # Fallback for traditional installations: use Registry but ALSO clean up shortcut
         try:
             import winreg
             key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+            
+            # Clean up shortcut if we are disabling or if we want to "take over" via registry
+            shortcut_path = _get_startup_shortcut_path()
+            if shortcut_path.exists():
+                try:
+                    shortcut_path.unlink()
+                except Exception as e:
+                    logger.warning(f"Failed to delete startup shortcut: {e}")
+
             if enable:
                 exe_path = sys.executable
                 with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE) as key:
