@@ -35,6 +35,7 @@ from .styles import (
     STATUS_LABEL_STYLE,
     SUBTITLE_STYLE,
     COMBOBOX_STYLE,
+    MESSAGE_BOX_STYLE,
 )
 
 logger = logging.getLogger(__name__)
@@ -668,11 +669,13 @@ class SettingsDialogController:
             try:
                 update_ui_lang_in_config(self.config_path, selected_lang)
                 _set_status(self.translate("language_changed_body"), False)
-                QtWidgets.QMessageBox.information(
-                    dialog,
-                    self.translate("language_changed_title"),
-                    self.translate("language_changed_body"),
-                )
+                
+                msg = QtWidgets.QMessageBox(dialog)
+                msg.setWindowTitle(self.translate("language_changed_title"))
+                msg.setText(self.translate("language_changed_body"))
+                msg.setIcon(QtWidgets.QMessageBox.Icon.Information)
+                msg.setStyleSheet(MESSAGE_BOX_STYLE)
+                msg.exec()
             except Exception as exc:
                 logger.exception(f"Failed to save language setting: {exc}")
                 _set_status(self.translate("error"), True)

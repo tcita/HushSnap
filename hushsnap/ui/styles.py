@@ -248,3 +248,26 @@ QComboBox QAbstractItemView {{
     outline: 0px;
 }}
 """
+
+# Message box style (for alerts)
+MESSAGE_BOX_STYLE = f"""
+QMessageBox {{
+    background-color: {SETTINGS_BG_COLOR};
+}}
+QMessageBox QLabel {{
+    color: {SETTINGS_LABEL_COLOR};
+    font-size: 13px;
+}}
+QMessageBox QPushButton {{
+    background-color: #FFFFFF;
+    border: 1px solid {SETTINGS_GHOST_BORDER};
+    border-radius: 4px;
+    padding: 5px 15px;
+    color: {SETTINGS_LABEL_COLOR};
+    font-size: 12px;
+    min-width: 60px;
+}}
+QMessageBox QPushButton:hover {{
+    background-color: {SETTINGS_GHOST_HOVER_BG};
+}}
+"""
