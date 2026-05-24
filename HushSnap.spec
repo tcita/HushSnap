@@ -53,6 +53,7 @@ a = Analysis(
         'PyQt6.QtNfc', 'PyQt6.QtSerialPort', 'PyQt6.QtDesigner',
         'PyQt6.QtHelp', 'PyQt6.QtTest', 'PyQt6.QtXml', 'PyQt6.QtSvg',
         'openvino', 'openvino_telemetry',
+        'cv2.videoio', 'cv2.samples', 'PIL._avif',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -63,9 +64,10 @@ a = Analysis(
 # --- Less aggressive optimization for stability ---
 def filter_binaries(binaries):
     # Only drop very obvious heavy but unused DLLs if necessary.
-    # Restoring Network and Svg as they are often required by Qt internally.
     excluded_dlls = [
-        'Qt6Pdf.dll', 'qpdf.dll'
+        'Qt6Pdf.dll', 'qpdf.dll', 
+        'opencv_videoio_ffmpeg', # 27MB, not needed for screenshots
+        'Qt6Qml.dll', 'Qt6Quick.dll', 'Qt6VirtualKeyboard.dll'
     ]
     return [b for b in binaries if not any(dll.lower() in b[0].lower() for dll in excluded_dlls)]
 
