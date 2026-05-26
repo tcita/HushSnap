@@ -171,7 +171,9 @@ def main(boot_start_time=None):
     def open_config_dir():
         """Open the local folder that contains the config file."""
         try:
-            os.startfile(resolve_physical_path(config_path.parent))
+            resolved = resolve_physical_path(config_path.parent)
+            logging.getLogger(__name__).info(f"Opening config folder. Raw: {config_path.parent}, Resolved: {resolved}")
+            os.startfile(resolved)
         except Exception as exc:
             logging.getLogger(__name__).exception(f"Failed to open config dir: {exc}")
             QtWidgets.QMessageBox.warning(

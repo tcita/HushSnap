@@ -87,14 +87,17 @@ def resolve_physical_path(path: Path) -> Path:
         return path
 
     try:
-        local_app_data_path = Path(local_app_data).resolve()
-        resolved_path = path.resolve()
+        # Normalize paths to lowercase strings to avoid drive letter casing mismatch (e.g. c:\ vs C:\)
+        local_app_data_str = str(Path(local_app_data).resolve()).lower()
+        resolved_path_str = str(path.resolve()).lower()
         
         # Check if the path is inside %LOCALAPPDATA%
-        if resolved_path.is_relative_to(local_app_data_path):
+        if resolved_path_str.startswith(local_app_data_str):
             family_name = get_package_family_name()
             if family_name:
-                relative_part = resolved_path.relative_to(local_app_data_path)
+                rel_str = str(path.resolve())[len(local_app_data_str):].lstrip("\\/")
+                relative_part = Path(rel_str)
+                
                 # Physical path under Packages: %USERPROFILE%\AppData\Local\Packages\<family_name>\LocalCache\Local\<relative_part>
                 user_profile = os.getenv("USERPROFILE")
                 if user_profile:
