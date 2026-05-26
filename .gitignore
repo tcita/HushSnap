@@ -8,17 +8,25 @@ __pycache__/
 # Installer build artifacts
 dist-installer/
 
+# Output MSIX test folder (keep the signing script, ignore the built packages)
+dist-installer-test/
+!dist-installer-test/sign_for_local_test.bat
+
 # Executables
 *.exe
 
-
+# IDE / Editor
 .vscode/
 .vs/
 .claude/settings.local.json
+
+# Local developer scripts (not committed, each dev uses their own)
+build_msix.bat
+register_dev_msix.bat
+installer/build_msix.ps1
+
+# Tool output / profiling data
 tools/health_idle.csv
 tools/health_rapidocr_hot_idle.csv
 tools/health_reports/
-installer/build_msix.ps1
-build_msix.bat
-build_msix_test.bat
-dist-installer-test/HushSnap_Test_Signed.msix
+tools/WACK_reports/
