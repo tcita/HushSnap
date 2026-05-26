@@ -75,42 +75,17 @@ def get_package_family_name() -> str:
 
 def resolve_physical_path(path: Path) -> Path:
     """
-    If running inside an MSIX package, resolves a virtualized Local AppData path
+    Resolves any path (including virtualized paths inside MSIX sandbox)
     to its actual physical path on disk so that external processes (like explorer.exe)
     can access it.
     """
-    if not is_running_as_package():
-        return path
-
-    local_app_data = os.getenv("LOCALAPPDATA")
-    if not local_app_data:
-        return path
-
     try:
-        # Normalize paths to lowercase strings to avoid drive letter casing mismatch (e.g. c:\ vs C:\)
-        local_app_data_str = str(Path(local_app_data).resolve()).lower()
-        resolved_path_str = str(path.resolve()).lower()
-        
-        # Check if the path is inside %LOCALAPPDATA%
-        if resolved_path_str.startswith(local_app_data_str):
-            family_name = get_package_family_name()
-            if family_name:
-                rel_str = str(path.resolve())[len(local_app_data_str):].lstrip("\\/")
-                relative_part = Path(rel_str)
-                
-                # Physical path under Packages: %USERPROFILE%\AppData\Local\Packages\<family_name>\LocalCache\Local\<relative_part>
-                user_profile = os.getenv("USERPROFILE")
-                if user_profile:
-                    physical_base = Path(user_profile) / "AppData" / "Local" / "Packages" / family_name / "LocalCache" / "Local"
-                    physical_path = physical_base / relative_part
-                    if physical_path.exists():
-                        return physical_path
-                    # Fallback to creating it if it doesn't exist yet physically
-                    physical_path.mkdir(parents=True, exist_ok=True)
-                    return physical_path
+        resolved = path.resolve()
+        # Ensure the directory physically exists so explorer.exe can open it
+        resolved.mkdir(parents=True, exist_ok=True)
+        return resolved
     except Exception as e:
-        logger.warning(f"Error resolving physical path for MSIX: {e}")
-        
+        logger.warning(f"Error resolving physical path: {e}")
     return path
 
 
