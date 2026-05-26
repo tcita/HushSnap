@@ -20,3 +20,5 @@ tools/health_rapidocr_hot_idle.csv
 tools/health_reports/
 installer/build_msix.ps1
 build_msix.bat
+build_msix_test.bat
+dist-installer-test/HushSnap_Test_Signed.msix

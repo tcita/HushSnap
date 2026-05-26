@@ -1,7 +1,8 @@
-# Dev/debug build script: kill process + clean folders + build EXE only (no installer).
+# Dev/debug build script: kill process + build EXE only (no installer).
 param(
     [string]$PyInstallerPath = "pyinstaller",
-    [string]$SpecPath = "HushSnap.spec"
+    [string]$SpecPath = "HushSnap.spec",
+    [switch]$Clean
 )
 
 $ErrorActionPreference = "Stop"
@@ -73,15 +74,21 @@ try {
     Get-Process -Name "HushSnap" -ErrorAction SilentlyContinue | Stop-Process -Force
     Start-Sleep -Milliseconds 800
 
-    # 2) Clean build directories with retry.
-    Remove-DirectoryIfExists -Path (Join-Path $rootDir "dist\HushSnap")
-    Remove-DirectoryIfExists -Path (Join-Path $rootDir "build\HushSnap")
+    # 2) Clean build directories with retry (only if -Clean is passed).
+    # Keeping these by default enables extremely fast incremental compilation.
+    if ($Clean) {
+        Remove-DirectoryIfExists -Path (Join-Path $rootDir "dist\HushSnap")
+        Remove-DirectoryIfExists -Path (Join-Path $rootDir "build\HushSnap")
+    }
 
     # 3) Build onedir EXE only (no installer output).
-    Invoke-ExternalCommand -Executable $PyInstallerPath -Arguments @(
-        "--clean",
-        $resolvedSpecPath
-    ) -StepName "PyInstaller build"
+    $pyinstallerArgs = @()
+    if ($Clean) {
+        $pyinstallerArgs += "--clean"
+    }
+    $pyinstallerArgs += $resolvedSpecPath
+
+    Invoke-ExternalCommand -Executable $PyInstallerPath -Arguments $pyinstallerArgs -StepName "PyInstaller build"
 }
 finally {
     Pop-Location
