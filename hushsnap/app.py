@@ -15,6 +15,7 @@ from .config import (
     load_ocr_hotkey_setting,
     resolve_ui_lang,
     ui_text,
+    resolve_physical_path,
 )
 from .hotkey import HotkeyFilter
 from .ocr_controller import OcrController
@@ -170,7 +171,7 @@ def main(boot_start_time=None):
     def open_config_dir():
         """Open the local folder that contains the config file."""
         try:
-            os.startfile(config_path.parent)
+            os.startfile(resolve_physical_path(config_path.parent))
         except Exception as exc:
             logging.getLogger(__name__).exception(f"Failed to open config dir: {exc}")
             QtWidgets.QMessageBox.warning(

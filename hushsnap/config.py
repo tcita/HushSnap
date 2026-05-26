@@ -46,6 +46,71 @@ _ERROR_ALREADY_EXISTS = 183
 logger = logging.getLogger(__name__)
 
 
+def is_running_as_package() -> bool:
+    """Check if the application is running as a packaged MSIX app."""
+    try:
+        length = ctypes.c_uint32(0)
+        # Call once to get required length, will fail with ERROR_INSUFFICIENT_BUFFER if packaged,
+        # or APPMODEL_ERROR_NO_PACKAGE if unpackaged.
+        result = _kernel32.GetCurrentPackageFullName(ctypes.byref(length), None)
+        # 15700 is APPMODEL_ERROR_NO_PACKAGE
+        return result != 15700
+    except (AttributeError, Exception):
+        return False
+
+
+def get_package_family_name() -> str:
+    """Get the MSIX package family name."""
+    try:
+        length = ctypes.c_uint32(0)
+        _kernel32.GetCurrentPackageFamilyName(ctypes.byref(length), None)
+        if length.value > 0:
+            buf = ctypes.create_unicode_buffer(length.value)
+            if _kernel32.GetCurrentPackageFamilyName(ctypes.byref(length), buf) == 0:
+                return buf.value
+    except Exception:
+        pass
+    return ""
+
+
+def resolve_physical_path(path: Path) -> Path:
+    """
+    If running inside an MSIX package, resolves a virtualized Local AppData path
+    to its actual physical path on disk so that external processes (like explorer.exe)
+    can access it.
+    """
+    if not is_running_as_package():
+        return path
+
+    local_app_data = os.getenv("LOCALAPPDATA")
+    if not local_app_data:
+        return path
+
+    try:
+        local_app_data_path = Path(local_app_data).resolve()
+        resolved_path = path.resolve()
+        
+        # Check if the path is inside %LOCALAPPDATA%
+        if resolved_path.is_relative_to(local_app_data_path):
+            family_name = get_package_family_name()
+            if family_name:
+                relative_part = resolved_path.relative_to(local_app_data_path)
+                # Physical path under Packages: %USERPROFILE%\AppData\Local\Packages\<family_name>\LocalCache\Local\<relative_part>
+                user_profile = os.getenv("USERPROFILE")
+                if user_profile:
+                    physical_base = Path(user_profile) / "AppData" / "Local" / "Packages" / family_name / "LocalCache" / "Local"
+                    physical_path = physical_base / relative_part
+                    if physical_path.exists():
+                        return physical_path
+                    # Fallback to creating it if it doesn't exist yet physically
+                    physical_path.mkdir(parents=True, exist_ok=True)
+                    return physical_path
+    except Exception as e:
+        logger.warning(f"Error resolving physical path for MSIX: {e}")
+        
+    return path
+
+
 # --- Path constants ---
 _is_frozen = getattr(sys, "frozen", False)
 # Application install directory (contains read-only assets like icon files).
