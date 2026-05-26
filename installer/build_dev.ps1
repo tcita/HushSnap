@@ -83,6 +83,7 @@ try {
 
     # 3) Build onedir EXE only (no installer output).
     $pyinstallerArgs = @()
+    $pyinstallerArgs += "--noconfirm"
     if ($Clean) {
         $pyinstallerArgs += "--clean"
     }
