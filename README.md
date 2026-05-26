@@ -94,40 +94,10 @@ Run packaged EXE in debug mode:
 
 ---
 
-## Build Guide
+## Installation
 
-### Prerequisites
-- Run commands from the project root.
-- Python and PyInstaller are installed.
-- Inno Setup 6 is installed.
-
-### 1) Full Release Build (EXE + Installer)
-Update `hushsnap/__init__.py` first (the `__version__` value), then run the following command:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File installer/build_installer.ps1
-```
-
-**This command will automatically:**
-- Read the version from `hushsnap/__init__.py`.
-- Build the app via PyInstaller as a `onedir` bundle based on `HushSnap.spec`.
-- Package the entire `dist\HushSnap\` folder into the installer.
-
-**Output:**
-- `dist\HushSnap\HushSnap.exe`
-- `dist-installer\HushSnap-Setup.exe`
-
-### 2) Dev Build (EXE Only, for Local Debugging)
-If you only need the packaged EXE for local debugging (without generating an installer), run:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File installer/build_dev.ps1
-```
-
-**This command will automatically:**
-- Kill running `HushSnap.exe` processes.
-- Clean build folders used by PyInstaller.
-- Build `dist\HushSnap\HushSnap.exe` only (no installer output).
+HushSnap is distributed exclusively through the **Microsoft Store**. Search for "HushSnap" in the Store app or visit the product page to install.
 
 ---
+
 

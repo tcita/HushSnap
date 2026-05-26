@@ -16,15 +16,10 @@ UI_TEXT = {
     UI_LANG_EN: {
         "error": "Error",
         "hotkey_taken": "{hotkey} is already in use.\nConfig: {config_path}",
-        "uninstaller_not_found_title": "Uninstaller Not Found",
-        "uninstaller_not_found_body": "No uninstaller was found in the app directory. Uninstall HushSnap from Control Panel > Programs and Features.",
-        "confirm_uninstall_title": "Confirm Uninstall",
-        "confirm_uninstall_body": "HushSnap uninstaller will be launched. Continue?",
-        "launch_uninstall_failed": "Failed to Launch Uninstaller",
-        "launch_uninstall_failed_body": "Unable to start uninstaller. Check logs for details.",
+
         "about_title": "About",
         "about_body": "HushSnap {version}\nCurrent hotkey: {hotkey}\nConfig: {config_path}",
-        "about_info": "HushSnap runs in the system tray. Use Settings to change hotkey or uninstall.",
+        "about_info": "HushSnap runs in the system tray. Right-click the tray icon for options.",
         "settings_title": "Settings",
         "settings_body": "Current hotkey: {hotkey}\nConfig: {config_path}",
         "settings_current_hotkey": "Current hotkey: {hotkey}",
@@ -57,7 +52,7 @@ UI_TEXT = {
         "settings_hotkey_save_failed": "Failed to save hotkey. Check logs for details.",
         "settings_hotkey_apply_failed": "Requested {new_hotkey}, but system kept {old_hotkey}.",
         "settings_ocr_hotkey_apply_failed": "Requested {new_hotkey}, but system kept {old_hotkey}.",
-        "uninstall_btn": "Uninstall",
+
         "close_btn": "Close",
         "settings_init_failed": "Settings initialization failed. Check logs for details.",
         "open_dir_failed": "Cannot Open Folder",
@@ -113,15 +108,10 @@ UI_TEXT = {
     UI_LANG_ZH: {
         "error": "错误",
         "hotkey_taken": "{hotkey} 热键已被占用！\n配置文件: {config_path}",
-        "uninstaller_not_found_title": "未找到卸载程序",
-        "uninstaller_not_found_body": "当前目录未检测到卸载程序，请在 控制面板 -> 程序和功能 中卸载 HushSnap。",
-        "confirm_uninstall_title": "确认卸载",
-        "confirm_uninstall_body": "将启动 HushSnap 卸载程序，是否继续？",
-        "launch_uninstall_failed": "启动卸载失败",
-        "launch_uninstall_failed_body": "无法启动卸载程序，请查看日志。",
+
         "about_title": "关于",
         "about_body": "HushSnap {version}\n当前热键: {hotkey}\n配置文件: {config_path}",
-        "about_info": "HushSnap 常驻系统托盘。可在“设置”中修改热键或卸载。",
+        "about_info": "HushSnap 常驻系统托盘。右击托盘图标可查看更多选项。",
         "settings_title": "设置",
         "settings_body": "当前热键: {hotkey}\n配置文件: {config_path}",
         "settings_current_hotkey": "当前快捷键: {hotkey}",
@@ -154,7 +144,7 @@ UI_TEXT = {
         "settings_hotkey_save_failed": "保存快捷键失败，请查看日志。",
         "settings_hotkey_apply_failed": "尝试应用 {new_hotkey}，但系统保持为 {old_hotkey}。",
         "settings_ocr_hotkey_apply_failed": "尝试应用 {new_hotkey}，但系统保持为 {old_hotkey}。",
-        "uninstall_btn": "卸载",
+
         "close_btn": "关闭",
         "settings_init_failed": "设置初始化失败，请查看日志。",
         "open_dir_failed": "无法打开目录",

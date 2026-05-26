@@ -44,12 +44,6 @@ Use this track to verify the actual user-facing double-click installation flow, 
 
 The batch files listed above are simple wrappers that delegate execution to more robust PowerShell scripts located in the `installer/` directory:
 
-* 📄 **[installer/build_dev.ps1](file:///c:/Users/09333/Documents/GitHub/HushSnap/installer/build_dev.ps1)**
-  * **Role**: Runs PyInstaller compilation.
-  * **Feature**: Automatically terminates any running instances of `HushSnap` to free file locks, and manages incremental caching. Pass `-Clean` to force a clean cache build.
 * 📄 **[installer/build_msix.ps1](file:///c:/Users/09333/Documents/GitHub/HushSnap/installer/build_msix.ps1)**
-  * **Role**: Main packaging script.
-  * **Feature**: Generates multi-DPI assets from `ico.ico` using Python, updates the `AppxManifest.xml` version based on `hushsnap/__init__.py`, packages them into an MSIX via `makeappx`, and supports optional local code signing via the `/s My /sm` certificate parameters.
-* 📄 **[installer/build_installer.ps1](file:///c:/Users/09333/Documents/GitHub/HushSnap/installer/build_installer.ps1)**
-  * **Role**: Setup Compiler for traditional EXE installation.
-  * **Feature**: Compiles PyInstaller binaries and builds a traditional Inno Setup installation package using `ISCC.exe` based on `installer/HushSnapInstaller.iss`.
+  * **Role**: Main packaging script — compiles Python code via PyInstaller and packages into MSIX.
+  * **Feature**: Terminates running instances, runs PyInstaller compilation, generates multi-DPI assets from `ico.ico`, updates the `AppxManifest.xml` version based on `hushsnap/__init__.py`, packages into an MSIX via `makeappx`, and supports optional local code signing.

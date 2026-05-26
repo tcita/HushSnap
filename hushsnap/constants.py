@@ -21,14 +21,12 @@ DEFAULT_OCR_HOTKEY = "Alt+Shift+Q"
 APP_CONFIG_FILENAME = "hushsnap_config.toml"
 # State filename (internal persistence, not user-editable)
 APP_STATE_FILENAME = "hushsnap_state.toml"
-# Installer-provided language hint filename
-INSTALLER_LANG_FILENAME = "hushsnap_installer_lang.txt"
+
 # Debug log filename
 CAPTURE_DEBUG_LOG_FILENAME = "hushsnap.log"
 # Tray icon filename
 APP_ICON_FILENAME = "ico.ico"
-# Uninstaller lookup glob
-UNINSTALLER_GLOB = "unins*.exe"
+
 # Named mutex for single-instance enforcement
 SINGLE_INSTANCE_MUTEX = "Local\\hushsnap.SingleInstance"
 

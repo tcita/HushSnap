@@ -89,12 +89,10 @@ def test_resolve_ui_lang_fallback_to_english():
     """Test default fallback to English when no source provides a valid language."""
     with patch("hushsnap.config._read_ui_lang_from_config") as mock_config:
         mock_config.return_value = "auto"
-        with patch("hushsnap.config._read_ui_lang_from_installer_hint") as mock_hint:
-            mock_hint.return_value = None
-            with patch("hushsnap.config._get_system_ui_language") as mock_system:
-                mock_system.return_value = "en"
-                lang = resolve_ui_lang(Path("dummy_path"))
-                assert lang == "en"
+        with patch("hushsnap.config._get_system_ui_language") as mock_system:
+            mock_system.return_value = "en"
+            lang = resolve_ui_lang(Path("dummy_path"))
+            assert lang == "en"
 
 
 def test_resolve_ui_lang_from_config_bcp47():
@@ -105,33 +103,18 @@ def test_resolve_ui_lang_from_config_bcp47():
         assert lang == "zh"
 
 
-def test_resolve_ui_lang_from_installer_hint_when_config_auto():
-    """Test installer hint is used when config is auto."""
-    with patch("hushsnap.config._read_ui_lang_from_config") as mock_config:
-        mock_config.return_value = "auto"
-        with patch("hushsnap.config._read_ui_lang_from_installer_hint") as mock_hint:
-            mock_hint.return_value = "zh"
-            with patch("hushsnap.config._get_system_ui_language") as mock_system:
-                mock_system.return_value = "en"
-                lang = resolve_ui_lang(Path("dummy_path"))
-                assert lang == "zh"
-
-
 def test_resolve_ui_lang_from_system_default():
-    """Test system default language is used when config is auto and no installer hint exists."""
+    """Test system default language is used when config is auto."""
     with patch("hushsnap.config._read_ui_lang_from_config") as mock_config:
         mock_config.return_value = "auto"
-        with patch("hushsnap.config._read_ui_lang_from_installer_hint") as mock_hint:
-            mock_hint.return_value = None
-            with patch("hushsnap.config._get_system_ui_language") as mock_system:
-                mock_system.return_value = "zh"
-                lang = resolve_ui_lang(Path("dummy_path"))
-                assert lang == "zh"
+        with patch("hushsnap.config._get_system_ui_language") as mock_system:
+            mock_system.return_value = "zh"
+            lang = resolve_ui_lang(Path("dummy_path"))
+            assert lang == "zh"
 
 
 def test_default_config_omits_ocr_fields(tmp_path):
     config_path = tmp_path / "hushsnap_config.toml"
-    (tmp_path / "hushsnap_installer_lang.txt").write_text("zh", encoding="utf-8")
 
     _ensure_default_config_exists(config_path)
 
@@ -163,8 +146,7 @@ def test_get_ocr_lang_migrates_from_config(tmp_path):
 def test_get_ocr_lang_falls_back_to_default(tmp_path):
     state_path = tmp_path / "hushsnap_state.toml"
     config_path = tmp_path / "hushsnap_config.toml"
-    config_path.write_text('language = "auto"\n', encoding="utf-8")
-    (tmp_path / "hushsnap_installer_lang.txt").write_text("zh", encoding="utf-8")
+    config_path.write_text('language = "zh"\n', encoding="utf-8")
 
     assert get_ocr_lang(state_path=state_path, config_path=config_path) == "zh-CN"
 

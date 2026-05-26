@@ -53,8 +53,7 @@ async def get_startup_state() -> bool:
             logger.error(f"Failed to get MSIX startup state: {e}")
             return False
     else:
-        # Fallback for traditional installations: check BOTH Registry and Startup folder shortcut
-        # (Inno Setup uses the shortcut method).
+        # Fallback for non-MSIX installations: check Registry and Startup folder shortcut.
         
         # 1. Check Registry
         registry_enabled = False

@@ -16,7 +16,7 @@ from .constants import (
     APP_STATE_FILENAME,
     DEFAULT_HOTKEY,
     DEFAULT_OCR_HOTKEY,
-    INSTALLER_LANG_FILENAME,
+
     MOD_ALT,
     MOD_CONTROL,
     MOD_SHIFT,
@@ -664,28 +664,6 @@ def _normalize_ocr_engine(raw_value):
     return None
 
 
-def _read_ui_lang_from_installer_hint(config_path):
-    """
-    Read language hint written by installer.
-    Used on first run to follow language selected in installer UI.
-    """
-    hint_path = config_path.parent / INSTALLER_LANG_FILENAME
-    try:
-        hint_value = hint_path.read_text(encoding="utf-8").strip().lower()
-    except Exception as e:
-        logger.debug(f"Failed to read installer language hint: {e}")
-        return None
-
-    normalized_hint = _normalize_ui_language_code(hint_value)
-    if normalized_hint in SUPPORTED_LANGUAGES:
-        return normalized_hint
-    if "chinese" in hint_value:
-        return UI_LANG_ZH
-    if "english" in hint_value:
-        return UI_LANG_EN
-    return None
-
-
 def _get_system_ui_language():
     """Get the user's default system UI language code ('zh' or 'en')."""
     try:
@@ -714,22 +692,16 @@ def _get_system_ui_language():
 def resolve_ui_lang(config_path):
     """
     Resolve the final UI language.
-    Priority: config file > installer hint > system default > English fallback.
+    Priority: config file > system default > English fallback.
     """
     config_language = _read_ui_lang_from_config(config_path)
     if config_language in SUPPORTED_LANGUAGES:
         return config_language
 
-    installer_hint_language = _read_ui_lang_from_installer_hint(config_path)
-    if installer_hint_language in SUPPORTED_LANGUAGES:
-        return installer_hint_language
-
-    # Check system UI language (e.g. for MSIX / Store app installations without installer hint)
     system_language = _get_system_ui_language()
     if system_language in SUPPORTED_LANGUAGES:
         return system_language
 
-    # Final fallback: use English.
     return UI_LANG_EN
 
 

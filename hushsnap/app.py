@@ -250,7 +250,7 @@ def main(boot_start_time=None):
 
     startup_profiler.log_summary()
 
-    # Enter event loop (build_installer.ps1 checks LASTEXITCODE).
+
     sys.exit(app.exec())
 
 
