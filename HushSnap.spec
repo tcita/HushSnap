@@ -110,6 +110,7 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=['ico.ico'],
+    manifest='installer/HushSnap.exe.manifest',
 )
 coll = COLLECT(
     exe,
