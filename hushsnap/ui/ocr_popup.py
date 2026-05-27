@@ -21,7 +21,6 @@ class OcrPopup(QtWidgets.QWidget):
         self._drag_pos = None
         self._last_pixmap = None
         self._is_refreshing = False
-        self._user_resized = False
 
         self.setWindowFlags(
             QtCore.Qt.WindowType.Tool
@@ -56,10 +55,6 @@ class OcrPopup(QtWidgets.QWidget):
         self.title_label.setObjectName("ocrTitle")
         header.addWidget(self.title_label)
 
-        self.editable_hint_label = QtWidgets.QLabel("")
-        self.editable_hint_label.setObjectName("ocrEditableHint")
-        header.addWidget(self.editable_hint_label)
-
         header.addStretch(1)
 
         self.recapture_btn = QtWidgets.QPushButton()
@@ -83,7 +78,31 @@ class OcrPopup(QtWidgets.QWidget):
         header.addWidget(self.close_btn)
         layout.addLayout(header)
 
-        # Engine / Language combos — kept off-layout, driven by status bar tabs
+        # --- Engine tabs ---
+        from ..constants import OCR_ENGINE_WINDOWS, OCR_ENGINE_RAPID
+
+        self.engine_bar = QtWidgets.QFrame()
+        self.engine_bar.setObjectName("ocrEngineBar")
+        engine_bar_layout = QtWidgets.QHBoxLayout(self.engine_bar)
+        engine_bar_layout.setContentsMargins(0, 0, 0, 0)
+        engine_bar_layout.setSpacing(6)
+
+        self.engine_tab_rapid = QtWidgets.QPushButton(self.translate("ocr_engine_rapid"))
+        self.engine_tab_rapid.setObjectName("ocrEngineTab")
+        self.engine_tab_rapid.setProperty("engine", OCR_ENGINE_RAPID)
+        self.engine_tab_rapid.clicked.connect(self._on_engine_tab_clicked)
+        engine_bar_layout.addWidget(self.engine_tab_rapid)
+
+        self.engine_tab_windows = QtWidgets.QPushButton(self.translate("ocr_engine_windows"))
+        self.engine_tab_windows.setObjectName("ocrEngineTab")
+        self.engine_tab_windows.setProperty("engine", OCR_ENGINE_WINDOWS)
+        self.engine_tab_windows.clicked.connect(self._on_engine_tab_clicked)
+        engine_bar_layout.addWidget(self.engine_tab_windows)
+
+        engine_bar_layout.addStretch(1)
+        layout.addWidget(self.engine_bar)
+
+        # Engine / Language combos — kept off-layout, driven by engine tabs
         self.engine_combo = QtWidgets.QComboBox()
         self.engine_combo.currentIndexChanged.connect(self._on_engine_changed_idx)
 
@@ -130,29 +149,19 @@ class OcrPopup(QtWidgets.QWidget):
         self.text_edit.setContentsMargins(0, 0, 0, 0)
         self.text_edit.setViewportMargins(0, 0, 0, 0)
         self.text_edit.document().setDocumentMargin(0)
-        self.text_edit.textChanged.connect(self._on_text_changed)
+        self.text_edit.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         layout.addWidget(self.text_edit)
 
-        # Status bar: engine tabs (left) + hint (right)
-        from ..constants import OCR_ENGINE_WINDOWS, OCR_ENGINE_RAPID
-
+        # Status bar: language selector + resize grip
         self.status_bar = QtWidgets.QFrame()
         self.status_bar.setObjectName("ocrStatusBar")
         status_layout = QtWidgets.QHBoxLayout(self.status_bar)
         status_layout.setContentsMargins(10, 4, 4, 4)
         status_layout.setSpacing(6)
 
-        self.engine_tab_rapid = QtWidgets.QPushButton(self.translate("ocr_engine_rapid"))
-        self.engine_tab_rapid.setObjectName("ocrEngineTab")
-        self.engine_tab_rapid.setProperty("engine", OCR_ENGINE_RAPID)
-        self.engine_tab_rapid.clicked.connect(self._on_engine_tab_clicked)
-        status_layout.addWidget(self.engine_tab_rapid)
-
-        self.engine_tab_windows = QtWidgets.QPushButton(self.translate("ocr_engine_windows"))
-        self.engine_tab_windows.setObjectName("ocrEngineTab")
-        self.engine_tab_windows.setProperty("engine", OCR_ENGINE_WINDOWS)
-        self.engine_tab_windows.clicked.connect(self._on_engine_tab_clicked)
-        status_layout.addWidget(self.engine_tab_windows)
+        self.editable_badge = QtWidgets.QLabel("")
+        self.editable_badge.setObjectName("ocrEditableBadge")
+        status_layout.addWidget(self.editable_badge)
 
         self.lang_combo_inline = QtWidgets.QComboBox()
         self.lang_combo_inline.setObjectName("ocrLangComboInline")
@@ -181,10 +190,19 @@ class OcrPopup(QtWidgets.QWidget):
             " font-size: 18px;"
             " font-weight: 600;"
             "}"
-            "#ocrEditableHint {"
-            " color: rgba(220, 240, 225, 130);"
-            " font-size: 11px;"
+            "#ocrEditableBadge {"
+            " color: rgba(220, 240, 225, 160);"
+            " background: rgba(190, 255, 212, 18);"
+            " border-radius: 8px;"
+            " padding: 2px 7px;"
+            " font-size: 10px;"
+            " font-weight: 500;"
             " margin-left: 4px;"
+            "}"
+            "#ocrEngineBar {"
+            " background: transparent;"
+            " border: none;"
+            " padding: 0 0 2px 0;"
             "}"
             "#ocrRecaptureBtn {"
             " color: #E1F7E7;"
@@ -319,7 +337,7 @@ class OcrPopup(QtWidgets.QWidget):
         self.recapture_btn.setToolTip(self.translate("ocr_recapture_tooltip"))
         self.recapture_btn.setAccessibleName(self.translate("ocr_recapture_tooltip"))
         self.copy_btn.setToolTip(self.translate("ocr_copy_btn"))
-        self.editable_hint_label.setText(f"({self.translate('ocr_editable_hint')})")
+        self.editable_badge.setText(self.translate("ocr_editable_hint"))
 
     def _on_lang_changed_idx(self, index):
         if not self._is_refreshing:
@@ -344,7 +362,6 @@ class OcrPopup(QtWidgets.QWidget):
     def show_text(self, text, pixmap=None, lang=None, engine=None):
         """Display OCR text and show popup near bottom-right corner."""
         self._is_refreshing = True
-        self._user_resized = False
         if pixmap is not None:
             self._last_pixmap = pixmap
 
@@ -382,8 +399,6 @@ class OcrPopup(QtWidgets.QWidget):
         self._refresh_labels()
         self.apply_font_size()
         self.text_edit.setPlainText(text)
-        self._fit_text_edit_to_content()
-        self.resize(self.width(), self.sizeHint().height())
         self._is_refreshing = False
 
         if not self.isVisible():
@@ -442,9 +457,6 @@ class OcrPopup(QtWidgets.QWidget):
         self.engine_tab_windows.style().unpolish(self.engine_tab_windows)
         self.engine_tab_windows.style().polish(self.engine_tab_windows)
 
-    def _on_text_changed(self):
-        QtCore.QTimer.singleShot(0, self._fit_text_edit_to_content)
-
     def apply_font_size(self):
         font_size = get_ocr_font_size()
         font = self.text_edit.font()
@@ -452,27 +464,6 @@ class OcrPopup(QtWidgets.QWidget):
         self.text_edit.setFont(font)
         doc = self.text_edit.document()
         doc.setDefaultFont(font)
-
-    def _fit_text_edit_to_content(self):
-        fm = self.text_edit.fontMetrics()
-        line_height = fm.lineSpacing()
-        document_height = self.text_edit.document().blockCount() * line_height
-
-        frame = self.text_edit.frameWidth() * 2
-        v_padding = 24
-        min_height = 120
-        max_height = 500
-        target_height = int(document_height + frame + v_padding + 4)
-        clamped = max(min_height, min(target_height, max_height))
-
-        if self._user_resized:
-            self.text_edit.setMinimumHeight(max(min_height, min(document_height + frame + v_padding + 4, max_height)))
-            self.text_edit.setMaximumHeight(16777215)
-            return
-
-        self.text_edit.setMinimumHeight(clamped)
-        self.text_edit.setMaximumHeight(clamped)
-        self.resize(self.width(), self.sizeHint().height())
 
     @staticmethod
     def _make_copy_icon():
@@ -566,25 +557,17 @@ class OcrPopup(QtWidgets.QWidget):
 
     def _on_copy_clicked(self):
         self.copy_text()
+        self.copy_btn.setText("✓")
         self.copy_btn.setProperty("copied", True)
         self.copy_btn.style().unpolish(self.copy_btn)
         self.copy_btn.style().polish(self.copy_btn)
         QtCore.QTimer.singleShot(1500, self._restore_copy_button)
 
     def _restore_copy_button(self):
+        self.copy_btn.setText("")
         self.copy_btn.setProperty("copied", False)
         self.copy_btn.style().unpolish(self.copy_btn)
         self.copy_btn.style().polish(self.copy_btn)
-
-    def resizeEvent(self, event):
-        """Track manual window resize and release auto-fit height constraint."""
-        super().resizeEvent(event)
-        if self.isVisible() and not self._is_refreshing:
-            self._user_resized = True
-            QtCore.QTimer.singleShot(0, self._release_max_height)
-
-    def _release_max_height(self):
-        self.text_edit.setMaximumHeight(16777215)
 
     def mousePressEvent(self, event):
         """Enable dragging the window."""
