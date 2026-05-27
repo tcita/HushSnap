@@ -7,6 +7,7 @@ from typing import Any
 # Defer rapidocr import to optimize application startup time
 from PyQt6 import QtGui
 RapidOCR = None
+OCRVersion = None
 
 from .models import OcrRecognition
 
@@ -168,12 +169,19 @@ def _get_engine() -> "RapidOCR":
     if _engine is None:
         with _engine_lock:
             if _engine is None:
-                global RapidOCR
+                global RapidOCR, OCRVersion
                 if RapidOCR is not None:
                     local_RapidOCR = RapidOCR
                 else:
                     from rapidocr import RapidOCR as local_RapidOCR
-                _engine = local_RapidOCR()
+                if OCRVersion is not None:
+                    local_OCRVersion = OCRVersion
+                else:
+                    from rapidocr import OCRVersion as local_OCRVersion
+                _engine = local_RapidOCR(params={
+                    "Det.ocr_version": local_OCRVersion.PPOCRV5,
+                    "Rec.ocr_version": local_OCRVersion.PPOCRV5,
+                })
                 # Flag that we should trim after the first use to clear import-time bloat.
                 # We don't trim immediately here because we want the first request
                 # to run without unnecessary page faults.

@@ -30,11 +30,11 @@ portions.
 - Project: [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)
 - Copyright: Baidu Inc.
 - License: Apache License 2.0
-- Usage in HushSnap: Pre-trained PP-OCRv4 ONNX model files are bundled with
+- Usage in HushSnap: Pre-trained PP-OCRv5 ONNX model files are bundled with
   the `rapidocr` Python package and loaded at runtime.
-  - `ch_PP-OCRv4_det_mobile.onnx` — text detection
+  - `ch_PP-OCRv5_det_mobile.onnx` — text detection
   - `ch_ppocr_mobile_v2.0_cls_mobile.onnx` — text orientation classification
-  - `ch_PP-OCRv4_rec_mobile.onnx` — text recognition
+  - `ch_PP-OCRv5_rec_mobile.onnx` — text recognition
   - `ppocr_keys_v1.txt` — character dictionary
 
 

@@ -208,7 +208,7 @@ def test_engine_singleton_returns_same_instance(monkeypatch):
 
     monkeypatch.setattr(rapidocr_module, "_engine", None)
     fake = object()
-    monkeypatch.setattr(rapidocr_module, "RapidOCR", lambda: fake)
+    monkeypatch.setattr(rapidocr_module, "RapidOCR", lambda **kwargs: fake)
 
     e1 = _get_engine()
     e2 = _get_engine()
