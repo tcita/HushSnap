@@ -95,7 +95,7 @@ QLabel#kbdPill {{
     border: 1px solid {SETTINGS_KBD_BORDER};
     border-radius: 4px;
     background: {SETTINGS_KBD_BG};
-    padding: 2px 7px;
+    padding: 3px 7px;
     font-family: "Consolas", "Segoe UI", monospace;
     font-size: 12px;
     color: {SETTINGS_KBD_TEXT};
@@ -120,7 +120,7 @@ QPushButton#ghostButton {{
     background: transparent;
     border: 0.5px solid {SETTINGS_GHOST_BORDER};
     border-radius: 4px;
-    padding: 3px 10px;
+    padding: 4px 10px;
     color: {SETTINGS_GHOST_TEXT};
     font-size: 11px;
     margin-left: 6px;
@@ -225,72 +225,59 @@ QPushButton#cancelButton:pressed {{
 
 
 COMBOBOX_STYLE = f"""
-QComboBox {{
+QComboBox#settingsCombo {{
     background: #FFFFFF;
     border: 0.5px solid {SETTINGS_GHOST_BORDER};
-    border-radius: 4px;
-    padding: 3px 10px;
-    color: {SETTINGS_GHOST_TEXT};
-    font-size: 11px;
-    margin-left: 6px;
-    min-width: 120px;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 13px;
+    color: {SETTINGS_LABEL_COLOR};
+    min-width: 140px;
 }}
-QComboBox:hover {{
-    background: {SETTINGS_GHOST_HOVER_BG};
+QComboBox#settingsCombo:hover {{
     border-color: #BBBBBB;
 }}
-QComboBox QAbstractItemView {{
-    background-color: #FFFFFF;
-    border: 0.5px solid {SETTINGS_GHOST_BORDER};
-    selection-background-color: {SETTINGS_GHOST_HOVER_BG};
-    selection-color: {SETTINGS_LABEL_COLOR};
-    color: {SETTINGS_GHOST_TEXT};
-    outline: 0px;
-}}
-"""
-
-# Font size combo box style (for settings)
-FONT_SIZE_COMBOBOX_STYLE = f"""
-QComboBox#fontSizeComboBox {{
-    background-color: #252525;
-    border: 1px solid #4a4a4a;
-    border-radius: 6px;
-    padding: 7px 12px;
-    font-size: 14px;
-    min-width: 100px;
-    color: #E0E0E0;
-}}
-QComboBox#fontSizeComboBox:hover {{
-    border-color: #666666;
-}}
-QComboBox#fontSizeComboBox::drop-down {{
+QComboBox#settingsCombo::drop-down {{
     border: none;
-    width: 28px;
+    width: 24px;
 }}
-QComboBox#fontSizeComboBox::down-arrow {{
+QComboBox#settingsCombo::down-arrow {{
     image: none;
-    border-left: 5px solid transparent;
-    border-right: 5px solid transparent;
-    border-top: 5px solid #888888;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid {SETTINGS_SUBTITLE_COLOR};
     width: 0;
     height: 0;
     subcontrol-position: center;
 }}
-QComboBox#fontSizeComboBox QAbstractItemView {{
-    background-color: #252525;
-    border: 1px solid #4a4a4a;
+QComboBox#settingsCombo QAbstractItemView {{
+    background-color: #FFFFFF;
+    border: 0.5px solid {SETTINGS_GHOST_BORDER};
     border-radius: 6px;
     outline: 0px;
-    selection-background-color: #2d2d2d;
-    color: #E0E0E0;
+    selection-background-color: {SETTINGS_GHOST_HOVER_BG};
+    selection-color: {SETTINGS_LABEL_COLOR};
+    color: {SETTINGS_LABEL_COLOR};
 }}
-QComboBox#fontSizeComboBox QAbstractItemView::item {{
-    padding: 8px 14px;
-    min-height: 32px;
-    color: #E0E0E0;
+QComboBox#settingsCombo QAbstractItemView::item {{
+    padding: 7px 14px;
+    min-height: 30px;
+    color: {SETTINGS_LABEL_COLOR};
 }}
-QComboBox#fontSizeComboBox QAbstractItemView::item:hover {{
-    background-color: #333333;
+QComboBox#settingsCombo QAbstractItemView::item:hover {{
+    background-color: {SETTINGS_GHOST_HOVER_BG};
+}}
+"""
+
+# Section header label (uppercase, muted)
+SECTION_HEADER_STYLE = f"""
+QLabel#sectionHeader {{
+    color: {SETTINGS_SUBTITLE_COLOR};
+    font-size: 11px;
+    font-weight: 600;
+    padding: 10px 4px 4px 4px;
+    border: none;
+    background: transparent;
 }}
 """
 

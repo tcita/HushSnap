@@ -17,7 +17,6 @@ from ..config import (
     update_ocr_font_size,
 )
 from ..system import startup_manager
-from ..constants import DEFAULT_OCR_FONT_SIZE
 from .styles import (
     CAPTURE_CANCEL_BUTTON_STYLE,
     CAPTURE_DIALOG_STYLE,
@@ -25,8 +24,8 @@ from .styles import (
     CAPTURE_HINT_STYLE,
     CAPTURE_INPUT_STYLE,
     CAPTURE_SAVE_BUTTON_STYLE,
+    COMBOBOX_STYLE,
     DIALOG_STYLE,
-    FONT_SIZE_COMBOBOX_STYLE,
     GHOST_BUTTON_STYLE,
     HEADER_BAR_STYLE,
     HEADER_ICON_STYLE,
@@ -34,13 +33,14 @@ from .styles import (
     KBD_PILL_STYLE,
     PLUS_LABEL_STYLE,
     ROW_LABEL_STYLE,
+    SECTION_HEADER_STYLE,
     SETTING_CARD_STYLE,
     SETTINGS_CAPTURE_DIALOG_MIN_WIDTH,
     SETTINGS_DIALOG_WIDTH,
     SETTINGS_ERROR_COLOR,
+    SETTINGS_LABEL_COLOR,
     STATUS_LABEL_STYLE,
     SUBTITLE_STYLE,
-    COMBOBOX_STYLE,
     MESSAGE_BOX_STYLE,
 )
 
@@ -67,7 +67,7 @@ class CheckmarkDelegate(QtWidgets.QStyledItemDelegate):
             font.setPointSize(11)
             painter.setFont(font)
             
-            painter.setPen(QtGui.QColor("#FFFFFF"))
+            painter.setPen(QtGui.QColor(SETTINGS_LABEL_COLOR))
             text_rect = rect.adjusted(0, 0, -16, 0)
             painter.drawText(
                 text_rect,
@@ -131,51 +131,6 @@ def create_language_icon():
     return QtGui.QIcon(pixmap)
 
 
-NEW_COMBOBOX_STYLE = """
-QComboBox#languageComboBox {
-    background-color: #252525;
-    border: 1px solid #4a4a4a;
-    border-radius: 6px;
-    padding: 7px 12px;
-    font-size: 14px;
-    min-width: 180px;
-    color: #E0E0E0;
-}
-QComboBox#languageComboBox:hover {
-    border-color: #666666;
-}
-QComboBox#languageComboBox::drop-down {
-    border: none;
-    width: 28px;
-}
-QComboBox#languageComboBox::down-arrow {
-    image: none;
-    border-left: 5px solid transparent;
-    border-right: 5px solid transparent;
-    border-top: 5px solid #888888;
-    width: 0;
-    height: 0;
-    subcontrol-position: center;
-}
-QComboBox#languageComboBox QAbstractItemView {
-    background-color: #252525;
-    border: 1px solid #4a4a4a;
-    border-radius: 6px;
-    outline: 0px;
-    selection-background-color: #2d2d2d;
-    color: #E0E0E0;
-}
-QComboBox#languageComboBox QAbstractItemView::item {
-    padding: 8px 14px;
-    min-height: 32px;
-    color: #E0E0E0;
-}
-QComboBox#languageComboBox QAbstractItemView::item:hover {
-    background-color: #333333;
-}
-"""
-
-
 def _qt_key_to_hotkey_token(key):
     """Convert Qt key enum value into internal hotkey token text."""
     if QtCore.Qt.Key.Key_A <= key <= QtCore.Qt.Key.Key_Z:
@@ -204,7 +159,7 @@ def _make_kbd_pill(text):
     pill = QtWidgets.QLabel(text)
     pill.setObjectName("kbdPill")
     pill.setStyleSheet(KBD_PILL_STYLE)
-    pill.setFixedHeight(24)
+    pill.setFixedHeight(26)
     return pill
 
 
@@ -276,12 +231,12 @@ def _make_ghost_button(text, callback=None):
     btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
     if callback:
         btn.clicked.connect(callback)
-    btn.setFixedHeight(26)
+    btn.setFixedHeight(28)
     return btn
 
 
 class SleekSwitch(QtWidgets.QAbstractButton):
-    def __init__(self, parent=None, track_radius=11, thumb_radius=8):
+    def __init__(self, parent=None, track_radius=12, thumb_radius=9):
         super().__init__(parent)
         self.setCheckable(True)
         self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
@@ -328,6 +283,89 @@ class SleekSwitch(QtWidgets.QAbstractButton):
             QtCore.QVariantAnimation.Direction.Forward if self.isChecked() else QtCore.QVariantAnimation.Direction.Backward
         )
         self._animation.start()
+
+
+class FontSizeStepper(QtWidgets.QWidget):
+    """Compact − / value / + stepper for font size selection."""
+    value_changed = QtCore.pyqtSignal(int)
+
+    STEPS = [12, 14, 16, 18, 20, 22, 24]
+    _btn_style = (
+        "QPushButton {"
+        " background: transparent;"
+        " border: 0.5px solid #D5D5D5;"
+        " border-radius: 4px;"
+        " color: #555;"
+        " font-size: 13px;"
+        " font-weight: 600;"
+        " min-width: 26px;"
+        " max-width: 26px;"
+        " min-height: 26px;"
+        " max-height: 26px;"
+        " padding: 0;"
+        "}"
+        "QPushButton:hover { background: #F0F0F0; border-color: #BBB; }"
+        "QPushButton:disabled { color: #CCC; border-color: #E8E8E8; }"
+    )
+
+    def __init__(self, initial_value=16, parent=None):
+        super().__init__(parent)
+        self._current = initial_value
+        if self._current not in self.STEPS:
+            self._current = 16
+
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        self._minus_btn = QtWidgets.QPushButton("−")
+        self._minus_btn.setStyleSheet(self._btn_style)
+        self._minus_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self._minus_btn.clicked.connect(self._decrement)
+
+        self._label = QtWidgets.QLabel(f"{self._current} px")
+        self._label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self._label.setStyleSheet(
+            "color: #333; font-size: 13px; font-weight: 500;"
+            " border: none; background: transparent;"
+            " min-width: 44px;"
+        )
+
+        self._plus_btn = QtWidgets.QPushButton("+")
+        self._plus_btn.setStyleSheet(self._btn_style)
+        self._plus_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self._plus_btn.clicked.connect(self._increment)
+
+        layout.addWidget(self._minus_btn)
+        layout.addWidget(self._label)
+        layout.addWidget(self._plus_btn)
+
+        self._update_enabled()
+
+    def _decrement(self):
+        idx = self.STEPS.index(self._current)
+        if idx > 0:
+            self._current = self.STEPS[idx - 1]
+            self._label.setText(f"{self._current} px")
+            self._update_enabled()
+            self.value_changed.emit(self._current)
+
+    def _increment(self):
+        idx = self.STEPS.index(self._current)
+        if idx < len(self.STEPS) - 1:
+            self._current = self.STEPS[idx + 1]
+            self._label.setText(f"{self._current} px")
+            self._update_enabled()
+            self.value_changed.emit(self._current)
+
+    def _update_enabled(self):
+        idx = self.STEPS.index(self._current)
+        self._minus_btn.setEnabled(idx > 0)
+        self._plus_btn.setEnabled(idx < len(self.STEPS) - 1)
+
+    @property
+    def value(self):
+        return self._current
 
 
 def _make_startup_card(label_text, subtitle_text, initial_state):
@@ -446,8 +484,8 @@ def _make_language_card(label_text, subtitle_text, current_lang, languages_optio
     top_layout.addStretch()
 
     combo = SleekComboBox()
-    combo.setObjectName("languageComboBox")
-    combo.setStyleSheet(NEW_COMBOBOX_STYLE)
+    combo.setObjectName("settingsCombo")
+    combo.setStyleSheet(COMBOBOX_STYLE)
 
     # Set item delegate for checkmark custom paint and custom height
     delegate = CheckmarkDelegate(combo)
@@ -628,11 +666,12 @@ class SettingsDialogController(QtCore.QObject):
     """Settings panel with per-setting cards, per-key kbd pills, header bar."""
     language_changed = QtCore.pyqtSignal()
 
-    def __init__(self, translate, config_path, hotkey_manager):
+    def __init__(self, translate, config_path, hotkey_manager, on_font_size_changed=None):
         super().__init__()
         self.translate = translate
         self.config_path = config_path
         self.hotkey_manager = hotkey_manager
+        self._on_font_size_changed = on_font_size_changed
         self._dialog = None
         self._screenshot_pills_container = None
         self._screenshot_pills = None
@@ -687,6 +726,12 @@ class SettingsDialogController(QtCore.QObject):
         body_layout = QtWidgets.QVBoxLayout(body)
         body_layout.setContentsMargins(16, 16, 16, 8)
         body_layout.setSpacing(8)
+
+        # --- Section: Shortcuts ---
+        shortcuts_header = QtWidgets.QLabel(self.translate("settings_section_shortcuts"))
+        shortcuts_header.setObjectName("sectionHeader")
+        shortcuts_header.setStyleSheet(SECTION_HEADER_STYLE)
+        body_layout.addWidget(shortcuts_header)
 
         # --- Screenshot card ---
         def change_hotkey():
@@ -764,6 +809,12 @@ class SettingsDialogController(QtCore.QObject):
         btn2.clicked.connect(change_ocr_hotkey)
         body_layout.addWidget(card2)
 
+        # --- Section: Preferences ---
+        prefs_header = QtWidgets.QLabel(self.translate("settings_section_preferences"))
+        prefs_header.setObjectName("sectionHeader")
+        prefs_header.setStyleSheet(SECTION_HEADER_STYLE)
+        body_layout.addWidget(prefs_header)
+
         # --- Language card ---
         def change_language(index):
             selected_lang = combo3.itemData(index)
@@ -793,51 +844,15 @@ class SettingsDialogController(QtCore.QObject):
         combo3.currentIndexChanged.connect(change_language)
         body_layout.addWidget(card3)
 
-        # --- Startup card ---
-        async def toggle_startup(checked):
-            success = await startup_manager.set_startup_state(checked)
-            if not success and checked:
-                # If requested enable but failed (e.g. user denied or MSIX error),
-                # we should probably sync the UI back or show error.
-                # However, SleekSwitch handles its own state. 
-                # Let's just check the real state and update.
-                real_state = await startup_manager.get_startup_state()
-                card4_switch.setChecked(real_state)
-
-        # We need a wrapper to run async code from Qt signal
-        def on_startup_toggled(checked):
-            # Using a one-off loop execution for simple state changes
-            # as there is no background asyncio event loop running.
-            try:
-                loop = asyncio.new_event_loop()
-                loop.run_until_complete(toggle_startup(checked))
-                loop.close()
-            except Exception as exc:
-                logger.exception(f"Failed to toggle startup state: {exc}")
-
-        loop = asyncio.get_event_loop()
-        initial_startup = loop.run_until_complete(startup_manager.get_startup_state())
-        
-        card4, card4_switch = _make_startup_card(
-            self.translate("settings_startup_label"),
-            self.translate("settings_startup_subtitle"),
-            initial_startup,
-        )
-        card4_switch.clicked.connect(on_startup_toggled)
-        body_layout.addWidget(card4)
-
         # --- Font size card ---
-        def change_font_size(index):
-            font_size = font_size_combo.itemData(index)
-            if font_size is not None:
-                try:
-                    update_ocr_font_size(font_size)
-                except Exception as exc:
-                    logger.exception(f"Failed to save OCR font size: {exc}")
-                    _set_status(self.translate("error"), True)
-
-        font_size_options = [12, 14, 16, 18, 20, 22, 24]
-        current_font_size = get_ocr_font_size()
+        def change_font_size(value):
+            try:
+                update_ocr_font_size(value)
+                if self._on_font_size_changed:
+                    self._on_font_size_changed()
+            except Exception as exc:
+                logger.exception(f"Failed to save OCR font size: {exc}")
+                _set_status(self.translate("error"), True)
 
         card5 = QtWidgets.QFrame()
         card5.setObjectName("settingCard")
@@ -860,25 +875,9 @@ class SettingsDialogController(QtCore.QObject):
 
         top_layout5.addStretch()
 
-        font_size_combo = SleekComboBox()
-        font_size_combo.setObjectName("fontSizeComboBox")
-        font_size_combo.setStyleSheet(FONT_SIZE_COMBOBOX_STYLE)
-
-        font_size_delegate = CheckmarkDelegate(font_size_combo)
-        font_size_combo.setItemDelegate(font_size_delegate)
-
-        for i, size in enumerate(font_size_options):
-            font_size_combo.addItem(f"{size} px", size)
-            if size == current_font_size:
-                font_size_combo.setCurrentIndex(font_size_combo.count() - 1)
-
-        # Fallback: if current font size wasn't in the list, select default
-        if font_size_combo.currentIndex() < 0:
-            default_idx = font_size_combo.findData(DEFAULT_OCR_FONT_SIZE)
-            if default_idx >= 0:
-                font_size_combo.setCurrentIndex(default_idx)
-
-        top_layout5.addWidget(font_size_combo, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
+        stepper = FontSizeStepper(initial_value=get_ocr_font_size())
+        stepper.value_changed.connect(change_font_size)
+        top_layout5.addWidget(stepper, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
 
         card5_layout.addWidget(top_row5)
 
@@ -887,8 +886,33 @@ class SettingsDialogController(QtCore.QObject):
         subtitle5.setStyleSheet(SUBTITLE_STYLE)
         card5_layout.addWidget(subtitle5)
 
-        font_size_combo.currentIndexChanged.connect(change_font_size)
         body_layout.addWidget(card5)
+
+        # --- Startup card ---
+        async def toggle_startup(checked):
+            success = await startup_manager.set_startup_state(checked)
+            if not success and checked:
+                real_state = await startup_manager.get_startup_state()
+                card4_switch.setChecked(real_state)
+
+        def on_startup_toggled(checked):
+            try:
+                loop = asyncio.new_event_loop()
+                loop.run_until_complete(toggle_startup(checked))
+                loop.close()
+            except Exception as exc:
+                logger.exception(f"Failed to toggle startup state: {exc}")
+
+        loop = asyncio.get_event_loop()
+        initial_startup = loop.run_until_complete(startup_manager.get_startup_state())
+
+        card4, card4_switch = _make_startup_card(
+            self.translate("settings_startup_label"),
+            self.translate("settings_startup_subtitle"),
+            initial_startup,
+        )
+        card4_switch.clicked.connect(on_startup_toggled)
+        body_layout.addWidget(card4)
 
         outer_layout.addWidget(body)
 

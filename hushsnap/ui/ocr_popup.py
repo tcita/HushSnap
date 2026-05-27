@@ -280,7 +280,7 @@ class OcrPopup(QtWidgets.QWidget):
             " font-size: 12px;"
             "}"
         )
-        self._apply_font_size()
+        self.apply_font_size()
         self._refresh_labels()
 
     def _refresh_labels(self):
@@ -380,7 +380,7 @@ class OcrPopup(QtWidgets.QWidget):
 
         self.title_label.setText(self.translate("ocr_popup_title"))
         self._refresh_labels()
-        self._apply_font_size()
+        self.apply_font_size()
         self.text_edit.setPlainText(text)
         self._fit_text_edit_to_content()
         self.resize(self.width(), self.sizeHint().height())
@@ -445,10 +445,10 @@ class OcrPopup(QtWidgets.QWidget):
     def _on_text_changed(self):
         QtCore.QTimer.singleShot(0, self._fit_text_edit_to_content)
 
-    def _apply_font_size(self):
+    def apply_font_size(self):
         font_size = get_ocr_font_size()
         font = self.text_edit.font()
-        font.setPixelSize(font_size)
+        font.setPointSizeF(font_size * 0.75)
         self.text_edit.setFont(font)
         doc = self.text_edit.document()
         doc.setDefaultFont(font)
