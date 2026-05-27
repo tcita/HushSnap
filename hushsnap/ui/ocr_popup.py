@@ -4,6 +4,8 @@ Floating OCR text popup widget.
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
+from ..config import get_ocr_font_size
+
 
 class OcrPopup(QtWidgets.QWidget):
     """Semi-transparent floating popup for recognized OCR text."""
@@ -19,6 +21,7 @@ class OcrPopup(QtWidgets.QWidget):
         self._drag_pos = None
         self._last_pixmap = None
         self._is_refreshing = False
+        self._user_resized = False
 
         self.setWindowFlags(
             QtCore.Qt.WindowType.Tool
@@ -35,7 +38,11 @@ class OcrPopup(QtWidgets.QWidget):
 
         panel = QtWidgets.QFrame()
         panel.setObjectName("ocrPanel")
-        outer.addWidget(panel)
+        panel.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding,
+            QtWidgets.QSizePolicy.Policy.Expanding,
+        )
+        outer.addWidget(panel, 1)
 
         layout = QtWidgets.QVBoxLayout(panel)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -118,7 +125,7 @@ class OcrPopup(QtWidgets.QWidget):
         self.text_edit.setObjectName("ocrText")
         self.text_edit.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Expanding,
-            QtWidgets.QSizePolicy.Policy.MinimumExpanding,
+            QtWidgets.QSizePolicy.Policy.Expanding,
         )
         self.text_edit.setContentsMargins(0, 0, 0, 0)
         self.text_edit.setViewportMargins(0, 0, 0, 0)
@@ -222,7 +229,6 @@ class OcrPopup(QtWidgets.QWidget):
             " border: 1px solid rgba(190, 255, 212, 28);"
             " border-radius: 10px;"
             " color: #F5FFF7;"
-            " font-size: 16px;"
             " padding: 10px 10px 10px 10px;"
             "}"
             "#ocrNotice {"
@@ -274,6 +280,7 @@ class OcrPopup(QtWidgets.QWidget):
             " font-size: 12px;"
             "}"
         )
+        self._apply_font_size()
         self._refresh_labels()
 
     def _refresh_labels(self):
@@ -337,6 +344,7 @@ class OcrPopup(QtWidgets.QWidget):
     def show_text(self, text, pixmap=None, lang=None, engine=None):
         """Display OCR text and show popup near bottom-right corner."""
         self._is_refreshing = True
+        self._user_resized = False
         if pixmap is not None:
             self._last_pixmap = pixmap
 
@@ -372,6 +380,7 @@ class OcrPopup(QtWidgets.QWidget):
 
         self.title_label.setText(self.translate("ocr_popup_title"))
         self._refresh_labels()
+        self._apply_font_size()
         self.text_edit.setPlainText(text)
         self._fit_text_edit_to_content()
         self.resize(self.width(), self.sizeHint().height())
@@ -436,20 +445,33 @@ class OcrPopup(QtWidgets.QWidget):
     def _on_text_changed(self):
         QtCore.QTimer.singleShot(0, self._fit_text_edit_to_content)
 
+    def _apply_font_size(self):
+        font_size = get_ocr_font_size()
+        font = self.text_edit.font()
+        font.setPixelSize(font_size)
+        self.text_edit.setFont(font)
+        doc = self.text_edit.document()
+        doc.setDefaultFont(font)
+
     def _fit_text_edit_to_content(self):
-        # Use block count and font metrics for reliable height estimation
         fm = self.text_edit.fontMetrics()
         line_height = fm.lineSpacing()
         document_height = self.text_edit.document().blockCount() * line_height
-        
+
         frame = self.text_edit.frameWidth() * 2
-        # Style has padding: 12px 10px 12px 10px
         v_padding = 24
         min_height = 120
         max_height = 500
         target_height = int(document_height + frame + v_padding + 4)
-        self.text_edit.setFixedHeight(max(min_height, min(target_height, max_height)))
-        # Also adjust window height to fit
+        clamped = max(min_height, min(target_height, max_height))
+
+        if self._user_resized:
+            self.text_edit.setMinimumHeight(max(min_height, min(document_height + frame + v_padding + 4, max_height)))
+            self.text_edit.setMaximumHeight(16777215)
+            return
+
+        self.text_edit.setMinimumHeight(clamped)
+        self.text_edit.setMaximumHeight(clamped)
         self.resize(self.width(), self.sizeHint().height())
 
     @staticmethod
@@ -553,6 +575,16 @@ class OcrPopup(QtWidgets.QWidget):
         self.copy_btn.setProperty("copied", False)
         self.copy_btn.style().unpolish(self.copy_btn)
         self.copy_btn.style().polish(self.copy_btn)
+
+    def resizeEvent(self, event):
+        """Track manual window resize and release auto-fit height constraint."""
+        super().resizeEvent(event)
+        if self.isVisible() and not self._is_refreshing:
+            self._user_resized = True
+            QtCore.QTimer.singleShot(0, self._release_max_height)
+
+    def _release_max_height(self):
+        self.text_edit.setMaximumHeight(16777215)
 
     def mousePressEvent(self, event):
         """Enable dragging the window."""

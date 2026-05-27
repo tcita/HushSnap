@@ -13,8 +13,11 @@ from ..config import (
     update_ocr_hotkey_in_config,
     get_configured_ui_lang,
     update_ui_lang_in_config,
+    get_ocr_font_size,
+    update_ocr_font_size,
 )
 from ..system import startup_manager
+from ..constants import DEFAULT_OCR_FONT_SIZE
 from .styles import (
     CAPTURE_CANCEL_BUTTON_STYLE,
     CAPTURE_DIALOG_STYLE,
@@ -23,6 +26,7 @@ from .styles import (
     CAPTURE_INPUT_STYLE,
     CAPTURE_SAVE_BUTTON_STYLE,
     DIALOG_STYLE,
+    FONT_SIZE_COMBOBOX_STYLE,
     GHOST_BUTTON_STYLE,
     HEADER_BAR_STYLE,
     HEADER_ICON_STYLE,
@@ -820,6 +824,70 @@ class SettingsDialogController(QtCore.QObject):
         )
         card4_switch.clicked.connect(on_startup_toggled)
         body_layout.addWidget(card4)
+
+        # --- Font size card ---
+        def change_font_size(index):
+            font_size = font_size_combo.itemData(index)
+            if font_size is not None:
+                try:
+                    update_ocr_font_size(font_size)
+                except Exception as exc:
+                    logger.exception(f"Failed to save OCR font size: {exc}")
+                    _set_status(self.translate("error"), True)
+
+        font_size_options = [12, 14, 16, 18, 20, 22, 24]
+        current_font_size = get_ocr_font_size()
+
+        card5 = QtWidgets.QFrame()
+        card5.setObjectName("settingCard")
+        card5.setStyleSheet(SETTING_CARD_STYLE)
+
+        card5_layout = QtWidgets.QVBoxLayout(card5)
+        card5_layout.setContentsMargins(14, 10, 14, 10)
+        card5_layout.setSpacing(2)
+
+        top_row5 = QtWidgets.QWidget()
+        top_row5.setStyleSheet("background: transparent; border: none;")
+        top_layout5 = QtWidgets.QHBoxLayout(top_row5)
+        top_layout5.setContentsMargins(0, 0, 0, 0)
+        top_layout5.setSpacing(8)
+
+        label5 = QtWidgets.QLabel(self.translate("settings_ocr_font_size_label"))
+        label5.setObjectName("rowLabel")
+        label5.setStyleSheet(ROW_LABEL_STYLE)
+        top_layout5.addWidget(label5, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
+
+        top_layout5.addStretch()
+
+        font_size_combo = SleekComboBox()
+        font_size_combo.setObjectName("fontSizeComboBox")
+        font_size_combo.setStyleSheet(FONT_SIZE_COMBOBOX_STYLE)
+
+        font_size_delegate = CheckmarkDelegate(font_size_combo)
+        font_size_combo.setItemDelegate(font_size_delegate)
+
+        for i, size in enumerate(font_size_options):
+            font_size_combo.addItem(f"{size} px", size)
+            if size == current_font_size:
+                font_size_combo.setCurrentIndex(font_size_combo.count() - 1)
+
+        # Fallback: if current font size wasn't in the list, select default
+        if font_size_combo.currentIndex() < 0:
+            default_idx = font_size_combo.findData(DEFAULT_OCR_FONT_SIZE)
+            if default_idx >= 0:
+                font_size_combo.setCurrentIndex(default_idx)
+
+        top_layout5.addWidget(font_size_combo, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
+
+        card5_layout.addWidget(top_row5)
+
+        subtitle5 = QtWidgets.QLabel(self.translate("settings_ocr_font_size_subtitle"))
+        subtitle5.setObjectName("subtitle")
+        subtitle5.setStyleSheet(SUBTITLE_STYLE)
+        card5_layout.addWidget(subtitle5)
+
+        font_size_combo.currentIndexChanged.connect(change_font_size)
+        body_layout.addWidget(card5)
 
         outer_layout.addWidget(body)
 

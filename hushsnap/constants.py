@@ -44,6 +44,8 @@ TRAY_NOTIFICATIONS_ENABLED = False
 # OCR engine identifiers.
 OCR_ENGINE_WINDOWS = "windows"
 OCR_ENGINE_RAPID = "rapidocr"
+# Default OCR result text font size (px)
+DEFAULT_OCR_FONT_SIZE = 16
 # Small topmost audit delay in debug mode
 DEBUG_TOPMOST_DELAY_MS = 120
 

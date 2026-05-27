@@ -16,6 +16,7 @@ from .constants import (
     APP_STATE_FILENAME,
     DEFAULT_HOTKEY,
     DEFAULT_OCR_HOTKEY,
+    DEFAULT_OCR_FONT_SIZE,
 
     MOD_ALT,
     MOD_CONTROL,
@@ -410,9 +411,13 @@ def _write_state_data(state_data, state_path=None):
         state_path = STATE_PATH
     engine = _normalize_ocr_engine(state_data.get("ocr_engine")) or OCR_ENGINE_RAPID
     lang = _normalize_ocr_language_tag(state_data.get("ocr_language")) or ""
+    font_size = state_data.get("ocr_font_size", DEFAULT_OCR_FONT_SIZE)
+    if not isinstance(font_size, int):
+        font_size = DEFAULT_OCR_FONT_SIZE
     lines = [
         f'ocr_engine = "{engine}"',
         f'ocr_language = "{lang}"',
+        f'ocr_font_size = {font_size}',
         "",
     ]
     state_path.write_text("\n".join(lines), encoding="utf-8")
@@ -425,7 +430,7 @@ def _ensure_default_state_exists(state_path=None):
     if state_path.exists():
         return
     try:
-        _write_state_data({"ocr_engine": OCR_ENGINE_RAPID, "ocr_language": ""}, state_path)
+        _write_state_data({"ocr_engine": OCR_ENGINE_RAPID, "ocr_language": "", "ocr_font_size": DEFAULT_OCR_FONT_SIZE}, state_path)
     except Exception as e:
         logger.debug(f"Failed to ensure default state exists at {state_path}: {e}")
 
@@ -515,6 +520,31 @@ def update_ocr_engine(engine, state_path=None):
         _write_state_data(state_data, state_path)
     except Exception as e:
         logger.error(f"Failed to update OCR engine in state: {e}")
+
+
+def get_ocr_font_size(state_path=None):
+    """Read OCR text font size from state file (default 16)."""
+    if state_path is None:
+        state_path = STATE_PATH
+    _ensure_default_state_exists(state_path)
+    state_data = _load_state_data(state_path)
+    font_size = state_data.get("ocr_font_size", DEFAULT_OCR_FONT_SIZE)
+    if isinstance(font_size, int) and 8 <= font_size <= 48:
+        return font_size
+    return DEFAULT_OCR_FONT_SIZE
+
+
+def update_ocr_font_size(font_size, state_path=None):
+    """Persist OCR text font size to state file."""
+    if state_path is None:
+        state_path = STATE_PATH
+    _ensure_default_state_exists(state_path)
+    try:
+        state_data = _load_state_data(state_path)
+        state_data["ocr_font_size"] = int(font_size)
+        _write_state_data(state_data, state_path)
+    except Exception as e:
+        logger.error(f"Failed to update OCR font size in state: {e}")
 
 
 def load_hotkey_setting():

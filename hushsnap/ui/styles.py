@@ -249,6 +249,51 @@ QComboBox QAbstractItemView {{
 }}
 """
 
+# Font size combo box style (for settings)
+FONT_SIZE_COMBOBOX_STYLE = f"""
+QComboBox#fontSizeComboBox {{
+    background-color: #252525;
+    border: 1px solid #4a4a4a;
+    border-radius: 6px;
+    padding: 7px 12px;
+    font-size: 14px;
+    min-width: 100px;
+    color: #E0E0E0;
+}}
+QComboBox#fontSizeComboBox:hover {{
+    border-color: #666666;
+}}
+QComboBox#fontSizeComboBox::drop-down {{
+    border: none;
+    width: 28px;
+}}
+QComboBox#fontSizeComboBox::down-arrow {{
+    image: none;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 5px solid #888888;
+    width: 0;
+    height: 0;
+    subcontrol-position: center;
+}}
+QComboBox#fontSizeComboBox QAbstractItemView {{
+    background-color: #252525;
+    border: 1px solid #4a4a4a;
+    border-radius: 6px;
+    outline: 0px;
+    selection-background-color: #2d2d2d;
+    color: #E0E0E0;
+}}
+QComboBox#fontSizeComboBox QAbstractItemView::item {{
+    padding: 8px 14px;
+    min-height: 32px;
+    color: #E0E0E0;
+}}
+QComboBox#fontSizeComboBox QAbstractItemView::item:hover {{
+    background-color: #333333;
+}}
+"""
+
 # Message box style (for alerts)
 MESSAGE_BOX_STYLE = f"""
 QMessageBox {{
