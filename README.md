@@ -10,10 +10,10 @@ As the project continues to evolve, some parts of this README may occasionally l
 
 HushSnap ships with two OCR engines, selectable from the OCR popup:
 
-- **RapidOCR (default):** Runs PP-OCRv5 ONNX models in-process via the [`rapidocr`](https://github.com/RapidAI/RapidOCR) Python package (Apache 2.0). No external dependencies or language packs needed. Works offline. Uses a unified CJK+Latin model — the language selector is hidden and no configuration is needed. Ships with a Chinese-centric embedded model; recognition targets Simplified Chinese, Traditional Chinese, and English. Japanese and Korean are not supported. Carries a higher memory footprint, best suited for on-demand use.
+- **RapidOCR (default):** Runs PP-OCRv5 ONNX models in-process via the [`rapidocr`](https://github.com/RapidAI/RapidOCR) Python package (Apache 2.0). No external dependencies or language packs needed. Works offline. Uses a unified CJK+Latin model — the language selector is hidden and no configuration is needed. Ships with a Chinese-centric embedded model; tested and tuned for Simplified Chinese, Traditional Chinese, and English. Carries a higher memory footprint, best suited for on-demand use.
 - **Windows OCR:** Uses the built-in `Windows.Media.Ocr` API and requires relevant Windows language packs. Matches the selected language against installed packs with same-family fallback (e.g. selecting Simplified Chinese will use `zh-SG` if `zh-CN` is unavailable). Flatter memory profile makes it a better fit for always-on tray usage.
 
-Both engines have been tested on standard screen captures (web, apps, UIs). While both engines are theoretically capable of recognizing more languages than the three listed, the current language selection is hardcoded to Simplified Chinese, Traditional Chinese, and English — this is a deliberate scope choice, not a technical limitation of the engines themselves.
+Both engines have been tested on standard screen captures (web, apps, UIs). While both engines are theoretically capable of recognizing more languages than the three listed, **the current language selection is hardcoded to Simplified Chinese, Traditional Chinese, and English** — this is a deliberate scope choice, not a technical limitation of the engines themselves.
 
 ## Third-Party Acknowledgment
 
@@ -81,5 +81,4 @@ Run packaged EXE in debug mode:
 HushSnap is distributed exclusively through the **Microsoft Store**. Search for "HushSnap" in the Store app or visit the product page to install.
 
 ---
-
 
