@@ -77,7 +77,7 @@ def filter_datas(datas):
     out = []
     for d in datas:
         src = d[0].lower()
-        if 'translations' in src and 'qtbase_zh_cn' not in src:
+        if 'translations' in src and 'qtbase_zh_cn' not in src and 'qtbase_zh_tw' not in src:
             continue
         if 'rapidocr/models/' in src.replace('\\', '/'):
             basename = src.replace('\\', '/').rsplit('/', 1)[-1]
