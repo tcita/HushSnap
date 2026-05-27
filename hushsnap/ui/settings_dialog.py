@@ -779,6 +779,7 @@ class SettingsDialogController(QtCore.QObject):
             (self.translate("settings_language_auto"), "auto"),
             (self.translate("settings_language_en"), "en"),
             (self.translate("settings_language_zh"), "zh"),
+            (self.translate("settings_language_zh_tw"), "zh-TW"),
         ]
 
         current_lang = get_configured_ui_lang(self.config_path)

@@ -121,7 +121,10 @@ class HotkeyManager:
         return True
 
     def _show_tray_message(self, title, body, icon, timeout):
-        if self.tray_icon is None or not TRAY_NOTIFICATIONS_ENABLED:
+        """Show a tray notification. Only informational messages respect the global toggle."""
+        if self.tray_icon is None:
+            return
+        if not TRAY_NOTIFICATIONS_ENABLED and icon == QtWidgets.QSystemTrayIcon.MessageIcon.Information:
             return
         self.tray_icon.showMessage(title, body, icon, timeout)
 

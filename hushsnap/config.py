@@ -30,6 +30,7 @@ from .translations import (
     UI_LANG_AUTO,
     UI_LANG_EN,
     UI_LANG_ZH,
+    UI_LANG_ZH_TW,
     SUPPORTED_LANGUAGES,
     UI_TEXT,
 )
@@ -156,7 +157,11 @@ def get_state_path():
 
 def _default_ocr_language_for_ui_language(ui_language):
     """Map the resolved UI language to the best default OCR language tag."""
-    return "zh-CN" if ui_language == UI_LANG_ZH else "en-US"
+    if ui_language == UI_LANG_ZH_TW:
+        return "zh-TW"
+    if ui_language == UI_LANG_ZH:
+        return "zh-CN"
+    return "en-US"
 
 
 def _resolve_default_ocr_language(config_path):
@@ -638,11 +643,12 @@ def update_ui_lang_in_config(config_path, language_code):
 
 def _normalize_ui_language_code(raw_value, allow_auto=False):
     """
-    Normalize incoming language values to supported ISO 639-1 codes.
+    Normalize incoming language values to supported language codes.
 
-    Accepts common BCP 47 forms (e.g. en-US, zh-CN, zh_Hans) and maps them to:
+    Accepts common BCP 47 forms (e.g. en-US, zh-CN, zh-Hant) and maps them to:
     - 'en' for English
-    - 'zh' for Chinese
+    - 'zh' for Simplified Chinese
+    - 'zh-TW' for Traditional Chinese
     - 'auto' only when allow_auto=True
     """
     if not isinstance(raw_value, str):
@@ -655,9 +661,17 @@ def _normalize_ui_language_code(raw_value, allow_auto=False):
     if allow_auto and normalized == UI_LANG_AUTO:
         return UI_LANG_AUTO
 
-    primary_subtag = normalized.split("-", 1)[0]
-    if primary_subtag in SUPPORTED_LANGUAGES:
-        return primary_subtag
+    # Traditional Chinese variants
+    if normalized in ("zh-tw", "zh-hk", "zh-mo", "zh-hant"):
+        return UI_LANG_ZH_TW
+
+    # Simplified Chinese and other zh-* fall back to zh
+    if normalized.startswith("zh"):
+        return UI_LANG_ZH
+
+    if normalized.startswith("en"):
+        return UI_LANG_EN
+
     return None
 
 
@@ -695,22 +709,27 @@ def _normalize_ocr_engine(raw_value):
 
 
 def _get_system_ui_language():
-    """Get the user's default system UI language code ('zh' or 'en')."""
+    """Get the user's default system UI language code ('zh', 'zh-TW', or 'en')."""
     try:
         # GetUserDefaultUILanguage returns the LCID (Language Identifier)
         lcid = ctypes.windll.kernel32.GetUserDefaultUILanguage()
         primary_lang = lcid & 0x3ff  # Primary language ID is the lower 10 bits
+        sub_lang = (lcid >> 10) & 0x3f
         if primary_lang == 0x04:  # LANG_CHINESE
+            if sub_lang == 0x01:  # SUBLANG_CHINESE_TRADITIONAL (zh-TW)
+                return UI_LANG_ZH_TW
             return UI_LANG_ZH
     except Exception as e:
         logger.debug(f"Failed to get system UI language via GetUserDefaultUILanguage: {e}")
-    
+
     # Fallback to locale or environment variables
     try:
         import locale
         lang, _ = locale.getdefaultlocale()
         if lang:
             lang = lang.lower()
+            if lang in ("zh-tw", "zh-hk", "zh-mo", "zh-hant") or "taiwan" in lang:
+                return UI_LANG_ZH_TW
             if "zh" in lang or "chinese" in lang:
                 return UI_LANG_ZH
     except Exception as e:

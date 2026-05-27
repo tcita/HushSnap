@@ -209,7 +209,7 @@ class OcrController:
             except Exception as exc:
                 logging.getLogger(__name__).warning(f"Failed to parse ocr_preprocess settings: {exc}")
 
-        logging.info(f"Starting OCR request with engine: {engine}, language: {language_tag}")
+        logging.info(f"Starting OCR request with engine: {engine}")
 
         # Convert QPixmap to QImage on the main GUI thread to prevent thread-safety issues
         from PyQt6 import QtGui
