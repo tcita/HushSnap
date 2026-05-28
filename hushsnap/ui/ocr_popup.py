@@ -596,3 +596,9 @@ class OcrPopup(QtWidgets.QWidget):
             area.right() - self.width() - margin,
             area.bottom() - self.height() - margin,
         )
+
+    def hideEvent(self, event):
+        """Release cached screenshot pixmap to free RAM while hidden."""
+        self._last_pixmap = None
+        super().hideEvent(event)
+

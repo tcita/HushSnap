@@ -126,14 +126,12 @@ _engine = None
 _engine_lock = threading.Lock()
 _active_requests = 0
 _active_requests_cv = threading.Condition()
-_needs_initial_trim = False
 
 
 def _trim_working_set():
-    """Aggressively collect garbage and trim the process working set."""
+    """Aggressively collect garbage and trim the process working set once on release."""
     import gc
-    for _ in range(3):
-        gc.collect()
+    gc.collect()
 
     try:
         import ctypes
@@ -165,7 +163,7 @@ def _release_request():
 
 
 def _get_engine() -> "RapidOCR":
-    global _engine, _needs_initial_trim
+    global _engine
     if _engine is None:
         with _engine_lock:
             if _engine is None:
@@ -182,19 +180,15 @@ def _get_engine() -> "RapidOCR":
                     "Det.ocr_version": local_OCRVersion.PPOCRV5,
                     "Rec.ocr_version": local_OCRVersion.PPOCRV5,
                 })
-                # Flag that we should trim after the first use to clear import-time bloat.
-                # We don't trim immediately here because we want the first request
-                # to run without unnecessary page faults.
-                _needs_initial_trim = True
     return _engine
 
 
 def release_engine():
     """Release the RapidOCR engine singleton to free memory.
 
-    Waits for in-flight requests, tears down ONNX sessions and their
-    sub-engine wrappers, then forces garbage collection and a working-set
-    trim.  The engine is lazily re-initialized on the next OCR call.
+    Waits for in-flight requests, tears down ONNX sessions, then forces
+    garbage collection and a working-set trim. The engine is lazily
+    re-initialized on the next OCR call.
     """
     global _engine
     with _active_requests_cv:
@@ -204,16 +198,7 @@ def release_engine():
         with _engine_lock:
             if _engine is None:
                 return
-            # Tear down ONNX InferenceSessions and clear sub-engine refs
-            for attr in ("text_det", "text_cls", "text_rec"):
-                sub = getattr(_engine, attr, None)
-                if sub is None:
-                    continue
-                session = getattr(sub, "session", None)
-                if session is not None:
-                    session.session = None
-                    sub.session = None
-                setattr(_engine, attr, None)
+            # Let CPython's reference counting clean up ONNX sessions naturally
             _engine = None
 
     _trim_working_set()
@@ -241,9 +226,6 @@ def recognize_rapidocr_qimage(image: QtGui.QImage, language_tag: str = "") -> Oc
             result = engine(arr)
         finally:
             _release_request()
-            # Explicitly drop the large image buffers before text composition
-            del arr
-            del bgr_image
 
         json_data = result.to_json()
 
@@ -266,19 +248,6 @@ def recognize_rapidocr_qimage(image: QtGui.QImage, language_tag: str = "") -> Oc
     except Exception:
         logger.exception("RapidOCR engine call failed")
         return OcrRecognition(engine_type=OCR_ENGINE_RAPID)
-    finally:
-        # Clear large returned outputs and force garbage collection of circular references
-        # to ensure that operational memory remains flat.
-        if result is not None:
-            del result
-        
-        global _needs_initial_trim
-        if _needs_initial_trim:
-            _needs_initial_trim = False
-            _trim_working_set()
-        else:
-            import gc
-            gc.collect()
 
 
 

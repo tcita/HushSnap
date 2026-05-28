@@ -294,3 +294,9 @@ class CaptureWindow(QtWidgets.QWidget):
             self.on_captured(pixmap)
         except Exception:
             logger.error(f"capture_notify_err | trace={traceback.format_exc().strip()}")
+
+    def closeEvent(self, event):
+        """Immediately release raw background screenshot reference on close."""
+        self.pixmap = None
+        super().closeEvent(event)
+
