@@ -14,6 +14,7 @@ class OcrPopup(QtWidgets.QWidget):
     switch_language_requested = QtCore.pyqtSignal(str)
     open_language_settings_requested = QtCore.pyqtSignal()
     recapture_requested = QtCore.pyqtSignal()
+    hidden = QtCore.pyqtSignal()
 
     def __init__(self, translate, parent=None):
         super().__init__(parent)
@@ -601,4 +602,5 @@ class OcrPopup(QtWidgets.QWidget):
         """Release cached screenshot pixmap to free RAM while hidden."""
         self._last_pixmap = None
         super().hideEvent(event)
+        self.hidden.emit()
 

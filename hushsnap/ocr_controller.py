@@ -64,6 +64,7 @@ class OcrController:
         self.popup.switch_language_requested.connect(self._handle_notice_switch_requested)
         self.popup.open_language_settings_requested.connect(self._open_windows_language_settings)
         self.popup.recapture_requested.connect(self.on_recapture_requested)
+        self.popup.hidden.connect(self.on_ocr_popup_hidden)
 
     def set_capture_requester(self, capture_requester):
         """Set callback used by popup recapture button to open screenshot selection."""
@@ -72,6 +73,15 @@ class OcrController:
     def force_ocr_next_capture(self):
         """Flag the next capture to always run OCR (used by OCR hotkey)."""
         self._force_ocr = True
+
+    def on_ocr_popup_hidden(self):
+        """Trim working set of the current OCR engine when the popup is hidden to minimize idle footprint."""
+        logging.info("OCR popup hidden. Trimming OCR engine memory...")
+        from .ocr.engine import trim_engine
+        try:
+            trim_engine(self._current_engine)
+        except Exception as exc:
+            logging.getLogger(__name__).exception(f"Failed to trim OCR engine: {exc}")
 
     def on_recapture_requested(self):
         """Start a fresh screenshot selection from the OCR popup."""

@@ -281,6 +281,7 @@ register_engine(
     OCR_ENGINE_RAPID,
     recognize=recognize_rapidocr_result_from_pixmap,
     release=release_engine,
+    trim=_trim_working_set,
     metadata={
         "display_name": "RapidOCR",
         "error_prefixes": [],

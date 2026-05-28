@@ -8,13 +8,14 @@ _ENGINES: dict[str, dict] = {}
 _DEFAULT_ENGINE: str | None = None
 
 
-def register_engine(engine_id: str, *, recognize, release=None, metadata=None):
+def register_engine(engine_id: str, *, recognize, release=None, trim=None, metadata=None):
     """Register an OCR engine implementation.
 
     Args:
         engine_id: Unique identifier (e.g. "windows", "rapidocr").
         recognize: Callable(pixmap, language_tag, **kwargs) -> OcrRecognition.
         release: Optional zero-arg callable to free engine resources.
+        trim: Optional zero-arg callable to trim engine resident memory.
         metadata: Optional dict (display_name, error_prefixes list, etc.).
     """
     global _DEFAULT_ENGINE
@@ -22,6 +23,7 @@ def register_engine(engine_id: str, *, recognize, release=None, metadata=None):
     _ENGINES[engine_id] = {
         "recognize": recognize,
         "release": release if release is not None else (existing["release"] if existing else None),
+        "trim": trim if trim is not None else (existing["trim"] if existing else None),
         "metadata": metadata if metadata is not None else (existing["metadata"] if existing else {}),
     }
     if _DEFAULT_ENGINE is None:
@@ -43,6 +45,13 @@ def release_engine(engine_id: str):
     entry = _ENGINES.get(engine_id)
     if entry and entry["release"]:
         entry["release"]()
+
+
+def trim_engine(engine_id: str):
+    """Trim memory for a specific engine (no-op if engine has no trim hook)."""
+    entry = _ENGINES.get(engine_id)
+    if entry and entry.get("trim"):
+        entry["trim"]()
 
 
 def identify_engine_error(error_message: str) -> str | None:
