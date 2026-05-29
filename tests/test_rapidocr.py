@@ -1,3 +1,6 @@
+import threading
+import time
+
 import numpy as np
 import pytest
 from PyQt6 import QtCore, QtGui, QtWidgets
@@ -213,6 +216,58 @@ def test_engine_singleton_returns_same_instance(monkeypatch):
     e1 = _get_engine()
     e2 = _get_engine()
     assert e1 is e2 is fake
+
+
+def test_release_engine_waits_while_request_is_loading_engine(monkeypatch, qapp):
+    import hushsnap.ocr.rapidocr as rapidocr_module
+
+    fake_engine = _FakeRapidOCREngine([
+        ([[0, 0], [50, 0], [50, 20], [0, 20]], "hello", 0.98),
+    ])
+    entered_get_engine = threading.Event()
+    allow_get_engine = threading.Event()
+    release_done = threading.Event()
+    result_holder = {}
+
+    def _blocking_get_engine():
+        entered_get_engine.set()
+        assert allow_get_engine.wait(timeout=2)
+        return fake_engine
+
+    monkeypatch.setattr(rapidocr_module, "_engine", fake_engine)
+    monkeypatch.setattr(rapidocr_module, "_active_requests", 0)
+    monkeypatch.setattr(rapidocr_module, "_get_engine", _blocking_get_engine)
+    monkeypatch.setattr(rapidocr_module, "_trim_working_set", lambda: None)
+
+    img = QtGui.QImage(100, 100, QtGui.QImage.Format.Format_ARGB32)
+    img.fill(QtCore.Qt.GlobalColor.white)
+
+    def _recognize():
+        result_holder["result"] = recognize_rapidocr_qimage(img)
+
+    def _release():
+        rapidocr_module.release_engine()
+        release_done.set()
+
+    recognize_thread = threading.Thread(target=_recognize)
+    recognize_thread.start()
+    assert entered_get_engine.wait(timeout=2)
+
+    release_thread = threading.Thread(target=_release)
+    release_thread.start()
+    time.sleep(0.05)
+
+    assert not release_done.is_set()
+
+    allow_get_engine.set()
+    recognize_thread.join(timeout=2)
+    release_thread.join(timeout=2)
+
+    assert not recognize_thread.is_alive()
+    assert not release_thread.is_alive()
+    assert release_done.is_set()
+    assert result_holder["result"].text == "hello"
+    assert rapidocr_module._active_requests == 0
 
 
 # ── recognize_rapidocr_qimage ─────────────────────────────────────────

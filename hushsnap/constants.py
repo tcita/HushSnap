@@ -44,6 +44,8 @@ TRAY_NOTIFICATIONS_ENABLED = False
 # OCR engine identifiers.
 OCR_ENGINE_WINDOWS = "windows"
 OCR_ENGINE_RAPID = "rapidocr"
+# Release RapidOCR model after 5 minutes of OCR inactivity.
+OCR_RAPID_IDLE_RELEASE_MS = 5 * 60 * 1000
 # Default OCR result text font size (px)
 DEFAULT_OCR_FONT_SIZE = 16
 # Small topmost audit delay in debug mode

@@ -12,6 +12,8 @@ from .config import (
     get_config_path,
 )
 from .constants import (
+    OCR_ENGINE_RAPID,
+    OCR_RAPID_IDLE_RELEASE_MS,
     TRAY_MSG_MEDIUM_MS,
     TRAY_NOTIFICATIONS_ENABLED,
 )
@@ -69,6 +71,10 @@ class OcrController:
         self._trim_timer.setSingleShot(True)
         self._trim_timer.timeout.connect(self._trim_current_engine)
 
+        self._rapid_release_timer = QtCore.QTimer()
+        self._rapid_release_timer.setSingleShot(True)
+        self._rapid_release_timer.timeout.connect(self._release_idle_rapidocr)
+
     def set_capture_requester(self, capture_requester):
         """Set callback used by popup recapture button to open screenshot selection."""
         self.capture_requester = capture_requester
@@ -85,6 +91,14 @@ class OcrController:
             trim_engine(self._current_engine)
         except Exception as exc:
             logging.getLogger(__name__).exception(f"Failed to trim OCR engine: {exc}")
+
+    def _release_idle_rapidocr(self):
+        """Release RapidOCR after a longer idle period for low-footprint tray usage."""
+        logging.info("RapidOCR idle detected (5m). Releasing RapidOCR engine memory...")
+        try:
+            release_engine(OCR_ENGINE_RAPID)
+        except Exception as exc:
+            logging.getLogger(__name__).exception(f"Failed to release RapidOCR engine: {exc}")
 
     def on_recapture_requested(self):
         """Start a fresh screenshot selection from the OCR popup."""
@@ -121,6 +135,8 @@ class OcrController:
     def on_ocr_finished(self, response):
         self._trim_timer.start(30000)
         engine_name = response.recognition.engine_type if response.recognition else "unknown"
+        if engine_name == OCR_ENGINE_RAPID or self._current_engine == OCR_ENGINE_RAPID:
+            self._rapid_release_timer.start(OCR_RAPID_IDLE_RELEASE_MS)
         error_part = f", Error: {response.error}" if response.error else ""
         logging.info(f"OCR finished (engine={engine_name}){error_part}, Text length: {len(response.text or '')}")
         if not self._force_ocr:
@@ -196,6 +212,7 @@ class OcrController:
         logging.info("Engine switched: %s -> %s", self._current_engine, engine)
         update_ocr_engine(engine)
 
+        self._rapid_release_timer.stop()
         release_engine(self._current_engine)
         self._current_engine = engine
 
@@ -213,6 +230,7 @@ class OcrController:
 
     def _start_request(self, pixmap, language_tag, engine):
         self._trim_timer.stop()
+        self._rapid_release_timer.stop()
         debug_dir = self.user_data_dir if self.save_debug_image else None
         
         # Load custom preprocess settings from config if available

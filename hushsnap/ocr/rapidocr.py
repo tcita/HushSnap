@@ -220,14 +220,13 @@ def recognize_rapidocr_qimage(image: QtGui.QImage, language_tag: str = "") -> Oc
         ptr.setsize(bgr_image.sizeInBytes())
         arr = np.frombuffer(ptr, dtype=np.uint8).reshape((height, width, 4))[:, :, :3].copy()
 
-        engine = _get_engine()
         _acquire_request()
         try:
+            engine = _get_engine()
             result = engine(arr)
+            json_data = result.to_json()
         finally:
             _release_request()
-
-        json_data = result.to_json()
 
         if json_data is None:
             logger.debug("RapidOCR returned no text (to_json is None)")

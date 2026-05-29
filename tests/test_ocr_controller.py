@@ -4,6 +4,7 @@ import pytest
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from hushsnap import ocr_controller
+from hushsnap.constants import OCR_RAPID_IDLE_RELEASE_MS
 from hushsnap.ocr import OcrRecognition, OcrResponse
 
 
@@ -490,3 +491,30 @@ def test_memory_trim_timer_behavior(monkeypatch, qapp, tmp_path, sample_pixmap):
     
     controller._trim_current_engine()
     assert trimmed_engine == ["rapidocr"]
+
+
+def test_rapidocr_idle_release_timer_behavior(monkeypatch, qapp, tmp_path, sample_pixmap):
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+
+    controller._rapid_release_timer.start(5000)
+    assert controller._rapid_release_timer.isActive()
+
+    controller._start_request(sample_pixmap, "en-US", "rapidocr")
+    assert not controller._rapid_release_timer.isActive()
+
+    controller.on_ocr_finished(
+        OcrResponse(
+            text="test",
+            error="",
+            pixmap=sample_pixmap,
+            recognition=OcrRecognition(engine_type="rapidocr"),
+        )
+    )
+    assert controller._rapid_release_timer.isActive()
+    assert controller._rapid_release_timer.interval() == OCR_RAPID_IDLE_RELEASE_MS
+
+    released_engine = []
+    monkeypatch.setattr(ocr_controller, "release_engine", lambda engine: released_engine.append(engine))
+
+    controller._release_idle_rapidocr()
+    assert released_engine == ["rapidocr"]
