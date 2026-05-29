@@ -64,7 +64,10 @@ class OcrController:
         self.popup.switch_language_requested.connect(self._handle_notice_switch_requested)
         self.popup.open_language_settings_requested.connect(self._open_windows_language_settings)
         self.popup.recapture_requested.connect(self.on_recapture_requested)
-        self.popup.hidden.connect(self.on_ocr_popup_hidden)
+
+        self._trim_timer = QtCore.QTimer()
+        self._trim_timer.setSingleShot(True)
+        self._trim_timer.timeout.connect(self._trim_current_engine)
 
     def set_capture_requester(self, capture_requester):
         """Set callback used by popup recapture button to open screenshot selection."""
@@ -74,9 +77,9 @@ class OcrController:
         """Flag the next capture to always run OCR (used by OCR hotkey)."""
         self._force_ocr = True
 
-    def on_ocr_popup_hidden(self):
-        """Trim working set of the current OCR engine when the popup is hidden to minimize idle footprint."""
-        logging.info("OCR popup hidden. Trimming OCR engine memory...")
+    def _trim_current_engine(self):
+        """Trim working set of the current OCR engine to minimize idle footprint."""
+        logging.info("OCR inactivity detected (30s). Trimming OCR engine memory...")
         from .ocr.engine import trim_engine
         try:
             trim_engine(self._current_engine)
@@ -116,6 +119,7 @@ class OcrController:
         )
 
     def on_ocr_finished(self, response):
+        self._trim_timer.start(30000)
         engine_name = response.recognition.engine_type if response.recognition else "unknown"
         error_part = f", Error: {response.error}" if response.error else ""
         logging.info(f"OCR finished (engine={engine_name}){error_part}, Text length: {len(response.text or '')}")
@@ -208,6 +212,7 @@ class OcrController:
         )
 
     def _start_request(self, pixmap, language_tag, engine):
+        self._trim_timer.stop()
         debug_dir = self.user_data_dir if self.save_debug_image else None
         
         # Load custom preprocess settings from config if available

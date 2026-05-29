@@ -465,3 +465,28 @@ def test_on_ocr_finished_skips_when_not_forced(monkeypatch, qapp, tmp_path, samp
     )
 
     assert qapp.clipboard().text() == ""
+
+
+def test_memory_trim_timer_behavior(monkeypatch, qapp, tmp_path, sample_pixmap):
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+    
+    # 1. Start OCR -> timer should stop
+    controller._trim_timer.start(5000)
+    assert controller._trim_timer.isActive()
+    
+    controller._start_request(sample_pixmap, "en-US", "rapidocr")
+    assert not controller._trim_timer.isActive()
+    
+    # 2. Finish OCR -> timer should start
+    controller.on_ocr_finished(
+        OcrResponse(text="test", error="", pixmap=sample_pixmap, recognition=OcrRecognition())
+    )
+    assert controller._trim_timer.isActive()
+    assert controller._trim_timer.interval() == 30000
+    
+    # 3. Verify trim_engine is called on timeout
+    trimmed_engine = []
+    monkeypatch.setattr("hushsnap.ocr.engine.trim_engine", lambda engine: trimmed_engine.append(engine))
+    
+    controller._trim_current_engine()
+    assert trimmed_engine == ["rapidocr"]

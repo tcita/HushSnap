@@ -17,11 +17,12 @@ Flags:
 Output columns:
     elapsed    seconds since monitoring started
     rss_mb     Working Set — physical RAM in use (MiB)
+    pvt_mb     Private Bytes — Commit Size / total memory requested (MiB)
     uss_mb     Unique Set Size — private, non-shareable subset of RSS (MiB)
     handles    open Win32 handle count
     threads    thread count
     cpu_pct    process CPU utilisation across all cores (may exceed 100%)
-    delta_mb   rss_mb change since previous sample
+    delta_mb   pvt_mb change since previous sample
     note       auto-annotated events (spike, release, etc.)
 """
 
@@ -46,8 +47,8 @@ ENTRY_POINT = PROJECT_ROOT / "HushSnap.py"
 PROCESS_NAMES = ("HushSnap.exe", "HushSnap_Dev.exe")
 FALLBACK_NAMES = ("python.exe", "pythonw.exe")
 
-SPIKE_THRESHOLD_MB = 80
-RELEASE_THRESHOLD_MB = 60
+SPIKE_THRESHOLD_MB = 50
+RELEASE_THRESHOLD_MB = 40
 
 # ── process discovery / launch ──────────────────────────────────────────
 
@@ -185,6 +186,7 @@ def _print_header():
     header = (
         f"{'elapsed':>8s}  "
         f"{'rss_mb':>8s}  "
+        f"{'pvt_mb':>8s}  "
         f"{'uss_mb':>8s}  "
         f"{'handles':>7s}  "
         f"{'threads':>7s}  "
@@ -203,6 +205,7 @@ def _sample(proc: psutil.Process) -> dict:
         mem = proc.memory_full_info()
         return {
             "rss": mem.rss,
+            "pvt": getattr(mem, "private", mem.vms),  # 'private' is Commit Size on Win
             "uss": mem.uss,
             "handles": getattr(proc, "num_handles", lambda: 0)(),
             "threads": proc.num_threads(),
@@ -216,6 +219,7 @@ def _print_row(elapsed: float, snap: dict, delta_mb: float, note_str: str, csv_w
     row = (
         f"{elapsed:8.1f}  "
         f"{_fmt_mb(snap['rss']):>8s}  "
+        f"{_fmt_mb(snap['pvt']):>8s}  "
         f"{_fmt_mb(snap['uss']):>8s}  "
         f"{snap['handles']:7d}  "
         f"{snap['threads']:7d}  "
@@ -228,6 +232,7 @@ def _print_row(elapsed: float, snap: dict, delta_mb: float, note_str: str, csv_w
         csv_writer.writerow([
             f"{elapsed:.1f}",
             f"{snap['rss'] / (1024 * 1024):.1f}",
+            f"{snap['pvt'] / (1024 * 1024):.1f}",
             f"{snap['uss'] / (1024 * 1024):.1f}",
             str(snap["handles"]),
             str(snap["threads"]),
@@ -238,10 +243,12 @@ def _print_row(elapsed: float, snap: dict, delta_mb: float, note_str: str, csv_w
 
 
 def _print_summary(samples: list[dict], peaks: dict,
-                   start_rss: int, end_rss: int, duration: float):
+                   start_rss: int, end_rss: int,
+                   start_pvt: int, end_pvt: int, duration: float):
     if not samples:
         return
     rss_values = [s["rss"] for s in samples]
+    pvt_values = [s["pvt"] for s in samples]
     uss_values = [s["uss"] for s in samples]
     print()
     print("=" * 56)
@@ -250,18 +257,19 @@ def _print_summary(samples: list[dict], peaks: dict,
     print(f"  Duration:           {duration:.0f} s")
     print(f"  Samples:            {len(samples)}")
     print(f"  RSS  start / end:   {_fmt_mb(start_rss):>6s} / {_fmt_mb(end_rss):>6s} MiB")
-    print(f"  RSS  min / avg / max:  "
-          f"{_fmt_mb(min(rss_values)):>6s} / "
-          f"{_fmt_mb(int(sum(rss_values) / len(rss_values))):>6s} / "
-          f"{_fmt_mb(max(rss_values)):>6s} MiB")
+    print(f"  PVT  start / end:   {_fmt_mb(start_pvt):>6s} / {_fmt_mb(end_pvt):>6s} MiB (Commit)")
+    print(f"  PVT  min / avg / max:  "
+          f"{_fmt_mb(min(pvt_values)):>6s} / "
+          f"{_fmt_mb(int(sum(pvt_values) / len(pvt_values))):>6s} / "
+          f"{_fmt_mb(max(pvt_values)):>6s} MiB")
     if any(uss_values):
         print(f"  USS max:            {_fmt_mb(max(uss_values)):>6s} MiB")
     if peaks:
-        print(f"  Peak RSS:           {_fmt_mb(peaks['rss_value']):>6s} MiB  "
+        print(f"  Peak PVT:           {_fmt_mb(peaks['pvt_value']):>6s} MiB  "
               f"(+{peaks['elapsed']:.1f}s)")
-    net = _fmt_mb(end_rss - start_rss)
-    sign = "+" if end_rss >= start_rss else ""
-    print(f"  Net change:         {sign}{net} MiB")
+    net = _fmt_mb(end_pvt - start_pvt)
+    sign = "+" if end_pvt >= start_pvt else ""
+    print(f"  Net PVT change:     {sign}{net} MiB")
 
 
 # ── main ────────────────────────────────────────────────────────────────
@@ -290,7 +298,7 @@ def main():
         csv_file = open(args.csv, "w", newline="", encoding="utf-8")
         csv_writer = csv.writer(csv_file)
         csv_writer.writerow([
-            "elapsed_s", "rss_mb", "uss_mb",
+            "elapsed_s", "rss_mb", "pvt_mb", "uss_mb",
             "handles", "threads", "cpu_pct", "delta_mb", "note",
         ])
 
@@ -315,13 +323,14 @@ def main():
 
             delta_mb = 0.0
             if prev_snap:
-                delta_mb = (snap["rss"] - prev_snap["rss"]) / (1024 * 1024)
+                # Delta is now based on PVT for more accurate leak/spike detection
+                delta_mb = (snap["pvt"] - prev_snap["pvt"]) / (1024 * 1024)
 
             note_str = _note(delta_mb, prev_note)
             prev_note = note_str
 
-            if snap["rss"] > peaks.get("rss_value", 0):
-                peaks = {"rss_value": snap["rss"], "elapsed": elapsed}
+            if snap["pvt"] > peaks.get("pvt_value", 0):
+                peaks = {"pvt_value": snap["pvt"], "elapsed": elapsed}
 
             samples.append(snap)
             _print_row(elapsed, snap, delta_mb, note_str, csv_writer)
@@ -341,7 +350,9 @@ def main():
     duration = time.monotonic() - start_ts
     start_rss = samples[0]["rss"] if samples else 0
     end_rss = samples[-1]["rss"] if samples else 0
-    _print_summary(samples, peaks, start_rss, end_rss, duration)
+    start_pvt = samples[0]["pvt"] if samples else 0
+    end_pvt = samples[-1]["pvt"] if samples else 0
+    _print_summary(samples, peaks, start_rss, end_rss, start_pvt, end_pvt, duration)
 
 
 
