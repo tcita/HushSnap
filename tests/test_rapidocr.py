@@ -368,7 +368,6 @@ def test_recognize_rapidocr_result_from_pixmap_null(monkeypatch, qapp):
 
 def test_recognize_rapidocr_result_from_pixmap_with_text(monkeypatch, qapp):
     import hushsnap.ocr.rapidocr as rapidocr_module
-    from hushsnap.ocr.preprocess import OcrPreprocessResult, OcrPreprocessSettings
 
     fake_engine = _FakeRapidOCREngine([
         ([[0, 0], [60, 0], [60, 25], [0, 25]], "hello world", 0.99),
@@ -376,21 +375,9 @@ def test_recognize_rapidocr_result_from_pixmap_with_text(monkeypatch, qapp):
     monkeypatch.setattr(rapidocr_module, "_get_engine", lambda: fake_engine)
     monkeypatch.setattr(rapidocr_module, "_engine", fake_engine)
 
-    def mock_minimal_pipeline(pixmap, **kwargs):
-        return OcrPreprocessResult(
-            image=pixmap.toImage(),
-            settings=OcrPreprocessSettings(),
-            resolved_scale_factor=1.0
-        )
+    image = QtGui.QImage(100, 100, QtGui.QImage.Format.Format_RGB32)
+    image.fill(QtCore.Qt.GlobalColor.white)
 
-    monkeypatch.setattr(
-        "hushsnap.ocr.preprocess.run_minimal_pipeline",
-        mock_minimal_pipeline
-    )
-
-    pixmap = QtGui.QPixmap(100, 100)
-    pixmap.fill(QtCore.Qt.GlobalColor.white)
-
-    result = recognize_rapidocr_result_from_pixmap(pixmap)
+    result = recognize_rapidocr_result_from_pixmap(image)
     assert "hello world" in result.text
     assert result.engine_type == OCR_ENGINE_RAPID

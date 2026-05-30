@@ -1,8 +1,5 @@
 import logging
-import tempfile
 import threading
-from pathlib import Path
-from typing import Any
 
 # Defer rapidocr import to optimize application startup time
 from PyQt6 import QtGui
@@ -251,26 +248,15 @@ def recognize_rapidocr_qimage(image: QtGui.QImage, language_tag: str = "") -> Oc
 
 
 def recognize_rapidocr_result_from_pixmap(
-    pixmap: QtGui.QImage | QtGui.QPixmap,
+    image: QtGui.QImage,
     language_tag: str = "",
-    debug_dir: str | Path | None = None,
-    preprocess_settings: Any = None,
 ) -> OcrRecognition:
-    if pixmap.isNull():
-        logger.debug("recognize_rapidocr_result_from_pixmap called with null pixmap")
+    """RapidOCR engine entry point. Receives a preprocessed QImage."""
+    if image.isNull():
+        logger.debug("recognize_rapidocr_result_from_pixmap called with null image")
         return OcrRecognition()
 
-    from .preprocess import default_preprocess_settings, run_minimal_pipeline
-
-    active_settings = preprocess_settings or default_preprocess_settings()
-    preprocess_result = run_minimal_pipeline(pixmap, settings=active_settings)
-
-    # Debug save if needed
-    if debug_dir:
-        from .recognition import save_debug_preprocessed_image
-        save_debug_preprocessed_image(preprocess_result.image, debug_dir)
-
-    return recognize_rapidocr_qimage(preprocess_result.image, language_tag=language_tag)
+    return recognize_rapidocr_qimage(image, language_tag=language_tag)
 
 
 # Register RapidOCR engine

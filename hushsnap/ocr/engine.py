@@ -13,7 +13,7 @@ def register_engine(engine_id: str, *, recognize, release=None, trim=None, metad
 
     Args:
         engine_id: Unique identifier (e.g. "windows", "rapidocr").
-        recognize: Callable(pixmap, language_tag, **kwargs) -> OcrRecognition.
+        recognize: Callable(image: QImage, language_tag: str) -> OcrRecognition.
         release: Optional zero-arg callable to free engine resources.
         trim: Optional zero-arg callable to trim engine resident memory.
         metadata: Optional dict (display_name, error_prefixes list, etc.).

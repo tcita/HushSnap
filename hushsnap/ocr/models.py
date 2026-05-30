@@ -3,9 +3,6 @@ from pathlib import Path
 
 from PyQt6 import QtGui
 
-from .preprocess import OcrPreprocessSettings
-
-
 @dataclass
 class OcrBox:
     x: float = 0.0
@@ -44,7 +41,6 @@ class OcrRequest:
     language_tag: str = ""
     engine: str = ""
     debug_dir: str | Path | None = None
-    preprocess_settings: OcrPreprocessSettings | None = None
 
 
 @dataclass

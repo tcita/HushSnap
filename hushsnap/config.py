@@ -354,18 +354,6 @@ def _serialize_config_data(config_data):
     return "\n".join(lines).strip() + "\n"
 
 
-def get_ocr_preprocess_settings_from_config(config_path):
-    """Read OCR preprocess settings from config and return as a dict."""
-    try:
-        config_data = _load_config_data(config_path)
-        preprocess = config_data.get("ocr_preprocess")
-        if isinstance(preprocess, dict):
-            return preprocess
-    except Exception as e:
-        logger.debug(f"Failed to read OCR preprocess settings from config: {e}")
-    return {}
-
-
 def _write_config_data(config_path, config_data):
     """Write config data to disk as TOML."""
     config_path.write_text(_serialize_config_data(config_data), encoding="utf-8")

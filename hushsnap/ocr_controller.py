@@ -4,12 +4,11 @@ import os
 from PyQt6 import QtCore, QtWidgets
 
 from .config import (
+    get_config_path,
     get_ocr_engine,
     get_ocr_lang,
-    get_ocr_preprocess_settings_from_config,
     update_ocr_engine,
     update_ocr_lang,
-    get_config_path,
 )
 from .constants import (
     OCR_ENGINE_RAPID,
@@ -17,7 +16,7 @@ from .constants import (
     TRAY_MSG_MEDIUM_MS,
     TRAY_NOTIFICATIONS_ENABLED,
 )
-from .ocr import OcrPreprocessSettings, OcrRequest, OcrService
+from .ocr import OcrRequest, OcrService
 from .ocr.engine import identify_engine_error, release_engine
 from .signal_bridge import SignalBridge
 from .ui.ocr_popup import OcrPopup
@@ -232,15 +231,6 @@ class OcrController:
         self._trim_timer.stop()
         self._rapid_release_timer.stop()
         debug_dir = self.user_data_dir if self.save_debug_image else None
-        
-        # Load custom preprocess settings from config if available
-        preprocess_dict = get_ocr_preprocess_settings_from_config(self.config_path)
-        preprocess_settings = None
-        if preprocess_dict:
-            try:
-                preprocess_settings = OcrPreprocessSettings(**preprocess_dict)
-            except Exception as exc:
-                logging.getLogger(__name__).warning(f"Failed to parse ocr_preprocess settings: {exc}")
 
         logging.info(f"Starting OCR request with engine: {engine}")
 
@@ -253,7 +243,6 @@ class OcrController:
             language_tag=language_tag,
             engine=engine,
             debug_dir=debug_dir,
-            preprocess_settings=preprocess_settings,
         )
         self.service.recognize_async(
             request,

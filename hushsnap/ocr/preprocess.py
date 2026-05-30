@@ -7,7 +7,6 @@ DEFAULT_OCR_SCALE_FACTOR = 1.0
 
 @dataclass(frozen=True)
 class OcrPreprocessSettings:
-    auto_scale: bool = False
     normalize_source: bool = True
 
 
@@ -40,9 +39,6 @@ class OcrPreprocessResult:
         return " -> ".join(parts)
 
 
-DEFAULT_OCR_PREPROCESS_SETTINGS = OcrPreprocessSettings()
-
-
 def normalize_source_image(image_or_pixmap) -> QtGui.QImage:
     """Normalize DPR and pixel format to avoid HiDPI offset artifacts."""
     if isinstance(image_or_pixmap, QtGui.QPixmap):
@@ -54,16 +50,12 @@ def normalize_source_image(image_or_pixmap) -> QtGui.QImage:
     return image.convertToFormat(QtGui.QImage.Format.Format_Grayscale8)
 
 
-def default_preprocess_settings() -> OcrPreprocessSettings:
-    return DEFAULT_OCR_PREPROCESS_SETTINGS
-
-
 def run_minimal_pipeline(
     image_or_pixmap,
     settings: OcrPreprocessSettings | None = None,
 ) -> OcrPreprocessResult:
     """Normalize source image to Grayscale8 then convert to RGB32 for OCR engine compatibility."""
-    active_settings = settings or DEFAULT_OCR_PREPROCESS_SETTINGS
+    active_settings = settings or OcrPreprocessSettings()
     steps: list[OcrPreprocessStep] = []
 
     # 1. Normalize (Ensure 1.0 DPR and 8-bit grayscale for speed)

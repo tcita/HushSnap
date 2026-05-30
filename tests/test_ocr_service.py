@@ -73,35 +73,31 @@ def test_ocr_service_async_callback(monkeypatch, sample_pixmap):
     assert result_holder["response"].text == "async"
 
 
-def test_ocr_service_forwards_preprocess_settings(monkeypatch, sample_pixmap):
+def test_ocr_service_receives_preprocessed_image(monkeypatch, sample_pixmap):
     captured = {}
 
-    def _recognize(pixmap, language_tag="", debug_dir=None, preprocess_settings=None, **kwargs):
-        captured["pixmap"] = pixmap
+    def _recognize(image, language_tag=""):
+        captured["image"] = image
         captured["language_tag"] = language_tag
-        captured["debug_dir"] = debug_dir
-        captured["preprocess_settings"] = preprocess_settings
-        return ocr.OcrRecognition(text="configured")
+        return ocr.OcrRecognition(text="preprocessed")
 
     register_engine(OCR_ENGINE_WINDOWS, recognize=_recognize)
 
-    settings = ocr.OcrPreprocessSettings(auto_scale=True)
     service = ocr.OcrService()
     response = service.recognize(
         ocr.OcrRequest(
             pixmap=sample_pixmap,
             language_tag="en-US",
             engine=OCR_ENGINE_WINDOWS,
-            debug_dir="debug",
-            preprocess_settings=settings,
+            debug_dir=None,
         )
     )
 
-    assert response.text == "configured"
-    assert captured["pixmap"] is sample_pixmap
+    assert response.text == "preprocessed"
     assert captured["language_tag"] == "en-US"
-    assert captured["debug_dir"] == "debug"
-    assert captured["preprocess_settings"] == settings
+    # OcrService preprocesses the pixmap — the engine should receive a QImage
+    assert isinstance(captured["image"], QtGui.QImage)
+    assert captured["image"].format() == QtGui.QImage.Format.Format_RGB32
 
 
 def test_compose_text_from_result_keeps_chinese_tokens_intact():

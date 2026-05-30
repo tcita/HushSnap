@@ -3,6 +3,8 @@ import threading
 
 from .engine import get_default_engine, get_recognize_fn
 from .models import OcrRequest, OcrResponse
+from .preprocess import OcrPreprocessSettings, run_minimal_pipeline
+from .recognition import save_debug_preprocessed_image
 from .text import compose_text_from_result
 
 logger = logging.getLogger(__name__)
@@ -13,9 +15,11 @@ class OcrService:
     Async/sync OCR service abstraction.
     Keeps threading and error handling outside UI modules.
 
-    Uses a single worker thread. When a new request arrives while one is
-    processing, the in-flight result is dropped and the worker immediately
-    picks up the latest request — no wasted concurrent processing.
+    Runs a shared preprocessing pipeline (DPR normalization, grayscale, RGB32
+    conversion) once, then passes the prepared QImage to the engine-specific
+    recognize function. Uses a single worker thread. When a new request arrives
+    while one is processing, the in-flight result is dropped and the worker
+    immediately picks up the latest request — no wasted concurrent processing.
     """
 
     def __init__(self):
@@ -31,11 +35,16 @@ class OcrService:
             if recognize_fn is None:
                 raise ValueError(f"Unknown OCR engine: {engine_id}")
 
+            # Shared preprocessing pipeline
+            preprocess_result = run_minimal_pipeline(request.pixmap)
+
+            # Debug save
+            save_debug_preprocessed_image(preprocess_result.image, request.debug_dir)
+
+            # Engine receives the preprocessed QImage directly
             recognition = recognize_fn(
-                request.pixmap,
+                preprocess_result.image,
                 language_tag=request.language_tag,
-                debug_dir=request.debug_dir,
-                preprocess_settings=request.preprocess_settings,
             )
             if recognition:
                 recognition.engine_type = engine_id
