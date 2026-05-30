@@ -7,6 +7,7 @@ import logging
 import asyncio
 from PyQt6 import QtCore, QtGui, QtWidgets
 
+from .. import __version__
 from ..config import (
     parse_hotkey,
     update_hotkey_in_config,
@@ -924,9 +925,20 @@ class SettingsDialogController(QtCore.QObject):
         status_container = QtWidgets.QWidget()
         status_container.setStyleSheet("background: transparent; border: none;")
         sc_layout = QtWidgets.QHBoxLayout(status_container)
-        sc_layout.setContentsMargins(20, 0, 20, 12)
+        sc_layout.setContentsMargins(20, 0, 20, 0)
         sc_layout.addWidget(status_label)
         outer_layout.addWidget(status_container)
+
+        # --- Version label ---
+        version_label = QtWidgets.QLabel(
+            f"HushSnap v{__version__}  ·  TCITA Studio"
+        )
+        version_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        version_label.setStyleSheet(
+            "font-size: 10px; color: #666; padding: 6px 0 10px 0;"
+            "border: none; background: transparent;"
+        )
+        outer_layout.addWidget(version_label)
 
         def _set_status(message, is_error=False):
             status_label.setText(message)
