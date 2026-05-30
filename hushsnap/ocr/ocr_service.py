@@ -15,9 +15,8 @@ class OcrService:
     Async/sync OCR service abstraction.
     Keeps threading and error handling outside UI modules.
 
-    Runs a shared preprocessing pipeline (DPR normalization, grayscale, RGB32
-    conversion) once, then passes the prepared QImage to the engine-specific
-    recognize function. Uses a single worker thread. When a new request arrives
+    Runs a shared preprocessing pipeline (DPR normalization, grayscale) once,
+    then passes the prepared QImage to the engine-specific recognize function. Uses a single worker thread. When a new request arrives
     while one is processing, the in-flight result is dropped and the worker
     immediately picks up the latest request — no wasted concurrent processing.
     """

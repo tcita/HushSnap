@@ -60,7 +60,7 @@ def test_run_minimal_pipeline(qapp, sample_pixmap):
     result = run_minimal_pipeline(sample_pixmap, settings=settings)
 
     assert isinstance(result, OcrPreprocessResult)
-    assert result.image.format() == QtGui.QImage.Format.Format_RGB32
+    assert result.image.format() == QtGui.QImage.Format.Format_Grayscale8
     assert result.resolved_scale_factor == 1.0
 
     step_keys = [step.key for step in result.applied_steps]

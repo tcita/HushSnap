@@ -54,7 +54,7 @@ def run_minimal_pipeline(
     image_or_pixmap,
     settings: OcrPreprocessSettings | None = None,
 ) -> OcrPreprocessResult:
-    """Normalize source image to Grayscale8 then convert to RGB32 for OCR engine compatibility."""
+    """Normalize source image to Grayscale8 for OCR engine compatibility."""
     active_settings = settings or OcrPreprocessSettings()
     steps: list[OcrPreprocessStep] = []
 
@@ -75,9 +75,6 @@ def run_minimal_pipeline(
             details="Grayscale8",
         )
     )
-
-    # Final conversion to RGB32 for OCR engine compatibility
-    image = image.convertToFormat(QtGui.QImage.Format.Format_RGB32)
 
     return OcrPreprocessResult(
         image=image,

@@ -30,3 +30,4 @@ tools/health_idle.csv
 tools/health_rapidocr_hot_idle.csv
 tools/health_reports/
 tools/WACK_reports/
+/ocr_preprocess_test
