@@ -1,9 +1,6 @@
 """Prepare QImage for OCR engines — format and DPR adaptation only.
 
-This module is NOT recognition enhancement. It does no sharpening,
-binarization, grayscale conversion, or denoising. It exists as a
-boundary where future OCR input preparation steps can be added.
-
+This module is NOT recognition enhancement.
 Currently the single step ensures:
 - DPR = 1.0  (grabWindow preserves the screen's native DPR; OCR
   engines operate in raw-pixel space and ignore the metadata)
