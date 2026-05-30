@@ -3,7 +3,7 @@ import threading
 
 from .engine import get_default_engine, get_recognize_fn
 from .models import OcrRequest, OcrResponse
-from .preprocess import OcrPreprocessSettings, run_minimal_pipeline
+from .preprocess import run_minimal_pipeline
 from .recognition import save_debug_preprocessed_image
 from .text import compose_text_from_result
 
@@ -15,10 +15,8 @@ class OcrService:
     Async/sync OCR service abstraction.
     Keeps threading and error handling outside UI modules.
 
-    Runs a shared preprocessing pipeline (DPR normalization, grayscale) once,
-    then passes the prepared QImage to the engine-specific recognize function. Uses a single worker thread. When a new request arrives
-    while one is processing, the in-flight result is dropped and the worker
-    immediately picks up the latest request — no wasted concurrent processing.
+    Runs a shared image preparation step (format/DPR adaptation) once, then
+    passes the prepared QImage to the engine-specific recognize function.
     """
 
     def __init__(self):

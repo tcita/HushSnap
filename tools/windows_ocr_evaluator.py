@@ -264,8 +264,8 @@ def build_display_pipeline_steps(steps: list[OcrPreprocessStep]) -> list[OcrPrep
 def normalize_pipeline_step_for_display(step: OcrPreprocessStep) -> OcrPreprocessStep | None:
     detail = normalize_pipeline_step_detail(step)
 
-    if step.key == "normalize_source":
-        return OcrPreprocessStep(step.key, "Normalize & Grayscale", True, detail)
+    if step.key == "prepare_ocr":
+        return OcrPreprocessStep(step.key, "Prepare OCR Input", True, detail)
     if step.key == "scale":
         label = "Auto Scale" if detail.startswith("auto->") else "Scale"
         return OcrPreprocessStep(step.key, label, True, detail)
@@ -287,7 +287,7 @@ def normalize_pipeline_step_for_display(step: OcrPreprocessStep) -> OcrPreproces
 def normalize_pipeline_step_detail(step: OcrPreprocessStep) -> str:
     detail = (step.details or "").strip()
 
-    if step.key == "normalize_source":
+    if step.key == "prepare_ocr":
         return ""
     if step.key == "scale":
         if not detail:
