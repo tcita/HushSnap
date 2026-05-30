@@ -47,7 +47,7 @@ class OcrController:
         self.tray_icon = None
         self.capture_requester = None
         self._warned_engine_unavailable: set[str] = set()
-        self._force_ocr = False
+        self._should_ocr = False
 
         initial_lang = get_ocr_lang(config_path=config_path)
         lang_idx = self.popup.lang_combo.findData(initial_lang)
@@ -79,9 +79,9 @@ class OcrController:
         """Set callback used by popup recapture button to open screenshot selection."""
         self.capture_requester = capture_requester
 
-    def force_ocr_next_capture(self):
-        """Flag the next capture to always run OCR (used by OCR hotkey)."""
-        self._force_ocr = True
+    def enable_ocr_next_capture(self):
+        """Enable OCR for the next capture (used by OCR hotkey)."""
+        self._should_ocr = True
 
     def _trim_current_engine(self):
         """Trim working set of the current OCR engine to minimize idle footprint."""
@@ -106,7 +106,7 @@ class OcrController:
             logging.debug("on_recapture_requested: no capture requester is configured")
             return
 
-        self.force_ocr_next_capture()
+        self.enable_ocr_next_capture()
         self.popup.hide()
         QtCore.QTimer.singleShot(180, self._request_ocr_capture)
 
@@ -122,9 +122,9 @@ class OcrController:
         self.capture_requester(pixmap)
 
     def handle_capture_completed(self, captured_pixmap):
-        """Start OCR after a screenshot if triggered via OCR hotkey."""
-        logging.info(f"Capture completed. force_ocr: {self._force_ocr}")
-        if not self._force_ocr:
+        """Start OCR after a screenshot if OCR is enabled for this capture."""
+        logging.info(f"Capture completed. should_ocr: {self._should_ocr}")
+        if not self._should_ocr:
             return
         self._start_request(
             captured_pixmap.copy(),
@@ -139,10 +139,10 @@ class OcrController:
             self._rapid_release_timer.start(OCR_RAPID_IDLE_RELEASE_MS)
         error_part = f", Error: {response.error}" if response.error else ""
         logging.info(f"OCR finished (engine={engine_name}){error_part}, Text length: {len(response.text or '')}")
-        if not self._force_ocr:
+        if not self._should_ocr:
             return
 
-        self._force_ocr = False
+        self._should_ocr = False
 
         text = response.text
         error = response.error
@@ -200,7 +200,7 @@ class OcrController:
             logging.debug("on_ocr_lang_changed: no pixmap to re-OCR")
             return
 
-        self._force_ocr = True
+        self._should_ocr = True
         self._start_request(
             pixmap,
             lang,
@@ -221,7 +221,7 @@ class OcrController:
             logging.debug("on_ocr_engine_changed: no pixmap to re-OCR")
             return
 
-        self._force_ocr = True
+        self._should_ocr = True
         self._start_request(
             pixmap,
             self.popup.lang_combo.itemData(self.popup.lang_combo.currentIndex()),

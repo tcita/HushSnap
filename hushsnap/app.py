@@ -1,7 +1,6 @@
 import os
 import sys
 import logging
-import argparse
 import time
 import subprocess
 
@@ -9,20 +8,22 @@ from PyQt6 import QtWidgets, QtCore
 
 from .capture_session import CaptureSession
 from .config import (
+    get_config_path,
+    get_debug_enabled,
+    get_user_data_dir,
     is_already_running,
-    release_instance_lock,
     load_hotkey_setting,
     load_ocr_hotkey_setting,
+    release_instance_lock,
+    resolve_physical_path,
     resolve_ui_lang,
     ui_text,
-    resolve_physical_path,
 )
 from .hotkey import HotkeyFilter
 from .ocr_controller import OcrController
 from .system.hotkey_manager import HotkeyManager
 from .ui.settings_dialog import SettingsDialogController
 from .ui.tray import create_tray
-from .config import get_user_data_dir
 from .constants import CAPTURE_DEBUG_LOG_FILENAME
 from .logging_config import setup_logging
 from .startup_profiler import StartupProfiler
@@ -55,7 +56,7 @@ def main(boot_start_time=None):
     """
     Main application entry point.
     Flow:
-    1. Parse CLI arguments for debug mode.
+    1. Resolve data & config paths, read debug flag from config.
     2. Initialize logging and data directory.
     3. Install global exception hook.
     4. Check single-instance state.
@@ -65,18 +66,19 @@ def main(boot_start_time=None):
     8. Start Qt event loop.
     """
     overall_start = time.perf_counter()
-    
-    # 1. Parse CLI arguments
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--debug", action="store_true")
-    args, qt_args = parser.parse_known_args(sys.argv[1:])
-    force_debug = args.debug
-    save_ocr_debug_image = force_debug
+
+    # 1. Resolve paths and read debug flag from config.
+    #    The old --debug CLI flag has been removed because MSIX packages
+    #    cannot receive command-line arguments. Set ``debug = true`` in
+    #    hushsnap_config.toml instead.
     user_data_dir = get_user_data_dir()
-    
+    config_path = get_config_path()
+    force_debug = get_debug_enabled(config_path)
+    save_ocr_debug_image = force_debug
+
     # 2. Initialize logging
     setup_logging(
-        user_data_dir / CAPTURE_DEBUG_LOG_FILENAME, 
+        user_data_dir / CAPTURE_DEBUG_LOG_FILENAME,
         force_level=logging.DEBUG if force_debug else None
     )
     logger = logging.getLogger(__name__)
@@ -87,17 +89,17 @@ def main(boot_start_time=None):
         detailed_enabled=force_debug,
     )
     startup_profiler.log_header()
-    startup_profiler.log_elapsed("Args parsed and logging setup")
+    startup_profiler.log_elapsed("Config loaded and logging setup")
 
     # 3. Install global exception hook as early as possible after logging is ready.
     sys.excepthook = exception_hook
 
     with startup_profiler.step("Startup config loaded"):
-        hotkey_modifier, hotkey_virtual_key, hotkey_name, config_path = load_hotkey_setting()
+        hotkey_modifier, hotkey_virtual_key, hotkey_name, _ = load_hotkey_setting()
         ocr_hotkey_modifier, ocr_hotkey_virtual_key, ocr_hotkey_name, _ = load_ocr_hotkey_setting(config_path)
 
     if force_debug:
-        logger.info("DEBUG MODE ENABLED.")
+        logger.info("DEBUG MODE ENABLED (via config).")
         print("\n" + "="*80)
         print(f"Config directory: {config_path.parent}")
         print("="*80 + "\n")
@@ -116,7 +118,7 @@ def main(boot_start_time=None):
     with startup_profiler.step("UI services initialized"):
         # Create the Qt application instance with argv0 and any remaining CLI arguments.
         # (currently usually none unless Qt args are provided).
-        app = QtWidgets.QApplication([sys.argv[0], *qt_args])
+        app = QtWidgets.QApplication(sys.argv)
 
         # Keep the process alive after all windows are closed.
         app.setQuitOnLastWindowClosed(False)
@@ -141,7 +143,7 @@ def main(boot_start_time=None):
 
     def on_ocr_hotkey_triggered(screen_pixmap):
         """OCR screenshot: always run OCR regardless of global toggle state."""
-        ocr_controller.force_ocr_next_capture()
+        ocr_controller.enable_ocr_next_capture()
         capture_session.request_capture(screen_pixmap)
 
     def handle_taskbar_created():

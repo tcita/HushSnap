@@ -18,7 +18,7 @@ def _translate(key, **kwargs):
         "ocr_copy_btn": "Copy",
         "ocr_copied": "✓ Copied!",
         "ocr_recapture_tooltip": "Capture and OCR",
-        "ocr_lang_english": "Lang: EN",
+        "ocr_lang_english": "English",
         "ocr_lang_chinese_simplified": "Chinese (Simplified)",
         "ocr_lang_chinese_traditional": "Chinese (Traditional)",
         "ocr_lang_selector_tooltip": "Select OCR language",

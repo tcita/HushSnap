@@ -183,6 +183,8 @@ def _ensure_default_config_exists(config_path):
             "hotkey": DEFAULT_HOTKEY,
             "ocr_hotkey": DEFAULT_OCR_HOTKEY,
             "language": UI_LANG_AUTO,
+            # Enable verbose logging and save OCR debug images.
+            "debug": False,
         }
         _write_config_data(config_path, config_data)
     except Exception as e:
@@ -463,6 +465,19 @@ def _migrate_ocr_from_config(state_data, config_path):
         except Exception:
             pass
     return state_data
+
+
+def get_debug_enabled(config_path=None):
+    """Read the debug flag from config.
+
+    When true, it enables DEBUG-level logging and saves preprocessed OCR images
+    to the user data directory for troubleshooting. Set ``debug = true`` in
+    ``hushsnap_config.toml`` to activate.
+    """
+    if config_path is None:
+        config_path = get_config_path()
+    config_data = _load_config_data(config_path)
+    return bool(config_data.get("debug", False))
 
 
 def get_ocr_lang(state_path=None, config_path=None):
