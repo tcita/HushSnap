@@ -96,10 +96,12 @@ class OcrService:
                     if seq == self._seq:
                         callback(response)
             finally:
-                # Explicitly clear all local references to ensure large pixmaps
-                # and recognition objects are eligible for GC immediately.
+                # Explicitly clear local references so that pixmap and
+                # recognition objects are eligible for immediate reclamation
+                # by CPython's reference counting.  Do NOT call gc.collect()
+                # here — the full-heap scan would touch pages that were
+                # trimmed out of the working set by a prior idle trim,
+                # pulling them back into physical RAM for no benefit.
                 del request
                 del response
                 del callback
-                import gc
-                gc.collect()

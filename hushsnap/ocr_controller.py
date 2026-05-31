@@ -19,6 +19,7 @@ from .constants import (
 from .ocr import OcrRequest, OcrService
 from .ocr.engine import identify_engine_error, release_engine
 from .signal_bridge import SignalBridge
+from .system.memory_utils import get_working_set_mb, fmt_memory
 from .ui.ocr_popup import OcrPopup
 
 
@@ -99,21 +100,42 @@ class OcrController:
             logging.debug("[_trim_current_engine] Skipping trim: OCR request is active")
             return
 
-        logging.info(f"Trimming OCR engine memory (idle) for engine: {self._current_engine}...")
+        ws_before = get_working_set_mb()
+        logging.info(
+            "[_trim_current_engine] Trimming engine=%s (idle). %s",
+            self._current_engine, fmt_memory(),
+        )
         from .ocr.engine import trim_engine
         try:
             trim_engine(self._current_engine)
-            logging.debug("[_trim_current_engine] Trim operation finished.")
+            ws_after = get_working_set_mb()
+            logging.debug(
+                "[_trim_current_engine] Trim done. %s (delta=%.1f MB)",
+                fmt_memory(), ws_after - ws_before,
+            )
         except Exception as exc:
-            logging.getLogger(__name__).exception(f"Failed to trim OCR engine: {exc}")
+            logging.getLogger(__name__).exception(
+                "[_trim_current_engine] Trim failed: %s. %s", exc, fmt_memory(),
+            )
 
     def _release_idle_rapidocr(self):
         """Release RapidOCR after a longer idle period for low-footprint tray usage."""
-        logging.info("RapidOCR idle detected (5m). Releasing RapidOCR engine memory...")
+        ws_before = get_working_set_mb()
+        logging.info(
+            "[_release_idle_rapidocr] RapidOCR idle (5m). Releasing engine. %s",
+            fmt_memory(),
+        )
         try:
             release_engine(OCR_ENGINE_RAPID)
+            ws_after = get_working_set_mb()
+            logging.debug(
+                "[_release_idle_rapidocr] Release done. %s (delta=%.1f MB)",
+                fmt_memory(), ws_after - ws_before,
+            )
         except Exception as exc:
-            logging.getLogger(__name__).exception(f"Failed to release RapidOCR engine: {exc}")
+            logging.getLogger(__name__).exception(
+                "[_release_idle_rapidocr] Release failed: %s. %s", exc, fmt_memory(),
+            )
 
     def on_recapture_requested(self):
         """Start a fresh screenshot selection from the OCR popup."""
@@ -153,7 +175,10 @@ class OcrController:
         if engine_name == OCR_ENGINE_RAPID or self._current_engine == OCR_ENGINE_RAPID:
             self._rapid_release_timer.start(OCR_RAPID_IDLE_RELEASE_MS)
         error_part = f", Error: {response.error}" if response.error else ""
-        logging.info(f"OCR finished (engine={engine_name}){error_part}, Text length: {len(response.text or '')}")
+        logging.info(
+            "[on_ocr_finished] engine=%s, text_len=%d%s. %s",
+            engine_name, len(response.text or ""), error_part, fmt_memory(),
+        )
         if not self._should_ocr:
             return
 
@@ -248,7 +273,7 @@ class OcrController:
         self._rapid_release_timer.stop()
         debug_dir = self.user_data_dir if self.save_debug_image else None
 
-        logging.info(f"Starting OCR request with engine: {engine}")
+        logging.info("[_start_request] engine=%s. %s", engine, fmt_memory())
 
         # Convert QPixmap to QImage on the main GUI thread to prevent thread-safety issues
         from PyQt6 import QtGui
@@ -408,11 +433,23 @@ class OcrController:
             return
 
         def run_warmup():
-            logging.debug(f"[_background_warmup] Thread started for engine: {self._current_engine}")
+            ws_before = get_working_set_mb()
+            logging.debug(
+                "[_background_warmup] Thread started for engine=%s. %s",
+                self._current_engine, fmt_memory(),
+            )
             try:
                 warmup_engine(self._current_engine)
+                ws_after = get_working_set_mb()
+                logging.debug(
+                    "[_background_warmup] Warmup complete. %s (delta=%.1f MB)",
+                    fmt_memory(), ws_after - ws_before,
+                )
             except Exception as exc:
-                logging.error(f"[_background_warmup] Background warmup failed: {exc}", exc_info=True)
+                logging.error(
+                    "[_background_warmup] Warmup failed: %s. %s",
+                    exc, fmt_memory(), exc_info=True,
+                )
             finally:
                 logging.debug("[_background_warmup] Emitting warmup_finished signal...")
                 self.bridge.warmup_finished.emit()
@@ -422,7 +459,10 @@ class OcrController:
 
     def _schedule_post_warmup_trim(self):
         """Trim memory after successful warmup, unless an OCR request is active."""
-        logging.debug(f"[_schedule_post_warmup_trim] Signal received. self._should_ocr={self._should_ocr}")
+        logging.debug(
+            "[_schedule_post_warmup_trim] Signal received. should_ocr=%s. %s",
+            self._should_ocr, fmt_memory(),
+        )
         if self._should_ocr:
             logging.info("[_schedule_post_warmup_trim] Post-warmup trim skipped: OCR request in progress")
             return

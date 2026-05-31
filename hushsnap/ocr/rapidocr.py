@@ -7,6 +7,7 @@ RapidOCR = None
 OCRVersion = None
 
 from .models import OcrRecognition
+from ..system.memory_utils import get_working_set_mb, fmt_memory
 
 logger = logging.getLogger(__name__)
 
@@ -128,63 +129,45 @@ _active_requests_cv = threading.Condition()
 def _trim_working_set():
     """Aggressively collect garbage and trim the process working set once on release."""
     import gc
+
+    before_mb = get_working_set_mb()
+    logger.debug("[RapidOCR] _trim_working_set: before GC  %s", fmt_memory())
+
     gc.collect()
+
+    after_gc_mb = get_working_set_mb()
+    logger.debug("[RapidOCR] _trim_working_set: after  GC  %s (delta=%.1f MB)",
+                 fmt_memory(), after_gc_mb - before_mb)
 
     try:
         import ctypes
-        from ctypes import wintypes
-        
+
         kernel32 = ctypes.windll.kernel32
-        psapi = ctypes.windll.psapi
-        
-        class PROCESS_MEMORY_COUNTERS(ctypes.Structure):
-            _fields_ = [
-                ("cb", wintypes.DWORD),
-                ("PageFaultCount", wintypes.DWORD),
-                ("PeakWorkingSetSize", ctypes.c_size_t),
-                ("WorkingSetSize", ctypes.c_size_t),
-                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
-                ("QuotaPagedPoolUsage", ctypes.c_size_t),
-                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
-                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
-                ("PagefileUsage", ctypes.c_size_t),
-                ("PeakPagefileUsage", ctypes.c_size_t),
+        # Signature is cached by memory_utils._init(); re-declare only if
+        # this function is called before _init() has run (should not happen,
+        # but guard against it).
+        try:
+            kernel32.SetProcessWorkingSetSize.argtypes
+        except AttributeError:
+            kernel32.SetProcessWorkingSetSize.argtypes = [
+                ctypes.c_void_p, ctypes.c_ssize_t, ctypes.c_ssize_t,
             ]
+            kernel32.SetProcessWorkingSetSize.restype = ctypes.c_int
 
-        def get_working_set():
-            # Ensure types are declared before calling
-            kernel32.GetCurrentProcess.restype = ctypes.c_void_p
-            psapi.GetProcessMemoryInfo.argtypes = [
-                ctypes.c_void_p, ctypes.POINTER(PROCESS_MEMORY_COUNTERS), wintypes.DWORD
-            ]
-            psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
-
-            counters = PROCESS_MEMORY_COUNTERS()
-            counters.cb = ctypes.sizeof(PROCESS_MEMORY_COUNTERS)
-            if psapi.GetProcessMemoryInfo(kernel32.GetCurrentProcess(), ctypes.byref(counters), counters.cb):
-                return counters.WorkingSetSize / (1024 * 1024)
-            return -1.0
-
-        before_mb = get_working_set()
-
-        # Must declare proper 64-bit types for process handles and sizes
-        kernel32.SetProcessWorkingSetSize.argtypes = [
-            ctypes.c_void_p, ctypes.c_ssize_t, ctypes.c_ssize_t,
-        ]
-        kernel32.SetProcessWorkingSetSize.restype = ctypes.c_int
-        
-        # Method: SetProcessWorkingSetSize (-1, -1) is the standard graceful way
-        logger.debug("[RapidOCR] Attempting SetProcessWorkingSetSize(-1, -1)...")
+        logger.debug("[RapidOCR] Calling SetProcessWorkingSetSize(-1, -1)...")
         res = kernel32.SetProcessWorkingSetSize(kernel32.GetCurrentProcess(), -1, -1)
-        
-        after_mb = get_working_set()
+
+        after_mb = get_working_set_mb()
         if res != 0:
-            logging.info(f"[RapidOCR] Memory trim successful: {before_mb:.2f} MB -> {after_mb:.2f} MB")
+            logger.debug("[RapidOCR] _trim_working_set: after  trim %s (delta=%.1f MB)",
+                         fmt_memory(), after_mb - after_gc_mb)
         else:
-            logging.warning(f"[RapidOCR] SetProcessWorkingSetSize failed with error: {ctypes.get_last_error()}")
-        
+            logger.warning(
+                "[RapidOCR] SetProcessWorkingSetSize failed, err=%d. %s",
+                ctypes.get_last_error(), fmt_memory(),
+            )
     except Exception as exc:
-        logging.error(f"[_trim_working_set] Trim failed: {exc}", exc_info=True)
+        logger.error("[RapidOCR] _trim_working_set failed: %s", exc, exc_info=True)
 
 
 def _acquire_request():
@@ -218,12 +201,17 @@ def _get_engine() -> "RapidOCR":
                     logger.debug("[RapidOCR] Importing OCRVersion...")
                     from rapidocr import OCRVersion as local_OCRVersion
                 
+                ws_before = get_working_set_mb()
                 logging.info("[RapidOCR] Initializing engine singleton (models loading)...")
                 _engine = local_RapidOCR(params={
                     "Det.ocr_version": local_OCRVersion.PPOCRV5,
                     "Rec.ocr_version": local_OCRVersion.PPOCRV5,
                 })
-                logger.debug("[RapidOCR] RapidOCR instance created successfully.")
+                ws_after = get_working_set_mb()
+                logger.debug(
+                    "[RapidOCR] Engine created. %s (delta=%.1f MB)",
+                    fmt_memory(), ws_after - ws_before,
+                )
     return _engine
 
 
@@ -235,17 +223,30 @@ def release_engine():
     re-initialized on the next OCR call.
     """
     global _engine
+
+    ws_entry = get_working_set_mb()
+    logger.debug("[RapidOCR] release_engine: entry  %s", fmt_memory())
+
     with _active_requests_cv:
         while _active_requests > 0:
             _active_requests_cv.wait()
 
         with _engine_lock:
             if _engine is None:
+                logger.debug("[RapidOCR] release_engine: engine already None, skipping")
                 return
             # Let CPython's reference counting clean up ONNX sessions naturally
             _engine = None
 
+    ws_before_trim = get_working_set_mb()
+    logger.debug("[RapidOCR] release_engine: after del, before trim  %s (delta from entry=%.1f MB)",
+                 fmt_memory(), ws_before_trim - ws_entry)
+
     _trim_working_set()
+
+    ws_exit = get_working_set_mb()
+    logger.debug("[RapidOCR] release_engine: exit  %s (total delta=%.1f MB)",
+                 fmt_memory(), ws_exit - ws_entry)
 
 
 # ── public API ────────────────────────────────────────────────────────
@@ -308,9 +309,13 @@ def recognize_rapidocr_result_from_pixmap(
 
 def warmup_rapidocr():
     """Pre-initialize the RapidOCR singleton to avoid cold-start latency."""
+    ws_before = get_working_set_mb()
+    logger.debug("[RapidOCR] warmup_rapidocr: start  %s", fmt_memory())
     try:
         _get_engine()
-        logger.debug("RapidOCR engine warmup successful")
+        ws_after = get_working_set_mb()
+        logger.debug("[RapidOCR] warmup_rapidocr: done  %s (delta=%.1f MB)",
+                     fmt_memory(), ws_after - ws_before)
     except Exception:
         logger.exception("RapidOCR engine warmup failed")
 
