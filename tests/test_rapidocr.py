@@ -209,6 +209,12 @@ def test_compose_rapidocr_text_missing_text_key():
 def test_engine_singleton_returns_same_instance(monkeypatch):
     import hushsnap.ocr.rapidocr as rapidocr_module
 
+    # Drain any in-progress daemon warmup thread from previous tests.
+    # _get_engine() blocks on _engine_lock until the thread finishes,
+    # so after this call no background thread will race with our
+    # monkeypatch below.
+    _get_engine()
+
     monkeypatch.setattr(rapidocr_module, "_engine", None)
     fake = object()
     monkeypatch.setattr(rapidocr_module, "RapidOCR", lambda **kwargs: fake)

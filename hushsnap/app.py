@@ -201,6 +201,11 @@ def main(boot_start_time=None):
 
         ocr_controller.tray_icon = tray_icon
 
+        # Show tray icon once OCR engine warmup completes.
+        # The icon is created hidden; this connection makes it appear
+        # when the app is truly ready — no extra notification needed.
+        ocr_controller.bridge.warmup_finished.connect(tray_icon.show)
+
         # Hotkey manager handles registration/unregistration with Windows.
         hotkey_manager = HotkeyManager(
             tray_icon,

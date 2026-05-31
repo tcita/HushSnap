@@ -178,7 +178,8 @@ def create_tray(
     # Create right-click context menu.
     tray_menu = QtWidgets.QMenu()
     tray_icon.setContextMenu(tray_menu)
-    tray_icon.show()
+    # Tray is shown after OCR warmup completes (see app.py).
+    # Delaying the tray gives a subtle "still loading" signal to the user.
 
     # Style QMenu window with modern dark theme and translucent corners
     tray_menu.setStyleSheet("""

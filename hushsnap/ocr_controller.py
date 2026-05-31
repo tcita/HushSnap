@@ -430,6 +430,9 @@ class OcrController:
                 "[_background_warmup] Skipping warmup: OCR already requested "
                 "(engine will be initialized by the OCR path)"
             )
+            # Still signal completion so that downstream listeners (e.g.
+            # tray-icon show) are not left waiting forever.
+            self.bridge.warmup_finished.emit()
             return
 
         def run_warmup():
