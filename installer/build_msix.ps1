@@ -388,7 +388,6 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $rootDir = Resolve-Path (Join-Path $scriptDir "..")
 $distDir = Join-Path $rootDir "dist\HushSnap"
 $stageDir = Join-Path $rootDir "build\msix_stage"
-$outputDir = Join-Path $rootDir "dist-installer"
 
 # 3) Resolve and parse version
 if ($Dev) {
@@ -562,7 +561,13 @@ $manifestContent | Set-Content -Path $manifestPath -Encoding UTF8
 Write-Host "  [Created] AppxManifest.xml" -ForegroundColor Green
 
 # 8) Packaging
-$msixFilename = "HushSnap.msix"
+if ($Dev) {
+    $outputDir = Join-Path $rootDir "dist-installer-dev"
+    $msixFilename = "HushSnap_Dev.msix"
+} else {
+    $outputDir = Join-Path $rootDir "dist-installer"
+    $msixFilename = "HushSnap.msix"
+}
 
 if (-not (Test-Path $outputDir)) {
     New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
