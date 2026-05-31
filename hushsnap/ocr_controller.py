@@ -60,6 +60,7 @@ class OcrController:
             self.popup.engine_combo.setCurrentIndex(engine_idx)
 
         self.bridge.signal.connect(self.on_ocr_finished)
+        self.bridge.warmup_finished.connect(self._schedule_post_warmup_trim)
         self.popup.language_changed.connect(self.on_ocr_lang_changed)
         self.popup.engine_changed.connect(self.on_ocr_engine_changed)
         self.popup.switch_language_requested.connect(self._handle_notice_switch_requested)
@@ -73,6 +74,10 @@ class OcrController:
         self._rapid_release_timer = QtCore.QTimer()
         self._rapid_release_timer.setSingleShot(True)
         self._rapid_release_timer.timeout.connect(self._release_idle_rapidocr)
+
+        # Trigger background warmup after a short delay to ensure UI is fully responsive first.
+        logging.info("[OcrController] Scheduling background warmup in 2000ms...")
+        QtCore.QTimer.singleShot(2000, self._background_warmup)
 
     def set_capture_requester(self, capture_requester):
         """Set callback used by popup recapture button to open screenshot selection."""
@@ -374,3 +379,42 @@ class OcrController:
         if self.tray_icon is None or not TRAY_NOTIFICATIONS_ENABLED:
             return
         self.tray_icon.showMessage(title, body, icon, TRAY_MSG_MEDIUM_MS)
+
+    def _background_warmup(self):
+        """Pre-initialize OCR engine in a background thread to eliminate first-call latency."""
+        import threading
+        from .ocr.engine import warmup_engine
+
+        def run_warmup():
+            logging.debug(f"[_background_warmup] Thread started for engine: {self._current_engine}")
+            try:
+                warmup_engine(self._current_engine)
+            except Exception as exc:
+                logging.error(f"[_background_warmup] Background warmup failed: {exc}", exc_info=True)
+            finally:
+                logging.debug("[_background_warmup] Emitting warmup_finished signal...")
+                self.bridge.warmup_finished.emit()
+
+        thread = threading.Thread(target=run_warmup, daemon=True)
+        thread.start()
+
+    def _schedule_post_warmup_trim(self):
+        """Schedule a memory trim after successful warmup, unless a real OCR is active."""
+        logging.debug(f"[_schedule_post_warmup_trim] Signal received. self._should_ocr={self._should_ocr}")
+        if self._should_ocr:
+            logging.info("[_schedule_post_warmup_trim] Post-warmup trim skipped: OCR request in progress")
+            return
+
+        logging.debug("[_schedule_post_warmup_trim] Starting 1s trim timer...")
+        # 1s delay is enough to ensure we don't fight with any immediate user action
+        self._trim_timer.start(1000)
+
+    def _trim_current_engine(self):
+        """Trim working set of the current OCR engine to minimize idle footprint."""
+        logging.debug(f"[_trim_current_engine] Timer timeout. Trimming memory for engine: {self._current_engine}")
+        from .ocr.engine import trim_engine
+        try:
+            trim_engine(self._current_engine)
+            logging.debug("[_trim_current_engine] Trim operation finished.")
+        except Exception as exc:
+            logging.error(f"[_trim_current_engine] Failed to trim OCR engine: {exc}", exc_info=True)

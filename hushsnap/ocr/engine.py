@@ -8,7 +8,7 @@ _ENGINES: dict[str, dict] = {}
 _DEFAULT_ENGINE: str | None = None
 
 
-def register_engine(engine_id: str, *, recognize, release=None, trim=None, metadata=None):
+def register_engine(engine_id: str, *, recognize, release=None, trim=None, warmup=None, metadata=None):
     """Register an OCR engine implementation.
 
     Args:
@@ -16,6 +16,7 @@ def register_engine(engine_id: str, *, recognize, release=None, trim=None, metad
         recognize: Callable(image: QImage, language_tag: str) -> OcrRecognition.
         release: Optional zero-arg callable to free engine resources.
         trim: Optional zero-arg callable to trim engine resident memory.
+        warmup: Optional zero-arg callable to pre-initialize engine resources.
         metadata: Optional dict (display_name, error_prefixes list, etc.).
     """
     global _DEFAULT_ENGINE
@@ -24,6 +25,7 @@ def register_engine(engine_id: str, *, recognize, release=None, trim=None, metad
         "recognize": recognize,
         "release": release if release is not None else (existing["release"] if existing else None),
         "trim": trim if trim is not None else (existing["trim"] if existing else None),
+        "warmup": warmup if warmup is not None else (existing["warmup"] if existing else None),
         "metadata": metadata if metadata is not None else (existing["metadata"] if existing else {}),
     }
     if _DEFAULT_ENGINE is None:
@@ -52,6 +54,16 @@ def trim_engine(engine_id: str):
     entry = _ENGINES.get(engine_id)
     if entry and entry.get("trim"):
         entry["trim"]()
+
+
+def warmup_engine(engine_id: str):
+    """Pre-initialize resources for a specific engine (no-op if no warmup hook)."""
+    entry = _ENGINES.get(engine_id)
+    if entry and entry.get("warmup"):
+        logger.debug("[engine] Calling warmup hook for: %s", engine_id)
+        entry["warmup"]()
+    else:
+        logger.debug("[engine] No warmup hook registered for: %s", engine_id)
 
 
 def identify_engine_error(error_message: str) -> str | None:

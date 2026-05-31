@@ -132,18 +132,59 @@ def _trim_working_set():
 
     try:
         import ctypes
+        from ctypes import wintypes
+        
         kernel32 = ctypes.windll.kernel32
+        psapi = ctypes.windll.psapi
+        
+        class PROCESS_MEMORY_COUNTERS(ctypes.Structure):
+            _fields_ = [
+                ("cb", wintypes.DWORD),
+                ("PageFaultCount", wintypes.DWORD),
+                ("PeakWorkingSetSize", ctypes.c_size_t),
+                ("WorkingSetSize", ctypes.c_size_t),
+                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                ("PagefileUsage", ctypes.c_size_t),
+                ("PeakPagefileUsage", ctypes.c_size_t),
+            ]
+
+        def get_working_set():
+            # Ensure types are declared before calling
+            kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+            psapi.GetProcessMemoryInfo.argtypes = [
+                ctypes.c_void_p, ctypes.POINTER(PROCESS_MEMORY_COUNTERS), wintypes.DWORD
+            ]
+            psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
+
+            counters = PROCESS_MEMORY_COUNTERS()
+            counters.cb = ctypes.sizeof(PROCESS_MEMORY_COUNTERS)
+            if psapi.GetProcessMemoryInfo(kernel32.GetCurrentProcess(), ctypes.byref(counters), counters.cb):
+                return counters.WorkingSetSize / (1024 * 1024)
+            return -1.0
+
+        before_mb = get_working_set()
+
         # Must declare proper 64-bit types for process handles and sizes
-        # on 64-bit Windows; default ctypes returns c_int (32-bit) which
-        # silently truncates the handle and causes the trim to fail.
-        kernel32.GetCurrentProcess.restype = ctypes.c_void_p
         kernel32.SetProcessWorkingSetSize.argtypes = [
             ctypes.c_void_p, ctypes.c_ssize_t, ctypes.c_ssize_t,
         ]
         kernel32.SetProcessWorkingSetSize.restype = ctypes.c_int
-        kernel32.SetProcessWorkingSetSize(kernel32.GetCurrentProcess(), -1, -1)
-    except Exception:
-        logger.debug("SetProcessWorkingSetSize failed", exc_info=True)
+        
+        # Method: SetProcessWorkingSetSize (-1, -1) is the standard graceful way
+        logger.debug("[RapidOCR] Attempting SetProcessWorkingSetSize(-1, -1)...")
+        res = kernel32.SetProcessWorkingSetSize(kernel32.GetCurrentProcess(), -1, -1)
+        
+        after_mb = get_working_set()
+        if res != 0:
+            logging.info(f"[RapidOCR] Memory trim successful: {before_mb:.2f} MB -> {after_mb:.2f} MB")
+        else:
+            logging.warning(f"[RapidOCR] SetProcessWorkingSetSize failed with error: {ctypes.get_last_error()}")
+        
+    except Exception as exc:
+        logging.error(f"[_trim_working_set] Trim failed: {exc}", exc_info=True)
 
 
 def _acquire_request():
@@ -162,21 +203,27 @@ def _release_request():
 def _get_engine() -> "RapidOCR":
     global _engine
     if _engine is None:
+        logger.debug("[RapidOCR] _get_engine: Initializing new engine instance...")
         with _engine_lock:
             if _engine is None:
                 global RapidOCR, OCRVersion
                 if RapidOCR is not None:
                     local_RapidOCR = RapidOCR
                 else:
+                    logger.debug("[RapidOCR] Importing RapidOCR...")
                     from rapidocr import RapidOCR as local_RapidOCR
                 if OCRVersion is not None:
                     local_OCRVersion = OCRVersion
                 else:
+                    logger.debug("[RapidOCR] Importing OCRVersion...")
                     from rapidocr import OCRVersion as local_OCRVersion
+                
+                logging.info("[RapidOCR] Initializing engine singleton (models loading)...")
                 _engine = local_RapidOCR(params={
                     "Det.ocr_version": local_OCRVersion.PPOCRV5,
                     "Rec.ocr_version": local_OCRVersion.PPOCRV5,
                 })
+                logger.debug("[RapidOCR] RapidOCR instance created successfully.")
     return _engine
 
 
@@ -259,6 +306,15 @@ def recognize_rapidocr_result_from_pixmap(
     return recognize_rapidocr_qimage(image, language_tag=language_tag)
 
 
+def warmup_rapidocr():
+    """Pre-initialize the RapidOCR singleton to avoid cold-start latency."""
+    try:
+        _get_engine()
+        logger.debug("RapidOCR engine warmup successful")
+    except Exception:
+        logger.exception("RapidOCR engine warmup failed")
+
+
 # Register RapidOCR engine
 from .engine import register_engine  # noqa: E402
 from ..constants import OCR_ENGINE_RAPID  # noqa: E402
@@ -267,6 +323,7 @@ register_engine(
     recognize=recognize_rapidocr_result_from_pixmap,
     release=release_engine,
     trim=_trim_working_set,
+    warmup=warmup_rapidocr,
     metadata={
         "display_name": "RapidOCR",
         "error_prefixes": [],

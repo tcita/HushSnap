@@ -252,20 +252,6 @@ def main(boot_start_time=None):
     # Unregister hotkey and release system resources before app exit.
     app.aboutToQuit.connect(hotkey_manager.release_resources)
 
-    with startup_profiler.step("Memory trim"):
-        gc.collect()
-        try:
-            import ctypes
-            kernel32 = ctypes.windll.kernel32
-            kernel32.GetCurrentProcess.restype = ctypes.c_void_p
-            kernel32.SetProcessWorkingSetSize.argtypes = [
-                ctypes.c_void_p, ctypes.c_ssize_t, ctypes.c_ssize_t,
-            ]
-            kernel32.SetProcessWorkingSetSize.restype = ctypes.c_int
-            kernel32.SetProcessWorkingSetSize(kernel32.GetCurrentProcess(), -1, -1)
-        except Exception:
-            logger.debug("Startup memory trim skipped", exc_info=True)
-
     startup_profiler.log_summary()
 
     sys.exit(app.exec())
