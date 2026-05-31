@@ -1,7 +1,8 @@
 @echo off
 chcp 65001 >nul
 echo ==========================================================
-echo Starting HushSnap MSIX Packaging...
+echo HushSnap MSIX Packaging - RELEASE Build
+echo (For Partner Center upload)
 echo ==========================================================
 echo.
 
@@ -18,5 +19,8 @@ echo.
 echo Build succeeded!
 powershell -Command "$v = (& git -C '%~dp0' describe --tags --abbrev=0 2>$null) -replace '^v',''; if (-not $v) { $v = 'unknown' }; Write-Host '  Version:' $v"
 echo.
-timeout /t 1 /nobreak >nul
+echo NOTE: This MSIX is for Partner Center upload (unsigned).
+echo For local dev testing, use: build_msix_dev.bat
+echo.
+timeout /t 5 /nobreak >nul
 exit /b 0

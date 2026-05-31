@@ -8,10 +8,6 @@ __pycache__/
 # Installer build artifacts
 dist-installer/
 
-# Output MSIX test folder (keep the signing script, ignore the built packages)
-dist-installer-test/
-!dist-installer-test/sign_for_local_test.bat
-
 # Executables
 *.exe
 
@@ -19,9 +15,6 @@ dist-installer-test/
 .vscode/
 .vs/
 .claude/settings.local.json
-
-# Local developer scripts (not committed, each dev uses their own)
-register_dev_msix.bat
 
 # Tool output / profiling data
 tools/health_idle.csv
