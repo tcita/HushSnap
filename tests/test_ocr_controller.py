@@ -518,3 +518,134 @@ def test_rapidocr_idle_release_timer_behavior(monkeypatch, qapp, tmp_path, sampl
 
     controller._release_idle_rapidocr()
     assert released_engine == ["rapidocr"]
+
+
+# ── Warmup vs. OCR collision tests ──────────────────────────────────────
+
+def test_warmup_skipped_when_ocr_already_requested(monkeypatch, qapp, tmp_path):
+    """If user already triggered OCR, skip warmup — the OCR path will
+    initialize the engine via _get_engine() on its own."""
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+    controller._should_ocr = True
+
+    warmup_calls = []
+    monkeypatch.setattr(
+        "hushsnap.ocr.engine.warmup_engine",
+        lambda engine: warmup_calls.append(engine),
+    )
+
+    controller._background_warmup()
+
+    assert warmup_calls == []
+    assert controller._should_ocr is True  # flag unchanged
+
+
+def test_warmup_runs_when_no_ocr_pending(monkeypatch, qapp, tmp_path):
+    """Warmup should initialize the engine and emit warmup_finished
+    when no OCR request is in progress."""
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+    controller._should_ocr = False
+
+    warmup_calls = []
+    monkeypatch.setattr(
+        "hushsnap.ocr.engine.warmup_engine",
+        lambda engine: warmup_calls.append(engine),
+    )
+
+    # Replace threading.Thread so the warmup body runs synchronously
+    # inside _background_warmup — deterministic assertions.
+    class SyncThread:
+        def __init__(self, target=None, daemon=False):
+            self._target = target
+
+        def start(self):
+            self._target()
+
+    monkeypatch.setattr("threading.Thread", SyncThread)
+
+    warmup_received = []
+    controller.bridge.warmup_finished.connect(
+        lambda: warmup_received.append(True)
+    )
+
+    controller._background_warmup()
+
+    assert warmup_calls == [controller._current_engine]
+    assert warmup_received == [True]
+
+
+def test_post_warmup_trim_skipped_when_ocr_in_progress(monkeypatch, qapp, tmp_path):
+    """_schedule_post_warmup_trim must not start the trim timer when
+    an OCR request is active (_should_ocr == True)."""
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+    controller._should_ocr = True
+
+    controller._trim_timer.stop()
+    assert not controller._trim_timer.isActive()
+
+    controller._schedule_post_warmup_trim()
+
+    assert not controller._trim_timer.isActive()
+
+
+def test_post_warmup_trim_starts_timer_when_idle(monkeypatch, qapp, tmp_path):
+    """_schedule_post_warmup_trim should start the trim timer (interval=0)
+    when no OCR is pending."""
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+    controller._should_ocr = False
+
+    controller._trim_timer.stop()
+    assert not controller._trim_timer.isActive()
+
+    controller._schedule_post_warmup_trim()
+
+    assert controller._trim_timer.isActive()
+    assert controller._trim_timer.interval() == 0
+
+
+def test_ocr_request_cancels_pending_trim(monkeypatch, qapp, tmp_path, sample_pixmap):
+    """_start_request must stop the trim timer, cancelling any pending
+    post-warmup or post-OCR trim."""
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+    controller._should_ocr = True
+
+    # Simulate a pending trimming timer (post-warmup or post-OCR)
+    controller._trim_timer.start(0)
+    assert controller._trim_timer.isActive()
+
+    controller._start_request(sample_pixmap, "en-US", "rapidocr")
+
+    assert not controller._trim_timer.isActive()
+
+
+def test_warmup_finished_signal_triggers_trim(monkeypatch, qapp, tmp_path):
+    """The warmup_finished Qt signal must be connected to
+    _schedule_post_warmup_trim, which starts the trim timer when idle."""
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+    controller._should_ocr = False
+
+    controller._trim_timer.stop()
+    assert not controller._trim_timer.isActive()
+
+    # Emit the signal directly — simulates warmup thread finishing
+    controller.bridge.warmup_finished.emit()
+
+    assert controller._trim_timer.isActive()
+    assert controller._trim_timer.interval() == 0
+
+
+def test_trim_current_engine_skips_when_ocr_active(monkeypatch, qapp, tmp_path):
+    """_trim_current_engine must be a no-op when _should_ocr is True,
+    regardless of which path (post-warmup or post-OCR) triggered it."""
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+    controller._should_ocr = True
+
+    trim_calls = []
+    monkeypatch.setattr(
+        "hushsnap.ocr.engine.trim_engine",
+        lambda engine: trim_calls.append(engine),
+    )
+
+    controller._trim_current_engine()
+
+    assert trim_calls == []  # trim was skipped

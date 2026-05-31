@@ -75,9 +75,12 @@ class OcrController:
         self._rapid_release_timer.setSingleShot(True)
         self._rapid_release_timer.timeout.connect(self._release_idle_rapidocr)
 
-        # Trigger background warmup after a short delay to ensure UI is fully responsive first.
-        logging.info("[OcrController] Scheduling background warmup in 2000ms...")
-        QtCore.QTimer.singleShot(2000, self._background_warmup)
+        # Warm up as soon as the event loop starts so the engine is ready
+        # before the user's first OCR call. Warmup runs on a background
+        # thread; if the user beats us and triggers OCR first, we skip
+        # warmup — the OCR path will initialize the engine on its own.
+        logging.info("[OcrController] Scheduling background warmup on event loop start...")
+        QtCore.QTimer.singleShot(0, self._background_warmup)
 
     def set_capture_requester(self, capture_requester):
         """Set callback used by popup recapture button to open screenshot selection."""
@@ -89,10 +92,18 @@ class OcrController:
 
     def _trim_current_engine(self):
         """Trim working set of the current OCR engine to minimize idle footprint."""
-        logging.info("OCR inactivity detected (30s). Trimming OCR engine memory...")
+        # Guard: if OCR was requested between the timer being scheduled and
+        # this callback firing, skip the trim. The engine is still in use
+        # (or about to be), and on_ocr_finished will re-schedule a 30s trim.
+        if self._should_ocr:
+            logging.debug("[_trim_current_engine] Skipping trim: OCR request is active")
+            return
+
+        logging.info(f"Trimming OCR engine memory (idle) for engine: {self._current_engine}...")
         from .ocr.engine import trim_engine
         try:
             trim_engine(self._current_engine)
+            logging.debug("[_trim_current_engine] Trim operation finished.")
         except Exception as exc:
             logging.getLogger(__name__).exception(f"Failed to trim OCR engine: {exc}")
 
@@ -385,6 +396,17 @@ class OcrController:
         import threading
         from .ocr.engine import warmup_engine
 
+        # If the user already triggered OCR (e.g. pressed the OCR hotkey
+        # before the event loop started processing this timer callback),
+        # skip warmup — the OCR request will initialize the engine via its
+        # own call to _get_engine(), making warmup redundant.
+        if self._should_ocr:
+            logging.info(
+                "[_background_warmup] Skipping warmup: OCR already requested "
+                "(engine will be initialized by the OCR path)"
+            )
+            return
+
         def run_warmup():
             logging.debug(f"[_background_warmup] Thread started for engine: {self._current_engine}")
             try:
@@ -399,22 +421,15 @@ class OcrController:
         thread.start()
 
     def _schedule_post_warmup_trim(self):
-        """Schedule a memory trim after successful warmup, unless a real OCR is active."""
+        """Trim memory after successful warmup, unless an OCR request is active."""
         logging.debug(f"[_schedule_post_warmup_trim] Signal received. self._should_ocr={self._should_ocr}")
         if self._should_ocr:
             logging.info("[_schedule_post_warmup_trim] Post-warmup trim skipped: OCR request in progress")
             return
 
-        logging.debug("[_schedule_post_warmup_trim] Starting 1s trim timer...")
-        # 1s delay is enough to ensure we don't fight with any immediate user action
-        self._trim_timer.start(1000)
-
-    def _trim_current_engine(self):
-        """Trim working set of the current OCR engine to minimize idle footprint."""
-        logging.debug(f"[_trim_current_engine] Timer timeout. Trimming memory for engine: {self._current_engine}")
-        from .ocr.engine import trim_engine
-        try:
-            trim_engine(self._current_engine)
-            logging.debug("[_trim_current_engine] Trim operation finished.")
-        except Exception as exc:
-            logging.error(f"[_trim_current_engine] Failed to trim OCR engine: {exc}", exc_info=True)
+        # Defer to the next event-loop iteration so any pending UI updates
+        # render first, then trim immediately — no reason to wait longer.
+        # If the user triggers OCR before this fires, _start_request calls
+        # _trim_timer.stop() and cancels the trim.
+        logging.debug("[_schedule_post_warmup_trim] Deferring trim to next event-loop cycle...")
+        self._trim_timer.start(0)
