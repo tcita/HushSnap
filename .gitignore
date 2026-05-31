@@ -21,9 +21,7 @@ dist-installer-test/
 .claude/settings.local.json
 
 # Local developer scripts (not committed, each dev uses their own)
-build_msix.bat
 register_dev_msix.bat
-installer/build_msix.ps1
 
 # Tool output / profiling data
 tools/health_idle.csv
