@@ -312,7 +312,7 @@ def recognize_rapidocr_qimage(image: QtGui.QImage, language_tag: str = "") -> Oc
         finally:
             _release_request()
 
-        if json_data is None:
+        if not json_data:
             logger.debug("RapidOCR detection returned empty — falling back to recognition-only")
             return _recognize_without_detection(engine, arr)
 
