@@ -79,6 +79,7 @@ class OcrService:
                 request, callback, seq = self._pending
                 self._pending = None
 
+            response = None  # guard: ensure del response in finally never raises UnboundLocalError
             try:
                 response = self.recognize(request)
                 with self._lock:
