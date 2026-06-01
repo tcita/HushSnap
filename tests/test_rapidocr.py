@@ -283,6 +283,8 @@ class _FakeRapidOCREngine:
 
     def __init__(self, items=None):
         self._items = items or []
+        self.use_det = True
+        self.use_cls = True
 
     def __call__(self, *args, **kwargs):
         return self

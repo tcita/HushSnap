@@ -275,6 +275,15 @@ class OcrController:
 
         logging.info("[_start_request] engine=%s. %s", engine, fmt_memory())
 
+        # Show "Recognizing…" immediately so the user knows a new OCR pass
+        # is in progress — replaces any stale text from a previous result.
+        self.popup.show_text(
+            self.translate("ocr_recognizing"),
+            pixmap=pixmap,
+            lang=language_tag,
+            engine=engine,
+        )
+
         # Convert QPixmap to QImage on the main GUI thread to prevent thread-safety issues
         from PyQt6 import QtGui
         image = pixmap.toImage() if isinstance(pixmap, QtGui.QPixmap) else pixmap

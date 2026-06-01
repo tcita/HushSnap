@@ -56,6 +56,7 @@ def _translate(key, **kwargs):
         "ocr_copied": "✓ Copied!",
         "ocr_char_count": "{count} chars",
         "ocr_editable_hint": "Text is editable",
+        "ocr_recognizing": "Recognizing…",
         "ocr_status_done": "Recognition complete",
         "ocr_status_paste_hint": "Ctrl+V to paste",
     }
