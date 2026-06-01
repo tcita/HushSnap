@@ -16,6 +16,7 @@ dist-installer-dev/
 .vscode/
 .vs/
 .claude/
+.antigravitycli/
 
 # Tool output / profiling data
 tools/health_idle.csv
@@ -25,3 +26,4 @@ tools/WACK_reports/
 /ocr_preprocess_test
 DEV.lnk
 RELEASE.lnk
+

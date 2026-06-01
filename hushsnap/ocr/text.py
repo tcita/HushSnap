@@ -110,7 +110,7 @@ def normalize_ocr_text(text: str) -> str:
         line = line.strip()
         if not line:
             continue
-        cleaned_lines.append(cleanup_ocr_text_line(line))
+        cleaned_lines.append(line)
     return "\n".join(cleaned_lines).strip()
 
 

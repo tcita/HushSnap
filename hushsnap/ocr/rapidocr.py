@@ -103,12 +103,7 @@ def compose_rapidocr_text(blocks: list[dict]) -> str:
             if previous is None:
                 pieces.append(text)
             else:
-                gap = block["left"] - previous["right"]
-                avg_height = (block["height"] + previous["height"]) / 2
-                if gap > avg_height * 1.2:
-                    pieces.append(" " + text)
-                else:
-                    pieces.append(word_separator(previous["text"], text) + text)
+                pieces.append(word_separator(previous["text"], text) + text)
             previous = block
 
         rendered = "".join(pieces).rstrip()
@@ -251,6 +246,50 @@ def release_engine():
 
 # ── public API ────────────────────────────────────────────────────────
 
+def _recognize_without_detection(engine, arr) -> OcrRecognition:
+    """Fallback: skip text detection and run recognition on the whole image.
+
+    The RapidOCR engine's detection model has a minimum-area threshold that
+    can reject very small images (e.g. a single word).  When that happens,
+    we feed the entire image directly to the recognizer.
+    """
+    from ..constants import OCR_ENGINE_RAPID
+
+    orig_det = engine.use_det
+    orig_cls = engine.use_cls
+    try:
+        _acquire_request()
+        try:
+            rec_result = engine(arr, use_det=False, use_cls=False)
+        finally:
+            _release_request()
+
+        txts = getattr(rec_result, "txts", None)
+        if not txts or not txts[0] or not txts[0].strip():
+            logger.debug("RapidOCR recognition-only fallback also returned no text")
+            return OcrRecognition(
+                requested_language_supported=True,
+                engine_language_tag="zh-CN",
+                engine_type=OCR_ENGINE_RAPID,
+            )
+
+        recognized_text = txts[0].strip()
+        logger.debug("RapidOCR recognition-only fallback succeeded: %r", recognized_text)
+
+        h, w = arr.shape[:2]
+        blocks = [{"text": recognized_text, "box": [[0, 0], [w, 0], [w, h], [0, h]]}]
+        text = compose_rapidocr_text(blocks)
+        return OcrRecognition(
+            text=text,
+            requested_language_supported=True,
+            engine_language_tag="zh-CN",
+            engine_type=OCR_ENGINE_RAPID,
+        )
+    finally:
+        engine.use_det = orig_det
+        engine.use_cls = orig_cls
+
+
 def recognize_rapidocr_qimage(image: QtGui.QImage, language_tag: str = "") -> OcrRecognition:
     from ..constants import OCR_ENGINE_RAPID
 
@@ -274,12 +313,8 @@ def recognize_rapidocr_qimage(image: QtGui.QImage, language_tag: str = "") -> Oc
             _release_request()
 
         if json_data is None:
-            logger.debug("RapidOCR returned no text (to_json is None)")
-            return OcrRecognition(
-                requested_language_supported=True,
-                engine_language_tag="zh-CN",
-                engine_type=OCR_ENGINE_RAPID,
-            )
+            logger.debug("RapidOCR detection returned empty — falling back to recognition-only")
+            return _recognize_without_detection(engine, arr)
 
         blocks = [{"text": item["txt"], "box": item["box"]} for item in json_data]
         text = compose_rapidocr_text(blocks)
