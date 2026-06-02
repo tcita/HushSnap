@@ -345,12 +345,16 @@ def recognize_rapidocr_result_from_pixmap(
 def warmup_rapidocr():
     """Pre-initialize the RapidOCR singleton to avoid cold-start latency."""
     ws_before = get_working_set_mb()
+    t0 = time.perf_counter()
     logger.debug("[RapidOCR] warmup_rapidocr: start  %s", fmt_memory())
     try:
         _get_engine()
+        elapsed = (time.perf_counter() - t0) * 1000
         ws_after = get_working_set_mb()
-        logger.debug("[RapidOCR] warmup_rapidocr: done  %s (delta=%.1f MB)",
-                     fmt_memory(), ws_after - ws_before)
+        logger.debug(
+            "[RapidOCR] warmup_rapidocr: done  %s (delta=%.1f MB, took %.1fms)",
+            fmt_memory(), ws_after - ws_before, elapsed,
+        )
     except Exception:
         logger.exception("RapidOCR engine warmup failed")
 

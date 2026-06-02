@@ -1,6 +1,7 @@
 """Lightweight OCR engine registry. Each engine module self-registers at import time."""
 
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,10 @@ def warmup_engine(engine_id: str):
     entry = _ENGINES.get(engine_id)
     if entry and entry.get("warmup"):
         logger.debug("[engine] Calling warmup hook for: %s", engine_id)
+        t0 = time.perf_counter()
         entry["warmup"]()
+        elapsed = (time.perf_counter() - t0) * 1000
+        logger.debug("[engine] Warmup hook finished for %s in %.1fms", engine_id, elapsed)
     else:
         logger.debug("[engine] No warmup hook registered for: %s", engine_id)
 

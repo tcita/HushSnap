@@ -47,6 +47,17 @@ _ERROR_ALREADY_EXISTS = 183
 
 logger = logging.getLogger(__name__)
 
+# ── Config defaults (single source of truth for new-key migration) ────
+# When a new config key is added, append it here.  _ensure_default_config_exists
+# will automatically fill it into existing config files without overwriting
+# values the user has already customised.
+_CONFIG_DEFAULTS = {
+    "hotkey": DEFAULT_HOTKEY,
+    "ocr_hotkey": DEFAULT_OCR_HOTKEY,
+    "language": UI_LANG_AUTO,
+    "debug": False,
+}
+
 
 def is_running_as_package() -> bool:
     """Check if the application is running as a packaged MSIX app."""
@@ -171,24 +182,35 @@ def _resolve_default_ocr_language(config_path):
 
 def _ensure_default_config_exists(config_path):
     """
-    Create an initial config file with defaults if it does not exist.
-    
-    Args:
-        config_path (Path): Config file path.
+    Ensure the config file exists and contains every key declared in
+    ``_CONFIG_DEFAULTS``.
+
+    * First run: creates the file with all defaults.
+    * Subsequent runs / upgrades: merges in any keys that were added in a
+      newer version, without touching values the user has already changed.
     """
-    if config_path.exists():
-        return
     try:
-        config_data = {
-            "hotkey": DEFAULT_HOTKEY,
-            "ocr_hotkey": DEFAULT_OCR_HOTKEY,
-            "language": UI_LANG_AUTO,
-            # Enable verbose logging and save OCR debug images.
-            "debug": False,
-        }
-        _write_config_data(config_path, config_data)
+        if config_path.exists():
+            # Existing config — fill in any keys that are missing (e.g. after
+            # an upgrade that introduced new settings).
+            config_data = _load_config_data(config_path)
+            missing = {
+                k: v for k, v in _CONFIG_DEFAULTS.items() if k not in config_data
+            }
+            if missing:
+                config_data.update(missing)
+                _write_config_data(config_path, config_data)
+                logger.debug(
+                    "Config migrated — added keys: %s", list(missing.keys())
+                )
+            return
+
+        # Fresh install — write the full defaults set.
+        _write_config_data(config_path, dict(_CONFIG_DEFAULTS))
     except Exception as e:
-        logger.debug(f"Failed to ensure default config exists at {config_path}: {e}")
+        logger.debug(
+            "Failed to ensure default config exists at %s: %s", config_path, e
+        )
 
 
 def _parse_virtual_key(token):

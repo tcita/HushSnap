@@ -113,9 +113,19 @@ async def set_startup_state(enable: bool) -> bool:
                     logger.warning(f"Failed to delete startup shortcut: {e}")
 
             if enable:
-                exe_path = sys.executable
+                if getattr(sys, 'frozen', False):
+                    # PyInstaller bundle: sys.executable is HushSnap.exe
+                    cmd = f'"{sys.executable}"'
+                else:
+                    # Running from source: need pythonw.exe + path to HushSnap.py
+                    _python_dir = Path(sys.executable).parent
+                    _pythonw = _python_dir / "pythonw.exe"
+                    if not _pythonw.exists():
+                        _pythonw = _python_dir / "python.exe"
+                    _entry = (Path(__file__).resolve().parent.parent.parent / "HushSnap.py").resolve()
+                    cmd = f'"{_pythonw}" "{_entry}"'
                 with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE) as key:
-                    winreg.SetValueEx(key, "HushSnap", 0, winreg.REG_SZ, f'"{exe_path}"')
+                    winreg.SetValueEx(key, "HushSnap", 0, winreg.REG_SZ, cmd)
                 return True
             else:
                 try:

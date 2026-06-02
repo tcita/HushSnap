@@ -428,6 +428,7 @@ class OcrController:
     def _background_warmup(self):
         """Pre-initialize OCR engine in a background thread to eliminate first-call latency."""
         import threading
+        import time
         from .ocr.engine import warmup_engine
 
         # If the user already triggered OCR (e.g. pressed the OCR hotkey
@@ -445,6 +446,7 @@ class OcrController:
             return
 
         def run_warmup():
+            t0 = time.perf_counter()
             ws_before = get_working_set_mb()
             logging.debug(
                 "[_background_warmup] Thread started for engine=%s. %s",
@@ -452,10 +454,12 @@ class OcrController:
             )
             try:
                 warmup_engine(self._current_engine)
+                elapsed = (time.perf_counter() - t0) * 1000
                 ws_after = get_working_set_mb()
                 logging.debug(
-                    "[_background_warmup] Warmup complete. %s (delta=%.1f MB)",
-                    fmt_memory(), ws_after - ws_before,
+                    "[_background_warmup] Warmup complete. %s "
+                    "(delta=%.1f MB, took %.1fms)",
+                    fmt_memory(), ws_after - ws_before, elapsed,
                 )
             except Exception as exc:
                 logging.error(
