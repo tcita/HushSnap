@@ -7,8 +7,10 @@ from .config import (
     get_config_path,
     get_ocr_engine,
     get_ocr_lang,
+    get_ocr_pinned,
     update_ocr_engine,
     update_ocr_lang,
+    update_ocr_pinned,
 )
 from .constants import (
     OCR_ENGINE_RAPID,
@@ -64,10 +66,14 @@ class OcrController:
         self.bridge.signal.connect(self.on_ocr_finished)
         self.bridge.warmup_finished.connect(self._schedule_post_warmup_trim)
         self.popup.language_changed.connect(self.on_ocr_lang_changed)
-        self.popup.engine_changed.connect(self.on_ocr_engine_changed)
         self.popup.switch_language_requested.connect(self._handle_notice_switch_requested)
         self.popup.open_language_settings_requested.connect(self._open_windows_language_settings)
-        self.popup.recapture_requested.connect(self.on_recapture_requested)
+        # Load and apply persisted pin state
+        initial_pinned = get_ocr_pinned()
+        if initial_pinned:
+            self.popup.set_pinned(True)
+        self.popup.pin_toggled.connect(self._handle_pin_toggled)
+
 
         self._trim_timer = QtCore.QTimer()
         self._trim_timer.setSingleShot(True)
@@ -85,7 +91,7 @@ class OcrController:
         QtCore.QTimer.singleShot(0, self._background_warmup)
 
     def set_capture_requester(self, capture_requester):
-        """Set callback used by popup recapture button to open screenshot selection."""
+        """Set callback used to request screenshot captures on demand."""
         self.capture_requester = capture_requester
 
     def enable_ocr_next_capture(self):
@@ -138,15 +144,15 @@ class OcrController:
                 "[_release_idle_rapidocr] Release failed: %s. %s", exc, fmt_memory(),
             )
 
-    def on_recapture_requested(self):
-        """Start a fresh screenshot selection from the OCR popup."""
-        if self.capture_requester is None:
-            logging.debug("on_recapture_requested: no capture requester is configured")
-            return
+    def _handle_pin_toggled(self, pinned):
+        """Persist the popup pin state to the state file."""
+        update_ocr_pinned(pinned)
 
-        self.enable_ocr_next_capture()
-        self.popup.hide()
-        QtCore.QTimer.singleShot(180, self._request_ocr_capture)
+    def on_settings_engine_changed(self, engine):
+        """Engine changed from settings dialog — persist and update popup."""
+        self.popup.set_engine(engine)
+        if engine != self._current_engine:
+            self.on_ocr_engine_changed(engine)
 
     def _request_ocr_capture(self):
         screen = QtWidgets.QApplication.primaryScreen()
@@ -252,24 +258,13 @@ class OcrController:
         )
 
     def on_ocr_engine_changed(self, engine):
-        """Persist engine changes and re-run OCR for the most recent capture."""
+        """Persist engine change and update the running engine instance."""
         logging.info("Engine switched: %s -> %s", self._current_engine, engine)
         update_ocr_engine(engine)
 
         self._rapid_release_timer.stop()
         release_engine(self._current_engine)
         self._current_engine = engine
-
-        pixmap = self.popup.last_pixmap
-        if not pixmap or pixmap.isNull():
-            logging.debug("on_ocr_engine_changed: no pixmap to re-OCR")
-            return
-
-        self._start_request(
-            pixmap,
-            self.popup.lang_combo.itemData(self.popup.lang_combo.currentIndex()),
-            engine
-        )
 
     def _start_request(self, pixmap, language_tag, engine):
         self._trim_timer.stop()

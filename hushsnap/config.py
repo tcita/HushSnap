@@ -431,10 +431,14 @@ def _write_state_data(state_data, state_path=None):
     font_size = state_data.get("ocr_font_size", DEFAULT_OCR_FONT_SIZE)
     if not isinstance(font_size, int):
         font_size = DEFAULT_OCR_FONT_SIZE
+    pinned = state_data.get("ocr_pinned", False)
+    if not isinstance(pinned, bool):
+        pinned = False
     lines = [
         f'ocr_engine = "{engine}"',
         f'ocr_language = "{lang}"',
         f'ocr_font_size = {font_size}',
+        f'ocr_pinned = {str(pinned).lower()}',
         "",
     ]
     state_path.write_text("\n".join(lines), encoding="utf-8")
@@ -447,7 +451,7 @@ def _ensure_default_state_exists(state_path=None):
     if state_path.exists():
         return
     try:
-        _write_state_data({"ocr_engine": OCR_ENGINE_RAPID, "ocr_language": "", "ocr_font_size": DEFAULT_OCR_FONT_SIZE}, state_path)
+        _write_state_data({"ocr_engine": OCR_ENGINE_RAPID, "ocr_language": "", "ocr_font_size": DEFAULT_OCR_FONT_SIZE, "ocr_pinned": False}, state_path)
     except Exception as e:
         logger.debug(f"Failed to ensure default state exists at {state_path}: {e}")
 
@@ -575,6 +579,34 @@ def update_ocr_font_size(font_size, state_path=None):
         _write_state_data(state_data, state_path)
     except Exception as e:
         logger.error(f"Failed to update OCR font size in state: {e}")
+
+
+def get_ocr_pinned(state_path=None):
+    """Read OCR popup pin state from state file (default False)."""
+    if state_path is None:
+        state_path = STATE_PATH
+    _ensure_default_state_exists(state_path)
+    state_data = _load_state_data(state_path)
+    pinned = state_data.get("ocr_pinned", False)
+    if isinstance(pinned, bool):
+        return pinned
+    # TOML parses "false"/"true" as bool already; handle string edge cases
+    if isinstance(pinned, str):
+        return pinned.strip().lower() == "true"
+    return False
+
+
+def update_ocr_pinned(pinned, state_path=None):
+    """Persist OCR popup pin state to state file."""
+    if state_path is None:
+        state_path = STATE_PATH
+    _ensure_default_state_exists(state_path)
+    try:
+        state_data = _load_state_data(state_path)
+        state_data["ocr_pinned"] = bool(pinned)
+        _write_state_data(state_data, state_path)
+    except Exception as e:
+        logger.error(f"Failed to update OCR pin state in state: {e}")
 
 
 def load_hotkey_setting():

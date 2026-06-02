@@ -121,6 +121,16 @@ def main(boot_start_time=None):
         # (currently usually none unless Qt args are provided).
         app = QtWidgets.QApplication(sys.argv)
 
+        # Give the process a distinct AppUserModelID so Windows shows the
+        # application icon in the taskbar instead of the python.exe icon.
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("HushSnap")
+                logger.debug("AppUserModelID set to HushSnap")
+            except Exception:
+                pass
+
         # Keep the process alive after all windows are closed.
         app.setQuitOnLastWindowClosed(False)
 
@@ -233,6 +243,7 @@ def main(boot_start_time=None):
                 config_path,
                 hotkey_manager,
                 on_font_size_changed=ocr_controller.popup.apply_font_size,
+                on_engine_changed=ocr_controller.on_settings_engine_changed,
             )
         except Exception as exc:
             logging.getLogger(__name__).exception(f"Failed to initialize settings dialog: {exc}")

@@ -1,12 +1,14 @@
 import logging
 import threading
+import time
 
 # Defer rapidocr import to optimize application startup time
-from PyQt6 import QtGui
+from PyQt6 import QtCore, QtGui
 RapidOCR = None
 OCRVersion = None
 
 from .models import OcrRecognition
+from .preprocess import OcrPreprocessResult
 from ..system.memory_utils import get_working_set_mb, fmt_memory
 
 logger = logging.getLogger(__name__)
@@ -290,8 +292,24 @@ def _recognize_without_detection(engine, arr) -> OcrRecognition:
         engine.use_cls = orig_cls
 
 
-def recognize_rapidocr_qimage(image: QtGui.QImage, language_tag: str = "") -> OcrRecognition:
+def recognize_rapidocr_qimage(image_or_result, language_tag: str = "") -> OcrRecognition:
+    from .preprocess import OcrPreprocessResult
     from ..constants import OCR_ENGINE_RAPID
+
+    if isinstance(image_or_result, OcrPreprocessResult):
+        image = image_or_result.image
+        original_size = image_or_result.original_size
+    elif isinstance(image_or_result, QtGui.QImage):
+        image = image_or_result
+        original_size = image.size()
+    else:
+        # Handle QPixmap or other types (fallback to manual conversion)
+        from .preprocess import prepare_ocr_image
+        image = prepare_ocr_image(image_or_result)
+        original_size = image.size()
+
+    if image.isNull():
+        return OcrRecognition(engine_type=OCR_ENGINE_RAPID)
 
     result = None
     try:
@@ -314,7 +332,24 @@ def recognize_rapidocr_qimage(image: QtGui.QImage, language_tag: str = "") -> Oc
 
         if not json_data:
             logger.debug("RapidOCR detection returned empty — falling back to recognition-only")
-            return _recognize_without_detection(engine, arr)
+            
+            # Smart Fallback: If image was padded, crop back to original size for the recognizer.
+            # Rationale: The recognition model (CRNN) uses a fixed input height (typically 48px).
+            # If we send a 960px padded image, the engine downscales it by 20x. For a small 
+            # 24px original text, this downscaling results in sub-pixel dots (~1.2px), 
+            # making recognition impossible. Reverting to original size ensures the recognizer 
+            # receives the text at a readable scale (often a slight upscale like 1.5x-2x).
+            if width > original_size.width() or height > original_size.height():
+                y_off = (height - original_size.height()) // 2
+                x_off = (width - original_size.width()) // 2
+                fallback_arr = arr[y_off : y_off + original_size.height(), 
+                                   x_off : x_off + original_size.width()].copy()
+                logger.debug("Fallback: cropped back to %dx%d from %dx%d", 
+                             original_size.width(), original_size.height(), width, height)
+            else:
+                fallback_arr = arr
+
+            return _recognize_without_detection(engine, fallback_arr)
 
         blocks = [{"text": item["txt"], "box": item["box"]} for item in json_data]
         text = compose_rapidocr_text(blocks)
@@ -331,15 +366,18 @@ def recognize_rapidocr_qimage(image: QtGui.QImage, language_tag: str = "") -> Oc
 
 
 def recognize_rapidocr_result_from_pixmap(
-    image: QtGui.QImage,
+    image_or_result,
     language_tag: str = "",
 ) -> OcrRecognition:
-    """RapidOCR engine entry point. Receives a preprocessed QImage."""
-    if image.isNull():
-        logger.debug("recognize_rapidocr_result_from_pixmap called with null image")
-        return OcrRecognition()
+    """RapidOCR engine entry point. Receives a preprocessed QImage or OcrPreprocessResult."""
+    if isinstance(image_or_result, QtGui.QImage):
+        if image_or_result.isNull():
+            return OcrRecognition()
+    elif isinstance(image_or_result, OcrPreprocessResult):
+        if image_or_result.image.isNull():
+            return OcrRecognition()
 
-    return recognize_rapidocr_qimage(image, language_tag=language_tag)
+    return recognize_rapidocr_qimage(image_or_result, language_tag=language_tag)
 
 
 def warmup_rapidocr():

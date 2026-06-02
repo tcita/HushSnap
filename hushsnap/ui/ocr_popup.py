@@ -4,7 +4,8 @@ Floating OCR text popup widget.
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
-from ..config import get_ocr_font_size
+from ..config import get_ocr_font_size, get_resource_dir
+from ..constants import APP_ICON_FILENAME
 
 
 class OcrPopup(QtWidgets.QWidget):
@@ -13,7 +14,7 @@ class OcrPopup(QtWidgets.QWidget):
     engine_changed = QtCore.pyqtSignal(str)
     switch_language_requested = QtCore.pyqtSignal(str)
     open_language_settings_requested = QtCore.pyqtSignal()
-    recapture_requested = QtCore.pyqtSignal()
+    pin_toggled = QtCore.pyqtSignal(bool)
 
     def __init__(self, translate, parent=None):
         super().__init__(parent)
@@ -21,6 +22,7 @@ class OcrPopup(QtWidgets.QWidget):
         self._drag_pos = None
         self._last_pixmap = None
         self._is_refreshing = False
+        self._pinned = False
 
         self.setWindowFlags(
             QtCore.Qt.WindowType.Tool
@@ -29,6 +31,8 @@ class OcrPopup(QtWidgets.QWidget):
         )
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, False)
+
+        self._app_icon = QtGui.QIcon(str(get_resource_dir() / APP_ICON_FILENAME))
 
         self.resize(560, 360)
 
@@ -57,19 +61,12 @@ class OcrPopup(QtWidgets.QWidget):
 
         header.addStretch(1)
 
-        self.recapture_btn = QtWidgets.QPushButton()
-        self.recapture_btn.setObjectName("ocrRecaptureBtn")
-        self.recapture_btn.setFixedSize(28, 24)
-        self.recapture_btn.setIconSize(QtCore.QSize(16, 16))
-        self.recapture_btn.clicked.connect(self.recapture_requested.emit)
-        header.addWidget(self.recapture_btn)
-
-        self.copy_btn = QtWidgets.QPushButton()
-        self.copy_btn.setObjectName("ocrCopyBtn")
-        self.copy_btn.setFixedSize(28, 24)
-        self.copy_btn.setIconSize(QtCore.QSize(16, 16))
-        self.copy_btn.clicked.connect(self._on_copy_clicked)
-        header.addWidget(self.copy_btn)
+        self.pin_btn = QtWidgets.QPushButton("📌")
+        self.pin_btn.setObjectName("ocrPinBtn")
+        self.pin_btn.setFixedSize(28, 24)
+        self.pin_btn.setCheckable(True)
+        self.pin_btn.clicked.connect(self._on_pin_toggled)
+        header.addWidget(self.pin_btn)
 
         self.close_btn = QtWidgets.QPushButton("✕")
         self.close_btn.setObjectName("ocrCloseBtn")
@@ -78,33 +75,8 @@ class OcrPopup(QtWidgets.QWidget):
         header.addWidget(self.close_btn)
         layout.addLayout(header)
 
-        # --- Engine tabs ---
-        from ..constants import OCR_ENGINE_WINDOWS, OCR_ENGINE_RAPID
-
-        self.engine_bar = QtWidgets.QFrame()
-        self.engine_bar.setObjectName("ocrEngineBar")
-        engine_bar_layout = QtWidgets.QHBoxLayout(self.engine_bar)
-        engine_bar_layout.setContentsMargins(0, 0, 0, 0)
-        engine_bar_layout.setSpacing(6)
-
-        self.engine_tab_rapid = QtWidgets.QPushButton(self.translate("ocr_engine_rapid"))
-        self.engine_tab_rapid.setObjectName("ocrEngineTab")
-        self.engine_tab_rapid.setProperty("engine", OCR_ENGINE_RAPID)
-        self.engine_tab_rapid.clicked.connect(self._on_engine_tab_clicked)
-        engine_bar_layout.addWidget(self.engine_tab_rapid)
-
-        self.engine_tab_windows = QtWidgets.QPushButton(self.translate("ocr_engine_windows"))
-        self.engine_tab_windows.setObjectName("ocrEngineTab")
-        self.engine_tab_windows.setProperty("engine", OCR_ENGINE_WINDOWS)
-        self.engine_tab_windows.clicked.connect(self._on_engine_tab_clicked)
-        engine_bar_layout.addWidget(self.engine_tab_windows)
-
-        engine_bar_layout.addStretch(1)
-        layout.addWidget(self.engine_bar)
-
-        # Engine / Language combos — kept off-layout, driven by engine tabs
+        # Hidden engine combo — holds engine state, driven by settings dialog
         self.engine_combo = QtWidgets.QComboBox()
-        self.engine_combo.currentIndexChanged.connect(self._on_engine_changed_idx)
 
         self.lang_combo = QtWidgets.QComboBox()
         self.lang_combo.addItem("", "en-US")
@@ -151,6 +123,17 @@ class OcrPopup(QtWidgets.QWidget):
         self.text_edit.document().setDocumentMargin(0)
         self.text_edit.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         layout.addWidget(self.text_edit)
+
+        # Copy button overlaid inside the text area (bottom-right corner)
+        self.copy_btn = QtWidgets.QPushButton()
+        self.copy_btn.setObjectName("ocrCopyBtn")
+        self.copy_btn.setFixedSize(26, 22)
+        self.copy_btn.setIconSize(QtCore.QSize(14, 14))
+        self.copy_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self.copy_btn.setParent(self.text_edit)
+        self.copy_btn.clicked.connect(self._on_copy_clicked)
+        self.copy_btn.hide()
+        self.text_edit.installEventFilter(self)
 
         # Status bar: language selector + resize grip
         self.status_bar = QtWidgets.QFrame()
@@ -199,37 +182,40 @@ class OcrPopup(QtWidgets.QWidget):
             " font-weight: 500;"
             " margin-left: 4px;"
             "}"
-            "#ocrEngineBar {"
-            " background: transparent;"
-            " border: none;"
-            " padding: 0 0 2px 0;"
-            "}"
-            "#ocrRecaptureBtn {"
-            " color: #E1F7E7;"
-            " border: none;"
-            " border-radius: 8px;"
-            " background: rgba(190, 255, 212, 22);"
-            " padding: 0;"
-            " font-size: 15px;"
-            " font-weight: 600;"
-            "}"
-            "#ocrRecaptureBtn:hover {"
-            " background: rgba(190, 255, 212, 34);"
-            "}"
             "#ocrCopyBtn {"
-            " color: #C8FFD4;"
-            " border: 1px solid rgba(100, 220, 140, 60);"
-            " border-radius: 8px;"
-            " background: rgba(80, 200, 120, 35);"
+            " color: rgba(220, 245, 225, 180);"
+            " border: 1px solid rgba(100, 200, 130, 40);"
+            " border-radius: 6px;"
+            " background: rgba(10, 55, 30, 210);"
             " padding: 0;"
-            " font-weight: 600;"
+            " font-size: 12px;"
             "}"
             "#ocrCopyBtn:hover {"
-            " background: rgba(80, 200, 120, 55);"
+            " background: rgba(30, 80, 50, 230);"
+            " border-color: rgba(120, 220, 155, 80);"
             "}"
             "#ocrCopyBtn[copied=\"true\"] {"
             " background: rgba(80, 200, 120, 45);"
             " color: #B0FFC0;"
+            "}"
+            "#ocrPinBtn {"
+            " color: rgba(225, 247, 231, 80);"
+            " border: none;"
+            " border-radius: 12px;"
+            " background: transparent;"
+            " font-size: 15px;"
+            "}"
+            "#ocrPinBtn:hover {"
+            " background: rgba(190, 255, 212, 25);"
+            " color: #E1F7E7;"
+            "}"
+            "#ocrPinBtn[pin=\"true\"] {"
+            " color: #FFD966;"
+            " background: rgba(255, 220, 100, 28);"
+            "}"
+            "#ocrPinBtn[pin=\"true\"]:hover {"
+            " color: #FFE8A0;"
+            " background: rgba(255, 220, 100, 42);"
             "}"
             "#ocrCloseBtn {"
             " color: #E1F7E7;"
@@ -274,22 +260,6 @@ class OcrPopup(QtWidgets.QWidget):
             " border-top: 1px solid rgba(170, 220, 185, 40);"
             " border-radius: 0 0 14px 14px;"
             "}"
-            "#ocrEngineTab {"
-            " color: rgba(200, 225, 210, 140);"
-            " border: 1px solid transparent;"
-            " border-radius: 6px;"
-            " background: transparent;"
-            " padding: 3px 10px;"
-            " font-size: 12px;"
-            "}"
-            "#ocrEngineTab:hover {"
-            " color: #E1F7E7;"
-            "}"
-            "#ocrEngineTab[selected=\"true\"] {"
-            " color: #E8FFF0;"
-            " background: rgba(190, 255, 212, 25);"
-            " border: 1px solid rgba(190, 255, 212, 55);"
-            "}"
             "#ocrLangComboInline {"
             " background: rgba(190, 255, 212, 18);"
             " border: 1px solid rgba(190, 255, 212, 35);"
@@ -315,12 +285,7 @@ class OcrPopup(QtWidgets.QWidget):
             self.engine_combo.setItemText(1, self.translate("ocr_engine_rapid"))
 
         # Icons
-        self.recapture_btn.setIcon(self._make_recapture_icon())
         self.copy_btn.setIcon(self._make_copy_icon())
-
-        # Engine tab labels
-        self.engine_tab_rapid.setText(self.translate("ocr_engine_rapid"))
-        self.engine_tab_windows.setText(self.translate("ocr_engine_windows"))
 
         # Refresh Language Combo labels (hidden master)
         for combo in (self.lang_combo, self.lang_combo_inline):
@@ -335,9 +300,11 @@ class OcrPopup(QtWidgets.QWidget):
                 combo.setItemText(traditional_index, self.translate("ocr_lang_chinese_traditional"))
 
         self.lang_combo_inline.setToolTip(self.translate("ocr_lang_selector_tooltip"))
-        self.recapture_btn.setToolTip(self.translate("ocr_recapture_tooltip"))
-        self.recapture_btn.setAccessibleName(self.translate("ocr_recapture_tooltip"))
         self.copy_btn.setToolTip(self.translate("ocr_copy_btn"))
+        self.pin_btn.setToolTip(self.translate("ocr_pin_btn"))
+        self.pin_btn.setAccessibleName(self.translate("ocr_pin_btn"))
+        self.close_btn.setToolTip(self.translate("close_btn"))
+        self.close_btn.setAccessibleName(self.translate("close_btn"))
         self.editable_badge.setText(self.translate("ocr_editable_hint"))
 
     def _on_lang_changed_idx(self, index):
@@ -352,7 +319,6 @@ class OcrPopup(QtWidgets.QWidget):
             if engine_data:
                 from ..constants import OCR_ENGINE_RAPID
                 self.lang_combo_inline.setVisible(engine_data != OCR_ENGINE_RAPID)
-                self._update_engine_tab_selection()
                 self.engine_changed.emit(engine_data)
 
     def _emit_switch_language_requested(self):
@@ -370,7 +336,6 @@ class OcrPopup(QtWidgets.QWidget):
             idx = self.engine_combo.findData(engine)
             if idx >= 0:
                 self.engine_combo.setCurrentIndex(idx)
-                self._update_engine_tab_selection()
                 from ..constants import OCR_ENGINE_RAPID
                 self.lang_combo_inline.setVisible(engine != OCR_ENGINE_RAPID)
 
@@ -403,11 +368,14 @@ class OcrPopup(QtWidgets.QWidget):
         self._is_refreshing = False
 
         if not self.isVisible():
-            self._place_bottom_right()
-            self.show()
+            self._place_near_cursor()
 
+        self.show()
         self.raise_()
         self.activateWindow()
+        self.copy_btn.show()
+        self.copy_btn.raise_()
+        self._position_copy_button()
 
     def show_language_notice(self, message, available_lang=""):
         self.notice_label.setText(message)
@@ -442,21 +410,13 @@ class OcrPopup(QtWidgets.QWidget):
                     break
                 QtCore.QThread.msleep(10)
 
-    def _on_engine_tab_clicked(self):
-        engine = self.sender().property("engine") if self.sender() else None
-        if engine and not self._is_refreshing:
-            idx = self.engine_combo.findData(engine)
-            if idx >= 0:
-                self.engine_combo.setCurrentIndex(idx)
-
-    def _update_engine_tab_selection(self):
-        current = self.engine_combo.currentData()
-        self.engine_tab_rapid.setProperty("selected", current == "rapidocr")
-        self.engine_tab_rapid.style().unpolish(self.engine_tab_rapid)
-        self.engine_tab_rapid.style().polish(self.engine_tab_rapid)
-        self.engine_tab_windows.setProperty("selected", current == "windows")
-        self.engine_tab_windows.style().unpolish(self.engine_tab_windows)
-        self.engine_tab_windows.style().polish(self.engine_tab_windows)
+    def set_engine(self, engine):
+        """Update the hidden engine combo (called from settings)."""
+        if self._is_refreshing:
+            return
+        idx = self.engine_combo.findData(engine)
+        if idx >= 0 and idx != self.engine_combo.currentIndex():
+            self.engine_combo.setCurrentIndex(idx)
 
     def apply_font_size(self):
         font_size = get_ocr_font_size()
@@ -509,41 +469,6 @@ class OcrPopup(QtWidgets.QWidget):
         painter.end()
         return QtGui.QIcon(pixmap)
 
-    @staticmethod
-    def _make_recapture_icon():
-        pixmap = QtGui.QPixmap(24, 24)
-        pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-        painter = QtGui.QPainter(pixmap)
-        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-
-        color = QtGui.QColor(255, 255, 255, 176) # #ffffffb0
-        pen = QtGui.QPen(color, 2)
-        pen.setCapStyle(QtCore.Qt.PenCapStyle.RoundCap)
-        pen.setJoinStyle(QtCore.Qt.PenJoinStyle.RoundJoin)
-        painter.setPen(pen)
-
-        # M 7 19 a 2 2 0 0 1 -2 -2
-        painter.drawArc(QtCore.QRectF(5, 15, 4, 4), 90 * 16, 90 * 16)
-        # M 5 13 v -2
-        painter.drawLine(5, 13, 5, 11)
-        # M 5 7 a 2 2 0 0 1 2 -2
-        painter.drawArc(QtCore.QRectF(5, 5, 4, 4), 180 * 16, -90 * 16)
-        # M 11 5 h 2
-        painter.drawLine(11, 5, 13, 5)
-        # M 17 5 a 2 2 0 0 1 2 2
-        painter.drawArc(QtCore.QRectF(15, 5, 4, 4), 90 * 16, -90 * 16)
-        # M 19 11 v 2
-        painter.drawLine(19, 11, 19, 13)
-        # M 19 17 v 4
-        painter.drawLine(19, 17, 19, 21)
-        # M 21 19 h -4
-        painter.drawLine(21, 19, 17, 19)
-        # M 13 19 h -2
-        painter.drawLine(13, 19, 11, 19)
-
-        painter.end()
-        return QtGui.QIcon(pixmap)
-
     def _sync_lang_inline_to_combo(self, index):
         if self._is_refreshing:
             return
@@ -556,19 +481,52 @@ class OcrPopup(QtWidgets.QWidget):
                 self.lang_combo.blockSignals(False)
                 self.language_changed.emit(lang_data)
 
+    def _on_pin_toggled(self, checked):
+        """Toggle pinned state: when pinned the window ignores focus loss."""
+        self._pinned = checked
+        self.pin_btn.setProperty("pin", checked)
+        self.pin_btn.style().unpolish(self.pin_btn)
+        self.pin_btn.style().polish(self.pin_btn)
+        # Update tooltip based on state
+        key = "ocr_unpin_btn" if checked else "ocr_pin_btn"
+        self.pin_btn.setToolTip(self.translate(key))
+        self.pin_toggled.emit(checked)
+
+    def set_pinned(self, pinned):
+        """Programmatically set pin state (e.g. loaded from config)."""
+        pinned = bool(pinned)
+        if pinned == bool(self._pinned):
+            return
+        self.pin_btn.blockSignals(True)
+        self.pin_btn.setChecked(pinned)
+        self.pin_btn.blockSignals(False)
+        self._on_pin_toggled(pinned)
+
     def _on_copy_clicked(self):
         self.copy_text()
-        self.copy_btn.setText("✓")
         self.copy_btn.setProperty("copied", True)
         self.copy_btn.style().unpolish(self.copy_btn)
         self.copy_btn.style().polish(self.copy_btn)
-        QtCore.QTimer.singleShot(1500, self._restore_copy_button)
+        QtCore.QTimer.singleShot(1200, self._restore_copy_button)
 
     def _restore_copy_button(self):
-        self.copy_btn.setText("")
         self.copy_btn.setProperty("copied", False)
         self.copy_btn.style().unpolish(self.copy_btn)
         self.copy_btn.style().polish(self.copy_btn)
+
+    def eventFilter(self, obj, event):
+        """Reposition the floating copy button when the text edit is resized."""
+        if obj is self.text_edit and event.type() == QtCore.QEvent.Type.Resize:
+            self._position_copy_button()
+        return super().eventFilter(obj, event)
+
+    def _position_copy_button(self):
+        """Place the copy button at the bottom-right of the text_edit."""
+        m = 8
+        self.copy_btn.move(
+            self.text_edit.width() - self.copy_btn.width() - m,
+            self.text_edit.height() - self.copy_btn.height() - m,
+        )
 
     def mousePressEvent(self, event):
         """Enable dragging the window."""
@@ -587,16 +545,45 @@ class OcrPopup(QtWidgets.QWidget):
         self._drag_pos = None
         event.accept()
 
-    def _place_bottom_right(self):
-        screen = QtWidgets.QApplication.primaryScreen()
+    def _place_near_cursor(self):
+        """Position the popup at the bottom-right of the mouse cursor, clamped to screen."""
+        screen = QtWidgets.QApplication.screenAt(QtGui.QCursor.pos())
+        if not screen:
+            screen = QtWidgets.QApplication.primaryScreen()
         if not screen:
             return
+
         area = screen.availableGeometry()
-        margin = 24
-        self.move(
-            area.right() - self.width() - margin,
-            area.bottom() - self.height() - margin,
-        )
+        cursor = QtGui.QCursor.pos()
+        gap = 20
+
+        x = cursor.x() + gap
+        y = cursor.y() + gap
+
+        # Clamp to keep the entire window on screen
+        if x + self.width() > area.right():
+            x = area.right() - self.width()
+        if y + self.height() > area.bottom():
+            y = area.bottom() - self.height()
+        if x < area.left():
+            x = area.left()
+        if y < area.top():
+            y = area.top()
+
+        self.move(x, y)
+
+    def showEvent(self, event):
+        """Set window icon once native handle is ready."""
+        super().showEvent(event)
+        if self.windowHandle() and not self._app_icon.isNull():
+            self.windowHandle().setIcon(self._app_icon)
+
+    def changeEvent(self, event):
+        """Hide popup on focus loss unless pinned."""
+        if event.type() == QtCore.QEvent.Type.ActivationChange and not self._pinned:
+            if not self.isActiveWindow():
+                self.hide()
+        super().changeEvent(event)
 
     def hideEvent(self, event):
         """Release cached screenshot pixmap to free RAM while hidden."""
