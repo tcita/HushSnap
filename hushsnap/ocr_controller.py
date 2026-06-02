@@ -47,7 +47,8 @@ class OcrController:
         self.tray_icon = None
         self.capture_requester = None
         self._warned_engine_unavailable: set[str] = set()
-        self._should_ocr = False
+        self._next_capture_should_ocr = False
+        self._expecting_ocr_result = False
 
         initial_lang = get_ocr_lang(config_path=config_path)
         lang_idx = self.popup.lang_combo.findData(initial_lang)
@@ -89,14 +90,14 @@ class OcrController:
 
     def enable_ocr_next_capture(self):
         """Enable OCR for the next capture (used by OCR hotkey)."""
-        self._should_ocr = True
+        self._next_capture_should_ocr = True
 
     def _trim_current_engine(self):
         """Trim working set of the current OCR engine to minimize idle footprint."""
         # Guard: if OCR was requested between the timer being scheduled and
         # this callback firing, skip the trim. The engine is still in use
         # (or about to be), and on_ocr_finished will re-schedule a 30s trim.
-        if self._should_ocr:
+        if self._next_capture_should_ocr or self._expecting_ocr_result:
             logging.debug("[_trim_current_engine] Skipping trim: OCR request is active")
             return
 
@@ -160,9 +161,12 @@ class OcrController:
 
     def handle_capture_completed(self, captured_pixmap):
         """Start OCR after a screenshot if OCR is enabled for this capture."""
-        logging.info(f"Capture completed. should_ocr: {self._should_ocr}")
-        if not self._should_ocr:
+        logging.info(f"Capture completed. next_capture_should_ocr: {self._next_capture_should_ocr}")
+        if not self._next_capture_should_ocr:
             return
+        
+        # Consume the intent flag once capture is done
+        self._next_capture_should_ocr = False
         self._start_request(
             captured_pixmap.copy(),
             self.popup.lang_combo.itemData(self.popup.lang_combo.currentIndex()),
@@ -179,10 +183,11 @@ class OcrController:
             "[on_ocr_finished] engine=%s, text_len=%d%s. %s",
             engine_name, len(response.text or ""), error_part, fmt_memory(),
         )
-        if not self._should_ocr:
+        
+        if not self._expecting_ocr_result:
             return
 
-        self._should_ocr = False
+        self._expecting_ocr_result = False
 
         text = response.text
         error = response.error
@@ -240,7 +245,6 @@ class OcrController:
             logging.debug("on_ocr_lang_changed: no pixmap to re-OCR")
             return
 
-        self._should_ocr = True
         self._start_request(
             pixmap,
             lang,
@@ -261,7 +265,6 @@ class OcrController:
             logging.debug("on_ocr_engine_changed: no pixmap to re-OCR")
             return
 
-        self._should_ocr = True
         self._start_request(
             pixmap,
             self.popup.lang_combo.itemData(self.popup.lang_combo.currentIndex()),
@@ -271,6 +274,7 @@ class OcrController:
     def _start_request(self, pixmap, language_tag, engine):
         self._trim_timer.stop()
         self._rapid_release_timer.stop()
+        self._expecting_ocr_result = True
         debug_dir = self.user_data_dir if self.save_debug_image else None
 
         logging.info("[_start_request] engine=%s. %s", engine, fmt_memory())
@@ -435,7 +439,7 @@ class OcrController:
         # before the event loop started processing this timer callback),
         # skip warmup — the OCR request will initialize the engine via its
         # own call to _get_engine(), making warmup redundant.
-        if self._should_ocr:
+        if self._next_capture_should_ocr or self._expecting_ocr_result:
             logging.info(
                 "[_background_warmup] Skipping warmup: OCR already requested "
                 "(engine will be initialized by the OCR path)"
@@ -476,10 +480,10 @@ class OcrController:
     def _schedule_post_warmup_trim(self):
         """Trim memory after successful warmup, unless an OCR request is active."""
         logging.debug(
-            "[_schedule_post_warmup_trim] Signal received. should_ocr=%s. %s",
-            self._should_ocr, fmt_memory(),
+            "[_schedule_post_warmup_trim] Signal received. next_capture_should_ocr=%s, expecting_ocr_result=%s. %s",
+            self._next_capture_should_ocr, self._expecting_ocr_result, fmt_memory(),
         )
-        if self._should_ocr:
+        if self._next_capture_should_ocr or self._expecting_ocr_result:
             logging.info("[_schedule_post_warmup_trim] Post-warmup trim skipped: OCR request in progress")
             return
 

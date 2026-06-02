@@ -253,10 +253,15 @@ class CaptureWindow(QtWidgets.QWidget):
     def mouseReleaseEvent(self, event):
         """Mouse release: choose region capture or fullscreen capture based on drag distance."""
         if event.button() == QtCore.Qt.MouseButton.LeftButton and self.start_pos:
+            # Guard: pixmap may have been cleared if the window is already closing.
+            if self.pixmap is None:
+                self.start_pos = self.curr_pos = None
+                return
+
             self.curr_pos = event.position().toPoint()
             rect = QtCore.QRect(self.start_pos, self.curr_pos).normalized()
             captured = None
-            
+
             # If movement is too small, treat it as click -> fullscreen capture.
             if (self.curr_pos - self.start_pos).manhattanLength() <= self.click_threshold:
                 full = self.pixmap.copy()

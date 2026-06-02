@@ -129,7 +129,7 @@ def test_capture_completed_starts_ocr_request(monkeypatch, qapp, tmp_path, sampl
 
 def test_ocr_finished_copies_text_and_updates_popup(monkeypatch, qapp, tmp_path, sample_pixmap):
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    controller.enable_ocr_next_capture()
+    controller._expecting_ocr_result = True
 
     shown = {}
 
@@ -156,7 +156,6 @@ def test_ocr_finished_shows_notice_when_selected_language_is_not_installed(
     monkeypatch, qapp, tmp_path, sample_pixmap
 ):
     controller, tray_icon = _build_controller(monkeypatch, qapp, tmp_path)
-    controller.enable_ocr_next_capture()
     tray_icon.messages.clear()
     shown = {}
     controller.popup.show_text = lambda *args, **kwargs: shown.update({"shown": True})
@@ -173,7 +172,9 @@ def test_ocr_finished_shows_notice_when_selected_language_is_not_installed(
         ),
     )
 
+    controller._expecting_ocr_result = True
     controller.on_ocr_finished(response)
+    controller._expecting_ocr_result = True
     controller.on_ocr_finished(response)
 
     assert tray_icon.messages == []
@@ -204,7 +205,6 @@ def test_ocr_lang_changed_persists_and_reruns(monkeypatch, qapp, tmp_path, sampl
 
 def test_ocr_finished_warns_once_when_engine_is_unavailable(monkeypatch, qapp, tmp_path, sample_pixmap):
     controller, tray_icon = _build_controller(monkeypatch, qapp, tmp_path)
-    controller.enable_ocr_next_capture()
 
     response = OcrResponse(
         text="",
@@ -213,7 +213,9 @@ def test_ocr_finished_warns_once_when_engine_is_unavailable(monkeypatch, qapp, t
         recognition=None,
     )
 
+    controller._expecting_ocr_result = True
     controller.on_ocr_finished(response)
+    controller._expecting_ocr_result = True
     controller.on_ocr_finished(response)
 
     assert tray_icon.messages == []
@@ -224,7 +226,6 @@ def test_ocr_missing_language_switches_and_reruns(monkeypatch, qapp, tmp_path, s
     saved = {}
     service = FakeService()
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path, service=service)
-    controller.enable_ocr_next_capture()
     controller.popup.lang_combo.setCurrentIndex(controller.popup.lang_combo.findData("zh-CN"))
     monkeypatch.setattr(
         ocr_controller,
@@ -243,6 +244,7 @@ def test_ocr_missing_language_switches_and_reruns(monkeypatch, qapp, tmp_path, s
         ),
     )
 
+    controller._expecting_ocr_result = True
     controller.on_ocr_finished(response)
     controller.popup.notice_switch_btn.click()
 
@@ -254,7 +256,7 @@ def test_ocr_missing_language_switches_and_reruns(monkeypatch, qapp, tmp_path, s
 
 def test_ocr_missing_language_can_open_settings(monkeypatch, qapp, tmp_path, sample_pixmap):
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    controller.enable_ocr_next_capture()
+    controller._expecting_ocr_result = True
     controller.popup.lang_combo.setCurrentIndex(controller.popup.lang_combo.findData("zh-CN"))
     opened = {}
     monkeypatch.setattr(ocr_controller.os, "startfile", lambda uri: opened.update({"called": uri}))
@@ -283,7 +285,7 @@ def test_ocr_missing_language_switch_falls_back_to_other_combo_language(
     saved = {}
     service = FakeService()
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path, service=service)
-    controller.enable_ocr_next_capture()
+    controller._expecting_ocr_result = True
     monkeypatch.setattr(
         ocr_controller,
         "update_ocr_lang",
@@ -313,7 +315,6 @@ def test_chinese_family_fallback_does_not_prompt_when_variant_is_available(
     monkeypatch, qapp, tmp_path, sample_pixmap
 ):
     controller, tray_icon = _build_controller(monkeypatch, qapp, tmp_path)
-    controller.enable_ocr_next_capture()
     controller.popup.lang_combo.setCurrentIndex(controller.popup.lang_combo.findData("zh-TW"))
 
     response = OcrResponse(
@@ -328,6 +329,7 @@ def test_chinese_family_fallback_does_not_prompt_when_variant_is_available(
         ),
     )
 
+    controller._expecting_ocr_result = True
     controller.on_ocr_finished(response)
 
     assert controller.popup.notice_frame.isHidden() is True
@@ -338,7 +340,6 @@ def test_simplified_chinese_family_fallback_does_not_prompt_when_variant_is_avai
     monkeypatch, qapp, tmp_path, sample_pixmap
 ):
     controller, tray_icon = _build_controller(monkeypatch, qapp, tmp_path)
-    controller.enable_ocr_next_capture()
     controller.popup.lang_combo.setCurrentIndex(controller.popup.lang_combo.findData("zh-CN"))
 
     response = OcrResponse(
@@ -353,6 +354,7 @@ def test_simplified_chinese_family_fallback_does_not_prompt_when_variant_is_avai
         ),
     )
 
+    controller._expecting_ocr_result = True
     controller.on_ocr_finished(response)
 
     assert controller.popup.notice_frame.isHidden() is True
@@ -386,21 +388,21 @@ def test_notice_hides_after_compatible_response(monkeypatch, qapp, tmp_path, sam
         ),
     )
 
-    controller._should_ocr = True
+    controller._expecting_ocr_result = True
     controller.on_ocr_finished(incompatible_response)
     assert controller.popup.notice_frame.isHidden() is False
 
-    controller._should_ocr = True
+    controller._expecting_ocr_result = True
     controller.on_ocr_finished(compatible_response)
     assert controller.popup.notice_frame.isHidden() is True
 
 
 def test_should_ocr_next_capture_sets_flag(monkeypatch, qapp, tmp_path):
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    assert controller._should_ocr is False
+    assert controller._next_capture_should_ocr is False
 
     controller.enable_ocr_next_capture()
-    assert controller._should_ocr is True
+    assert controller._next_capture_should_ocr is True
 
 
 def test_recapture_button_requests_fresh_ocr_capture(monkeypatch, qapp, tmp_path, sample_pixmap):
@@ -432,7 +434,7 @@ def test_recapture_button_requests_fresh_ocr_capture(monkeypatch, qapp, tmp_path
     controller.popup.recapture_btn.click()
 
     assert hidden == [True]
-    assert controller._should_ocr is True
+    assert controller._next_capture_should_ocr is True
     assert requested == [sample_pixmap]
 
 
@@ -449,19 +451,19 @@ def test_on_ocr_finished_clears_should_ocr_flag(monkeypatch, qapp, tmp_path, sam
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
     qapp.clipboard().clear()
 
-    controller._should_ocr = True
+    controller._expecting_ocr_result = True
     controller.on_ocr_finished(
         OcrResponse(text="test", error="", pixmap=sample_pixmap, recognition=OcrRecognition())
     )
 
-    assert controller._should_ocr is False
+    assert controller._expecting_ocr_result is False
 
 
 def test_on_ocr_finished_skips_when_not_enabled(monkeypatch, qapp, tmp_path, sample_pixmap):
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
     qapp.clipboard().clear()
 
-    controller._should_ocr = False
+    controller._expecting_ocr_result = False
     controller.on_ocr_finished(
         OcrResponse(text="should not appear", error="", pixmap=sample_pixmap, recognition=OcrRecognition())
     )
@@ -525,9 +527,9 @@ def test_rapidocr_idle_release_timer_behavior(monkeypatch, qapp, tmp_path, sampl
 
 def test_warmup_skipped_when_ocr_already_requested(monkeypatch, qapp, tmp_path):
     """If user already triggered OCR, skip warmup — the OCR path will
-    initialize the engine via _get_engine() on its own."""
+    initialize the engine on its own."""
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    controller._should_ocr = True
+    controller._next_capture_should_ocr = True
 
     warmup_calls = []
     monkeypatch.setattr(
@@ -538,14 +540,15 @@ def test_warmup_skipped_when_ocr_already_requested(monkeypatch, qapp, tmp_path):
     controller._background_warmup()
 
     assert warmup_calls == []
-    assert controller._should_ocr is True  # flag unchanged
+    assert controller._next_capture_should_ocr is True
 
 
 def test_warmup_runs_when_no_ocr_pending(monkeypatch, qapp, tmp_path):
     """Warmup should initialize the engine and emit warmup_finished
     when no OCR request is in progress."""
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    controller._should_ocr = False
+    controller._next_capture_should_ocr = False
+    controller._expecting_ocr_result = False
 
     warmup_calls = []
     monkeypatch.setattr(
@@ -577,9 +580,9 @@ def test_warmup_runs_when_no_ocr_pending(monkeypatch, qapp, tmp_path):
 
 def test_post_warmup_trim_skipped_when_ocr_in_progress(monkeypatch, qapp, tmp_path):
     """_schedule_post_warmup_trim must not start the trim timer when
-    an OCR request is active (_should_ocr == True)."""
+    an OCR request is active."""
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    controller._should_ocr = True
+    controller._expecting_ocr_result = True
 
     controller._trim_timer.stop()
     assert not controller._trim_timer.isActive()
@@ -593,7 +596,8 @@ def test_post_warmup_trim_starts_timer_when_idle(monkeypatch, qapp, tmp_path):
     """_schedule_post_warmup_trim should start the trim timer (interval=0)
     when no OCR is pending."""
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    controller._should_ocr = False
+    controller._next_capture_should_ocr = False
+    controller._expecting_ocr_result = False
 
     controller._trim_timer.stop()
     assert not controller._trim_timer.isActive()
@@ -608,7 +612,7 @@ def test_ocr_request_cancels_pending_trim(monkeypatch, qapp, tmp_path, sample_pi
     """_start_request must stop the trim timer, cancelling any pending
     post-warmup or post-OCR trim."""
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    controller._should_ocr = True
+    controller._expecting_ocr_result = True
 
     # Simulate a pending trimming timer (post-warmup or post-OCR)
     controller._trim_timer.start(0)
@@ -623,7 +627,8 @@ def test_warmup_finished_signal_triggers_trim(monkeypatch, qapp, tmp_path):
     """The warmup_finished Qt signal must be connected to
     _schedule_post_warmup_trim, which starts the trim timer when idle."""
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    controller._should_ocr = False
+    controller._next_capture_should_ocr = False
+    controller._expecting_ocr_result = False
 
     controller._trim_timer.stop()
     assert not controller._trim_timer.isActive()
@@ -636,10 +641,10 @@ def test_warmup_finished_signal_triggers_trim(monkeypatch, qapp, tmp_path):
 
 
 def test_trim_current_engine_skips_when_ocr_active(monkeypatch, qapp, tmp_path):
-    """_trim_current_engine must be a no-op when _should_ocr is True,
+    """_trim_current_engine must be a no-op when OCR is active,
     regardless of which path (post-warmup or post-OCR) triggered it."""
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    controller._should_ocr = True
+    controller._expecting_ocr_result = True
 
     trim_calls = []
     monkeypatch.setattr(
