@@ -51,6 +51,60 @@ function Write-Warn {
     Write-Host "    [WARN] $Msg" -ForegroundColor Yellow
 }
 
+function Write-Utf8FileExact {
+    param(
+        [string]$Path,
+        [string]$Content,
+        [bool]$IncludeBom = $false
+    )
+    $encoding = [System.Text.UTF8Encoding]::new($IncludeBom)
+    [System.IO.File]::WriteAllText($Path, $Content, $encoding)
+}
+
+function Test-Utf8Bom {
+    param([string]$Path)
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+    return $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
+}
+
+function Stop-HushSnapProcessesInPaths {
+    param([string[]]$RootPaths)
+
+    $resolvedRoots = @()
+    foreach ($rootPath in $RootPaths) {
+        if (Test-Path $rootPath) {
+            $resolvedRoots += [System.IO.Path]::GetFullPath($rootPath).TrimEnd('\') + '\'
+        }
+    }
+
+    if (-not $resolvedRoots) {
+        return
+    }
+
+    $stopped = 0
+    Get-Process -Name "HushSnap" -ErrorAction SilentlyContinue | ForEach-Object {
+        $processPath = $null
+        try {
+            $processPath = [System.IO.Path]::GetFullPath($_.Path)
+        } catch {
+            return
+        }
+
+        foreach ($root in $resolvedRoots) {
+            if ($processPath.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) {
+                Write-Host "Stopping HushSnap process using build output: $processPath" -ForegroundColor Yellow
+                $_ | Stop-Process -Force
+                $stopped++
+                break
+            }
+        }
+    }
+
+    if ($stopped -gt 0) {
+        Start-Sleep -Milliseconds 800
+    }
+}
+
 function Invoke-PreBuildValidation {
     param([string]$RootDir, [string]$SpecPath)
     Write-ValidationHeader "Pre-build validation"
@@ -387,7 +441,13 @@ Write-Host "  [Found] MakeAppx: $makeappx" -ForegroundColor Green
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $rootDir = Resolve-Path (Join-Path $scriptDir "..")
 $distDir = Join-Path $rootDir "dist\HushSnap"
-$stageDir = Join-Path $rootDir "build\msix_stage"
+if ($Dev) {
+    # Loose-folder registration keeps using this path after the build finishes.
+    # Keep it separate so release packaging never deletes the registered dev app.
+    $stageDir = Join-Path $rootDir "build\msix_stage_dev"
+} else {
+    $stageDir = Join-Path $rootDir "build\msix_stage_release"
+}
 
 # 3) Resolve and parse version
 if ($Dev) {
@@ -438,9 +498,8 @@ if ($Dev) {
 
     Write-Host "Building HushSnap with PyInstaller..." -ForegroundColor Cyan
 
-    # Kill running HushSnap processes to release file handles
-    Get-Process -Name "HushSnap" -ErrorAction SilentlyContinue | Stop-Process -Force
-    Start-Sleep -Milliseconds 800
+    # Stop only processes using paths this build may overwrite.
+    Stop-HushSnapProcessesInPaths -RootPaths @($distDir, $stageDir)
 
     if ($Rebuild) {
         if (Test-Path $distDir) {
@@ -469,19 +528,17 @@ if ($Dev) {
     }
 } else {
     # Release build: inject version into __init__.py then compile
+    $initPyHadBom = Test-Utf8Bom -Path $initPyPath
     $initPyBackup = Get-Content -Path $initPyPath -Raw
     try {
         Write-Host "Injecting version '$rawVersion' into __init__.py for build..." -ForegroundColor Cyan
         $patchedInit = $initPyBackup -replace '__version__\s*=\s*"[^"]*"', "__version__ = `"$rawVersion`""
-        $patchedInit | Set-Content -Path $initPyPath -Encoding UTF8 -NoNewline
-        # Ensure trailing newline (Set-Content -NoNewline strips it)
-        Add-Content -Path $initPyPath -Value "`n"
+        Write-Utf8FileExact -Path $initPyPath -Content $patchedInit -IncludeBom $initPyHadBom
 
         Write-Host "Building HushSnap with PyInstaller..." -ForegroundColor Cyan
 
-        # Kill running HushSnap processes to release file handles
-        Get-Process -Name "HushSnap" -ErrorAction SilentlyContinue | Stop-Process -Force
-        Start-Sleep -Milliseconds 800
+        # Stop only processes using paths this build may overwrite.
+        Stop-HushSnapProcessesInPaths -RootPaths @($distDir, $stageDir)
 
         if ($Rebuild) {
             if (Test-Path $distDir) {
@@ -510,8 +567,7 @@ if ($Dev) {
         }
     } finally {
         Write-Host "Restoring __init__.py to dev placeholder..." -ForegroundColor Cyan
-        $initPyBackup | Set-Content -Path $initPyPath -Encoding UTF8 -NoNewline
-        Add-Content -Path $initPyPath -Value "`n"
+        Write-Utf8FileExact -Path $initPyPath -Content $initPyBackup -IncludeBom $initPyHadBom
     }
 }
 
@@ -523,7 +579,21 @@ if ((-not $SkipValidation) -and (-not $Dev)) {
 # 5) Clean and prepare staging directory
 Write-Host "Preparing staging folder..." -ForegroundColor Cyan
 if (Test-Path $stageDir) {
-    Remove-Item -Path $stageDir -Recurse -Force
+    # Retry removal — Windows may briefly lock .pyd files (AV, indexer, previous build)
+    $retryCount = 0
+    $maxRetries = 5
+    while ($true) {
+        try {
+            Remove-Item -Path $stageDir -Recurse -Force -ErrorAction Stop
+            break
+        } catch {
+            if (++$retryCount -ge $maxRetries) {
+                throw "Failed to remove staging directory after $maxRetries attempts: $_"
+            }
+            Write-Host "  Retry $retryCount/$maxRetries — file in use, waiting 2s..." -ForegroundColor Yellow
+            Start-Sleep -Seconds 2
+        }
+    }
 }
 New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
 
@@ -620,4 +690,3 @@ if ($Dev) {
     Write-Host "Note: This package is UNSIGNED. Perfect for uploading to Partner Center." -ForegroundColor Yellow
 }
 Write-Host "==========================================================" -ForegroundColor Green
-

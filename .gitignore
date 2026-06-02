@@ -8,6 +8,7 @@ __pycache__/
 # Installer build artifacts
 dist-installer/
 dist-installer-dev/
+dist-installer-test/
 
 # Executables
 *.exe
@@ -26,5 +27,6 @@ tools/WACK_reports/
 /ocr_preprocess_test
 DEV.lnk
 RELEASE.lnk
+sign.lnk
 
 EXPERIMENT_SUMMARY.md
