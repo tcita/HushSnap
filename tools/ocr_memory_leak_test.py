@@ -1,7 +1,7 @@
 """
 HushSnap In-Process Memory Leak & Footprint Diagnostic Suite
 -----------------------------------------------------------
-Tests both RapidOCR and Windows OCR engines inside a real PyQt6 QApplication context,
+Tests the RapidOCR engine inside a real PyQt6 QApplication context,
 analyzing Python heap allocations using tracemalloc to isolate leaks down to the line of code.
 """
 
@@ -16,8 +16,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from hushsnap.constants import OCR_ENGINE_RAPID, OCR_ENGINE_WINDOWS
-from hushsnap.ocr.recognition import recognize_result_from_pixmap
+from hushsnap.constants import OCR_ENGINE_RAPID
 from hushsnap.ocr.rapidocr import recognize_rapidocr_result_from_pixmap
 from hushsnap.ocr.engine import release_engine
 
@@ -125,16 +124,6 @@ def main():
     # Headless GUI context
     app = QtWidgets.QApplication(sys.argv)
     
-    # Run test for Windows OCR
-    try:
-        run_engine_leak_test(
-            OCR_ENGINE_WINDOWS,
-            lambda pix: recognize_result_from_pixmap(pix),
-            runs=10
-        )
-    except Exception as exc:
-        print(f"\nWindows OCR Test skipped or failed: {exc}")
-        
     # Run test for RapidOCR
     try:
         run_engine_leak_test(
