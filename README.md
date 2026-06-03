@@ -12,7 +12,7 @@ HushSnap uses **RapidOCR** as its sole OCR engine:
 
 - **RapidOCR:** Runs PP-OCRv5 ONNX models in-process via the [`rapidocr`](https://github.com/RapidAI/RapidOCR) Python package (Apache 2.0). No external dependencies or language packs needed. Works offline. Uses a unified CJK+Latin model. Ships with a Chinese-centric embedded model; tested and tuned for Simplified Chinese, Traditional Chinese, and English.
 
-The engine has been tested on standard screen captures (web, apps, UIs). While the engine is theoretically capable of recognizing more languages than the three listed, **the current language selection is hardcoded to Simplified Chinese, Traditional Chinese, and English** — this is a deliberate scope choice, not a technical limitation of the engine itself.
+The engine has been tested on standard screen captures (web, apps, UIs). **Simplified Chinese, Traditional Chinese, and English** are the languages the author has personally tested and can vouch for. The underlying model may recognize additional languages (e.g., Japanese), but their accuracy is unverified — use at your own discretion.
 
 ## Third-Party Acknowledgment
 
