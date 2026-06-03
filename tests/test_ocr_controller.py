@@ -59,6 +59,12 @@ def _translate(key, **kwargs):
         "ocr_recognizing": "Recognizing…",
         "ocr_status_done": "Recognition complete",
         "ocr_status_paste_hint": "Ctrl+V to paste",
+        "ocr_pin_btn": "Pin",
+        "ocr_unpin_btn": "Unpin",
+        "close_btn": "Close",
+        "ocr_edit_btn": "Edit",
+        "ocr_update_btn": "Update",
+        "ocr_cancel_btn": "Cancel",
     }
     return table[key].format(**kwargs)
 
