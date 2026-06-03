@@ -14,10 +14,6 @@ WINDOW_MIN_HEIGHT = 180
 
 class OcrPopup(QtWidgets.QWidget):
     """Semi-transparent floating popup for recognized OCR text."""
-    language_changed = QtCore.pyqtSignal(str)
-    engine_changed = QtCore.pyqtSignal(str)
-    switch_language_requested = QtCore.pyqtSignal(str)
-    open_language_settings_requested = QtCore.pyqtSignal()
     pin_toggled = QtCore.pyqtSignal(bool)
 
     def __init__(self, translate, parent=None):
@@ -81,44 +77,6 @@ class OcrPopup(QtWidgets.QWidget):
         header_layout.addWidget(self.close_btn)
         layout.addWidget(self.header_container)
 
-        # ── hidden engine combo ──────────────────────────────────────
-        self.engine_combo = QtWidgets.QComboBox()
-        self.engine_combo.currentIndexChanged.connect(self._on_engine_changed_idx)
-
-        self.lang_combo = QtWidgets.QComboBox()
-        self.lang_combo.addItem("", "en-US")
-        self.lang_combo.addItem("", "zh-CN")
-        self.lang_combo.addItem("", "zh-TW")
-        self.lang_combo.currentIndexChanged.connect(self._on_lang_changed_idx)
-
-        # ── language notice ──────────────────────────────────────────
-        self.notice_frame = QtWidgets.QFrame()
-        self.notice_frame.setObjectName("ocrNotice")
-        self.notice_frame.hide()
-        notice_layout = QtWidgets.QVBoxLayout(self.notice_frame)
-        notice_layout.setContentsMargins(12, 10, 12, 10)
-        notice_layout.setSpacing(8)
-
-        self.notice_label = QtWidgets.QLabel("")
-        self.notice_label.setObjectName("ocrNoticeLabel")
-        self.notice_label.setWordWrap(True)
-        notice_layout.addWidget(self.notice_label)
-
-        notice_actions = QtWidgets.QHBoxLayout()
-        notice_actions.setSpacing(8)
-        self.notice_switch_btn = QtWidgets.QPushButton("")
-        self.notice_switch_btn.setObjectName("ocrNoticeSwitchBtn")
-        self.notice_switch_btn.clicked.connect(self._emit_switch_language_requested)
-        notice_actions.addWidget(self.notice_switch_btn)
-
-        self.notice_settings_btn = QtWidgets.QPushButton("")
-        self.notice_settings_btn.setObjectName("ocrNoticeSettingsBtn")
-        self.notice_settings_btn.clicked.connect(self.open_language_settings_requested.emit)
-        notice_actions.addWidget(self.notice_settings_btn)
-        notice_actions.addStretch(1)
-        notice_layout.addLayout(notice_actions)
-        layout.addWidget(self.notice_frame)
-
         # ── scroll area (text block list container) ──────────────────
         self.scroll_area = QtWidgets.QScrollArea()
         self.scroll_area.setObjectName("ocrScrollArea")
@@ -139,7 +97,7 @@ class OcrPopup(QtWidgets.QWidget):
             QtWidgets.QSizePolicy.Policy.Preferred,
         )
         text_block_layout = QtWidgets.QVBoxLayout(self.text_block)
-        text_block_layout.setContentsMargins(16, 14, 16, 14)
+        text_block_layout.setContentsMargins(16, 8, 16, 14)
         text_block_layout.setSpacing(6)
 
         # Read-only display label (visible by default)
@@ -214,31 +172,11 @@ class OcrPopup(QtWidgets.QWidget):
         self.btn_row.addWidget(self.cancel_btn)
 
         text_block_layout.addLayout(self.btn_row)
+        text_block_layout.addStretch(1)  # absorb extra height — keep content anchored to bubble top
 
         self.scroll_area.setWidget(self.text_block)
-        # Left/right spacing per spec §II — container padding controls
-        # distance from bubble to window edge, not max-width on bubble.
-        self.scroll_area.setViewportMargins(16, 10, 16, 10)
+        self.scroll_area.setViewportMargins(16, 10, 16, 16)
         layout.addWidget(self.scroll_area, 1)  # stretch=1, fills remaining space
-
-        # ── status bar ───────────────────────────────────────────────
-        self.status_bar = QtWidgets.QFrame()
-        self.status_bar.setObjectName("ocrStatusBar")
-        status_layout = QtWidgets.QHBoxLayout(self.status_bar)
-        status_layout.setContentsMargins(10, 4, 10, 8)
-        status_layout.setSpacing(6)
-
-        self.lang_combo_inline = QtWidgets.QComboBox()
-        self.lang_combo_inline.setObjectName("ocrLangComboInline")
-        self.lang_combo_inline.addItem("", "en-US")
-        self.lang_combo_inline.addItem("", "zh-CN")
-        self.lang_combo_inline.addItem("", "zh-TW")
-        self.lang_combo_inline.setFixedWidth(130)
-        self.lang_combo_inline.currentIndexChanged.connect(self._sync_lang_inline_to_combo)
-        status_layout.addWidget(self.lang_combo_inline)
-
-        status_layout.addStretch(1)
-        layout.addWidget(self.status_bar)
 
         # ── caret colour ────────────────────────────────────────────
         pal = self.text_edit.palette()
@@ -318,13 +256,6 @@ class OcrPopup(QtWidgets.QWidget):
             " selection-color: #ffffff;"
             "}"
 
-            "#ocrStatusBar {"
-            " background-color: #12261b;"
-            " border-top: 1px solid rgba(94, 201, 138, 0.1);"
-            " border-bottom-left-radius: 8px;"
-            " border-bottom-right-radius: 8px;"
-            "}"
-
             "/* ── buttons in the bubble ── */"
             "#ocrCopyBtn {"
             " color: #5fc98a;"
@@ -385,27 +316,6 @@ class OcrPopup(QtWidgets.QWidget):
             " font-size: 15px;"
             "}"
             "#ocrCloseBtn:hover { background: #f44336; color: #FFF; }"
-
-            "#ocrLangComboInline {"
-            " background: #1e4a30;"
-            " border: 1px solid #1e4a30;"
-            " border-radius: 6px;"
-            " color: #d4f5e2;"
-            " padding: 2px 5px;"
-            " font-size: 12px;"
-            "}"
-            "#ocrNotice {"
-            " background-color: #0d1f17;"
-            " border-bottom: 1px solid #1e4a30;"
-            "}"
-            "#ocrNoticeLabel { color: #5fc98a; }"
-            "#ocrNoticeSwitchBtn, #ocrNoticeSettingsBtn {"
-            " background: #1e4a30;"
-            " color: #5fc98a;"
-            " border-radius: 6px;"
-            " padding: 4px 8px;"
-            "}"
-            "#ocrNoticeSwitchBtn:hover, #ocrNoticeSettingsBtn:hover { background: #2e7d4f; }"
         )
 
     # ── paint / window chrome ────────────────────────────────────────
@@ -418,16 +328,6 @@ class OcrPopup(QtWidgets.QWidget):
 
     # ── label refresh ────────────────────────────────────────────────
     def _refresh_labels(self):
-        from ..constants import OCR_ENGINE_WINDOWS, OCR_ENGINE_RAPID
-        if self.engine_combo.count() == 0:
-            self.engine_combo.blockSignals(True)
-            self.engine_combo.addItem(self.translate("ocr_engine_windows"), OCR_ENGINE_WINDOWS)
-            self.engine_combo.addItem(self.translate("ocr_engine_rapid"), OCR_ENGINE_RAPID)
-            self.engine_combo.blockSignals(False)
-        else:
-            self.engine_combo.setItemText(0, self.translate("ocr_engine_windows"))
-            self.engine_combo.setItemText(1, self.translate("ocr_engine_rapid"))
-
         self.copy_btn.setIcon(self._make_copy_icon())
         self.edit_btn.setIcon(self._make_edit_icon())
         self.update_btn.setIcon(self._make_check_icon())
@@ -435,13 +335,6 @@ class OcrPopup(QtWidgets.QWidget):
         self.pin_btn.setIcon(self._make_pin_icon(self._pinned))
         self.pin_btn.setIconSize(QtCore.QSize(16, 16))
 
-        for combo in (self.lang_combo, self.lang_combo_inline):
-            for code, key in [("en-US", "ocr_lang_english"), ("zh-CN", "ocr_lang_chinese_simplified"), ("zh-TW", "ocr_lang_chinese_traditional")]:
-                idx = combo.findData(code)
-                if idx >= 0:
-                    combo.setItemText(idx, self.translate(key))
-
-        self.lang_combo_inline.setToolTip(self.translate("ocr_lang_selector_tooltip"))
         self.copy_btn.setToolTip(self.translate("ocr_copy_btn"))
         for btn, key, fallback in [
             (self.edit_btn, "ocr_edit_btn", "Edit"),
@@ -453,65 +346,11 @@ class OcrPopup(QtWidgets.QWidget):
         self.pin_btn.setToolTip(self.translate("ocr_pin_btn"))
         self.close_btn.setToolTip(self.translate("close_btn"))
 
-    # ── language / engine slots ──────────────────────────────────────
-    def _on_lang_changed_idx(self, index):
-        if not self._is_refreshing:
-            lang_data = self.lang_combo.itemData(index)
-            if lang_data:
-                inline_idx = self.lang_combo_inline.findData(lang_data)
-                if inline_idx >= 0 and inline_idx != self.lang_combo_inline.currentIndex():
-                    self.lang_combo_inline.blockSignals(True)
-                    self.lang_combo_inline.setCurrentIndex(inline_idx)
-                    self.lang_combo_inline.blockSignals(False)
-                self.language_changed.emit(lang_data)
-
-    def _sync_lang_inline_to_combo(self, index):
-        if not self._is_refreshing:
-            lang_data = self.lang_combo_inline.itemData(index)
-            if lang_data:
-                idx = self.lang_combo.findData(lang_data)
-                if idx >= 0:
-                    self.lang_combo.setCurrentIndex(idx)
-
-    def _on_engine_changed_idx(self, index):
-        if not self._is_refreshing:
-            engine_data = self.engine_combo.itemData(index)
-            if engine_data:
-                from ..constants import OCR_ENGINE_RAPID
-                self.lang_combo_inline.setVisible(engine_data != OCR_ENGINE_RAPID)
-                self.engine_changed.emit(engine_data)
-
-    def _emit_switch_language_requested(self):
-        target = self.notice_switch_btn.property("target_lang")
-        if target:
-            self.switch_language_requested.emit(str(target))
-
     # ── show / hide text ─────────────────────────────────────────────
-    def show_text(self, text, pixmap=None, lang=None, engine=None):
+    def show_text(self, text, pixmap=None):
         self._is_refreshing = True
         if pixmap is not None:
             self._last_pixmap = pixmap
-        if engine:
-            idx = self.engine_combo.findData(engine)
-            if idx >= 0:
-                self.engine_combo.setCurrentIndex(idx)
-                from ..constants import OCR_ENGINE_RAPID
-                self.lang_combo_inline.setVisible(engine != OCR_ENGINE_RAPID)
-        if lang:
-            idx = self.lang_combo.findData(lang)
-            if idx < 0:
-                lowered = (lang or "").lower()
-                if lowered.startswith(("zh-tw", "zh-hk", "zh-mo", "zh-hant")):
-                    idx = self.lang_combo.findData("zh-TW")
-                elif lowered.startswith("zh"):
-                    idx = self.lang_combo.findData("zh-CN")
-            if idx >= 0:
-                self.lang_combo.setCurrentIndex(idx)
-                inline_idx = self.lang_combo_inline.findData(self.lang_combo.itemData(idx))
-                if inline_idx >= 0:
-                    self.lang_combo_inline.blockSignals(True)
-                    self.lang_combo_inline.setCurrentIndex(inline_idx)
-                    self.lang_combo_inline.blockSignals(False)
 
         self._refresh_labels()
         self.apply_font_size()
@@ -531,22 +370,6 @@ class OcrPopup(QtWidgets.QWidget):
         self.activateWindow()
         # Fit window height to bubble content after layout settles
         QtCore.QTimer.singleShot(0, self._adjust_window_size)
-
-    def show_language_notice(self, message, available_lang=""):
-        self.notice_label.setText(message)
-        self.notice_switch_btn.setText(
-            self.translate(
-                "ocr_lang_missing_switch_btn",
-                available_lang=available_lang or self.translate("ocr_lang_installed_fallback"),
-            )
-        )
-        self.notice_switch_btn.setProperty("target_lang", available_lang)
-        self.notice_switch_btn.setEnabled(bool(available_lang))
-        self.notice_settings_btn.setText(self.translate("ocr_lang_missing_open_settings_btn"))
-        self.notice_frame.show()
-
-    def hide_language_notice(self):
-        self.notice_frame.hide()
 
     # ── properties ───────────────────────────────────────────────────
     @property
@@ -633,8 +456,6 @@ class OcrPopup(QtWidgets.QWidget):
         else:
             widget = self.text_label
 
-        # 16px internal padding refers to text_block_layout margins
-        # widget.width() should be accurate after processEvents()
         text_w = max(widget.width(), 200)
         font = widget.font()
         text = self.text_edit.toPlainText() if self._editing else self.text_label.text()
@@ -651,20 +472,13 @@ class OcrPopup(QtWidgets.QWidget):
 
         # Accumulate: bubble internals + chrome
         header_h = self.header_container.sizeHint().height()
-        status_h = self.status_bar.sizeHint().height()
-        notice_h = (
-            self.notice_frame.sizeHint().height()
-            if not self.notice_frame.isHidden()
-            else 0
-        )
-        
-        # chrome_h: viewport 10+10, outer 1+1, window border 1+1
-        chrome_h = header_h + notice_h + status_h + 24
-        
-        # bubble_h: text + block padding (14+14) + spacing(6) + buttons(24) + borders(1+1)
-        # Using 62 instead of 60 to provide a tiny bit of extra breathing room
-        bubble_h = text_h + 28 + 34
-        
+
+        # chrome_h: viewport 10+16, outer 1+1, window border 1+1, header
+        chrome_h = header_h + 30
+
+        # bubble_h: text + block padding (8+14) + spacing(6) + buttons(24) + borders(1+1)
+        bubble_h = text_h + 22 + 34
+
         total_h = chrome_h + bubble_h
         total_h = max(total_h, WINDOW_MIN_HEIGHT)
 
@@ -676,14 +490,7 @@ class OcrPopup(QtWidgets.QWidget):
 
         self.resize(self.width(), int(total_h))
 
-    # ── engine / pin setter ──────────────────────────────────────────
-    def set_engine(self, engine):
-        if self._is_refreshing:
-            return
-        idx = self.engine_combo.findData(engine)
-        if idx >= 0:
-            self.engine_combo.setCurrentIndex(idx)
-
+    # ── pin setter ──────────────────────────────────────────────────
     def set_pinned(self, pinned):
         if bool(pinned) == bool(self._pinned):
             return
