@@ -18,15 +18,6 @@ def _translate(key, **kwargs):
         "ocr_copy_btn": "Copy",
         "ocr_copied": "✓ Copied!",
         "ocr_recapture_tooltip": "Capture and OCR",
-        "ocr_lang_english": "English",
-        "ocr_lang_chinese_simplified": "Chinese (Simplified)",
-        "ocr_lang_chinese_traditional": "Chinese (Traditional)",
-        "ocr_lang_selector_tooltip": "Select OCR language",
-        "ocr_engine_windows": "WindowsOCR",
-        "ocr_engine_rapid": "RapidOCR",
-        "ocr_lang_missing_switch_btn": "Switch to {available_lang}",
-        "ocr_lang_missing_open_settings_btn": "Open language settings",
-        "ocr_lang_installed_fallback": "Installed language",
         "ocr_status_done": "Recognition complete",
         "ocr_status_paste_hint": "Ctrl+V to paste",
         "ocr_editable_hint": "Text is editable",
@@ -139,37 +130,6 @@ def test_ocr_popup_copy_button_copies_current_text(qapp):
 def test_ocr_popup_updates_copy_button_text_on_show(qapp):
     popup = OcrPopup(_translate)
 
-    popup.show_text("hello", lang="en-US")
+    popup.show_text("hello")
 
     assert popup.copy_btn.toolTip() == "Copy"
-    assert popup.lang_combo.itemText(popup.lang_combo.findData("zh-CN")) == "Chinese (Simplified)"
-    assert popup.lang_combo.itemText(popup.lang_combo.findData("zh-TW")) == "Chinese (Traditional)"
-
-
-def test_ocr_popup_maps_traditional_chinese_variants_to_traditional_option(qapp):
-    popup = OcrPopup(_translate)
-
-    popup.show_text("hello", lang="zh-TW")
-
-    assert popup.lang_combo.currentData() == "zh-TW"
-
-
-def test_ocr_popup_maps_simplified_chinese_variants_to_simplified_option(qapp):
-    popup = OcrPopup(_translate)
-
-    popup.show_text("hello", lang="zh-SG")
-
-    assert popup.lang_combo.currentData() == "zh-CN"
-
-
-def test_ocr_popup_can_show_and_hide_language_notice(qapp):
-    popup = OcrPopup(_translate)
-
-    popup.show_language_notice("Missing OCR language pack", available_lang="zh-CN")
-
-    assert popup.notice_frame.isHidden() is False
-    assert popup.notice_switch_btn.isEnabled() is True
-
-    popup.hide_language_notice()
-
-    assert popup.notice_frame.isHidden() is True

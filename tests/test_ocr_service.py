@@ -4,7 +4,7 @@ import pytest
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from hushsnap import ocr
-from hushsnap.constants import OCR_ENGINE_RAPID, OCR_ENGINE_WINDOWS
+from hushsnap.constants import OCR_ENGINE_RAPID
 from hushsnap.ocr.engine import register_engine
 
 
@@ -81,14 +81,14 @@ def test_ocr_service_receives_preprocessed_image(monkeypatch, sample_pixmap):
         captured["language_tag"] = language_tag
         return ocr.OcrRecognition(text="preprocessed")
 
-    register_engine(OCR_ENGINE_WINDOWS, recognize=_recognize)
+    register_engine(OCR_ENGINE_RAPID, recognize=_recognize)
 
     service = ocr.OcrService()
     response = service.recognize(
         ocr.OcrRequest(
             pixmap=sample_pixmap,
             language_tag="en-US",
-            engine=OCR_ENGINE_WINDOWS,
+            engine=OCR_ENGINE_RAPID,
             debug_dir=None,
         )
     )

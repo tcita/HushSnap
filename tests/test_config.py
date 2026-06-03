@@ -9,7 +9,6 @@ from pathlib import Path
 from unittest.mock import patch
 from hushsnap.config import (
     _ensure_default_config_exists,
-    get_ocr_lang,
     get_user_data_dir,
     load_ocr_hotkey_setting,
     parse_hotkey,
@@ -124,31 +123,6 @@ def test_default_config_omits_ocr_fields(tmp_path):
     assert "ocr_engine" not in config_data
     assert config_data["hotkey"] == "Alt+Q"
     assert config_data["ocr_hotkey"] == "Alt+Shift+Q"
-
-
-def test_get_ocr_lang_from_state(tmp_path):
-    state_path = tmp_path / "hushsnap_state.toml"
-    state_path.write_text('ocr_language = "zh-CN"\n', encoding="utf-8")
-
-    assert get_ocr_lang(state_path=state_path) == "zh-CN"
-
-
-def test_get_ocr_lang_migrates_from_config(tmp_path):
-    config_path = tmp_path / "hushsnap_config.toml"
-    config_path.write_text('ocr_language = "zh-HK"\n', encoding="utf-8")
-    state_path = tmp_path / "hushsnap_state.toml"
-
-    # State file doesn't have ocr_language, should migrate from config
-    state_path.write_text('ocr_engine = "rapidocr"\n', encoding="utf-8")
-    assert get_ocr_lang(state_path=state_path, config_path=config_path) == "zh-TW"
-
-
-def test_get_ocr_lang_falls_back_to_default(tmp_path):
-    state_path = tmp_path / "hushsnap_state.toml"
-    config_path = tmp_path / "hushsnap_config.toml"
-    config_path.write_text('language = "zh"\n', encoding="utf-8")
-
-    assert get_ocr_lang(state_path=state_path, config_path=config_path) == "zh-CN"
 
 
 # --- OCR hotkey config tests ---

@@ -10,7 +10,7 @@ This Privacy Policy explains how HushSnap handles data.
 
 HushSnap is built to stay entirely local on your Windows device:
 - **No Remote Servers:** HushSnap does not communicate with any external servers, nor does it transmit any data over the internet.
-- **Local OCR:** Optical Character Recognition (OCR) is performed entirely on your local machine using embedded offline libraries (RapidOCR) or Windows built-in local APIs.
+- **Local OCR:** Optical Character Recognition (OCR) is performed entirely on your local machine using embedded offline libraries (RapidOCR).
 - **Screen Captures:** Screenshots captured by the application are held in your system memory and copied directly to your local clipboard. They are never uploaded or shared with us or any third party.
 
 ## 2. Information We Access
