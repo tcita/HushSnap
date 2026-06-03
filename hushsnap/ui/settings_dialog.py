@@ -14,9 +14,7 @@ from ..config import (
     update_ocr_hotkey_in_config,
     get_configured_ui_lang,
     update_ui_lang_in_config,
-    get_ocr_engine,
     get_ocr_font_size,
-    update_ocr_engine,
     update_ocr_font_size,
 )
 from ..system import startup_manager
@@ -669,13 +667,12 @@ class SettingsDialogController(QtCore.QObject):
     """Settings panel with per-setting cards, per-key kbd pills, header bar."""
     language_changed = QtCore.pyqtSignal()
 
-    def __init__(self, translate, config_path, hotkey_manager, on_font_size_changed=None, on_engine_changed=None):
+    def __init__(self, translate, config_path, hotkey_manager, on_font_size_changed=None):
         super().__init__()
         self.translate = translate
         self.config_path = config_path
         self.hotkey_manager = hotkey_manager
         self._on_font_size_changed = on_font_size_changed
-        self._on_engine_changed = on_engine_changed
         self._dialog = None
         self._screenshot_pills_container = None
         self._screenshot_pills = None
@@ -917,76 +914,6 @@ class SettingsDialogController(QtCore.QObject):
         )
         card4_switch.clicked.connect(on_startup_toggled)
         body_layout.addWidget(card4)
-
-        # --- Section: OCR ---
-        ocr_section_header = QtWidgets.QLabel(self.translate("settings_section_ocr"))
-        ocr_section_header.setObjectName("sectionHeader")
-        ocr_section_header.setStyleSheet(SECTION_HEADER_STYLE)
-        body_layout.addWidget(ocr_section_header)
-
-        # --- OCR engine card ---
-        def change_ocr_engine(index):
-            selected_engine = combo_engine.itemData(index)
-            try:
-                update_ocr_engine(selected_engine)
-                if self._on_engine_changed:
-                    self._on_engine_changed(selected_engine)
-            except Exception as exc:
-                logger.exception(f"Failed to save OCR engine setting: {exc}")
-                _set_status(self.translate("error"), True)
-
-        current_ocr_engine = get_ocr_engine()
-
-        card_engine = QtWidgets.QFrame()
-        card_engine.setObjectName("settingCard")
-        card_engine.setStyleSheet(SETTING_CARD_STYLE)
-
-        card_engine_layout = QtWidgets.QVBoxLayout(card_engine)
-        card_engine_layout.setContentsMargins(14, 10, 14, 10)
-        card_engine_layout.setSpacing(2)
-
-        top_row_engine = QtWidgets.QWidget()
-        top_row_engine.setStyleSheet("background: transparent; border: none;")
-        top_layout_engine = QtWidgets.QHBoxLayout(top_row_engine)
-        top_layout_engine.setContentsMargins(0, 0, 0, 0)
-        top_layout_engine.setSpacing(8)
-
-        label_engine = QtWidgets.QLabel(self.translate("ocr_engine_label"))
-        label_engine.setObjectName("rowLabel")
-        label_engine.setStyleSheet(ROW_LABEL_STYLE)
-        top_layout_engine.addWidget(label_engine, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
-
-        top_layout_engine.addStretch()
-
-        combo_engine = SleekComboBox()
-        combo_engine.setObjectName("settingsCombo")
-        combo_engine.setStyleSheet(COMBOBOX_STYLE)
-        delegate_engine = CheckmarkDelegate(combo_engine)
-        combo_engine.setItemDelegate(delegate_engine)
-
-        # RapidOCR first, marked as default
-        rapidocr_label = self.translate("ocr_engine_rapid") + "  (" + self.translate("default_label") + ")"
-        windows_label = self.translate("ocr_engine_windows")
-        engine_options = [
-            (rapidocr_label, "rapidocr"),
-            (windows_label, "windows"),
-        ]
-        for display_text, engine_code in engine_options:
-            combo_engine.addItem(display_text, engine_code)
-            if engine_code == current_ocr_engine:
-                combo_engine.setCurrentIndex(combo_engine.count() - 1)
-
-        combo_engine.currentIndexChanged.connect(change_ocr_engine)
-        top_layout_engine.addWidget(combo_engine, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
-
-        card_engine_layout.addWidget(top_row_engine)
-
-        subtitle_engine = QtWidgets.QLabel(self.translate("settings_ocr_engine_subtitle"))
-        subtitle_engine.setObjectName("subtitle")
-        subtitle_engine.setStyleSheet(SUBTITLE_STYLE)
-        card_engine_layout.addWidget(subtitle_engine)
-
-        body_layout.addWidget(card_engine)
 
         outer_layout.addWidget(body)
 

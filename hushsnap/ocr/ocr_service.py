@@ -1,13 +1,27 @@
 import logging
 import threading
+from pathlib import Path
+
+from PyQt6 import QtGui
 
 from .engine import get_default_engine, get_recognize_fn
 from .models import OcrRequest, OcrResponse
 from .preprocess import run_minimal_pipeline
-from .recognition import save_debug_preprocessed_image
 from .text import compose_text_from_result
 
 logger = logging.getLogger(__name__)
+
+
+def _save_debug_preprocessed_image(image: QtGui.QImage, debug_dir: str | Path | None) -> None:
+    """Best-effort debug image dump; failures are logged but non-fatal."""
+    if not debug_dir:
+        return
+    try:
+        debug_path = Path(debug_dir) / "ocr_debug_preprocessed.png"
+        image.save(str(debug_path), "PNG")
+        logger.debug(f"Saved OCR debug image to: {debug_path}")
+    except Exception as exc:
+        logger.warning(f"Failed to save OCR debug image: {exc}")
 
 
 class OcrService:
@@ -36,7 +50,7 @@ class OcrService:
             preprocess_result = run_minimal_pipeline(request.pixmap)
 
             # Debug save
-            save_debug_preprocessed_image(preprocess_result.image, request.debug_dir)
+            _save_debug_preprocessed_image(preprocess_result.image, request.debug_dir)
 
             # Engine receives the preprocessed QImage directly
             recognition = recognize_fn(

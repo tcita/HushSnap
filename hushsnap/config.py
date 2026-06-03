@@ -23,7 +23,6 @@ from .constants import (
     MOD_SHIFT,
     MOD_WIN,
     OCR_ENGINE_RAPID,
-    OCR_ENGINE_WINDOWS,
     SINGLE_INSTANCE_MUTEX,
 )
 from .translations import (
@@ -164,20 +163,6 @@ def get_config_path():
 def get_state_path():
     """Get the absolute state file path (internal persistence)."""
     return STATE_PATH
-
-
-def _default_ocr_language_for_ui_language(ui_language):
-    """Map the resolved UI language to the best default OCR language tag."""
-    if ui_language == UI_LANG_ZH_TW:
-        return "zh-TW"
-    if ui_language == UI_LANG_ZH:
-        return "zh-CN"
-    return "en-US"
-
-
-def _resolve_default_ocr_language(config_path):
-    """Resolve the default OCR language for first run or missing config fields."""
-    return _default_ocr_language_for_ui_language(resolve_ui_lang(config_path))
 
 
 def _ensure_default_config_exists(config_path):
@@ -427,7 +412,6 @@ def _write_state_data(state_data, state_path=None):
     if state_path is None:
         state_path = STATE_PATH
     engine = _normalize_ocr_engine(state_data.get("ocr_engine")) or OCR_ENGINE_RAPID
-    lang = _normalize_ocr_language_tag(state_data.get("ocr_language")) or ""
     font_size = state_data.get("ocr_font_size", DEFAULT_OCR_FONT_SIZE)
     if not isinstance(font_size, int):
         font_size = DEFAULT_OCR_FONT_SIZE
@@ -436,7 +420,6 @@ def _write_state_data(state_data, state_path=None):
         pinned = False
     lines = [
         f'ocr_engine = "{engine}"',
-        f'ocr_language = "{lang}"',
         f'ocr_font_size = {font_size}',
         f'ocr_pinned = {str(pinned).lower()}',
         "",
@@ -451,13 +434,13 @@ def _ensure_default_state_exists(state_path=None):
     if state_path.exists():
         return
     try:
-        _write_state_data({"ocr_engine": OCR_ENGINE_RAPID, "ocr_language": "", "ocr_font_size": DEFAULT_OCR_FONT_SIZE, "ocr_pinned": False}, state_path)
+        _write_state_data({"ocr_engine": OCR_ENGINE_RAPID, "ocr_font_size": DEFAULT_OCR_FONT_SIZE, "ocr_pinned": False}, state_path)
     except Exception as e:
         logger.debug(f"Failed to ensure default state exists at {state_path}: {e}")
 
 
 def _migrate_ocr_from_config(state_data, config_path):
-    """One-shot: pull ocr_engine / ocr_language from old config TOML into state dict."""
+    """One-shot: pull ocr_engine from old config TOML into state dict."""
     config_data = _load_config_data(config_path)
     if not config_data:
         return state_data
@@ -466,11 +449,6 @@ def _migrate_ocr_from_config(state_data, config_path):
         engine = _normalize_ocr_engine(config_data.get("ocr_engine"))
         if engine:
             state_data["ocr_engine"] = engine
-            migrated = True
-    if "ocr_language" not in state_data:
-        lang = _normalize_ocr_language_tag(config_data.get("ocr_language"))
-        if lang:
-            state_data["ocr_language"] = lang
             migrated = True
     if migrated:
         try:
@@ -492,38 +470,6 @@ def get_debug_enabled(config_path=None):
         config_path = get_config_path()
     config_data = _load_config_data(config_path)
     return bool(config_data.get("debug", False))
-
-
-def get_ocr_lang(state_path=None, config_path=None):
-    """Read OCR language from state file, with migration fallback from config."""
-    if state_path is None:
-        state_path = STATE_PATH
-    _ensure_default_state_exists(state_path)
-    state_data = _load_state_data(state_path)
-    ocr_language = state_data.get("ocr_language")
-    normalized = _normalize_ocr_language_tag(ocr_language)
-    if normalized:
-        return normalized
-    # Migration: try old config location
-    state_data = _migrate_ocr_from_config(state_data, config_path or get_config_path())
-    ocr_language = state_data.get("ocr_language")
-    normalized = _normalize_ocr_language_tag(ocr_language)
-    if normalized:
-        return normalized
-    return _resolve_default_ocr_language(config_path or get_config_path())
-
-
-def update_ocr_lang(ocr_lang, state_path=None):
-    """Persist OCR language to state file."""
-    if state_path is None:
-        state_path = STATE_PATH
-    _ensure_default_state_exists(state_path)
-    try:
-        state_data = _load_state_data(state_path)
-        state_data["ocr_language"] = _normalize_ocr_language_tag(ocr_lang) or ocr_lang
-        _write_state_data(state_data, state_path)
-    except Exception as e:
-        logger.error(f"Failed to update OCR language in state: {e}")
 
 
 def get_ocr_engine(state_path=None, config_path=None):
@@ -732,27 +678,6 @@ def _normalize_ui_language_code(raw_value, allow_auto=False):
     return None
 
 
-def _normalize_ocr_language_tag(raw_value):
-    """Normalize OCR language values into the app's supported OCR options."""
-    if not isinstance(raw_value, str):
-        return None
-
-    normalized = raw_value.strip().replace("_", "-")
-    if not normalized:
-        return None
-
-    lowered = normalized.lower()
-    if lowered == "en" or lowered.startswith("en-"):
-        return "en-US"
-    if lowered == "zh":
-        return "zh-CN"
-    if lowered in ("zh-cn", "zh-sg", "zh-hans"):
-        return "zh-CN"
-    if lowered in ("zh-tw", "zh-hk", "zh-mo", "zh-hant"):
-        return "zh-TW"
-    return normalized
-
-
 def _normalize_ocr_engine(raw_value):
     if not isinstance(raw_value, str):
         return None
@@ -760,8 +685,6 @@ def _normalize_ocr_engine(raw_value):
     normalized = raw_value.strip().lower().replace("-", "").replace("_", "")
     if normalized in {"rapidocr", "rapid"}:
         return OCR_ENGINE_RAPID
-    if normalized in {"windows", "win", "windowsocr"}:
-        return OCR_ENGINE_WINDOWS
     return None
 
 

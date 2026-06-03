@@ -41,8 +41,7 @@ TRAY_MSG_MEDIUM_MS = 3000
 TRAY_MSG_LONG_MS = 4000
 # Disable tray balloon notifications entirely to avoid Windows notification sounds.
 TRAY_NOTIFICATIONS_ENABLED = False
-# OCR engine identifiers.
-OCR_ENGINE_WINDOWS = "windows"
+# OCR engine identifier.
 OCR_ENGINE_RAPID = "rapidocr"
 # Release RapidOCR model after 5 minutes of OCR inactivity.
 OCR_RAPID_IDLE_RELEASE_MS = 5 * 60 * 1000

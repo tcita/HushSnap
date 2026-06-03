@@ -243,7 +243,6 @@ def main(boot_start_time=None):
                 config_path,
                 hotkey_manager,
                 on_font_size_changed=ocr_controller.popup.apply_font_size,
-                on_engine_changed=ocr_controller.on_settings_engine_changed,
             )
         except Exception as exc:
             logging.getLogger(__name__).exception(f"Failed to initialize settings dialog: {exc}")
