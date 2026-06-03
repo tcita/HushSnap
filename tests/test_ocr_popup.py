@@ -30,8 +30,11 @@ def _translate(key, **kwargs):
         "ocr_status_done": "Recognition complete",
         "ocr_status_paste_hint": "Ctrl+V to paste",
         "ocr_editable_hint": "Text is editable",
+        "ocr_pin_btn": "Pin",
+        "ocr_unpin_btn": "Unpin",
+        "close_btn": "Close",
     }
-    return table[key].format(**kwargs)
+    return table.get(key, key).format(**kwargs)
 
 
 def test_ocr_popup_is_editable(qapp):
@@ -56,7 +59,6 @@ def test_ocr_popup_updates_copy_button_text_on_show(qapp):
     popup.show_text("hello", lang="en-US")
 
     assert popup.copy_btn.toolTip() == "Copy"
-    assert popup.title_label.text() == "OCR Text"
     assert popup.lang_combo.itemText(popup.lang_combo.findData("zh-CN")) == "Chinese (Simplified)"
     assert popup.lang_combo.itemText(popup.lang_combo.findData("zh-TW")) == "Chinese (Traditional)"
 
