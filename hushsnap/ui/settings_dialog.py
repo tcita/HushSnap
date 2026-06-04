@@ -247,7 +247,7 @@ class SleekSwitch(QtWidgets.QAbstractButton):
         self._base_offset = self._margin
         self._offset = self._base_offset
         self._color_off = QtGui.QColor("#D5D5D5")
-        self._color_on = QtGui.QColor("#4CD964")
+        self._color_on = QtGui.QColor("#5FC98A")
         self._thumb_color = QtGui.QColor("#FFFFFF")
         self._animation = QtCore.QVariantAnimation(
             self,
@@ -521,6 +521,50 @@ def _make_language_card(label_text, subtitle_text, current_lang, languages_optio
     return card, combo
 
 
+class PulseDot(QtWidgets.QWidget):
+    """A custom widget that renders a pulsing green status dot."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(14, 14)
+        self._alpha = 255
+        self._anim = QtCore.QVariantAnimation(
+            self,
+            startValue=100,
+            endValue=255,
+            duration=800,
+            valueChanged=self._update_alpha
+        )
+        self._anim.setEasingCurve(QtCore.QEasingCurve.Type.InOutSine)
+        self._anim.finished.connect(self._toggle_direction)
+        self._anim.start()
+        
+    def _update_alpha(self, value):
+        self._alpha = value
+        self.update()
+        
+    def _toggle_direction(self):
+        if self._anim.direction() == QtCore.QVariantAnimation.Direction.Forward:
+            self._anim.setDirection(QtCore.QVariantAnimation.Direction.Backward)
+        else:
+            self._anim.setDirection(QtCore.QVariantAnimation.Direction.Forward)
+        self._anim.start()
+        
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        
+        # Glow outer ring
+        glow_color = QtGui.QColor(95, 201, 138, int(self._alpha * 0.35))
+        painter.setBrush(glow_color)
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        painter.drawEllipse(0, 0, 14, 14)
+        
+        # Solid inner core
+        core_color = QtGui.QColor(95, 201, 138, 255)
+        painter.setBrush(core_color)
+        painter.drawEllipse(3, 3, 8, 8)
+
+
 class HotkeyCaptureDialog(QtWidgets.QDialog):
     """Modal dialog that captures new hotkey input from keyboard."""
 
@@ -535,23 +579,42 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
         self.setStyleSheet(CAPTURE_DIALOG_STYLE)
 
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 16)
-        layout.setSpacing(12)
+        layout.setContentsMargins(24, 24, 24, 20)
+        layout.setSpacing(14)
 
-        hint = QtWidgets.QLabel(self.translate("settings_hotkey_capture_placeholder"))
-        hint.setObjectName("captureHint")
-        hint.setStyleSheet(CAPTURE_HINT_STYLE)
-        layout.addWidget(hint)
-
-        self.hotkey_display = QtWidgets.QLineEdit("")
-        self.hotkey_display.setReadOnly(True)
-        self.hotkey_display.setPlaceholderText(
-            self.translate("settings_hotkey_capture_placeholder")
+        # Pulse indicator row (Recording status)
+        status_row = QtWidgets.QHBoxLayout()
+        status_row.setSpacing(8)
+        self.pulse_dot = PulseDot(self)
+        status_row.addWidget(self.pulse_dot, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
+        
+        self.status_title = QtWidgets.QLabel(self.translate("settings_hotkey_capture_waiting"))
+        self.status_title.setStyleSheet(
+            "font-size: 13px; font-weight: bold; color: #5FC98A; "
+            "font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", \"Segoe UI\", sans-serif; "
+            "background: transparent; border: none;"
         )
-        self.hotkey_display.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
-        self.hotkey_display.setStyleSheet(CAPTURE_INPUT_STYLE)
-        self.hotkey_display.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.hotkey_display)
+        status_row.addWidget(self.status_title, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
+        status_row.addStretch()
+        layout.addLayout(status_row)
+
+        # Container for custom Kbd Pills representation of the captured hotkey
+        self.pills_container = QtWidgets.QFrame()
+        self.pills_container.setObjectName("pillsContainer")
+        self.pills_container.setStyleSheet(
+            "QFrame#pillsContainer {"
+            "  border: 1px solid #D5D5D5;"
+            "  border-radius: 8px;"
+            "  background-color: #F9F9F9;"
+            "  min-height: 50px;"
+            "}"
+        )
+        
+        self.pills_layout = QtWidgets.QHBoxLayout(self.pills_container)
+        self.pills_layout.setContentsMargins(16, 12, 16, 12)
+        self.pills_layout.setSpacing(6)
+        
+        layout.addWidget(self.pills_container)
 
         self.feedback_label = QtWidgets.QLabel("")
         self.feedback_label.setObjectName("captureFeedback")
@@ -578,15 +641,100 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
             self.translate("settings_save_hotkey_btn")
         )
         self.save_button.setObjectName("saveButton")
-        self.save_button.setStyleSheet(CAPTURE_SAVE_BUTTON_STYLE)
+        self.save_button.setStyleSheet(CAPTURE_SAVE_BUTTON_STYLE + """
+            QPushButton#saveButton:enabled {
+                background-color: #5FC98A;
+            }
+            QPushButton#saveButton:enabled:hover {
+                background-color: #4eb579;
+            }
+            QPushButton#saveButton:enabled:pressed {
+                background-color: #3f9b65;
+            }
+        """)
         self.save_button.setEnabled(False)
         self.save_button.clicked.connect(self.accept)
         button_row.addWidget(self.save_button)
 
         layout.addLayout(button_row)
 
+        self._set_placeholder_display()
         self._set_feedback(self.translate("settings_hotkey_capture_waiting"))
         QtCore.QTimer.singleShot(0, self.setFocus)
+
+    def _set_placeholder_display(self):
+        # Clear container layout
+        while self.pills_layout.count():
+            item = self.pills_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+                
+        placeholder = QtWidgets.QLabel(self.translate("settings_hotkey_capture_placeholder"))
+        placeholder.setStyleSheet(
+            "color: #999999; font-size: 13px; font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
+            "background: transparent; border: none;"
+        )
+        self.pills_layout.addWidget(placeholder, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
+        
+        # Reset stylesheet to normal grey border
+        self.pills_container.setStyleSheet(
+            "QFrame#pillsContainer {"
+            "  border: 1px solid #D5D5D5;"
+            "  border-radius: 8px;"
+            "  background-color: #F9F9F9;"
+            "  min-height: 50px;"
+            "}"
+        )
+
+    def _update_pills_display(self, hotkey_string):
+        # Clear container layout
+        while self.pills_layout.count():
+            item = self.pills_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+                
+        parts = [p.strip() for p in hotkey_string.split("+") if p.strip()]
+        for i, part in enumerate(parts):
+            if i > 0:
+                plus = _make_plus_label()
+                self.pills_layout.addWidget(plus, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
+            pill = _make_kbd_pill(part)
+            # Make the pill look gorgeous with brand green accent inside the capture dialog
+            pill.setStyleSheet(
+                "border: 1px solid #5FC98A; border-radius: 5px; background: #FFFFFF; "
+                "padding: 4px 10px; font-family: 'Consolas', 'Segoe UI', monospace; "
+                "font-size: 13px; font-weight: bold; color: #5FC98A;"
+            )
+            self.pills_layout.addWidget(pill, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
+
+    def _shake_window(self):
+        if hasattr(self, "_shake_anim") and self._shake_anim is not None:
+            self._shake_anim.stop()
+            
+        self._shake_anim = QtCore.QSequentialAnimationGroup(self)
+        orig_pos = self.pos()
+        
+        offsets = [8, -8, 6, -6, 4, -4, 0]
+        for offset in offsets:
+            anim = QtCore.QPropertyAnimation(self, b"pos")
+            anim.setDuration(35)
+            anim.setStartValue(self.pos())
+            anim.setEndValue(QtCore.QPoint(orig_pos.x() + offset, orig_pos.y()))
+            self._shake_anim.addAnimation(anim)
+            
+        self._shake_anim.start()
+
+    def _show_invalid_input(self):
+        # Revert container border stylesheet to red error style
+        self.pills_container.setStyleSheet(
+            "QFrame#pillsContainer {"
+            "  border: 1.5px solid #B00020;"
+            "  border-radius: 8px;"
+            "  background-color: #FFF5F5;"
+            "  min-height: 50px;"
+            "}"
+        )
+        self._shake_window()
 
     def _set_feedback(self, message, is_error=False):
         self.feedback_label.setText(message)
@@ -617,6 +765,7 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
                 self.translate("settings_hotkey_capture_invalid"),
                 is_error=True,
             )
+            self._show_invalid_input()
             event.accept()
             return
 
@@ -628,6 +777,7 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
                 self.translate("settings_hotkey_capture_invalid"),
                 is_error=True,
             )
+            self._show_invalid_input()
             event.accept()
             return
 
@@ -653,16 +803,27 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
                 self.translate("settings_hotkey_invalid"),
                 is_error=True,
             )
+            self._show_invalid_input()
             event.accept()
             return
 
         self.captured_hotkey = canonical_hotkey
-        self.hotkey_display.setText(canonical_hotkey)
+        self._update_pills_display(canonical_hotkey)
         self._set_feedback(
             self.translate("settings_hotkey_capture_captured", hotkey=canonical_hotkey),
             is_error=False,
         )
         self.save_button.setEnabled(True)
+        
+        # Set container border stylesheet to valid green success style
+        self.pills_container.setStyleSheet(
+            "QFrame#pillsContainer {"
+            "  border: 1.5px solid #5FC98A;"
+            "  border-radius: 8px;"
+            "  background-color: #F2FDF6;"
+            "  min-height: 50px;"
+            "}"
+        )
         event.accept()
 
 

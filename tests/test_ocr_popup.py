@@ -76,7 +76,7 @@ def test_ocr_popup_edit_btn_exits_edit_mode_and_saves(qapp):
     assert not popup._editing
     assert not popup.text_label.isHidden()
     assert popup.text_edit.isHidden()
-    assert popup.text_label.text() == "edited text"
+    assert popup.get_plain_text() == "edited text"
 
 
 def test_ocr_popup_cancel_btn_discards_edits(qapp):
@@ -89,7 +89,7 @@ def test_ocr_popup_cancel_btn_discards_edits(qapp):
     popup.cancel_btn.click()
 
     assert not popup._editing
-    assert popup.text_label.text() == "original"
+    assert popup.get_plain_text() == "original"
 
 
 def test_ocr_popup_edit_mode_swaps_button_groups(qapp):

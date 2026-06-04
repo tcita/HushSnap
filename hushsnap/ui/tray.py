@@ -41,6 +41,7 @@ class MenuItemWidget(QtWidgets.QWidget):
     
     def __init__(self, text, icon_path, color_hex, shortcut="", is_danger=False, parent=None):
         super().__init__(parent)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
         self.is_danger = is_danger
         self.setObjectName("MenuItemWidget")
         
@@ -66,8 +67,8 @@ class MenuItemWidget(QtWidgets.QWidget):
         # Shortcut badge
         self.shortcut_label = QtWidgets.QLabel()
         self.shortcut_label.setStyleSheet(
-            "color: #888888; font-size: 11px; padding: 2px 6px; "
-            "background-color: #2b2b2b; border-radius: 4px; font-weight: 500;"
+            "color: #666666; font-size: 11px; padding: 2px 6px; "
+            "background-color: #F0F0F0; border-radius: 4px; font-weight: 500;"
             "font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
         )
         layout.addWidget(self.shortcut_label)
@@ -88,7 +89,7 @@ class MenuItemWidget(QtWidgets.QWidget):
         """
         self.hover_style = """
             #MenuItemWidget {
-                background-color: #2e2e2e;
+                background-color: #F0F0F0;
                 border-radius: 6px;
             }
         """
@@ -96,10 +97,10 @@ class MenuItemWidget(QtWidgets.QWidget):
         
         # Text tinting
         if is_danger:
-            self.text_label.setStyleSheet("color: #e05555; font-size: 13px; font-weight: bold; background-color: transparent;"
+            self.text_label.setStyleSheet("color: #D32F2F; font-size: 13px; font-weight: bold; background-color: transparent;"
                 " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;")
         else:
-            self.text_label.setStyleSheet("color: #e8e8e8; font-size: 13px; background-color: transparent;"
+            self.text_label.setStyleSheet("color: #333333; font-size: 13px; background-color: transparent;"
                 " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;")
             
     def enterEvent(self, event):
@@ -180,13 +181,14 @@ def create_tray(
     # Tray is shown after OCR warmup completes (see app.py).
     # Delaying the tray gives a subtle "still loading" signal to the user.
 
-    # Style QMenu window with modern dark theme and translucent corners
+    # Style QMenu window with modern light theme, translucent corners, and margin for shadow
     tray_menu.setStyleSheet("""
         QMenu {
-            background-color: #1e1e1e;
-            border: 1px solid #3a3a3a;
+            background-color: #FFFFFF;
+            border: 1px solid #E5E5E5;
             border-radius: 10px;
-            padding: 4px;
+            padding: 8px;
+            margin: 10px;
             font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
         }
         QMenu::item {
@@ -194,17 +196,18 @@ def create_tray(
         }
         QMenu::separator {
             height: 1px;
-            background: #333333;
+            background: #EEEEEE;
             margin: 3px 8px;
         }
     """)
     tray_menu.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
-    # FramelessWindowHint helps render anti-aliased rounded corners nicely on Windows
-    tray_menu.setWindowFlags(
-        tray_menu.windowFlags() 
-        | QtCore.Qt.WindowType.FramelessWindowHint 
-        | QtCore.Qt.WindowType.NoDropShadowWindowHint
-    )
+
+    # Create a premium soft drop shadow effect
+    shadow = QtWidgets.QGraphicsDropShadowEffect(tray_menu)
+    shadow.setBlurRadius(15)
+    shadow.setColor(QtGui.QColor(0, 0, 0, 45))
+    shadow.setOffset(0, 3)
+    tray_menu.setGraphicsEffect(shadow)
 
     # Resolve local icon directory paths
     icons_dir = Path(__file__).resolve().parent / "icons"
@@ -247,7 +250,7 @@ def create_tray(
     screenshot_action = StyledMenuAction(
         text=translate("menu_screenshot"),
         icon_path=screenshot_icon_path,
-        color_hex="#888888",
+        color_hex="#5fc98a",
         shortcut=initial_hotkey,
         is_danger=False,
         on_triggered=on_screenshot_triggered,
@@ -287,7 +290,7 @@ def create_tray(
     quit_action = StyledMenuAction(
         text=translate("menu_quit"),
         icon_path=power_icon_path,
-        color_hex="#e05555",
+        color_hex="#D32F2F",
         shortcut="",
         is_danger=True,
         on_triggered=on_quit,

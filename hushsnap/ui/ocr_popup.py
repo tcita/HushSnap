@@ -24,6 +24,7 @@ class OcrPopup(QtWidgets.QWidget):
         self._is_refreshing = False
         self._pinned = False
         self._editing = False
+        self._plain_text = ""
 
         self.setWindowFlags(
             QtCore.Qt.WindowType.Window
@@ -40,10 +41,17 @@ class OcrPopup(QtWidgets.QWidget):
 
         # ── outer shell ──────────────────────────────────────────────
         outer = QtWidgets.QVBoxLayout(self)
-        outer.setContentsMargins(1, 1, 1, 1)  # Thin window border
+        outer.setContentsMargins(12, 12, 12, 12)  # Margin space for drop shadow
 
         panel = QtWidgets.QFrame()
         panel.setObjectName("ocrPanel")
+
+        # Apply a premium soft drop shadow effect
+        shadow = QtWidgets.QGraphicsDropShadowEffect(panel)
+        shadow.setBlurRadius(15)
+        shadow.setColor(QtGui.QColor(0, 0, 0, 85))
+        shadow.setOffset(0, 4)
+        panel.setGraphicsEffect(shadow)
         panel.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Expanding,
             QtWidgets.QSizePolicy.Policy.Expanding,
@@ -70,9 +78,11 @@ class OcrPopup(QtWidgets.QWidget):
 
         header_layout.addStretch(1)
 
-        self.close_btn = QtWidgets.QPushButton("✕")
+        self.close_btn = QtWidgets.QPushButton()
         self.close_btn.setObjectName("ocrCloseBtn")
         self.close_btn.setFixedSize(24, 24)
+        self.close_btn.setIcon(self._make_close_icon())
+        self.close_btn.setIconSize(QtCore.QSize(10, 10))
         self.close_btn.clicked.connect(self.hide)
         header_layout.addWidget(self.close_btn)
         layout.addWidget(self.header_container)
@@ -80,7 +90,7 @@ class OcrPopup(QtWidgets.QWidget):
         # ── scroll area (text block list container) ──────────────────
         self.scroll_area = QtWidgets.QScrollArea()
         self.scroll_area.setObjectName("ocrScrollArea")
-        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setWidgetResizable(False)
         self.scroll_area.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
         self.scroll_area.setHorizontalScrollBarPolicy(
             QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff
@@ -104,7 +114,7 @@ class OcrPopup(QtWidgets.QWidget):
         self.text_label = QtWidgets.QLabel()
         self.text_label.setObjectName("ocrTextLabel")
         self.text_label.setWordWrap(True)
-        self.text_label.setTextFormat(QtCore.Qt.TextFormat.PlainText)
+        self.text_label.setTextFormat(QtCore.Qt.TextFormat.RichText)
         self.text_label.setTextInteractionFlags(
             QtCore.Qt.TextInteractionFlag.TextSelectableByMouse
         )
@@ -172,7 +182,6 @@ class OcrPopup(QtWidgets.QWidget):
         self.btn_row.addWidget(self.cancel_btn)
 
         text_block_layout.addLayout(self.btn_row)
-        text_block_layout.addStretch(1)  # absorb extra height — keep content anchored to bubble top
 
         self.scroll_area.setWidget(self.text_block)
         self.scroll_area.setViewportMargins(16, 10, 16, 16)
@@ -197,15 +206,14 @@ class OcrPopup(QtWidgets.QWidget):
             "/* Midnight Forest v2 Theme - Terminal Style with Chat Bubble */"
 
             "OcrPopup {"
-            " background-color: #0a1910;"
-            " border: 1px solid #1a3a22;"
-            " border-radius: 10px;"
+            " background-color: transparent;"
+            " border: none;"
             "}"
 
             "#ocrPanel {"
-            " background-color: transparent;"
-            " border: none;"
-            " border-radius: 8px;"
+            " background-color: #0a1910;"
+            " border: 1px solid #1a3a22;"
+            " border-radius: 10px;"
             "}"
 
             "#ocrHeader {"
@@ -312,15 +320,28 @@ class OcrPopup(QtWidgets.QWidget):
             "#ocrPinBtn:hover { background: rgba(46, 125, 79, 64); color: #d4f5e2; }"
             "#ocrPinBtn[pin=\"true\"] { color: #5fc98a; background: rgba(30, 74, 48, 120); }"
 
-            "#ocrCloseBtn {"
-            " color: #d4f5e2;"
-            " border: none;"
-            " border-radius: 12px;"
-            " background: rgba(30, 74, 48, 64);"
-            " font-size: 15px;"
-            " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
-            "}"
             "#ocrCloseBtn:hover { background: #f44336; color: #FFF; }"
+
+            "/* ── custom vertical scrollbar ── */"
+            "QScrollBar:vertical {"
+            " background: transparent;"
+            " width: 6px;"
+            " margin: 0px;"
+            "}"
+            "QScrollBar::handle:vertical {"
+            " background: #1e4a30;"
+            " min-height: 20px;"
+            " border-radius: 3px;"
+            "}"
+            "QScrollBar::handle:vertical:hover {"
+            " background: #2e7d4f;"
+            "}"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {"
+            " height: 0px;"
+            "}"
+            "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {"
+            " background: transparent;"
+            "}"
         )
 
     # ── paint / window chrome ────────────────────────────────────────
@@ -339,6 +360,8 @@ class OcrPopup(QtWidgets.QWidget):
         self.cancel_btn.setIcon(self._make_x_icon())
         self.pin_btn.setIcon(self._make_pin_icon(self._pinned))
         self.pin_btn.setIconSize(QtCore.QSize(16, 16))
+        self.close_btn.setIcon(self._make_close_icon())
+        self.close_btn.setIconSize(QtCore.QSize(10, 10))
 
         self.copy_btn.setToolTip(self.translate("ocr_copy_btn"))
         for btn, key, fallback in [
@@ -360,21 +383,28 @@ class OcrPopup(QtWidgets.QWidget):
         self._refresh_labels()
         self.apply_font_size()
 
+        self._plain_text = text
         # Ensure weʼre in read-only display mode
         self._exit_edit_mode(save=False)
-        self.text_label.setText(text)
+        import html
+        self.text_label.setText(f"<div style='line-height: 1.8; white-space: pre-wrap;'>{html.escape(text)}</div>")
         self.text_edit.setPlainText(text)
 
         self._is_refreshing = False
 
-        if not self.isVisible():
-            self._place_on_screen()
+        # First adjust layout size synchronously
+        self._adjust_window_size()
+
+        # Ensure the bubble is always shown from the top (stale scroll from
+        # a previous long result would otherwise shift text out of view)
+        self.scroll_area.verticalScrollBar().setValue(0)
+
+        # Align to the bottom-right corner of the active screen
+        self._place_on_screen()
 
         self.show()
         self.raise_()
         self.activateWindow()
-        # Fit window height to bubble content after layout settles
-        QtCore.QTimer.singleShot(0, self._adjust_window_size)
 
     # ── properties ───────────────────────────────────────────────────
     @property
@@ -383,10 +413,13 @@ class OcrPopup(QtWidgets.QWidget):
 
     # ── copy ─────────────────────────────────────────────────────────
     def copy_text(self):
-        text = self.text_edit.toPlainText() if self._editing else self.text_label.text()
+        text = self.text_edit.toPlainText() if self._editing else self._plain_text
         clipboard = QtWidgets.QApplication.clipboard()
         if clipboard:
             clipboard.setText(text)
+
+    def get_plain_text(self):
+        return self._plain_text
 
     # ── edit mode ────────────────────────────────────────────────────
     def _on_edit_clicked(self):
@@ -404,8 +437,7 @@ class OcrPopup(QtWidgets.QWidget):
     def _enter_edit_mode(self):
         """Switch from read-only label to editable text edit."""
         self._editing = True
-        text = self.text_label.text()
-        self.text_edit.setPlainText(text)
+        self.text_edit.setPlainText(self._plain_text)
         self.text_label.hide()
         self.text_edit.show()
         self.text_edit.setFocus()
@@ -432,7 +464,9 @@ class OcrPopup(QtWidgets.QWidget):
         self._editing = False
         if save:
             text = self.text_edit.toPlainText()
-            self.text_label.setText(text)
+            self._plain_text = text
+            import html
+            self.text_label.setText(f"<div style='line-height: 1.8; white-space: pre-wrap;'>{html.escape(text)}</div>")
         self.text_edit.hide()
         self.text_label.show()
 
@@ -453,23 +487,33 @@ class OcrPopup(QtWidgets.QWidget):
     # ── height auto-fit (width stays user-controlled) ────────────────
     def _adjust_window_size(self):
         """Fit window height to bubble content; width is untouched."""
-        # Force pending layout so widgets have their final widths
+        # Force pending layout so widgets have their final sizes
         QtWidgets.QApplication.processEvents()
+
+        # Always use the formula-based viewport width to avoid garbage values
+        # when the window is not yet fully laid out or shown.
+        vp_w = self.width() - 60
+        self.text_block.setFixedWidth(vp_w)
+
+        # text_label wraps at viewport width minus its own internal padding (16+16)
+        text_w = max(vp_w - 32, 200)
 
         if self._editing:
             widget = self.text_edit
         else:
             widget = self.text_label
 
-        text_w = max(widget.width(), 200)
+        import html
         font = widget.font()
-        text = self.text_edit.toPlainText() if self._editing else self.text_label.text()
+        text = self.text_edit.toPlainText()
 
         td = QtGui.QTextDocument()
+        td.setDocumentMargin(0)
         td.setDefaultFont(font)
         td.setTextWidth(text_w)
-        td.setPlainText(text or " ")
-        text_h = int(td.size().height()) + 4
+        # Use HTML formatting to support custom line-height: 1.8 spacing with pre-wrap
+        td.setHtml(f"<div style='line-height: 1.8; white-space: pre-wrap;'>{html.escape(text or ' ')}</div>")
+        text_h = int(td.size().height()) + 2
         td.deleteLater()
 
         # Respect minimum height (especially important for text_edit which is 80px)
@@ -478,16 +522,18 @@ class OcrPopup(QtWidgets.QWidget):
         # Accumulate: bubble internals + chrome
         header_h = self.header_container.sizeHint().height()
 
-        # chrome_h: viewport 10+16, outer 1+1, window border 1+1, header
-        chrome_h = header_h + 30
+        # chrome_h: viewport margins(10+16) + outer margins(12+12) + panel borders(1+1) + header
+        chrome_h = header_h + 52
 
-        # bubble_h: text + block padding (8+14) + spacing(6) + buttons(24) + borders(1+1)
+        # bubble_h: text + block padding(8+14) + spacing(6) + buttons(24) + text_block borders(1+1)
         bubble_h = text_h + 22 + 34
 
         total_h = chrome_h + bubble_h
         total_h = max(total_h, WINDOW_MIN_HEIGHT)
 
-        screen = QtWidgets.QApplication.screenAt(self.pos()) or QtWidgets.QApplication.primaryScreen()
+        screen = QtWidgets.QApplication.screenAt(self.pos())
+        if not screen or not self.isVisible():
+            screen = QtWidgets.QApplication.screenAt(QtGui.QCursor.pos()) or QtWidgets.QApplication.primaryScreen()
         if screen:
             area = screen.availableGeometry()
             # Don't exceed screen dimensions
@@ -497,6 +543,10 @@ class OcrPopup(QtWidgets.QWidget):
             new_w = min(self.width(), max_w)
         else:
             new_w = self.width()
+
+        # Pin text_block to exactly its content height so the scroll_area never
+        # expands it with blank space (setWidgetResizable is False).
+        self.text_block.setFixedHeight(bubble_h)
 
         self.resize(new_w, int(total_h))
 
@@ -525,176 +575,238 @@ class OcrPopup(QtWidgets.QWidget):
 
     # ── custom icons ─────────────────────────────────────────────────
     @staticmethod
-    def _make_copy_icon():
-        pixmap = QtGui.QPixmap(24, 24)
-        pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-        p = QtGui.QPainter(pixmap)
-        p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-        p.setPen(
-            QtGui.QPen(
-                QtGui.QColor("#5fc98a"),
-                2,
-                QtCore.Qt.PenStyle.SolidLine,
-                QtCore.Qt.PenCapStyle.RoundCap,
-                QtCore.Qt.PenJoinStyle.RoundJoin,
+    def _make_close_icon():
+        """X icon for the top-right close button."""
+        def draw_close(color_str, width):
+            pixmap = QtGui.QPixmap(24, 24)
+            pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+            p = QtGui.QPainter(pixmap)
+            p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+            p.setPen(
+                QtGui.QPen(
+                    QtGui.QColor(color_str),
+                    width,
+                    QtCore.Qt.PenStyle.SolidLine,
+                    QtCore.Qt.PenCapStyle.RoundCap,
+                    QtCore.Qt.PenJoinStyle.RoundJoin,
+                )
             )
-        )
-        p.drawRect(7, 7, 10, 10)
-        p.drawPolyline([QtCore.QPointF(14, 4), QtCore.QPointF(4, 4), QtCore.QPointF(4, 14)])
-        p.end()
-        return QtGui.QIcon(pixmap)
+            p.drawLine(QtCore.QPointF(8, 8), QtCore.QPointF(16, 16))
+            p.drawLine(QtCore.QPointF(16, 8), QtCore.QPointF(8, 16))
+            p.end()
+            return pixmap
+
+        icon = QtGui.QIcon()
+        icon.addPixmap(draw_close("#d4f5e2", 2.2), QtGui.QIcon.Mode.Normal)
+        icon.addPixmap(draw_close("#ffffff", 2.5), QtGui.QIcon.Mode.Active)
+        return icon
+
+    @staticmethod
+    def _make_copy_icon():
+        def draw_copy(color_str):
+            pixmap = QtGui.QPixmap(24, 24)
+            pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+            p = QtGui.QPainter(pixmap)
+            p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+            p.setPen(
+                QtGui.QPen(
+                    QtGui.QColor(color_str),
+                    2,
+                    QtCore.Qt.PenStyle.SolidLine,
+                    QtCore.Qt.PenCapStyle.RoundCap,
+                    QtCore.Qt.PenJoinStyle.RoundJoin,
+                )
+            )
+            p.drawRect(7, 7, 10, 10)
+            p.drawPolyline([QtCore.QPointF(14, 4), QtCore.QPointF(4, 4), QtCore.QPointF(4, 14)])
+            p.end()
+            return pixmap
+
+        icon = QtGui.QIcon()
+        icon.addPixmap(draw_copy("#5fc98a"), QtGui.QIcon.Mode.Normal)
+        icon.addPixmap(draw_copy("#a3f2c2"), QtGui.QIcon.Mode.Active)
+        return icon
 
     @staticmethod
     def _make_edit_icon():
         """Pen-tool icon matching Lucide pen-tool style."""
-        pixmap = QtGui.QPixmap(24, 24)
-        pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-        p = QtGui.QPainter(pixmap)
-        p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-        pen = QtGui.QPen(
-            QtGui.QColor("#5fc98a"),
-            1.5,
-            QtCore.Qt.PenStyle.SolidLine,
-            QtCore.Qt.PenCapStyle.RoundCap,
-            QtCore.Qt.PenJoinStyle.RoundJoin,
-        )
-        p.setPen(pen)
-        p.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+        def draw_edit(color_str):
+            pixmap = QtGui.QPixmap(24, 24)
+            pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+            p = QtGui.QPainter(pixmap)
+            p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+            pen = QtGui.QPen(
+                QtGui.QColor(color_str),
+                1.5,
+                QtCore.Qt.PenStyle.SolidLine,
+                QtCore.Qt.PenCapStyle.RoundCap,
+                QtCore.Qt.PenJoinStyle.RoundJoin,
+            )
+            p.setPen(pen)
+            p.setBrush(QtCore.Qt.BrushStyle.NoBrush)
 
-        # Pen nib — bottom-right diamond (path 1)
-        nib = QtGui.QPainterPath()
-        nib.moveTo(15.7, 21.3)
-        nib.lineTo(14.3, 21.3)
-        nib.lineTo(12.7, 19.7)
-        nib.lineTo(12.7, 18.3)
-        nib.lineTo(18.3, 12.7)
-        nib.lineTo(19.7, 12.7)
-        nib.lineTo(21.3, 14.3)
-        nib.lineTo(21.3, 15.7)
-        nib.closeSubpath()
-        p.drawPath(nib)
+            # Pen nib — bottom-right diamond (path 1)
+            nib = QtGui.QPainterPath()
+            nib.moveTo(15.7, 21.3)
+            nib.lineTo(14.3, 21.3)
+            nib.lineTo(12.7, 19.7)
+            nib.lineTo(12.7, 18.3)
+            nib.lineTo(18.3, 12.7)
+            nib.lineTo(19.7, 12.7)
+            nib.lineTo(21.3, 14.3)
+            nib.lineTo(21.3, 15.7)
+            nib.closeSubpath()
+            p.drawPath(nib)
 
-        # Pen body — curved stroke from nib up-left (path 2)
-        body = QtGui.QPainterPath()
-        body.moveTo(18, 13)
-        body.cubicTo(17, 10, 16.6, 6.1, 15.9, 5.4)
-        body.cubicTo(10, 4, 3.2, 2.0, 2.0, 3.2)
-        body.cubicTo(3, 8, 5.4, 15.9, 6.1, 16.6)
-        body.cubicTo(8, 17, 13, 18, 13, 18)
-        p.drawPath(body)
+            # Pen body — curved stroke from nib up-left (path 2)
+            body = QtGui.QPainterPath()
+            body.moveTo(18, 13)
+            body.cubicTo(17, 10, 16.6, 6.1, 15.9, 5.4)
+            body.cubicTo(10, 4, 3.2, 2.0, 2.0, 3.2)
+            body.cubicTo(3, 8, 5.4, 15.9, 6.1, 16.6)
+            body.cubicTo(8, 17, 13, 18, 13, 18)
+            p.drawPath(body)
 
-        # Rule line — diagonal (path 3)
-        p.drawLine(QtCore.QPointF(2.3, 2.3), QtCore.QPointF(9.6, 9.6))
+            # Rule line — diagonal (path 3)
+            p.drawLine(QtCore.QPointF(2.3, 2.3), QtCore.QPointF(9.6, 9.6))
 
-        # Pivot circle (path 4)
-        p.drawEllipse(QtCore.QPointF(11, 11), 2, 2)
+            # Pivot circle (path 4)
+            p.drawEllipse(QtCore.QPointF(11, 11), 2, 2)
+            p.end()
+            return pixmap
 
-        p.end()
-        return QtGui.QIcon(pixmap)
+        icon = QtGui.QIcon()
+        icon.addPixmap(draw_edit("#5fc98a"), QtGui.QIcon.Mode.Normal)
+        icon.addPixmap(draw_edit("#a3f2c2"), QtGui.QIcon.Mode.Active)
+        return icon
 
     @staticmethod
     def _make_check_icon():
         """Checkmark icon for the Update button."""
-        pixmap = QtGui.QPixmap(24, 24)
-        pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-        p = QtGui.QPainter(pixmap)
-        p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-        p.setPen(
-            QtGui.QPen(
-                QtGui.QColor("#d4f5e2"),
-                2.2,
-                QtCore.Qt.PenStyle.SolidLine,
-                QtCore.Qt.PenCapStyle.RoundCap,
-                QtCore.Qt.PenJoinStyle.RoundJoin,
+        def draw_check(color_str):
+            pixmap = QtGui.QPixmap(24, 24)
+            pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+            p = QtGui.QPainter(pixmap)
+            p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+            p.setPen(
+                QtGui.QPen(
+                    QtGui.QColor(color_str),
+                    2.2,
+                    QtCore.Qt.PenStyle.SolidLine,
+                    QtCore.Qt.PenCapStyle.RoundCap,
+                    QtCore.Qt.PenJoinStyle.RoundJoin,
+                )
             )
-        )
-        p.drawPolyline([
-            QtCore.QPointF(4, 13),
-            QtCore.QPointF(9, 18),
-            QtCore.QPointF(20, 7),
-        ])
-        p.end()
-        return QtGui.QIcon(pixmap)
+            p.drawPolyline([
+                QtCore.QPointF(4, 13),
+                QtCore.QPointF(9, 18),
+                QtCore.QPointF(20, 7),
+            ])
+            p.end()
+            return pixmap
+
+        icon = QtGui.QIcon()
+        icon.addPixmap(draw_check("#d4f5e2"), QtGui.QIcon.Mode.Normal)
+        icon.addPixmap(draw_check("#ffffff"), QtGui.QIcon.Mode.Active)
+        return icon
 
     @staticmethod
     def _make_success_check_icon():
         """Green checkmark for copy-success animation (matches theme #5fc98a)."""
-        pixmap = QtGui.QPixmap(24, 24)
-        pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-        p = QtGui.QPainter(pixmap)
-        p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-        p.setPen(
-            QtGui.QPen(
-                QtGui.QColor("#5fc98a"),
-                2.2,
-                QtCore.Qt.PenStyle.SolidLine,
-                QtCore.Qt.PenCapStyle.RoundCap,
-                QtCore.Qt.PenJoinStyle.RoundJoin,
+        def draw_success(color_str):
+            pixmap = QtGui.QPixmap(24, 24)
+            pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+            p = QtGui.QPainter(pixmap)
+            p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+            p.setPen(
+                QtGui.QPen(
+                    QtGui.QColor(color_str),
+                    2.2,
+                    QtCore.Qt.PenStyle.SolidLine,
+                    QtCore.Qt.PenCapStyle.RoundCap,
+                    QtCore.Qt.PenJoinStyle.RoundJoin,
+                )
             )
-        )
-        p.drawPolyline([
-            QtCore.QPointF(4, 13),
-            QtCore.QPointF(9, 18),
-            QtCore.QPointF(20, 7),
-        ])
-        p.end()
-        return QtGui.QIcon(pixmap)
+            p.drawPolyline([
+                QtCore.QPointF(4, 13),
+                QtCore.QPointF(9, 18),
+                QtCore.QPointF(20, 7),
+            ])
+            p.end()
+            return pixmap
+
+        icon = QtGui.QIcon()
+        icon.addPixmap(draw_success("#5fc98a"), QtGui.QIcon.Mode.Normal)
+        icon.addPixmap(draw_success("#a3f2c2"), QtGui.QIcon.Mode.Active)
+        return icon
 
     @staticmethod
     def _make_x_icon():
         """X icon for the Cancel button."""
-        pixmap = QtGui.QPixmap(24, 24)
-        pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-        p = QtGui.QPainter(pixmap)
-        p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-        p.setPen(
-            QtGui.QPen(
-                QtGui.QColor("#5fc98a"),
-                1.8,
-                QtCore.Qt.PenStyle.SolidLine,
-                QtCore.Qt.PenCapStyle.RoundCap,
-                QtCore.Qt.PenJoinStyle.RoundJoin,
+        def draw_x(color_str):
+            pixmap = QtGui.QPixmap(24, 24)
+            pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+            p = QtGui.QPainter(pixmap)
+            p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+            p.setPen(
+                QtGui.QPen(
+                    QtGui.QColor(color_str),
+                    1.8,
+                    QtCore.Qt.PenStyle.SolidLine,
+                    QtCore.Qt.PenCapStyle.RoundCap,
+                    QtCore.Qt.PenJoinStyle.RoundJoin,
+                )
             )
-        )
-        p.drawLine(QtCore.QPointF(6, 6), QtCore.QPointF(18, 18))
-        p.drawLine(QtCore.QPointF(18, 6), QtCore.QPointF(6, 18))
-        p.end()
-        return QtGui.QIcon(pixmap)
+            p.drawLine(QtCore.QPointF(6, 6), QtCore.QPointF(18, 18))
+            p.drawLine(QtCore.QPointF(18, 6), QtCore.QPointF(6, 18))
+            p.end()
+            return pixmap
+
+        icon = QtGui.QIcon()
+        icon.addPixmap(draw_x("#5fc98a"), QtGui.QIcon.Mode.Normal)
+        icon.addPixmap(draw_x("#a3f2c2"), QtGui.QIcon.Mode.Active)
+        return icon
 
     def _make_pin_icon(self, checked=False):
-        pixmap = QtGui.QPixmap(24, 24)
-        pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-        p = QtGui.QPainter(pixmap)
-        p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-        p.setPen(
-            QtGui.QPen(
-                QtGui.QColor("#5fc98a"),
-                2,
-                QtCore.Qt.PenStyle.SolidLine,
-                QtCore.Qt.PenCapStyle.RoundCap,
-                QtCore.Qt.PenJoinStyle.RoundJoin,
+        def draw_pin(color_str):
+            pixmap = QtGui.QPixmap(24, 24)
+            pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+            p = QtGui.QPainter(pixmap)
+            p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+            p.setPen(
+                QtGui.QPen(
+                    QtGui.QColor(color_str),
+                    2,
+                    QtCore.Qt.PenStyle.SolidLine,
+                    QtCore.Qt.PenCapStyle.RoundCap,
+                    QtCore.Qt.PenJoinStyle.RoundJoin,
+                )
             )
-        )
-        if not checked:
-            p.translate(12, 12)
-            p.rotate(-45)
-            p.translate(-12, -12)
-        path = QtGui.QPainterPath()
-        path.moveTo(12, 17)
-        path.lineTo(12, 22)
-        path.moveTo(9, 11)
-        path.lineTo(6, 14)
-        path.lineTo(6, 16)
-        path.lineTo(18, 16)
-        path.lineTo(18, 14)
-        path.lineTo(15, 11)
-        path.lineTo(15, 6)
-        path.lineTo(9, 6)
-        path.closeSubpath()
-        path.addEllipse(QtCore.QRectF(8, 2, 8, 4))
-        p.drawPath(path)
-        p.end()
-        return QtGui.QIcon(pixmap)
+            if not checked:
+                p.translate(12, 12)
+                p.rotate(-45)
+                p.translate(-12, -12)
+            path = QtGui.QPainterPath()
+            path.moveTo(12, 17)
+            path.lineTo(12, 22)
+            path.moveTo(9, 11)
+            path.lineTo(6, 14)
+            path.lineTo(6, 16)
+            path.lineTo(18, 16)
+            path.lineTo(18, 14)
+            path.lineTo(15, 11)
+            path.lineTo(15, 6)
+            path.lineTo(9, 6)
+            path.closeSubpath()
+            path.addEllipse(QtCore.QRectF(8, 2, 8, 4))
+            p.drawPath(path)
+            p.end()
+            return pixmap
+
+        icon = QtGui.QIcon()
+        icon.addPixmap(draw_pin("#5fc98a"), QtGui.QIcon.Mode.Normal)
+        icon.addPixmap(draw_pin("#a3f2c2"), QtGui.QIcon.Mode.Active)
+        return icon
 
     # ── pin ──────────────────────────────────────────────────────────
     def _on_pin_toggled(self, checked):
@@ -806,7 +918,7 @@ class OcrPopup(QtWidgets.QWidget):
     # ── window resize / drag ─────────────────────────────────────────
     def _get_edge(self, pos):
         edge = QtCore.Qt.Edge(0)
-        hit = 8
+        hit = 14
         w, h = self.width(), self.height()
         if pos.x() <= hit:
             edge |= QtCore.Qt.Edge.LeftEdge
@@ -889,6 +1001,13 @@ class OcrPopup(QtWidgets.QWidget):
         self.move(x, y)
 
     # ── window events ────────────────────────────────────────────────
+    def resizeEvent(self, event):
+        """Keep text_block width pinned to viewport width on any window resize."""
+        super().resizeEvent(event)
+        vp_w = self.scroll_area.viewport().width()
+        if vp_w > 0:
+            self.text_block.setFixedWidth(vp_w)
+
     def showEvent(self, event):
         super().showEvent(event)
         if self.windowHandle() and not self._app_icon.isNull():

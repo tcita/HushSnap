@@ -294,18 +294,18 @@ class CaptureWindow(QtWidgets.QWidget):
 
                 # --- New Advanced Selection UI ---
                 # 1. Draw Glow/Shadow Effect
-                glow_pen = QtGui.QPen(QtGui.QColor(255, 106, 0, 100), 4)
+                glow_pen = QtGui.QPen(QtGui.QColor(95, 201, 138, 100), 4)
                 painter.setPen(glow_pen)
                 painter.drawRect(rect)
 
                 # 2. Draw Main Vibrant Border
-                main_pen = QtGui.QPen(QtGui.QColor("#FF6A00"), 1.5)
+                main_pen = QtGui.QPen(QtGui.QColor("#5FC98A"), 1.5)
                 painter.setPen(main_pen)
                 painter.drawRect(rect)
 
                 # 3. Draw Corner Handles (professional look)
                 handle_size = 6
-                painter.setBrush(QtGui.QColor("#FF6A00"))
+                painter.setBrush(QtGui.QColor("#5FC98A"))
                 painter.setPen(QtGui.QPen(QtCore.Qt.GlobalColor.white, 1))
                 
                 # Corners: Top-Left, Top-Right, Bottom-Left, Bottom-Right

@@ -190,9 +190,13 @@ def main(boot_start_time=None):
         """Thumbnail context menu: Save to Desktop."""
         try:
             desktop = os.path.join(os.path.expanduser("~"), "Desktop")
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-            filename = f"Screenshot_{timestamp}.png"
-            file_path = os.path.join(desktop, filename)
+            timestamp = time.strftime("%m%d_%H-%M-%S")
+            base = f"_{timestamp}"
+            file_path = os.path.join(desktop, f"{base}.png")
+            counter = 1
+            while os.path.exists(file_path):
+                file_path = os.path.join(desktop, f"{base}({counter}).png")
+                counter += 1
             pil_img.save(file_path)
         except Exception:
             logging.getLogger(__name__).exception("Failed to save image to desktop")
@@ -200,11 +204,13 @@ def main(boot_start_time=None):
     def handle_thumbnail_save(pil_img):
         """Thumbnail context menu: Save As..."""
         try:
+            default_name = f"_{time.strftime('%m%d_%H-%M-%S')}.png"
             file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
-                None, translate("thumbnail_save_as"), "Screenshot.png", "Images (*.png *.jpg *.bmp)"
+                None, translate("thumbnail_save_as"), default_name, "Images (*.png *.jpg *.bmp)"
             )
             if file_path:
                 pil_img.save(file_path)
+                os.startfile(os.path.dirname(file_path))
         except Exception:
             logging.getLogger(__name__).exception("Failed to save image")
 

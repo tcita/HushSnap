@@ -107,8 +107,12 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self.close_btn.hide()
         
         # 3. Position and Animation
-        # Use availableGeometry to account for the taskbar
-        screen = QtWidgets.QApplication.primaryScreen().availableGeometry()
+        # Use cursor-based screen detection for multi-monitor awareness
+        active_screen = (
+            QtWidgets.QApplication.screenAt(QtGui.QCursor.pos())
+            or QtWidgets.QApplication.primaryScreen()
+        )
+        screen = active_screen.availableGeometry()
         self.end_x = screen.x() + screen.width() - self.display_width - THUMBNAIL_MARGIN + self.shadow_padding
         self.end_y = screen.y() + screen.height() - self.display_height - THUMBNAIL_MARGIN + self.shadow_padding
         self.start_x = screen.x() + screen.width()
@@ -137,6 +141,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self._is_dragging = False
         self._drag_start_pos = None
         self._menu_active = False
+        self._hovered = False
 
     def _pil_to_qpixmap(self, pil_img: Image.Image) -> QtGui.QPixmap:
         """Convert PIL Image to QPixmap efficiently."""
@@ -159,16 +164,20 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self.timer.start(THUMBNAIL_DISPLAY_MS)
 
     def enterEvent(self, event):
-        """Pause timer on hover and show close button."""
+        """Pause timer on hover, activate visual feedback, and show close button."""
         self.timer.stop()
         self.fade_anim.stop()
         self.setWindowOpacity(1.0)
+        self._hovered = True
+        self.update()
         self.close_btn.show()
 
     def leaveEvent(self, event):
-        """Resume timer on leave and hide close button."""
+        """Resume timer on leave, deactivate visual feedback, and hide close button."""
         if not self._is_dragging and not self._menu_active:
             self.timer.start(THUMBNAIL_DISPLAY_MS)
+        self._hovered = False
+        self.update()
         self.close_btn.hide()
 
     def mousePressEvent(self, event):
@@ -204,12 +213,21 @@ class ThumbnailWindow(QtWidgets.QWidget):
         lang = resolve_ui_lang(get_config_path())
 
         self._menu_active = True
+        self._hovered = True
+        self.update()
         self.timer.stop()
         self.fade_anim.stop()
         self.setWindowOpacity(1.0)
 
         menu = QtWidgets.QMenu(self)
-        menu.setStyleSheet(MODERN_MENU_STYLE)
+        menu.setStyleSheet(MODERN_MENU_STYLE + "\nQMenu { margin: 10px; }")
+        menu.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
+        
+        shadow = QtWidgets.QGraphicsDropShadowEffect(menu)
+        shadow.setBlurRadius(15)
+        shadow.setColor(QtGui.QColor(0, 0, 0, 45))
+        shadow.setOffset(0, 3)
+        menu.setGraphicsEffect(shadow)
 
         paint_action = menu.addAction(ui_text(lang, "thumbnail_open_with_paint"))
         desktop_action = menu.addAction(ui_text(lang, "thumbnail_save_to_desktop"))
@@ -230,6 +248,8 @@ class ThumbnailWindow(QtWidgets.QWidget):
             self.close()
         else:
             # Menu dismissed without selection — resume auto-hide timer
+            self._hovered = False
+            self.update()
             self.timer.start(THUMBNAIL_DISPLAY_MS)
 
     def _start_drag(self):
@@ -241,10 +261,14 @@ class ThumbnailWindow(QtWidgets.QWidget):
         scaled_w = int(self.card_width * THUMBNAIL_DRAG_SCALE)
         scaled_h = int(self.card_height * THUMBNAIL_DRAG_SCALE)
 
-        # Prepare temporary file
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        filename = f"Screenshot_{timestamp}.png"
-        temp_path = os.path.join(tempfile.gettempdir(), filename)
+        # Prepare temporary file with conflict resolution
+        timestamp = time.strftime("%m%d_%H-%M-%S")
+        base = f"_{timestamp}"
+        temp_path = os.path.join(tempfile.gettempdir(), f"{base}.png")
+        counter = 1
+        while os.path.exists(temp_path):
+            temp_path = os.path.join(tempfile.gettempdir(), f"{base}({counter}).png")
+            counter += 1
         self.pil_image.save(temp_path, "PNG")
 
         # Create Drag object
@@ -311,7 +335,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
         # 2. Draw scaled pixmap inside the rounded clip
         painter.setClipPath(path)
         painter.drawPixmap(self.pixmap_rect, self.scaled_pixmap)
-        
+
         # 3. Draw a subtle border
         painter.setClipping(False)
         painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 40), 1))
@@ -320,6 +344,15 @@ class ThumbnailWindow(QtWidgets.QWidget):
             THUMBNAIL_CORNER_RADIUS,
             THUMBNAIL_CORNER_RADIUS
         )
+
+        # 4. Accent highlight border on hover / menu active — forest green accent
+        if self._hovered:
+            painter.setPen(QtGui.QPen(QtGui.QColor("#5fc98a"), 1.5))
+            painter.drawRoundedRect(
+                QtCore.QRectF(self.card_rect).adjusted(1, 1, -1, -1),
+                THUMBNAIL_CORNER_RADIUS,
+                THUMBNAIL_CORNER_RADIUS
+            )
 
 class ThumbnailManager(QtCore.QObject):
     """
