@@ -56,6 +56,7 @@ QLabel#headerTitle {{
     font-weight: 600;
     border: none;
     background: transparent;
+    font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
 }}
 """
 
@@ -76,6 +77,7 @@ QLabel#rowLabel {{
     font-weight: 600;
     border: none;
     background: transparent;
+    font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
 }}
 """
 
@@ -86,6 +88,7 @@ QLabel#subtitle {{
     font-size: 12px;
     border: none;
     background: transparent;
+    font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
 }}
 """
 
@@ -124,6 +127,7 @@ QPushButton#ghostButton {{
     color: {SETTINGS_GHOST_TEXT};
     font-size: 11px;
     margin-left: 6px;
+    font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
 }}
 QPushButton#ghostButton:hover {{
     background: {SETTINGS_GHOST_HOVER_BG};
@@ -142,6 +146,7 @@ QLabel#statusLabel {{
     padding: 0 4px;
     border: none;
     background: transparent;
+    font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
 }}
 """
 
@@ -173,6 +178,7 @@ QLabel#captureHint {{
     font-size: 12px;
     border: none;
     background: transparent;
+    font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
 }}
 """
 
@@ -181,6 +187,7 @@ QLabel#captureFeedback {{
     font-size: 12px;
     border: none;
     background: transparent;
+    font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
 }}
 """
 
@@ -193,6 +200,7 @@ QPushButton#saveButton {{
     color: white;
     font-size: 12px;
     font-weight: 500;
+    font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
 }}
 QPushButton#saveButton:hover {{
     background: #444;
@@ -214,6 +222,7 @@ QPushButton#cancelButton {{
     padding: 7px 16px;
     color: {SETTINGS_GHOST_TEXT};
     font-size: 12px;
+    font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
 }}
 QPushButton#cancelButton:hover {{
     background: #F5F5F5;
@@ -233,6 +242,7 @@ QComboBox#settingsCombo {{
     font-size: 13px;
     color: {SETTINGS_LABEL_COLOR};
     min-width: 140px;
+    font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
 }}
 QComboBox#settingsCombo:hover {{
     border-color: #BBBBBB;
@@ -258,11 +268,13 @@ QComboBox#settingsCombo QAbstractItemView {{
     selection-background-color: {SETTINGS_GHOST_HOVER_BG};
     selection-color: {SETTINGS_LABEL_COLOR};
     color: {SETTINGS_LABEL_COLOR};
+    font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
 }}
 QComboBox#settingsCombo QAbstractItemView::item {{
     padding: 7px 14px;
     min-height: 30px;
     color: {SETTINGS_LABEL_COLOR};
+    font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
 }}
 QComboBox#settingsCombo QAbstractItemView::item:hover {{
     background-color: {SETTINGS_GHOST_HOVER_BG};
@@ -278,6 +290,7 @@ QLabel#sectionHeader {{
     padding: 10px 4px 4px 4px;
     border: none;
     background: transparent;
+    font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
 }}
 """
 
@@ -289,6 +302,7 @@ QMessageBox {{
 QMessageBox QLabel {{
     color: {SETTINGS_LABEL_COLOR};
     font-size: 13px;
+    font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
 }}
 QMessageBox QPushButton {{
     background-color: #FFFFFF;
@@ -298,8 +312,37 @@ QMessageBox QPushButton {{
     color: {SETTINGS_LABEL_COLOR};
     font-size: 12px;
     min-width: 60px;
+    font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
 }}
 QMessageBox QPushButton:hover {{
     background-color: {SETTINGS_GHOST_HOVER_BG};
+}}
+"""
+
+# Modern Context Menu Style (used by Thumbnail and Tray)
+MODERN_MENU_STYLE = f"""
+QMenu {{
+    background-color: #FFFFFF;
+    border: 1px solid #E0E0E0;
+    border-radius: 8px;
+    padding: 6px 0px;
+}}
+QMenu::item {{
+    padding: 8px 24px;
+    font-size: 13px;
+    color: #333333;
+    background-color: transparent;
+    border-radius: 4px;
+    margin: 2px 6px;
+    font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
+}}
+QMenu::item:selected {{
+    background-color: #F0F0F0;
+    color: #000000;
+}}
+QMenu::separator {{
+    height: 1px;
+    background: #EEEEEE;
+    margin: 4px 0px;
 }}
 """

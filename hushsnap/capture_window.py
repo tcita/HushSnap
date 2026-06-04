@@ -25,6 +25,65 @@ from .system.win32_window_utils import (
 
 logger = get_logger(__name__)
 
+FLOAT_UP_PX = 20
+FLOAT_DURATION_MS = 600
+
+
+class CopiedToast(QtWidgets.QWidget):
+    """A tiny semi-transparent label that floats up and fades out at the cursor position."""
+
+    def __init__(self, text: str, global_pos: QtCore.QPoint):
+        super().__init__()
+        self.setWindowFlags(
+            QtCore.Qt.WindowType.FramelessWindowHint
+            | QtCore.Qt.WindowType.WindowStaysOnTopHint
+            | QtCore.Qt.WindowType.Tool
+        )
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_ShowWithoutActivating)
+
+        label = QtWidgets.QLabel(text, self)
+        label.setStyleSheet(
+            "QLabel {"
+            "  color: rgba(255, 255, 255, 220);"
+            "  background: rgba(0, 0, 0, 140);"
+            "  padding: 2px 6px;"
+            "  border-radius: 4px;"
+            "  font-size: 11px;"
+            "  font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
+            "}"
+        )
+        label.adjustSize()
+        self.setFixedSize(label.size())
+        self.move(global_pos)
+
+        # Float upward animation
+        self._float_anim = QtCore.QPropertyAnimation(self, b"pos")
+        self._float_anim.setDuration(FLOAT_DURATION_MS)
+        self._float_anim.setStartValue(global_pos)
+        self._float_anim.setEndValue(global_pos + QtCore.QPoint(0, -FLOAT_UP_PX))
+        self._float_anim.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
+
+        # Fade out animation
+        self._fade_anim = QtCore.QPropertyAnimation(self, b"windowOpacity")
+        self._fade_anim.setDuration(FLOAT_DURATION_MS)
+        self._fade_anim.setStartValue(1.0)
+        self._fade_anim.setEndValue(0.0)
+
+        # Run both in parallel, close when done
+        self._group = QtCore.QParallelAnimationGroup(self)
+        self._group.addAnimation(self._float_anim)
+        self._group.addAnimation(self._fade_anim)
+        self._group.finished.connect(self.close)
+        self._group.start()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Animation already started in __init__; ensure it runs.
+        if self._group.state() == QtCore.QAbstractAnimation.State.Stopped:
+            self._group.start()
+
 
 class CaptureWindow(QtWidgets.QWidget):
     """
@@ -342,6 +401,7 @@ class CaptureWindow(QtWidgets.QWidget):
 
             if captured is not None:
                 self._notify_captured(captured)
+                self._show_copied_toast(event.globalPosition().toPoint())
 
             self.start_pos = self.curr_pos = None
             self.close()
@@ -350,6 +410,17 @@ class CaptureWindow(QtWidgets.QWidget):
         """Keyboard handling: Esc exits capture mode."""
         if event.key() == QtCore.Qt.Key.Key_Escape:
             self.close()
+
+    def _show_copied_toast(self, global_pos: QtCore.QPoint):
+        """Show a floating 'Copied' toast at the cursor position."""
+        try:
+            from .config import resolve_ui_lang, ui_text, get_config_path
+            lang = resolve_ui_lang(get_config_path())
+            text = ui_text(lang, "capture_copied")
+            toast = CopiedToast(text, global_pos)
+            toast.show()
+        except Exception:
+            logger.error(f"copied_toast_err | trace={traceback.format_exc().strip()}")
 
     def _notify_captured(self, pixmap):
         """Notify app layer with the captured image for optional OCR flow."""

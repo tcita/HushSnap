@@ -112,19 +112,27 @@ def test_ocr_popup_edit_mode_swaps_button_groups(qapp):
     assert not popup.cancel_btn.isHidden()
 
 
+from unittest.mock import patch, MagicMock
+
 def test_ocr_popup_copy_button_copies_current_text(qapp):
-    popup = OcrPopup(_translate)
-    popup.show_text("original")
+    with patch("PyQt6.QtWidgets.QApplication.clipboard") as mock_clipboard_func:
+        mock_clipboard = MagicMock()
+        mock_clipboard_func.return_value = mock_clipboard
 
-    # Copy from read-only label
-    popup.copy_btn.click()
-    assert QtWidgets.QApplication.clipboard().text() == "original"
+        popup = OcrPopup(_translate)
+        popup.show_text("original")
 
-    # Enter edit mode, modify, then copy
-    popup.edit_btn.click()
-    popup.text_edit.setPlainText("edited text")
-    popup.copy_btn.click()
-    assert QtWidgets.QApplication.clipboard().text() == "edited text"
+        # Copy from read-only label
+        popup.copy_btn.click()
+        mock_clipboard.setText.assert_called_with("original")
+
+        # Enter edit mode, modify, then copy
+        popup.edit_btn.click()
+        popup.text_edit.setPlainText("edited text")
+        popup.copy_btn.setEnabled(True)  # Animation disables it; re-enable for testing
+        popup.copy_btn.click()
+        mock_clipboard.setText.assert_called_with("edited text")
+
 
 
 def test_ocr_popup_updates_copy_button_text_on_show(qapp):
@@ -133,3 +141,4 @@ def test_ocr_popup_updates_copy_button_text_on_show(qapp):
     popup.show_text("hello")
 
     assert popup.copy_btn.toolTip() == "Copy"
+

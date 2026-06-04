@@ -61,14 +61,14 @@ class OcrPopup(QtWidgets.QWidget):
         header_layout.setSpacing(8)
         header_layout.setContentsMargins(10, 6, 10, 6)
 
-        header_layout.addStretch(1)
-
         self.pin_btn = QtWidgets.QPushButton()
         self.pin_btn.setObjectName("ocrPinBtn")
         self.pin_btn.setFixedSize(28, 24)
         self.pin_btn.setCheckable(True)
         self.pin_btn.clicked.connect(self._on_pin_toggled)
         header_layout.addWidget(self.pin_btn)
+
+        header_layout.addStretch(1)
 
         self.close_btn = QtWidgets.QPushButton("✕")
         self.close_btn.setObjectName("ocrCloseBtn")
@@ -264,6 +264,7 @@ class OcrPopup(QtWidgets.QWidget):
             " background: #1e4a30;"
             " padding: 0;"
             " font-size: 12px;"
+            " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
             "}"
             "#ocrCopyBtn:hover { background: #2e7d4f; border-color: #2e7d4f; }"
 
@@ -274,6 +275,7 @@ class OcrPopup(QtWidgets.QWidget):
             " background: #1e4a30;"
             " padding: 0;"
             " font-size: 12px;"
+            " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
             "}"
             "#ocrEditBtn:hover { background: #2e7d4f; border-color: #2e7d4f; }"
 
@@ -284,6 +286,7 @@ class OcrPopup(QtWidgets.QWidget):
             " background: #2e7d4f;"
             " padding: 0;"
             " font-size: 12px;"
+            " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
             "}"
             "#ocrUpdateBtn:hover { background: #3a9d62; border-color: #3a9d62; }"
 
@@ -294,6 +297,7 @@ class OcrPopup(QtWidgets.QWidget):
             " background: transparent;"
             " padding: 0;"
             " font-size: 12px;"
+            " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
             "}"
             "#ocrCancelBtn:hover { background: rgba(46, 125, 79, 64); border-color: #2e7d4f; }"
 
@@ -303,6 +307,7 @@ class OcrPopup(QtWidgets.QWidget):
             " border-radius: 12px;"
             " background: transparent;"
             " font-size: 15px;"
+            " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
             "}"
             "#ocrPinBtn:hover { background: rgba(46, 125, 79, 64); color: #d4f5e2; }"
             "#ocrPinBtn[pin=\"true\"] { color: #5fc98a; background: rgba(30, 74, 48, 120); }"
@@ -313,6 +318,7 @@ class OcrPopup(QtWidgets.QWidget):
             " border-radius: 12px;"
             " background: rgba(30, 74, 48, 64);"
             " font-size: 15px;"
+            " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
             "}"
             "#ocrCloseBtn:hover { background: #f44336; color: #FFF; }"
         )
@@ -362,7 +368,7 @@ class OcrPopup(QtWidgets.QWidget):
         self._is_refreshing = False
 
         if not self.isVisible():
-            self._place_near_cursor()
+            self._place_on_screen()
 
         self.show()
         self.raise_()
@@ -483,11 +489,23 @@ class OcrPopup(QtWidgets.QWidget):
 
         screen = QtWidgets.QApplication.screenAt(self.pos()) or QtWidgets.QApplication.primaryScreen()
         if screen:
-            # Don't exceed screen height
-            max_allowed = screen.availableGeometry().height() - 60
-            total_h = min(total_h, max_allowed)
+            area = screen.availableGeometry()
+            # Don't exceed screen dimensions
+            max_w = area.width() - 40
+            max_h = area.height() - 60
+            total_h = min(total_h, max_h)
+            new_w = min(self.width(), max_w)
+        else:
+            new_w = self.width()
 
-        self.resize(self.width(), int(total_h))
+        self.resize(new_w, int(total_h))
+
+        # Re-clamp position after resize — the window may now overflow
+        # a screen edge (e.g. after growing taller than available space).
+        if screen:
+            x = max(area.left(), min(self.x(), area.right() - self.width()))
+            y = max(area.top(), min(self.y(), area.bottom() - self.height()))
+            self.move(x, y)
 
     # ── pin setter ──────────────────────────────────────────────────
     def set_pinned(self, pinned):
@@ -850,17 +868,25 @@ class OcrPopup(QtWidgets.QWidget):
         self._drag_pos = None
         event.accept()
 
-    def _place_near_cursor(self):
+    def _place_on_screen(self):
+        """Position the popup at the bottom-right corner, clamped to screen bounds."""
         screen = QtWidgets.QApplication.screenAt(QtGui.QCursor.pos()) or QtWidgets.QApplication.primaryScreen()
         if not screen:
             return
         area = screen.availableGeometry()
-        cursor = QtGui.QCursor.pos()
-        gap = 20
-        self.move(
-            min(max(cursor.x() + gap, area.left()), area.right() - self.width()),
-            min(max(cursor.y() + gap, area.top()), area.bottom() - self.height()),
-        )
+        margin = 20
+
+        # Default: bottom-right corner (like the screenshot thumbnail)
+        x = area.right() - self.width() - margin
+        y = area.bottom() - self.height() - margin
+
+        # Clamp so the window never overflows any screen edge
+        x = max(x, area.left())
+        y = max(y, area.top())
+        x = min(x, area.right() - self.width())
+        y = min(y, area.bottom() - self.height())
+
+        self.move(x, y)
 
     # ── window events ────────────────────────────────────────────────
     def showEvent(self, event):

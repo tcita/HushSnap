@@ -13,8 +13,7 @@ MOD_SHIFT = 0x0004
 MOD_WIN = 0x0008
 # Default activation hotkey
 DEFAULT_HOTKEY = "Alt+Q"
-# OCR screenshot hotkey (always runs OCR regardless of toggle state)
-DEFAULT_OCR_HOTKEY = "Alt+Z"
+
 
 # --- 2. File and system constants ---
 # Config filename (user-editable)
@@ -60,10 +59,11 @@ CAPTURE_OVERLAY_RGBA = (0, 0, 0, 80)
 CAPTURE_LOG_TS_FMT = "%Y-%m-%d %H:%M:%S"
 
 # --- 4. Floating Thumbnail constants ---
-THUMBNAIL_WIDTH = 280
+THUMBNAIL_WIDTH = 240
+THUMBNAIL_HEIGHT = 150
 THUMBNAIL_MARGIN = 20
 THUMBNAIL_DISPLAY_MS = 3000
 THUMBNAIL_ANIM_MS = 300
-THUMBNAIL_CORNER_RADIUS = 16
+THUMBNAIL_CORNER_RADIUS = 12
 THUMBNAIL_DRAG_OPACITY = 0.6
 THUMBNAIL_DRAG_SCALE = 0.9

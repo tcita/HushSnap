@@ -61,59 +61,6 @@ def test_hotkey_filter_handle_wm_hotkey(mock_from_address, mock_app):
 
 
 @patch("ctypes.wintypes.MSG.from_address")
-def test_hotkey_filter_routes_to_ocr_trigger(mock_from_address, mock_app):
-    """Verify on_ocr_trigger is called when wParam matches ocr_hotkey_id."""
-    mock_callback = MagicMock()
-    mock_ocr_callback = MagicMock()
-    filter = HotkeyFilter(on_trigger=mock_callback, on_ocr_trigger=mock_ocr_callback)
-    filter.hotkey_id = 0xC001
-    filter.ocr_hotkey_id = 0xC002
-
-    mock_msg = MagicMock()
-    mock_msg.message = WM_HOTKEY
-    mock_msg.wParam = 0xC002  # matches OCR hotkey ID
-    mock_from_address.return_value = mock_msg
-
-    mock_screen = MagicMock()
-    mock_pixmap = MagicMock()
-    mock_screen.grabWindow.return_value = mock_pixmap
-    mock_screen.devicePixelRatio.return_value = 1.0
-    mock_app.primaryScreen.return_value = mock_screen
-
-    handled, ret = filter.nativeEventFilter(b"windows_generic_MSG", 12345)
-
-    assert handled is True
-    mock_ocr_callback.assert_called_once_with(mock_pixmap)
-    mock_callback.assert_not_called()
-
-
-@patch("ctypes.wintypes.MSG.from_address")
-def test_hotkey_filter_ignores_ocr_when_id_is_none(mock_from_address, mock_app):
-    """Verify on_trigger is used when ocr_hotkey_id is None (backward compat)."""
-    mock_callback = MagicMock()
-    mock_ocr_callback = MagicMock()
-    filter = HotkeyFilter(on_trigger=mock_callback, on_ocr_trigger=mock_ocr_callback)
-    filter.hotkey_id = 0xC001
-    filter.ocr_hotkey_id = None  # not set
-
-    mock_msg = MagicMock()
-    mock_msg.message = WM_HOTKEY
-    mock_msg.wParam = 0xC001
-    mock_from_address.return_value = mock_msg
-
-    mock_screen = MagicMock()
-    mock_pixmap = MagicMock()
-    mock_screen.grabWindow.return_value = mock_pixmap
-    mock_screen.devicePixelRatio.return_value = 1.0
-    mock_app.primaryScreen.return_value = mock_screen
-
-    filter.nativeEventFilter(b"windows_generic_MSG", 12345)
-
-    mock_callback.assert_called_once_with(mock_pixmap)
-    mock_ocr_callback.assert_not_called()
-
-
-@patch("ctypes.wintypes.MSG.from_address")
 def test_hotkey_filter_handle_taskbar_created(mock_from_address, mock_app):
     """Test handling of the WM_TASKBARCREATED message and tray icon restoration."""
     mock_callback = MagicMock()

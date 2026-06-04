@@ -46,7 +46,7 @@ def dummy_config_path(tmp_path):
 @patch("ctypes.windll.user32.RegisterHotKey")
 def test_hotkey_manager_initialization(mock_register, mock_add_atom, mock_tray, mock_translate, dummy_config_path):
     """Test hotkey manager atom creation and value assignments."""
-    mock_add_atom.side_effect = [100, 101]
+    mock_add_atom.return_value = 100
 
     mgr = HotkeyManager(
         tray_icon=mock_tray,
@@ -55,26 +55,19 @@ def test_hotkey_manager_initialization(mock_register, mock_add_atom, mock_tray, 
         modifier=1,
         virtual_key=65,
         name="Alt+A",
-        ocr_modifier=2,
-        ocr_virtual_key=66,
-        ocr_name="Ctrl+B",
     )
 
     assert mgr.hotkey_id == 100
-    assert mgr.ocr_hotkey_id == 101
     assert mgr.current_hotkey_modifier == 1
     assert mgr.current_hotkey_virtual_key == 65
     assert mgr.current_hotkey_name == "Alt+A"
-    assert mgr.current_ocr_hotkey_modifier == 2
-    assert mgr.current_ocr_hotkey_virtual_key == 66
-    assert mgr.current_ocr_hotkey_name == "Ctrl+B"
 
 
 @patch("ctypes.windll.kernel32.GlobalAddAtomW")
 @patch("ctypes.windll.user32.RegisterHotKey")
 def test_register_initial_success(mock_register, mock_add_atom, mock_tray, mock_translate, dummy_config_path):
     """Verify that register_initial registers the hotkey with user32 successfully."""
-    mock_add_atom.side_effect = [100, 101]
+    mock_add_atom.return_value = 100
     mock_register.return_value = True
 
     mgr = HotkeyManager(
@@ -96,7 +89,7 @@ def test_register_initial_success(mock_register, mock_add_atom, mock_tray, mock_
 @patch("ctypes.windll.user32.RegisterHotKey")
 def test_register_initial_failure(mock_register, mock_add_atom, mock_tray, mock_translate, dummy_config_path):
     """Verify that register_initial records conflict without showing a dialog."""
-    mock_add_atom.side_effect = [100, 101]
+    mock_add_atom.return_value = 100
     mock_register.return_value = False  # Simulate conflict
 
     mgr = HotkeyManager(
@@ -112,107 +105,6 @@ def test_register_initial_failure(mock_register, mock_add_atom, mock_tray, mock_
     assert success is False
     assert mgr.hotkey_registered is False
     assert mgr._startup_conflicts == [("main", "Alt+A")]
-
-
-@patch("ctypes.windll.kernel32.GlobalAddAtomW")
-@patch("ctypes.windll.user32.RegisterHotKey")
-def test_register_ocr_initial_success(mock_register, mock_add_atom, mock_tray, mock_translate, dummy_config_path):
-    """Verify that register_ocr_initial registers the OCR hotkey successfully."""
-    mock_add_atom.side_effect = [100, 101]
-    mock_register.return_value = True
-
-    mgr = HotkeyManager(
-        tray_icon=mock_tray,
-        translate=mock_translate,
-        config_path=dummy_config_path,
-        modifier=1,
-        virtual_key=65,
-        name="Alt+A",
-        ocr_modifier=2,
-        ocr_virtual_key=66,
-        ocr_name="Ctrl+B",
-    )
-
-    success = mgr.register_ocr_initial()
-    assert success is True
-    assert mgr.ocr_hotkey_registered is True
-    mock_register.assert_called_once_with(None, 101, 2, 66)
-
-
-@patch("ctypes.windll.kernel32.GlobalAddAtomW")
-@patch("ctypes.windll.user32.RegisterHotKey")
-def test_register_ocr_initial_failure(mock_register, mock_add_atom, mock_tray, mock_translate, dummy_config_path):
-    """Verify that register_ocr_initial records conflict without showing a dialog."""
-    mock_add_atom.side_effect = [100, 101]
-    mock_register.return_value = False  # Simulate conflict
-
-    mgr = HotkeyManager(
-        tray_icon=mock_tray,
-        translate=mock_translate,
-        config_path=dummy_config_path,
-        modifier=1,
-        virtual_key=65,
-        name="Alt+A",
-        ocr_modifier=2,
-        ocr_virtual_key=66,
-        ocr_name="Ctrl+B",
-    )
-
-    success = mgr.register_ocr_initial()
-    assert success is False
-    assert mgr.ocr_hotkey_registered is False
-    assert mgr._startup_conflicts == [("ocr", "Ctrl+B")]
-
-
-@patch("ctypes.windll.kernel32.GlobalAddAtomW")
-@patch("ctypes.windll.user32.RegisterHotKey")
-def test_register_ocr_hotkey_success(mock_register, mock_add_atom, mock_tray, mock_translate, dummy_config_path):
-    """Verify that register_ocr_hotkey (reload helper) works without popup."""
-    mock_add_atom.side_effect = [100, 101]
-    mock_register.return_value = True
-
-    mgr = HotkeyManager(
-        tray_icon=mock_tray,
-        translate=mock_translate,
-        config_path=dummy_config_path,
-        modifier=1,
-        virtual_key=65,
-        name="Alt+A",
-        ocr_modifier=2,
-        ocr_virtual_key=66,
-        ocr_name="Ctrl+B",
-    )
-
-    result = mgr.register_ocr_hotkey(4, 88, "Alt+X")
-    assert result is True
-    assert mgr.ocr_hotkey_registered is True
-    assert mgr.current_ocr_hotkey_modifier == 4
-    assert mgr.current_ocr_hotkey_virtual_key == 88
-    assert mgr.current_ocr_hotkey_name == "Alt+X"
-
-
-@patch("ctypes.windll.kernel32.GlobalAddAtomW")
-@patch("ctypes.windll.user32.RegisterHotKey")
-def test_register_ocr_hotkey_failure_no_popup(mock_register, mock_add_atom, mock_tray, mock_translate, dummy_config_path):
-    """Verify that register_ocr_hotkey returns False on conflict (no popup — for reload)."""
-    mock_add_atom.side_effect = [100, 101]
-    mock_register.return_value = False
-
-    mgr = HotkeyManager(
-        tray_icon=mock_tray,
-        translate=mock_translate,
-        config_path=dummy_config_path,
-        modifier=1,
-        virtual_key=65,
-        name="Alt+A",
-        ocr_modifier=2,
-        ocr_virtual_key=66,
-        ocr_name="Ctrl+B",
-    )
-
-    result = mgr.register_ocr_hotkey(4, 88, "Alt+X")
-    assert result is False
-    assert mgr.ocr_hotkey_registered is False
 
 
 @patch("PyQt6.QtWidgets.QMessageBox.question")
@@ -264,7 +156,6 @@ def test_resolve_startup_conflicts_multiple(mock_question, mock_tray, mock_trans
         translate=mock_translate,
         config_path=dummy_config_path,
         modifier=1, virtual_key=65, name="Alt+Q",
-        ocr_modifier=1, ocr_virtual_key=90, ocr_name="Alt+Z",
     )
     mgr._startup_conflicts = [("main", "Alt+Q"), ("ocr", "Alt+Z")]
 
@@ -296,7 +187,7 @@ def test_resolve_startup_conflicts_no_conflicts(mock_tray, mock_translate, dummy
 @patch("ctypes.windll.kernel32.GlobalDeleteAtom")
 def test_release_resources(mock_delete_atom, mock_unregister, mock_add_atom, mock_tray, mock_translate, dummy_config_path):
     """Verify that release_resources unregisters hotkeys and deletes generated atoms."""
-    mock_add_atom.side_effect = [100, 101]
+    mock_add_atom.return_value = 100
     mock_unregister.return_value = True
 
     mgr = HotkeyManager(
@@ -306,26 +197,16 @@ def test_release_resources(mock_delete_atom, mock_unregister, mock_add_atom, moc
         modifier=1,
         virtual_key=65,
         name="Alt+A",
-        ocr_modifier=2,
-        ocr_virtual_key=66,
-        ocr_name="Ctrl+B",
     )
     mgr.hotkey_registered = True
-    mgr.ocr_hotkey_registered = True
 
     mgr.release_resources()
 
-    # Unregister should be called for both hotkey IDs
-    mock_unregister.assert_has_calls([
-        call(None, 100),
-        call(None, 101),
-    ], any_order=True)
+    # Unregister should be called for hotkey ID
+    mock_unregister.assert_called_once_with(None, 100)
 
     # Atoms should be deleted
-    mock_delete_atom.assert_has_calls([
-        call(100),
-        call(101),
-    ], any_order=True)
+    mock_delete_atom.assert_called_once_with(100)
 
     assert mgr.hotkey_registered is False
-    assert mgr.ocr_hotkey_registered is False
+

@@ -11,7 +11,7 @@ from .. import __version__
 from ..config import (
     parse_hotkey,
     update_hotkey_in_config,
-    update_ocr_hotkey_in_config,
+
     get_configured_ui_lang,
     update_ui_lang_in_config,
     get_ocr_font_size,
@@ -330,6 +330,7 @@ class FontSizeStepper(QtWidgets.QWidget):
             "color: #333; font-size: 13px; font-weight: 500;"
             " border: none; background: transparent;"
             " min-width: 44px;"
+            " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
         )
 
         self._plus_btn = QtWidgets.QPushButton("+")
@@ -591,8 +592,10 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
         self.feedback_label.setText(message)
         self.feedback_label.setStyleSheet(
             f"font-size: 12px; border: none; background: transparent; color: {SETTINGS_ERROR_COLOR};"
+            " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
             if is_error
             else "font-size: 12px; border: none; background: transparent; color: #999;"
+            " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
         )
 
     def keyPressEvent(self, event):
@@ -676,8 +679,6 @@ class SettingsDialogController(QtCore.QObject):
         self._dialog = None
         self._screenshot_pills_container = None
         self._screenshot_pills = None
-        self._ocr_pills_container = None
-        self._ocr_pills = None
 
     def _refresh_pills(self):
         if self._screenshot_pills_container is None:
@@ -686,12 +687,8 @@ class SettingsDialogController(QtCore.QObject):
             self._screenshot_pills = _rebuild_kbd_pills(
                 self._screenshot_pills_container, self.hotkey_manager.current_hotkey_name
             )
-            self._ocr_pills = _rebuild_kbd_pills(
-                self._ocr_pills_container, self.hotkey_manager.current_ocr_hotkey_name
-            )
         except RuntimeError:
             self._screenshot_pills_container = None
-            self._ocr_pills_container = None
 
     def show(self):
         if self._dialog is not None and self._dialog.isVisible():
@@ -712,8 +709,6 @@ class SettingsDialogController(QtCore.QObject):
             self._dialog = None
             self._screenshot_pills_container = None
             self._screenshot_pills = None
-            self._ocr_pills_container = None
-            self._ocr_pills = None
 
         dialog.destroyed.connect(clear_settings_dialog)
 
@@ -771,44 +766,6 @@ class SettingsDialogController(QtCore.QObject):
         )
         btn1.clicked.connect(change_hotkey)
         body_layout.addWidget(card1)
-
-        # --- OCR card ---
-        def change_ocr_hotkey():
-            capture_dialog = HotkeyCaptureDialog(self.translate, parent=dialog)
-            capture_dialog.setWindowTitle(self.translate("settings_hotkey_capture_ocr_title"))
-            if capture_dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
-                return
-            canonical_hotkey = capture_dialog.captured_hotkey
-            if not canonical_hotkey:
-                return
-            try:
-                update_ocr_hotkey_in_config(self.config_path, canonical_hotkey)
-            except Exception as exc:
-                logger.exception(f"Failed to save OCR hotkey '{canonical_hotkey}' to config: {exc}")
-                _set_status(self.translate("settings_hotkey_save_failed"), True)
-                return
-            self.hotkey_manager.apply_ocr_hotkey_reload()
-            self._refresh_pills()
-            if self.hotkey_manager.current_ocr_hotkey_name == canonical_hotkey:
-                _set_status("", False)
-            else:
-                _set_status(
-                    self.translate(
-                        "settings_ocr_hotkey_apply_failed",
-                        old_hotkey=self.hotkey_manager.current_ocr_hotkey_name,
-                        new_hotkey=canonical_hotkey,
-                    ),
-                    True,
-                )
-
-        card2, self._ocr_pills_container, self._ocr_pills, btn2 = _make_setting_card(
-            self.translate("menu_ocr_recognize"),
-            self.translate("settings_ocr_hotkey_subtitle"),
-            self.hotkey_manager.current_ocr_hotkey_name,
-            self.translate("settings_change_ocr_hotkey_btn"),
-        )
-        btn2.clicked.connect(change_ocr_hotkey)
-        body_layout.addWidget(card2)
 
         # --- Section: Preferences ---
         prefs_header = QtWidgets.QLabel(self.translate("settings_section_preferences"))
@@ -937,6 +894,7 @@ class SettingsDialogController(QtCore.QObject):
         version_label.setStyleSheet(
             "font-size: 10px; color: #666; padding: 6px 0 10px 0;"
             "border: none; background: transparent;"
+            " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
         )
         outer_layout.addWidget(version_label)
 
@@ -944,6 +902,7 @@ class SettingsDialogController(QtCore.QObject):
             status_label.setText(message)
             status_label.setStyleSheet(
                 f"font-size: 12px; padding: 0 4px; border: none; background: transparent; color: {SETTINGS_ERROR_COLOR};"
+                " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
                 if is_error
                 else STATUS_LABEL_STYLE
             )

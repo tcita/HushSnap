@@ -68,6 +68,7 @@ class MenuItemWidget(QtWidgets.QWidget):
         self.shortcut_label.setStyleSheet(
             "color: #888888; font-size: 11px; padding: 2px 6px; "
             "background-color: #2b2b2b; border-radius: 4px; font-weight: 500;"
+            "font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
         )
         layout.addWidget(self.shortcut_label)
         
@@ -95,9 +96,11 @@ class MenuItemWidget(QtWidgets.QWidget):
         
         # Text tinting
         if is_danger:
-            self.text_label.setStyleSheet("color: #e05555; font-size: 13px; font-weight: bold; background-color: transparent;")
+            self.text_label.setStyleSheet("color: #e05555; font-size: 13px; font-weight: bold; background-color: transparent;"
+                " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;")
         else:
-            self.text_label.setStyleSheet("color: #e8e8e8; font-size: 13px; background-color: transparent;")
+            self.text_label.setStyleSheet("color: #e8e8e8; font-size: 13px; background-color: transparent;"
+                " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;")
             
     def enterEvent(self, event):
         self.setStyleSheet(self.hover_style)
@@ -148,9 +151,7 @@ def create_tray(
     on_open_settings,
     on_open_config_dir,
     on_quit,
-    on_ocr_trigger=None,
     initial_hotkey="",
-    initial_ocr_hotkey="",
 ):
     """
     Initialize and create the system tray icon and its menu.
@@ -162,9 +163,7 @@ def create_tray(
         on_open_settings (callable): Callback to open settings window.
         on_open_config_dir (callable): Callback to open config directory.
         on_quit (callable): Callback to quit application.
-        on_ocr_trigger (callable): Callback to trigger screenshot with OCR.
         initial_hotkey (str): Initial main screenshot hotkey name.
-        initial_ocr_hotkey (str): Initial OCR screenshot hotkey name.
         
     Returns:
         tuple: (tray_icon, settings_action) for later dynamic operations.
@@ -188,6 +187,10 @@ def create_tray(
             border: 1px solid #3a3a3a;
             border-radius: 10px;
             padding: 4px;
+            font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
+        }
+        QMenu::item {
+            font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
         }
         QMenu::separator {
             height: 1px;
@@ -206,7 +209,6 @@ def create_tray(
     # Resolve local icon directory paths
     icons_dir = Path(__file__).resolve().parent / "icons"
     screenshot_icon_path = icons_dir / "screenshot.svg"
-    scan_icon_path = icons_dir / "scan.svg"
     settings_icon_path = icons_dir / "settings.svg"
     folder_icon_path = icons_dir / "folder.svg"
     power_icon_path = icons_dir / "power.svg"
@@ -230,20 +232,17 @@ def create_tray(
     tray_icon.activated.connect(on_tray_icon_activated)
 
     # Define delay capture helper
-    def do_capture(is_ocr):
+    def do_capture():
         screen = QtWidgets.QApplication.primaryScreen()
         if screen:
             dpr = screen.devicePixelRatio()
             pixmap = screen.grabWindow(0)
             pixmap.setDevicePixelRatio(dpr)
-            if is_ocr and on_ocr_trigger is not None:
-                on_ocr_trigger(pixmap)
-            else:
-                on_trigger(pixmap)
+            on_trigger(pixmap)
 
     # 1. Screenshot Action
     def on_screenshot_triggered():
-        QtCore.QTimer.singleShot(200, lambda: do_capture(is_ocr=False))
+        QtCore.QTimer.singleShot(200, do_capture)
 
     screenshot_action = StyledMenuAction(
         text=translate("menu_screenshot"),
@@ -256,24 +255,9 @@ def create_tray(
     )
     tray_menu.addAction(screenshot_action)
 
-    # 2. Screenshot & OCR Action
-    def on_screenshot_ocr_triggered():
-        QtCore.QTimer.singleShot(200, lambda: do_capture(is_ocr=True))
-
-    screenshot_ocr_action = StyledMenuAction(
-        text=translate("menu_screenshot_ocr"),
-        icon_path=scan_icon_path,
-        color_hex="#888888",
-        shortcut=initial_ocr_hotkey,
-        is_danger=False,
-        on_triggered=on_screenshot_ocr_triggered,
-        parent_menu=tray_menu
-    )
-    tray_menu.addAction(screenshot_ocr_action)
-
     tray_menu.addSeparator()
 
-    # 3. Settings Action
+    # 2. Settings Action
     settings_action = StyledMenuAction(
         text=translate("menu_settings"),
         icon_path=settings_icon_path,
@@ -285,7 +269,7 @@ def create_tray(
     )
     tray_menu.addAction(settings_action)
 
-    # 4. Config Directory Action
+    # 3. Config Directory Action
     config_dir_action = StyledMenuAction(
         text=translate("menu_open_install_dir"),
         icon_path=folder_icon_path,
@@ -299,7 +283,7 @@ def create_tray(
 
     tray_menu.addSeparator()
     
-    # 5. Quit Action
+    # 4. Quit Action
     quit_action = StyledMenuAction(
         text=translate("menu_quit"),
         icon_path=power_icon_path,
@@ -312,9 +296,8 @@ def create_tray(
     tray_menu.addAction(quit_action)
 
     # Expose dynamic text and shortcut updater method
-    def update_shortcuts(hotkey, ocr_hotkey):
+    def update_shortcuts(hotkey):
         screenshot_action.update_shortcut(hotkey)
-        screenshot_ocr_action.update_shortcut(ocr_hotkey)
 
     tray_icon.update_shortcuts = update_shortcuts
 

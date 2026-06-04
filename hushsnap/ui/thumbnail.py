@@ -8,14 +8,17 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 from PIL import Image
 import io
 
+from .styles import MODERN_MENU_STYLE
 from ..constants import (
     THUMBNAIL_WIDTH,
+    THUMBNAIL_HEIGHT,
     THUMBNAIL_MARGIN,
     THUMBNAIL_DISPLAY_MS,
     THUMBNAIL_ANIM_MS,
     THUMBNAIL_CORNER_RADIUS,
     THUMBNAIL_DRAG_OPACITY,
     THUMBNAIL_DRAG_SCALE,
+    CAPTURE_CLICK_THRESHOLD_PX,
 )
 
 logger = logging.getLogger(__name__)
@@ -25,6 +28,12 @@ class ThumbnailWindow(QtWidgets.QWidget):
     Floating thumbnail window with slide-in animation, auto-hide, 
     and drag-and-drop save functionality.
     """
+    # Signals for local handling, Manager will relay these globally
+    clicked_signal = QtCore.pyqtSignal()
+    open_paint_signal = QtCore.pyqtSignal()
+    save_to_desktop_signal = QtCore.pyqtSignal()
+    save_requested_signal = QtCore.pyqtSignal()
+
     def __init__(self, pil_image: Image.Image):
         super().__init__()
         self.pil_image = pil_image
@@ -41,16 +50,67 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
         
-        # Calculate aspect ratio
-        ratio = self.pixmap.height() / self.pixmap.width()
-        self.target_height = int(THUMBNAIL_WIDTH * ratio)
-        self.setFixedSize(THUMBNAIL_WIDTH, self.target_height)
+        # Shadow padding for custom drop shadow
+        self.shadow_padding = 12
+        
+        # The card size is fixed
+        self.card_width = THUMBNAIL_WIDTH
+        self.card_height = THUMBNAIL_HEIGHT
+        
+        # The window size includes shadow padding
+        self.display_width = self.card_width + 2 * self.shadow_padding
+        self.display_height = self.card_height + 2 * self.shadow_padding
+        self.setFixedSize(self.display_width, self.display_height)
+
+        # Card rect within the window
+        self.card_rect = QtCore.QRect(
+            self.shadow_padding, 
+            self.shadow_padding, 
+            self.card_width, 
+            self.card_height
+        )
+
+        # Scale original pixmap to fit inside the fixed card dimensions using KeepAspectRatio.
+        self.scaled_pixmap = self.pixmap.scaled(
+            self.card_width, self.card_height,
+            QtCore.Qt.AspectRatioMode.KeepAspectRatio,
+            QtCore.Qt.TransformationMode.SmoothTransformation,
+        )
+
+        # Center the scaled pixmap inside the card_rect
+        pw = self.scaled_pixmap.width()
+        ph = self.scaled_pixmap.height()
+        px = self.shadow_padding + (self.card_width - pw) // 2
+        py = self.shadow_padding + (self.card_height - ph) // 2
+        self.pixmap_rect = QtCore.QRect(px, py, pw, ph)
+        
+        # Close button (small 'x' in top-right of card)
+        self.close_btn = QtWidgets.QPushButton("×", self)
+        self.close_btn.setFixedSize(20, 20)
+        self.close_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self.close_btn.setStyleSheet(
+            "QPushButton {"
+            "  background-color: rgba(0, 0, 0, 160);"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 10px;"
+            "  font-size: 14px;"
+            "  font-weight: bold;"
+            "  line-height: 18px;"
+            "}"
+            "QPushButton:hover {"
+            "  background-color: rgba(255, 60, 60, 220);"
+            "}"
+        )
+        self.close_btn.move(self.shadow_padding + self.card_width - 26, self.shadow_padding + 6)
+        self.close_btn.clicked.connect(self.close)
+        self.close_btn.hide()
         
         # 3. Position and Animation
         # Use availableGeometry to account for the taskbar
         screen = QtWidgets.QApplication.primaryScreen().availableGeometry()
-        self.end_x = screen.x() + screen.width() - THUMBNAIL_WIDTH - THUMBNAIL_MARGIN
-        self.end_y = screen.y() + screen.height() - self.target_height - THUMBNAIL_MARGIN
+        self.end_x = screen.x() + screen.width() - self.display_width - THUMBNAIL_MARGIN + self.shadow_padding
+        self.end_y = screen.y() + screen.height() - self.display_height - THUMBNAIL_MARGIN + self.shadow_padding
         self.start_x = screen.x() + screen.width()
         
         self.move(self.start_x, self.end_y)
@@ -76,6 +136,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
         
         self._is_dragging = False
         self._drag_start_pos = None
+        self._menu_active = False
 
     def _pil_to_qpixmap(self, pil_img: Image.Image) -> QtGui.QPixmap:
         """Convert PIL Image to QPixmap efficiently."""
@@ -98,19 +159,23 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self.timer.start(THUMBNAIL_DISPLAY_MS)
 
     def enterEvent(self, event):
-        """Pause timer on hover."""
+        """Pause timer on hover and show close button."""
         self.timer.stop()
         self.fade_anim.stop()
         self.setWindowOpacity(1.0)
+        self.close_btn.show()
 
     def leaveEvent(self, event):
-        """Resume timer on leave."""
-        if not self._is_dragging:
+        """Resume timer on leave and hide close button."""
+        if not self._is_dragging and not self._menu_active:
             self.timer.start(THUMBNAIL_DISPLAY_MS)
+        self.close_btn.hide()
 
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
-            self._drag_start_pos = event.position().toPoint()
+            pos = event.position().toPoint()
+            if self.card_rect.contains(pos):
+                self._drag_start_pos = pos
 
     def mouseMoveEvent(self, event):
         if not (event.buttons() & QtCore.Qt.MouseButton.LeftButton):
@@ -122,17 +187,59 @@ class ThumbnailWindow(QtWidgets.QWidget):
 
         self._start_drag()
 
+    def mouseReleaseEvent(self, event):
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
+            if self._drag_start_pos and self.card_rect.contains(self._drag_start_pos):
+                dist = (event.position().toPoint() - self._drag_start_pos).manhattanLength()
+                if dist < CAPTURE_CLICK_THRESHOLD_PX:
+                    self.clicked_signal.emit()
+                    self.close()
+        elif event.button() == QtCore.Qt.MouseButton.RightButton:
+            if self.card_rect.contains(event.position().toPoint()):
+                self._show_context_menu(event.globalPosition().toPoint())
+
+    def _show_context_menu(self, pos):
+        # Local import to avoid circular dependencies if any
+        from ..config import resolve_ui_lang, ui_text, get_config_path
+        lang = resolve_ui_lang(get_config_path())
+
+        self._menu_active = True
+        self.timer.stop()
+        self.fade_anim.stop()
+        self.setWindowOpacity(1.0)
+
+        menu = QtWidgets.QMenu(self)
+        menu.setStyleSheet(MODERN_MENU_STYLE)
+
+        paint_action = menu.addAction(ui_text(lang, "thumbnail_open_with_paint"))
+        desktop_action = menu.addAction(ui_text(lang, "thumbnail_save_to_desktop"))
+        save_action = menu.addAction(ui_text(lang, "thumbnail_save_as"))
+
+        action = menu.exec(pos)
+
+        self._menu_active = False
+
+        if action == paint_action:
+            self.open_paint_signal.emit()
+            self.close()
+        elif action == desktop_action:
+            self.save_to_desktop_signal.emit()
+            self.close()
+        elif action == save_action:
+            self.save_requested_signal.emit()
+            self.close()
+        else:
+            # Menu dismissed without selection — resume auto-hide timer
+            self.timer.start(THUMBNAIL_DISPLAY_MS)
+
     def _start_drag(self):
         self._is_dragging = True
         self.timer.stop()
         
         # Visual feedback: scale down and transparency
         self.setWindowOpacity(THUMBNAIL_DRAG_OPACITY)
-        scaled_w = int(THUMBNAIL_WIDTH * THUMBNAIL_DRAG_SCALE)
-        scaled_h = int(self.target_height * THUMBNAIL_DRAG_SCALE)
-        # We don't change the actual window size to avoid jumpiness, 
-        # just the painting in paintEvent if we wanted to be fancy.
-        # For now, just transparency is good.
+        scaled_w = int(self.card_width * THUMBNAIL_DRAG_SCALE)
+        scaled_h = int(self.card_height * THUMBNAIL_DRAG_SCALE)
 
         # Prepare temporary file
         timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -180,23 +287,36 @@ class ThumbnailWindow(QtWidgets.QWidget):
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform)
 
-        # Draw rounded rect clip
+        # Draw soft drop shadow around card_rect
+        for i in range(1, 10):
+            alpha = int(25 * (1.0 - (i / 10.0)))
+            painter.setPen(QtGui.QPen(QtGui.QColor(0, 0, 0, alpha), 2))
+            painter.drawRoundedRect(
+                QtCore.QRectF(self.card_rect).adjusted(-i + 0.5, -i + 3.5, i - 0.5, i + 3.5),
+                THUMBNAIL_CORNER_RADIUS + i,
+                THUMBNAIL_CORNER_RADIUS + i
+            )
+
+        # Draw rounded rect clip path for card
         path = QtGui.QPainterPath()
         path.addRoundedRect(
-            QtCore.QRectF(self.rect()), 
+            QtCore.QRectF(self.card_rect), 
             THUMBNAIL_CORNER_RADIUS, 
             THUMBNAIL_CORNER_RADIUS
         )
-        painter.setClipPath(path)
 
-        # Draw pixmap
-        painter.drawPixmap(self.rect(), self.pixmap)
+        # 1. Fill the container background with a dark translucent color
+        painter.fillPath(path, QtGui.QColor(30, 30, 30, 220))
+
+        # 2. Draw scaled pixmap inside the rounded clip
+        painter.setClipPath(path)
+        painter.drawPixmap(self.pixmap_rect, self.scaled_pixmap)
         
-        # Optional: Subtle border
+        # 3. Draw a subtle border
         painter.setClipping(False)
-        painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 50), 1))
+        painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 40), 1))
         painter.drawRoundedRect(
-            QtCore.QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5),
+            QtCore.QRectF(self.card_rect).adjusted(0.5, 0.5, -0.5, -0.5),
             THUMBNAIL_CORNER_RADIUS,
             THUMBNAIL_CORNER_RADIUS
         )
@@ -206,6 +326,12 @@ class ThumbnailManager(QtCore.QObject):
     Manages thumbnail window creation from any thread.
     """
     show_signal = QtCore.pyqtSignal(object)
+    
+    # Global signals for app integration
+    clicked = QtCore.pyqtSignal(object)       # Emits pil_image
+    open_paint = QtCore.pyqtSignal(object)    # Emits pil_image
+    save_to_desktop = QtCore.pyqtSignal(object) # Emits pil_image
+    save_requested = QtCore.pyqtSignal(object) # Emits pil_image
 
     def __init__(self):
         super().__init__()
@@ -213,19 +339,21 @@ class ThumbnailManager(QtCore.QObject):
         self._windows = [] # Keep references to prevent GC
 
     def _do_show(self, pil_image: Image.Image):
-        # Safely cleanup closed or deleted windows from the reference list
-        alive_windows = []
+        # Close any existing thumbnail windows to prevent stacking
         for w in self._windows:
             try:
-                # sip.isdeleted or simply checking if the wrapper still works
-                if not w.isHidden():
-                    alive_windows.append(w)
-            except RuntimeError:
-                # "wrapped C/C++ object has been deleted" - skip this one
-                continue
-        self._windows = alive_windows
+                w.close()
+            except Exception:
+                pass
+        self._windows = []
         
         win = ThumbnailWindow(pil_image)
+        # Relay signals through the manager
+        win.clicked_signal.connect(lambda: self.clicked.emit(pil_image))
+        win.open_paint_signal.connect(lambda: self.open_paint.emit(pil_image))
+        win.save_to_desktop_signal.connect(lambda: self.save_to_desktop.emit(pil_image))
+        win.save_requested_signal.connect(lambda: self.save_requested.emit(pil_image))
+        
         self._windows.append(win)
         win.show()
 

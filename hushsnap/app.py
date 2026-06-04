@@ -3,6 +3,7 @@ import os
 import sys
 import logging
 import time
+import tempfile
 import subprocess
 
 from PyQt6 import QtWidgets, QtCore
@@ -14,7 +15,6 @@ from .config import (
     get_user_data_dir,
     is_already_running,
     load_hotkey_setting,
-    load_ocr_hotkey_setting,
     release_instance_lock,
     resolve_physical_path,
     resolve_ui_lang,
@@ -98,7 +98,6 @@ def main(boot_start_time=None):
 
     with startup_profiler.step("Startup config loaded"):
         hotkey_modifier, hotkey_virtual_key, hotkey_name, _ = load_hotkey_setting()
-        ocr_hotkey_modifier, ocr_hotkey_virtual_key, ocr_hotkey_name, _ = load_ocr_hotkey_setting(config_path)
 
     if force_debug:
         logger.info("DEBUG MODE ENABLED (via config).")
@@ -141,7 +140,7 @@ def main(boot_start_time=None):
         def translate(key, **kwargs):
             return ui_text(ui_language, key, **kwargs)
 
-        ocr_controller = OcrController(
+    ocr_controller = OcrController(
             app=app,
             translate=translate,
             config_path=config_path,
@@ -161,10 +160,58 @@ def main(boot_start_time=None):
             
         ocr_controller.handle_capture_completed(captured_pixmap)
 
-    def on_ocr_hotkey_triggered(screen_pixmap):
-        """OCR screenshot: always run OCR regardless of global toggle state."""
-        ocr_controller.enable_ocr_next_capture()
-        capture_session.request_capture(screen_pixmap)
+    # --- Thumbnail Interaction Handlers ---
+    from .ui.thumbnail import _manager as thumbnail_manager
+
+    def handle_thumbnail_clicked(pil_img):
+        """Thumbnail left-click: trigger OCR."""
+        # Convert PIL Image to QPixmap for the OCR pipeline
+        from PyQt6 import QtGui
+        if pil_img.mode != "RGBA":
+            pil_img = pil_img.convert("RGBA")
+        data = pil_img.tobytes("raw", "RGBA")
+        qimage = QtGui.QImage(
+            data, pil_img.size[0], pil_img.size[1],
+            QtGui.QImage.Format.Format_RGBA8888,
+        ).copy()
+        qpixmap = QtGui.QPixmap.fromImage(qimage)
+        ocr_controller._start_request(qpixmap)
+
+    def handle_open_with_paint(pil_img):
+        """Thumbnail context menu: Open with Paint."""
+        try:
+            temp_path = os.path.join(tempfile.gettempdir(), f"paint_{int(time.time())}.png")
+            pil_img.save(temp_path)
+            subprocess.Popen(["mspaint.exe", temp_path])
+        except Exception:
+            logging.getLogger(__name__).exception("Failed to open image in Paint")
+
+    def handle_save_to_desktop(pil_img):
+        """Thumbnail context menu: Save to Desktop."""
+        try:
+            desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            filename = f"Screenshot_{timestamp}.png"
+            file_path = os.path.join(desktop, filename)
+            pil_img.save(file_path)
+        except Exception:
+            logging.getLogger(__name__).exception("Failed to save image to desktop")
+
+    def handle_thumbnail_save(pil_img):
+        """Thumbnail context menu: Save As..."""
+        try:
+            file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+                None, translate("thumbnail_save_as"), "Screenshot.png", "Images (*.png *.jpg *.bmp)"
+            )
+            if file_path:
+                pil_img.save(file_path)
+        except Exception:
+            logging.getLogger(__name__).exception("Failed to save image")
+
+    thumbnail_manager.clicked.connect(handle_thumbnail_clicked)
+    thumbnail_manager.open_paint.connect(handle_open_with_paint)
+    thumbnail_manager.save_to_desktop.connect(handle_save_to_desktop)
+    thumbnail_manager.save_requested.connect(handle_thumbnail_save)
 
     def handle_taskbar_created():
         logger.info("Windows Explorer taskbar recreated. Restoring system tray icon.")
@@ -185,7 +232,6 @@ def main(boot_start_time=None):
     # Install HotkeyFilter to intercept WM_HOTKEY before Qt window event delivery.
     native_hotkey_filter = HotkeyFilter(
         on_trigger=capture_session.request_capture,
-        on_ocr_trigger=on_ocr_hotkey_triggered,
         on_taskbar_created=handle_taskbar_created,
     )
     app.installNativeEventFilter(native_hotkey_filter)
@@ -213,9 +259,7 @@ def main(boot_start_time=None):
             None,
             open_config_dir,
             app.quit,
-            on_ocr_trigger=on_ocr_hotkey_triggered,
             initial_hotkey=hotkey_name,
-            initial_ocr_hotkey=ocr_hotkey_name,
         )
 
         ocr_controller.tray_icon = tray_icon
@@ -233,17 +277,12 @@ def main(boot_start_time=None):
             hotkey_modifier,
             hotkey_virtual_key,
             hotkey_name,
-            ocr_modifier=ocr_hotkey_modifier,
-            ocr_virtual_key=ocr_hotkey_virtual_key,
-            ocr_name=ocr_hotkey_name,
         )
         hotkey_manager.register_initial()
-        hotkey_manager.register_ocr_initial()
         hotkey_manager.start_watch(app) # Start config-change watcher.
 
         # Set hotkey IDs on the native event filter so it can route WM_HOTKEY events.
         native_hotkey_filter.hotkey_id = hotkey_manager.hotkey_id
-        native_hotkey_filter.ocr_hotkey_id = hotkey_manager.ocr_hotkey_id
 
         # Initialize settings dialog controller.
         try:

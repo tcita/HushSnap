@@ -15,7 +15,6 @@ from .constants import (
     APP_CONFIG_FILENAME,
     APP_STATE_FILENAME,
     DEFAULT_HOTKEY,
-    DEFAULT_OCR_HOTKEY,
     DEFAULT_OCR_FONT_SIZE,
 
     MOD_ALT,
@@ -52,7 +51,6 @@ logger = logging.getLogger(__name__)
 # values the user has already customised.
 _CONFIG_DEFAULTS = {
     "hotkey": DEFAULT_HOTKEY,
-    "ocr_hotkey": DEFAULT_OCR_HOTKEY,
     "language": UI_LANG_AUTO,
     "debug": False,
 }
@@ -332,7 +330,7 @@ def _serialize_config_data(config_data):
     ]
 
     # Define preferred order for core settings for better readability
-    preferred_order = ["hotkey", "ocr_hotkey", "language"]
+    preferred_order = ["hotkey", "language"]
     processed_keys = set()
 
     # 1. Write preferred top-level keys first
@@ -574,43 +572,6 @@ def load_hotkey_setting():
         # Fallback to default system hotkey if parsing fails.
         logger.warning(f"Failed to load hotkey from config, falling back to default: {e}")
         modifier_mask, virtual_key, canonical_hotkey = parse_hotkey(DEFAULT_HOTKEY)
-        return modifier_mask, virtual_key, canonical_hotkey, config_path
-
-
-def read_ocr_hotkey_text_from_config(config_path):
-    """Read OCR screenshot hotkey text from config file."""
-    config_data = _load_config_data(config_path)
-    if not isinstance(config_data, dict):
-        raise ValueError("Config must be a TOML table.")
-    ocr_hotkey_value = config_data.get("ocr_hotkey")
-    if not isinstance(ocr_hotkey_value, str) or not ocr_hotkey_value.strip():
-        return DEFAULT_OCR_HOTKEY
-    return ocr_hotkey_value.strip()
-
-
-def update_ocr_hotkey_in_config(config_path, hotkey_text):
-    """Update and persist the OCR screenshot hotkey in the config file."""
-    config_data = _load_config_data(config_path)
-    config_data["ocr_hotkey"] = hotkey_text
-    try:
-        _write_config_data(config_path, config_data)
-    except Exception as e:
-        logger.error(f"Failed to update OCR hotkey in config: {e}")
-
-
-def load_ocr_hotkey_setting(config_path=None):
-    """Load OCR screenshot hotkey settings, with initialization and fault tolerance."""
-    if config_path is None:
-        config_path = get_config_path()
-    _ensure_default_config_exists(config_path)
-    try:
-        modifier_mask, virtual_key, canonical_hotkey = parse_hotkey(
-            read_ocr_hotkey_text_from_config(config_path)
-        )
-        return modifier_mask, virtual_key, canonical_hotkey, config_path
-    except Exception as e:
-        logger.warning(f"Failed to load OCR hotkey from config, falling back to default: {e}")
-        modifier_mask, virtual_key, canonical_hotkey = parse_hotkey(DEFAULT_OCR_HOTKEY)
         return modifier_mask, virtual_key, canonical_hotkey, config_path
 
 

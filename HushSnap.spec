@@ -61,7 +61,9 @@ def filter_binaries(binaries):
     excluded_dlls = [
         'Qt6Pdf.dll', 'qpdf.dll', 
         'opencv_videoio_ffmpeg', # 27MB, not needed for screenshots
-        'Qt6Qml.dll', 'Qt6Quick.dll', 'Qt6VirtualKeyboard.dll'
+        'Qt6Qml.dll', 'Qt6Quick.dll', 'Qt6VirtualKeyboard.dll',
+        'Qt6Network.dll', # 1.7MB, no network usage
+        'opengl32sw.dll' # 5.5MB, software renderer fallback (most systems have HW)
     ]
     return [b for b in binaries if not any(dll.lower() in b[0].lower() for dll in excluded_dlls)]
 
@@ -78,6 +80,8 @@ def filter_datas(datas):
             if '_infer.onnx' in basename:
                 continue
             if 'ppocrv5_dict' in basename:
+                continue
+            if 'v4' in basename: # Exclude v4 models (using v5)
                 continue
         out.append(d)
     return out
