@@ -14,7 +14,7 @@ MOD_WIN = 0x0008
 # Default activation hotkey
 DEFAULT_HOTKEY = "Alt+Q"
 # OCR screenshot hotkey (always runs OCR regardless of toggle state)
-DEFAULT_OCR_HOTKEY = "Alt+Shift+Q"
+DEFAULT_OCR_HOTKEY = "Alt+Z"
 
 # --- 2. File and system constants ---
 # Config filename (user-editable)

@@ -94,9 +94,8 @@ def test_register_initial_success(mock_register, mock_add_atom, mock_tray, mock_
 
 @patch("ctypes.windll.kernel32.GlobalAddAtomW")
 @patch("ctypes.windll.user32.RegisterHotKey")
-@patch("PyQt6.QtWidgets.QMessageBox.warning")
-def test_register_initial_failure(mock_warning, mock_register, mock_add_atom, mock_tray, mock_translate, dummy_config_path):
-    """Verify that register_initial handles OS conflict properly by raising a QMessageBox warning."""
+def test_register_initial_failure(mock_register, mock_add_atom, mock_tray, mock_translate, dummy_config_path):
+    """Verify that register_initial records conflict without showing a dialog."""
     mock_add_atom.side_effect = [100, 101]
     mock_register.return_value = False  # Simulate conflict
 
@@ -112,8 +111,7 @@ def test_register_initial_failure(mock_warning, mock_register, mock_add_atom, mo
     success = mgr.register_initial()
     assert success is False
     assert mgr.hotkey_registered is False
-    mock_warning.assert_called_once()
-    assert "Alt+A" in mock_warning.call_args[0][2]
+    assert mgr._startup_conflicts == [("main", "Alt+A")]
 
 
 @patch("ctypes.windll.kernel32.GlobalAddAtomW")
@@ -139,6 +137,158 @@ def test_register_ocr_initial_success(mock_register, mock_add_atom, mock_tray, m
     assert success is True
     assert mgr.ocr_hotkey_registered is True
     mock_register.assert_called_once_with(None, 101, 2, 66)
+
+
+@patch("ctypes.windll.kernel32.GlobalAddAtomW")
+@patch("ctypes.windll.user32.RegisterHotKey")
+def test_register_ocr_initial_failure(mock_register, mock_add_atom, mock_tray, mock_translate, dummy_config_path):
+    """Verify that register_ocr_initial records conflict without showing a dialog."""
+    mock_add_atom.side_effect = [100, 101]
+    mock_register.return_value = False  # Simulate conflict
+
+    mgr = HotkeyManager(
+        tray_icon=mock_tray,
+        translate=mock_translate,
+        config_path=dummy_config_path,
+        modifier=1,
+        virtual_key=65,
+        name="Alt+A",
+        ocr_modifier=2,
+        ocr_virtual_key=66,
+        ocr_name="Ctrl+B",
+    )
+
+    success = mgr.register_ocr_initial()
+    assert success is False
+    assert mgr.ocr_hotkey_registered is False
+    assert mgr._startup_conflicts == [("ocr", "Ctrl+B")]
+
+
+@patch("ctypes.windll.kernel32.GlobalAddAtomW")
+@patch("ctypes.windll.user32.RegisterHotKey")
+def test_register_ocr_hotkey_success(mock_register, mock_add_atom, mock_tray, mock_translate, dummy_config_path):
+    """Verify that register_ocr_hotkey (reload helper) works without popup."""
+    mock_add_atom.side_effect = [100, 101]
+    mock_register.return_value = True
+
+    mgr = HotkeyManager(
+        tray_icon=mock_tray,
+        translate=mock_translate,
+        config_path=dummy_config_path,
+        modifier=1,
+        virtual_key=65,
+        name="Alt+A",
+        ocr_modifier=2,
+        ocr_virtual_key=66,
+        ocr_name="Ctrl+B",
+    )
+
+    result = mgr.register_ocr_hotkey(4, 88, "Alt+X")
+    assert result is True
+    assert mgr.ocr_hotkey_registered is True
+    assert mgr.current_ocr_hotkey_modifier == 4
+    assert mgr.current_ocr_hotkey_virtual_key == 88
+    assert mgr.current_ocr_hotkey_name == "Alt+X"
+
+
+@patch("ctypes.windll.kernel32.GlobalAddAtomW")
+@patch("ctypes.windll.user32.RegisterHotKey")
+def test_register_ocr_hotkey_failure_no_popup(mock_register, mock_add_atom, mock_tray, mock_translate, dummy_config_path):
+    """Verify that register_ocr_hotkey returns False on conflict (no popup — for reload)."""
+    mock_add_atom.side_effect = [100, 101]
+    mock_register.return_value = False
+
+    mgr = HotkeyManager(
+        tray_icon=mock_tray,
+        translate=mock_translate,
+        config_path=dummy_config_path,
+        modifier=1,
+        virtual_key=65,
+        name="Alt+A",
+        ocr_modifier=2,
+        ocr_virtual_key=66,
+        ocr_name="Ctrl+B",
+    )
+
+    result = mgr.register_ocr_hotkey(4, 88, "Alt+X")
+    assert result is False
+    assert mgr.ocr_hotkey_registered is False
+
+
+@patch("PyQt6.QtWidgets.QMessageBox.question")
+def test_resolve_startup_conflicts_single_opens_settings(mock_question, mock_tray, mock_translate, dummy_config_path):
+    """Single conflict → user clicks Yes → callback is invoked."""
+    mock_question.return_value = QtWidgets.QMessageBox.StandardButton.Yes
+    callback_called = []
+
+    mgr = HotkeyManager(
+        tray_icon=mock_tray,
+        translate=mock_translate,
+        config_path=dummy_config_path,
+        modifier=1, virtual_key=65, name="Alt+A",
+    )
+    mgr._startup_conflicts = [("main", "Alt+A")]
+
+    mgr.resolve_startup_conflicts(lambda: callback_called.append(True))
+    assert callback_called == [True]
+    mock_question.assert_called_once()
+
+
+@patch("PyQt6.QtWidgets.QMessageBox.question")
+def test_resolve_startup_conflicts_ignores(mock_question, mock_tray, mock_translate, dummy_config_path):
+    """Single conflict → user clicks No → callback is NOT invoked."""
+    mock_question.return_value = QtWidgets.QMessageBox.StandardButton.No
+    callback_called = []
+
+    mgr = HotkeyManager(
+        tray_icon=mock_tray,
+        translate=mock_translate,
+        config_path=dummy_config_path,
+        modifier=1, virtual_key=65, name="Alt+A",
+    )
+    mgr._startup_conflicts = [("main", "Alt+A")]
+
+    mgr.resolve_startup_conflicts(lambda: callback_called.append(True))
+    assert callback_called == []
+    mock_question.assert_called_once()
+
+
+@patch("PyQt6.QtWidgets.QMessageBox.question")
+def test_resolve_startup_conflicts_multiple(mock_question, mock_tray, mock_translate, dummy_config_path):
+    """Multiple conflicts → combined message → callback invoked on Yes."""
+    mock_question.return_value = QtWidgets.QMessageBox.StandardButton.Yes
+    callback_called = []
+
+    mgr = HotkeyManager(
+        tray_icon=mock_tray,
+        translate=mock_translate,
+        config_path=dummy_config_path,
+        modifier=1, virtual_key=65, name="Alt+Q",
+        ocr_modifier=1, ocr_virtual_key=90, ocr_name="Alt+Z",
+    )
+    mgr._startup_conflicts = [("main", "Alt+Q"), ("ocr", "Alt+Z")]
+
+    mgr.resolve_startup_conflicts(lambda: callback_called.append(True))
+    assert callback_called == [True]
+    # Verify the message contains both hotkey names
+    call_args = mock_question.call_args[0]
+    assert "Alt+Q" in call_args[2]
+    assert "Alt+Z" in call_args[2]
+
+
+def test_resolve_startup_conflicts_no_conflicts(mock_tray, mock_translate, dummy_config_path):
+    """No conflicts → no dialog, no callback."""
+    callback_called = []
+
+    mgr = HotkeyManager(
+        tray_icon=mock_tray,
+        translate=mock_translate,
+        config_path=dummy_config_path,
+        modifier=1, virtual_key=65, name="Alt+Q",
+    )
+    # _startup_conflicts is empty by default
+    mgr.resolve_startup_conflicts(lambda: callback_called.append(True))
+    assert callback_called == []
 
 
 @patch("ctypes.windll.kernel32.GlobalAddAtomW")

@@ -122,7 +122,7 @@ def test_default_config_omits_ocr_fields(tmp_path):
     assert "ocr_language" not in config_data
     assert "ocr_engine" not in config_data
     assert config_data["hotkey"] == "Alt+Q"
-    assert config_data["ocr_hotkey"] == "Alt+Shift+Q"
+    assert config_data["ocr_hotkey"] == "Alt+Z"
 
 
 # --- OCR hotkey config tests ---
@@ -173,15 +173,15 @@ def test_load_ocr_hotkey_setting_fallback_on_invalid(tmp_path):
         modifier, vk, name, returned_path = load_ocr_hotkey_setting(config_path)
 
     assert mock_warn.called
-    from hushsnap.constants import DEFAULT_OCR_HOTKEY, MOD_ALT, MOD_SHIFT
-    assert modifier == (MOD_ALT | MOD_SHIFT)
-    assert vk == ord("Q")
+    from hushsnap.constants import DEFAULT_OCR_HOTKEY, MOD_ALT
+    assert modifier == MOD_ALT
+    assert vk == ord("Z")
     assert name == DEFAULT_OCR_HOTKEY
 
 
 def test_update_ocr_hotkey_in_config_writes_to_disk(tmp_path):
     config_path = tmp_path / "hushsnap_config.toml"
-    config_path.write_text('ocr_hotkey = "Alt+Shift+Q"\n', encoding="utf-8")
+    config_path.write_text('ocr_hotkey = "Alt+Z"\n', encoding="utf-8")
 
     update_ocr_hotkey_in_config(config_path, "Ctrl+Shift+K")
 

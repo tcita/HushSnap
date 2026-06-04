@@ -266,7 +266,6 @@ class OcrPopup(QtWidgets.QWidget):
             " font-size: 12px;"
             "}"
             "#ocrCopyBtn:hover { background: #2e7d4f; border-color: #2e7d4f; }"
-            "#ocrCopyBtn[copied=\"true\"] { background: #2a5a3a; border-color: #5fc98a; }"
 
             "#ocrEditBtn {"
             " color: #5fc98a;"
@@ -600,6 +599,30 @@ class OcrPopup(QtWidgets.QWidget):
         return QtGui.QIcon(pixmap)
 
     @staticmethod
+    def _make_success_check_icon():
+        """Green checkmark for copy-success animation (matches theme #5fc98a)."""
+        pixmap = QtGui.QPixmap(24, 24)
+        pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+        p = QtGui.QPainter(pixmap)
+        p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        p.setPen(
+            QtGui.QPen(
+                QtGui.QColor("#5fc98a"),
+                2.2,
+                QtCore.Qt.PenStyle.SolidLine,
+                QtCore.Qt.PenCapStyle.RoundCap,
+                QtCore.Qt.PenJoinStyle.RoundJoin,
+            )
+        )
+        p.drawPolyline([
+            QtCore.QPointF(4, 13),
+            QtCore.QPointF(9, 18),
+            QtCore.QPointF(20, 7),
+        ])
+        p.end()
+        return QtGui.QIcon(pixmap)
+
+    @staticmethod
     def _make_x_icon():
         """X icon for the Cancel button."""
         pixmap = QtGui.QPixmap(24, 24)
@@ -670,17 +693,97 @@ class OcrPopup(QtWidgets.QWidget):
     # ── copy button ──────────────────────────────────────────────────
     def _on_copy_clicked(self):
         self.copy_text()
-        self.copy_btn.setProperty("copied", True)
-        self.copy_btn.style().unpolish(self.copy_btn)
-        self.copy_btn.style().polish(self.copy_btn)
-        QtCore.QTimer.singleShot(
-            1200,
-            lambda: [
-                self.copy_btn.setProperty("copied", False),
-                self.copy_btn.style().unpolish(self.copy_btn),
-                self.copy_btn.style().polish(self.copy_btn),
-            ],
+        self._animate_copy_success()
+
+    def _animate_copy_success(self):
+        """Phase 1: smooth color morph to success state, then swap to checkmark icon."""
+        btn = self.copy_btn
+
+        # Cancel any in-flight animation (prevents double-click glitches)
+        if hasattr(self, "_copy_anim") and self._copy_anim is not None:
+            self._copy_anim.stop()
+            self._copy_anim = None
+        btn.setEnabled(False)
+
+        bg_normal = QtGui.QColor("#1e4a30")
+        bg_success = QtGui.QColor("#2a5a3a")
+        border_normal = QtGui.QColor("#1e4a30")
+        border_success = QtGui.QColor("#5fc98a")
+
+        def _interp(a, b, t):
+            return QtGui.QColor(
+                int(a.red() + (b.red() - a.red()) * t),
+                int(a.green() + (b.green() - a.green()) * t),
+                int(a.blue() + (b.blue() - a.blue()) * t),
+            )
+
+        def _apply(bg, bd):
+            btn.setStyleSheet(
+                f"#ocrCopyBtn {{ background: {bg.name()}; border-color: {bd.name()}; }}"
+            )
+
+        self._copy_anim = QtCore.QVariantAnimation()
+        self._copy_anim.setDuration(250)
+        self._copy_anim.setStartValue(0.0)
+        self._copy_anim.setEndValue(1.0)
+        self._copy_anim.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
+        self._copy_anim.valueChanged.connect(
+            lambda v: _apply(
+                _interp(bg_normal, bg_success, v),
+                _interp(border_normal, border_success, v),
+            )
         )
+
+        def _on_phase1_done():
+            btn.setIcon(self._make_success_check_icon())
+            btn.setIconSize(QtCore.QSize(14, 14))
+            QtCore.QTimer.singleShot(900, self._animate_copy_reverse)
+
+        self._copy_anim.finished.connect(_on_phase1_done)
+        self._copy_anim.start()
+
+    def _animate_copy_reverse(self):
+        """Phase 2: smooth color morph back to normal, restore copy icon."""
+        btn = self.copy_btn
+
+        bg_success = QtGui.QColor("#2a5a3a")
+        bg_normal = QtGui.QColor("#1e4a30")
+        border_success = QtGui.QColor("#5fc98a")
+        border_normal = QtGui.QColor("#1e4a30")
+
+        def _interp(a, b, t):
+            return QtGui.QColor(
+                int(a.red() + (b.red() - a.red()) * t),
+                int(a.green() + (b.green() - a.green()) * t),
+                int(a.blue() + (b.blue() - a.blue()) * t),
+            )
+
+        def _apply(bg, bd):
+            btn.setStyleSheet(
+                f"#ocrCopyBtn {{ background: {bg.name()}; border-color: {bd.name()}; }}"
+            )
+
+        self._copy_anim = QtCore.QVariantAnimation()
+        self._copy_anim.setDuration(350)
+        self._copy_anim.setStartValue(0.0)
+        self._copy_anim.setEndValue(1.0)
+        self._copy_anim.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
+        self._copy_anim.valueChanged.connect(
+            lambda v: _apply(
+                _interp(bg_success, bg_normal, v),
+                _interp(border_success, border_normal, v),
+            )
+        )
+
+        def _on_done():
+            btn.setIcon(self._make_copy_icon())
+            btn.setIconSize(QtCore.QSize(14, 14))
+            btn.setStyleSheet("")  # clear inline style → global QSS takes over
+            btn.setEnabled(True)
+            self._copy_anim = None
+
+        self._copy_anim.finished.connect(_on_done)
+        self._copy_anim.start()
 
     # ── window resize / drag ─────────────────────────────────────────
     def _get_edge(self, pos):
