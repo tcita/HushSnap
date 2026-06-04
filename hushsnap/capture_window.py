@@ -232,9 +232,69 @@ class CaptureWindow(QtWidgets.QWidget):
                 painter.setClipRect(rect)
                 painter.drawPixmap(self.rect(), self.pixmap)
                 painter.restore()
-                # Draw dark orange selection border.
-                painter.setPen(QtGui.QPen(QtGui.QColor("#FF8C00"), 2))
+
+                # --- New Advanced Selection UI ---
+                # 1. Draw Glow/Shadow Effect
+                glow_pen = QtGui.QPen(QtGui.QColor(255, 106, 0, 100), 4)
+                painter.setPen(glow_pen)
                 painter.drawRect(rect)
+
+                # 2. Draw Main Vibrant Border
+                main_pen = QtGui.QPen(QtGui.QColor("#FF6A00"), 1.5)
+                painter.setPen(main_pen)
+                painter.drawRect(rect)
+
+                # 3. Draw Corner Handles (professional look)
+                handle_size = 6
+                painter.setBrush(QtGui.QColor("#FF6A00"))
+                painter.setPen(QtGui.QPen(QtCore.Qt.GlobalColor.white, 1))
+                
+                # Corners: Top-Left, Top-Right, Bottom-Left, Bottom-Right
+                corners = [
+                    rect.topLeft(), rect.topRight(), 
+                    rect.bottomLeft(), rect.bottomRight()
+                ]
+                for pt in corners:
+                    painter.drawRect(QtCore.QRect(
+                        pt.x() - handle_size // 2, 
+                        pt.y() - handle_size // 2, 
+                        handle_size, handle_size
+                    ))
+
+                # 4. Real-time Size Label
+                size_text = f"{rect.width()} x {rect.height()}"
+                font = painter.font()
+                font.setPointSize(9)
+                font.setBold(True)
+                painter.setFont(font)
+                
+                # Calculate label background rect
+                metrics = painter.fontMetrics()
+                text_w = metrics.horizontalAdvance(size_text)
+                text_h = metrics.height()
+                padding_x, padding_y = 6, 2
+                
+                bg_rect = QtCore.QRect(
+                    rect.right() - text_w - padding_x * 2,
+                    rect.bottom() + 5, # Positioned slightly below selection
+                    text_w + padding_x * 2,
+                    text_h + padding_y * 2
+                )
+                
+                # Adjust if label goes off-screen
+                if bg_rect.bottom() > self.height():
+                    bg_rect.moveBottom(rect.bottom() - 5)
+                if bg_rect.left() < 0:
+                    bg_rect.moveLeft(5)
+
+                # Draw Label Background
+                painter.setBrush(QtGui.QColor(0, 0, 0, 180))
+                painter.setPen(QtCore.Qt.PenStyle.NoPen)
+                painter.drawRoundedRect(bg_rect, 4, 4)
+                
+                # Draw Text
+                painter.setPen(QtCore.Qt.GlobalColor.white)
+                painter.drawText(bg_rect, QtCore.Qt.AlignmentFlag.AlignCenter, size_text)
 
     def mousePressEvent(self, event):
         """Mouse press: record start point or close window."""

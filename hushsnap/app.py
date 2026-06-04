@@ -25,6 +25,7 @@ from .ocr_controller import OcrController
 from .system.hotkey_manager import HotkeyManager
 from .ui.settings_dialog import SettingsDialogController
 from .ui.tray import create_tray
+from .ui.thumbnail import show_thumbnail, qpixmap_to_pil
 from .constants import CAPTURE_DEBUG_LOG_FILENAME
 from .logging_config import setup_logging
 from .startup_profiler import StartupProfiler
@@ -150,6 +151,14 @@ def main(boot_start_time=None):
 
     def on_capture_completed(captured_pixmap):
         """Callback after screenshot is copied to clipboard."""
+        # Only show thumbnail if this is NOT an OCR capture to avoid distraction.
+        if not ocr_controller._next_capture_should_ocr:
+            try:
+                pil_img = qpixmap_to_pil(captured_pixmap)
+                show_thumbnail(pil_img)
+            except Exception:
+                logging.getLogger(__name__).exception("Failed to show thumbnail")
+            
         ocr_controller.handle_capture_completed(captured_pixmap)
 
     def on_ocr_hotkey_triggered(screen_pixmap):
