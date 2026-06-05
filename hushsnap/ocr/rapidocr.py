@@ -250,16 +250,42 @@ def release_engine():
 
 def _recognize_without_detection(engine, arr) -> OcrRecognition:
     """Fallback: skip text detection and run recognition on the whole image.
-
-    The RapidOCR engine's detection model has a minimum-area threshold that
-    can reject very small images (e.g. a single word).  When that happens,
-    we feed the entire image directly to the recognizer.
+    
+    Includes automatic content cropping to handle large/padded images where 
+    the text might be too small relative to the canvas for the recognizer's 
+    fixed-height input window.
     """
     from ..constants import OCR_ENGINE_RAPID
+    import cv2
+    import numpy as np
 
     orig_det = engine.use_det
     orig_cls = engine.use_cls
     try:
+        # 1. Smart Content Crop: Find the actual text area to avoid destructive downscaling
+        # Sample background from the top-left corner
+        h, w = arr.shape[:2]
+        gray = cv2.cvtColor(arr, cv2.COLOR_BGR2GRAY)
+        bg_val = int(gray[0, 0])
+        # Find pixels significantly different from background
+        mask = cv2.absdiff(gray, bg_val) > 20
+        coords = np.column_stack(np.where(mask))
+        
+        if coords.size > 0:
+            y0, x0 = coords.min(axis=0)
+            y1, x1 = coords.max(axis=0)
+            # Add a small 2px margin for safety
+            y0, x0 = max(0, y0-2), max(0, x0-2)
+            y1, x1 = min(h-1, y1+2), min(w-1, x1+2)
+            arr = arr[y0:y1+1, x0:x1+1].copy()
+            logger.debug("Fallback: auto-cropped to content area %dx%d", x1-x0, y1-y0)
+
+        # 2. Pre-recognition enhancement: Normalize contrast
+        gray_crop = cv2.cvtColor(arr, cv2.COLOR_BGR2GRAY)
+        min_v, max_v, _, _ = cv2.minMaxLoc(gray_crop)
+        if max_v - min_v < 80:
+            arr = cv2.normalize(arr, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
+
         _acquire_request()
         try:
             rec_result = engine(arr, use_det=False, use_cls=False)
@@ -268,7 +294,7 @@ def _recognize_without_detection(engine, arr) -> OcrRecognition:
 
         txts = getattr(rec_result, "txts", None)
         if not txts or not txts[0] or not txts[0].strip():
-            logger.debug("RapidOCR recognition-only fallback also returned no text")
+            logger.debug("RapidOCR recognition-only fallback returned no text")
             return OcrRecognition(
                 requested_language_supported=True,
                 engine_language_tag="zh-CN",
@@ -278,11 +304,8 @@ def _recognize_without_detection(engine, arr) -> OcrRecognition:
         recognized_text = txts[0].strip()
         logger.debug("RapidOCR recognition-only fallback succeeded: %r", recognized_text)
 
-        h, w = arr.shape[:2]
-        blocks = [{"text": recognized_text, "box": [[0, 0], [w, 0], [w, h], [0, h]]}]
-        text = compose_rapidocr_text(blocks)
         return OcrRecognition(
-            text=text,
+            text=recognized_text,
             requested_language_supported=True,
             engine_language_tag="zh-CN",
             engine_type=OCR_ENGINE_RAPID,
