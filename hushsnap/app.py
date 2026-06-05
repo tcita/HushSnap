@@ -177,14 +177,14 @@ def main(boot_start_time=None):
         qpixmap = QtGui.QPixmap.fromImage(qimage)
         ocr_controller._start_request(qpixmap)
 
-    def handle_open_with_paint(pil_img):
-        """Thumbnail context menu: Open with Paint."""
+    def handle_open_viewer(pil_img):
+        """Thumbnail context menu: Open with default image viewer."""
         try:
-            temp_path = os.path.join(tempfile.gettempdir(), f"paint_{int(time.time())}.png")
+            temp_path = os.path.join(tempfile.gettempdir(), f"view_{int(time.time())}.png")
             pil_img.save(temp_path)
-            subprocess.Popen(["mspaint.exe", temp_path])
+            os.startfile(temp_path)
         except Exception:
-            logging.getLogger(__name__).exception("Failed to open image in Paint")
+            logging.getLogger(__name__).exception("Failed to open image in viewer")
 
     def handle_save_to_desktop(pil_img):
         """Thumbnail context menu: Save to Desktop."""
@@ -215,7 +215,7 @@ def main(boot_start_time=None):
             logging.getLogger(__name__).exception("Failed to save image")
 
     thumbnail_manager.clicked.connect(handle_thumbnail_clicked)
-    thumbnail_manager.open_paint.connect(handle_open_with_paint)
+    thumbnail_manager.open_viewer.connect(handle_open_viewer)
     thumbnail_manager.save_to_desktop.connect(handle_save_to_desktop)
     thumbnail_manager.save_requested.connect(handle_thumbnail_save)
 

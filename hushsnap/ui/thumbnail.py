@@ -18,7 +18,6 @@ from ..constants import (
     THUMBNAIL_CORNER_RADIUS,
     THUMBNAIL_DRAG_OPACITY,
     THUMBNAIL_DRAG_SCALE,
-    CAPTURE_CLICK_THRESHOLD_PX,
 )
 
 logger = logging.getLogger(__name__)
@@ -30,7 +29,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
     """
     # Signals for local handling, Manager will relay these globally
     clicked_signal = QtCore.pyqtSignal()
-    open_paint_signal = QtCore.pyqtSignal()
+    open_viewer_signal = QtCore.pyqtSignal()
     save_to_desktop_signal = QtCore.pyqtSignal()
     save_requested_signal = QtCore.pyqtSignal()
 
@@ -49,6 +48,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
         )
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
+        self.setAcceptDrops(True)
         
         # Shadow padding for custom drop shadow
         self.shadow_padding = 12
@@ -191,18 +191,24 @@ class ThumbnailWindow(QtWidgets.QWidget):
             return
         if not self._drag_start_pos:
             return
-        if (event.position().toPoint() - self._drag_start_pos).manhattanLength() < 5:
+        
+        # Increase drag threshold (15px) to avoid accidental triggers during clicks.
+        if (event.position().toPoint() - self._drag_start_pos).manhattanLength() < 15:
             return
 
         self._start_drag()
 
     def mouseReleaseEvent(self, event):
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
-            if self._drag_start_pos and self.card_rect.contains(self._drag_start_pos):
-                dist = (event.position().toPoint() - self._drag_start_pos).manhattanLength()
-                if dist < CAPTURE_CLICK_THRESHOLD_PX:
-                    self.clicked_signal.emit()
-                    self.close()
+            release_pos = event.position().toPoint()
+            # If the mouse is released inside the thumbnail card, it's a click.
+            # This is more intuitive than checking the exact movement distance.
+            if self.card_rect.contains(release_pos):
+                logger.debug(f"Thumbnail click triggered at {release_pos}")
+                self.clicked_signal.emit()
+                self.close()
+            else:
+                logger.debug(f"Thumbnail release outside card at {release_pos}, click ignored.")
         elif event.button() == QtCore.Qt.MouseButton.RightButton:
             if self.card_rect.contains(event.position().toPoint()):
                 self._show_context_menu(event.globalPosition().toPoint())
@@ -229,7 +235,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
         shadow.setOffset(0, 3)
         menu.setGraphicsEffect(shadow)
 
-        paint_action = menu.addAction(ui_text(lang, "thumbnail_open_with_paint"))
+        view_action = menu.addAction(ui_text(lang, "thumbnail_view_image"))
         desktop_action = menu.addAction(ui_text(lang, "thumbnail_save_to_desktop"))
         save_action = menu.addAction(ui_text(lang, "thumbnail_save_as"))
 
@@ -237,8 +243,8 @@ class ThumbnailWindow(QtWidgets.QWidget):
 
         self._menu_active = False
 
-        if action == paint_action:
-            self.open_paint_signal.emit()
+        if action == view_action:
+            self.open_viewer_signal.emit()
             self.close()
         elif action == desktop_action:
             self.save_to_desktop_signal.emit()
@@ -288,7 +294,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
         drag.setHotSpot(QtCore.QPoint(scaled_w // 2, scaled_h // 2))
 
         # Execute drag
-        drag.exec(QtCore.Qt.DropAction.CopyAction)
+        result = drag.exec(QtCore.Qt.DropAction.CopyAction)
         
         # Cleanup file after a short delay to ensure target app has read it
         def cleanup_temp():
@@ -302,9 +308,51 @@ class ThumbnailWindow(QtWidgets.QWidget):
         # 5 seconds delay is usually safe for OS to finish the copy
         QtCore.QTimer.singleShot(5000, cleanup_temp)
         
-        # Cleanup state
+        # Check if the window was closed during drag (e.g. by external trigger)
+        try:
+            if not self.isVisible():
+                return
+        except RuntimeError:
+            return
+
         self._is_dragging = False
-        self.close()
+        
+        if result == QtCore.Qt.DropAction.IgnoreAction:
+            # Drag was cancelled (released over self or invalid target).
+            cursor_pos = self.mapFromGlobal(QtGui.QCursor.pos())
+            if self.card_rect.contains(cursor_pos):
+                # Case A: Released inside the card.
+                # User might have "shaken" the mouse but stayed within bounds.
+                # Treat as a click per user requirement.
+                logger.debug(f"Thumbnail click triggered after cancelled drag at {cursor_pos}")
+                self.clicked_signal.emit()
+                self.close()
+            else:
+                # Case B: Released outside the card.
+                # Restore state and stay open; timer starts when mouse leaves.
+                self.setWindowOpacity(1.0)
+                self._is_dragging = False
+                self._hovered = False
+                self.close_btn.hide()
+                self.timer.start(THUMBNAIL_DISPLAY_MS)
+                self.update()
+        else:
+            # Successful drag to external target (CopyAction)
+            self.close()
+
+    def dragEnterEvent(self, event):
+        """Accept drag to avoid 'forbidden' cursor sign over self."""
+        if event.mimeData().hasUrls():
+            event.accept()
+
+    def dragMoveEvent(self, event):
+        """Accept drag to avoid 'forbidden' cursor sign over self."""
+        if event.mimeData().hasUrls():
+            event.accept()
+
+    def dropEvent(self, event):
+        """Ignore drops on self to count as 'cancelled' drag."""
+        event.ignore()
 
     def paintEvent(self, event):
         painter = QtGui.QPainter(self)
@@ -362,7 +410,7 @@ class ThumbnailManager(QtCore.QObject):
     
     # Global signals for app integration
     clicked = QtCore.pyqtSignal(object)       # Emits pil_image
-    open_paint = QtCore.pyqtSignal(object)    # Emits pil_image
+    open_viewer = QtCore.pyqtSignal(object)    # Emits pil_image
     save_to_desktop = QtCore.pyqtSignal(object) # Emits pil_image
     save_requested = QtCore.pyqtSignal(object) # Emits pil_image
 
@@ -383,7 +431,7 @@ class ThumbnailManager(QtCore.QObject):
         win = ThumbnailWindow(pil_image)
         # Relay signals through the manager
         win.clicked_signal.connect(lambda: self.clicked.emit(pil_image))
-        win.open_paint_signal.connect(lambda: self.open_paint.emit(pil_image))
+        win.open_viewer_signal.connect(lambda: self.open_viewer.emit(pil_image))
         win.save_to_desktop_signal.connect(lambda: self.save_to_desktop.emit(pil_image))
         win.save_requested_signal.connect(lambda: self.save_requested.emit(pil_image))
         
