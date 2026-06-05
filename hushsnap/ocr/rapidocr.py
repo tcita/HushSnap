@@ -7,7 +7,7 @@ from PyQt6 import QtCore, QtGui
 RapidOCR = None
 OCRVersion = None
 
-from .models import OcrRecognition
+from .models import OcrBox, OcrLine, OcrRecognition, OcrWord
 from .preprocess import OcrPreprocessResult
 from ..system.memory_utils import get_working_set_mb, fmt_memory
 
@@ -30,6 +30,10 @@ def rapidocr_box_to_bbox(box) -> tuple[float, float, float, float]:
     xs = [point[0] for point in points]
     ys = [point[1] for point in points]
     return min(xs), min(ys), max(xs), max(ys)
+
+
+def bbox_to_ocr_box(left: float, top: float, right: float, bottom: float) -> OcrBox:
+    return OcrBox(x=left, y=top, width=max(0.0, right - left), height=max(0.0, bottom - top))
 
 
 def is_cjk_or_fullwidth(character: str) -> bool:
@@ -57,14 +61,24 @@ def word_separator(left: str, right: str) -> str:
     return " "
 
 
-def compose_rapidocr_text(blocks: list[dict]) -> str:
+def compose_rapidocr_structures(blocks: list[dict]) -> list[OcrLine]:
     normalized_blocks = []
+    vertical_aspect_count = 0
+    total_valid = 0
+
     for block in blocks or []:
         text = str(block.get("text", "") or "").strip()
         if not text:
             continue
         left, top, right, bottom = rapidocr_box_to_bbox(block.get("box"))
-        height = max(1.0, bottom - top)
+        w = right - left
+        h = bottom - top
+        
+        # Heuristic: if height is significantly greater than width, it's likely a vertical block.
+        if h > w * 1.4:
+            vertical_aspect_count += 1
+        total_valid += 1
+        
         normalized_blocks.append(
             {
                 "text": text,
@@ -72,47 +86,167 @@ def compose_rapidocr_text(blocks: list[dict]) -> str:
                 "top": top,
                 "right": right,
                 "bottom": bottom,
+                "width": w,
+                "height": h,
+                "center_x": (left + right) / 2,
                 "center_y": (top + bottom) / 2,
-                "height": height,
+                "raw_box": block.get("box"),
             }
         )
 
     if not normalized_blocks:
-        return ""
+        return []
 
-    normalized_blocks.sort(key=lambda item: (item["center_y"], item["left"]))
-    lines: list[list[dict]] = []
-    for block in normalized_blocks:
-        if not lines:
-            lines.append([block])
-            continue
+    # Enhanced vertical layout detection:
+    # 1. Check aspect ratios of individual blocks
+    # 2. Compare vertical alignment vs horizontal neighbor trends using weighted evidence
+    vert_align_count = 0.0
+    horiz_neighbor_count = 0.0
+    sample_blocks = normalized_blocks[:20]
+    for i in range(len(sample_blocks)):
+        for j in range(i + 1, len(sample_blocks)):
+            bi, bj = sample_blocks[i], sample_blocks[j]
+            x_dist = abs(bi["center_x"] - bj["center_x"])
+            y_dist = abs(bi["center_y"] - bj["center_y"])
+            
+            # Potential vertical alignment (same column)
+            if x_dist < min(bi["width"], bj["width"]) * 0.25:
+                avg_h = min(bi["height"], bj["height"])
+                if 0.7 * avg_h < y_dist < 2.0 * avg_h:
+                    vert_align_count += 1.5  # Strong evidence: typical character spacing
+                elif y_dist < 4.0 * avg_h:
+                    vert_align_count += 0.5  # Weak evidence: distant but aligned
+                else:
+                    vert_align_count += 0.1  # Trace evidence: very distant
+            
+            # Potential horizontal neighbor (same line)
+            if y_dist < min(bi["height"], bj["height"]) * 0.3 and x_dist > min(bi["width"], bj["width"]) * 0.5:
+                horiz_neighbor_count += 1.0
 
-        current_line = lines[-1]
-        avg_height = sum(item["height"] for item in current_line) / len(current_line)
-        avg_center_y = sum(item["center_y"] for item in current_line) / len(current_line)
-        if abs(block["center_y"] - avg_center_y) <= max(avg_height, block["height"]) * 0.55:
-            current_line.append(block)
-        else:
-            lines.append([block])
+    # Heuristic: Switch to vertical ONLY if:
+    # - More than half the blocks are tall (classic vertical line boxes)
+    # - OR Vertical alignment is very strong AND overwhelmingly outweighs horizontal connections
+    is_vertical = (vertical_aspect_count / total_valid > 0.5)
+    if not is_vertical:
+        # Very conservative threshold: vertical evidence must be at least 2.5x horizontal 
+        # to overcome the default horizontal bias.
+        is_vertical = (vert_align_count > 5.0) and (vert_align_count > horiz_neighbor_count * 2.5)
 
-    rendered_lines: list[str] = []
-    for line in lines:
-        line.sort(key=lambda item: item["left"])
-        pieces: list[str] = []
-        previous = None
-        for block in line:
-            text = block["text"]
-            if previous is None:
-                pieces.append(text)
+    final_lines: list[OcrLine] = []
+
+    if is_vertical:
+        logger.debug("Vertical layout detected (aspect_score=%d, vert_align=%d, horiz_neigh=%d)", 
+                     vertical_aspect_count, vert_align_count, horiz_neighbor_count)
+        # 1. Sort columns from right to left (CJK standard)
+        normalized_blocks.sort(key=lambda item: (-item["center_x"], item["center_y"]))
+        
+        columns: list[list[dict]] = []
+        for block in normalized_blocks:
+            if not columns:
+                columns.append([block])
+                continue
+
+            last_col = columns[-1]
+            avg_width = sum(item["width"] for item in last_col) / len(last_col)
+            avg_center_x = sum(item["center_x"] for item in last_col) / len(last_col)
+            
+            # Group into the same column if horizontal center is close enough
+            if abs(block["center_x"] - avg_center_x) <= max(avg_width, block["width"]) * 0.7:
+                last_col.append(block)
             else:
-                pieces.append(word_separator(previous["text"], text) + text)
-            previous = block
+                columns.append([block])
 
-        rendered = "".join(pieces).rstrip()
-        if rendered:
-            rendered_lines.append(rendered)
+        for col in columns:
+            col.sort(key=lambda item: item["center_y"])
+            words: list[OcrWord] = []
+            line_text_parts: list[str] = []
+            prev_block = None
+            
+            min_l, min_t, max_r, max_b = float("inf"), float("inf"), float("-inf"), float("-inf")
+            
+            for block in col:
+                text = block["text"]
+                sep = word_separator(prev_block["text"], text) if prev_block else ""
+                if sep:
+                    line_text_parts.append(sep)
+                line_text_parts.append(text)
+                
+                words.append(OcrWord(
+                    text=text,
+                    bounding_box=bbox_to_ocr_box(block["left"], block["top"], block["right"], block["bottom"])
+                ))
+                min_l, min_t = min(min_l, block["left"]), min(min_t, block["top"])
+                max_r, max_b = max(max_r, block["right"]), max(max_b, block["bottom"])
+                prev_block = block
+                
+            final_lines.append(OcrLine(
+                text="".join(line_text_parts).strip(),
+                words=words,
+                bounding_box=bbox_to_ocr_box(min_l, min_t, max_r, max_b)
+            ))
+    else:
+        # Standard horizontal mode: Robust Multi-line Grouping
+        # We sort by center_y first to get a general top-to-bottom flow
+        normalized_blocks.sort(key=lambda item: item["center_y"])
+        
+        line_groups: list[list[dict]] = []
+        for block in normalized_blocks:
+            # Look for an existing line that this block could belong to
+            found_line = False
+            for line in line_groups:
+                # Use the average center_y and height of the line for matching
+                avg_line_y = sum(item["center_y"] for item in line) / len(line)
+                avg_line_h = sum(item["height"] for item in line) / len(line)
+                
+                # If the block's center is within 50% of the line's height
+                if abs(block["center_y"] - avg_line_y) < avg_line_h * 0.5:
+                    line.append(block)
+                    found_line = True
+                    break
+            
+            if not found_line:
+                line_groups.append([block])
 
-    return "\n".join(rendered_lines).strip()
+        # After grouping into lines, sort each line by X-coordinate
+        # and then sort the lines themselves by their average Y-coordinate
+        line_groups.sort(key=lambda line: sum(item["center_y"] for item in line) / len(line))
+
+        for line in line_groups:
+            line.sort(key=lambda item: item["left"])
+            words: list[OcrWord] = []
+            line_text_parts: list[str] = []
+            prev_block = None
+            
+            min_l, min_t, max_r, max_b = float("inf"), float("inf"), float("-inf"), float("-inf")
+
+            for block in line:
+                text = block["text"]
+                sep = word_separator(prev_block["text"], text) if prev_block else ""
+                if sep:
+                    line_text_parts.append(sep)
+                line_text_parts.append(text)
+                
+                words.append(OcrWord(
+                    text=text,
+                    bounding_box=bbox_to_ocr_box(block["left"], block["top"], block["right"], block["bottom"])
+                ))
+                min_l, min_t = min(min_l, block["left"]), min(min_t, block["top"])
+                max_r, max_b = max(max_r, block["right"]), max(max_b, block["bottom"])
+                prev_block = block
+
+            final_lines.append(OcrLine(
+                text="".join(line_text_parts).strip(),
+                words=words,
+                bounding_box=bbox_to_ocr_box(min_l, min_t, max_r, max_b)
+            ))
+
+    return final_lines
+
+
+def compose_rapidocr_text(blocks: list[dict]) -> str:
+    """Compatibility wrapper that returns plain text string."""
+    lines = compose_rapidocr_structures(blocks)
+    return "\n".join(line.text for line in lines).strip()
 
 
 # ── engine singleton ───────────────────────────────────────────────────
@@ -203,6 +337,8 @@ def _get_engine() -> "RapidOCR":
                 _engine = local_RapidOCR(params={
                     "Det.ocr_version": local_OCRVersion.PPOCRV5,
                     "Rec.ocr_version": local_OCRVersion.PPOCRV5,
+                    "Cls.ocr_version": local_OCRVersion.PPOCRV5,
+                    "Global.use_cls": True,
                 })
                 ws_after = get_working_set_mb()
                 logger.debug(
@@ -375,9 +511,12 @@ def recognize_rapidocr_qimage(image_or_result, language_tag: str = "") -> OcrRec
             return _recognize_without_detection(engine, fallback_arr)
 
         blocks = [{"text": item["txt"], "box": item["box"]} for item in json_data]
-        text = compose_rapidocr_text(blocks)
+        lines = compose_rapidocr_structures(blocks)
+        text = "\n".join(line.text for line in lines).strip()
+        
         return OcrRecognition(
             text=text,
+            lines=lines,
             requested_language_supported=True,
             engine_language_tag="zh-CN",
             engine_type=OCR_ENGINE_RAPID,
