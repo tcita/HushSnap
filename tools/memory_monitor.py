@@ -122,7 +122,7 @@ _ACTION_PATTERNS = [
     (re.compile(r"Engine switched: (\S+) -> (\S+)"), lambda m: f"  │ switch {m[1]} -> {m[2]}"),
     (re.compile(r"OCR Completed in ([\d.]+)s"), lambda m: f"  │ ocr done {m[1]}s"),
     (re.compile(r"OCR finished.*Text length: (\d+)"), lambda m: f"  │ ({m[1]} chars)"),
-    (re.compile(r"RapidOCR engine call failed"), lambda m: "  │ ‼ rapidocr crashed"),
+    (re.compile(r"PP-OCR engine call failed"), lambda m: "  │ ‼ ppocr crashed"),
     (re.compile(r"OCR result is empty"), lambda m: "  │ (empty)"),
 ]
 

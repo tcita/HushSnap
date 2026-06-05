@@ -23,7 +23,7 @@ def run_test():
     service = OcrService()
     
     # Custom logger to catch fallback
-    logger = logging.getLogger("hushsnap.ocr.rapidocr")
+    logger = logging.getLogger("hushsnap.ocr.ppocr")
     logger.setLevel(logging.DEBUG)
     
     class CaptureHandler(logging.Handler):

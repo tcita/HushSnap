@@ -88,9 +88,9 @@ if __name__ == "__main__":
     print(f"\n[1/6] Baseline (before any OCR loading):")
     print(f"  {fmt(get_memory_mb())}")
 
-    # Load and warm up RapidOCR
-    print(f"\n[2/6] Loading RapidOCR engine and running one OCR pass...")
-    from hushsnap.ocr.rapidocr import _get_engine, release_engine, recognize_rapidocr_qimage
+    # Load and warm up PP-OCR
+    print(f"\n[2/6] Loading PP-OCR engine and running one OCR pass...")
+    from hushsnap.ocr.ppocr import _get_engine, release_engine, recognize_ppocr_qimage
 
     # Create a test image
     image = QtGui.QImage(200, 100, QtGui.QImage.Format.Format_RGB32)
@@ -101,14 +101,14 @@ if __name__ == "__main__":
     painter.drawText(10, 60, "Hello Test 123")
     painter.end()
 
-    result = recognize_rapidocr_qimage(image)
+    result = recognize_ppocr_qimage(image)
     print(f"  OCR result: '{result.text}'")
     print(f"  {fmt(get_memory_mb())}")
 
     # Run a few more passes to stabilize
     print(f"\n[3/6] Running 5 more OCR passes to stabilize...")
     for i in range(5):
-        recognize_rapidocr_qimage(image)
+        recognize_ppocr_qimage(image)
     print(f"  {fmt(get_memory_mb())}")
 
     # Now release the engine

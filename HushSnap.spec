@@ -17,7 +17,7 @@ a = Analysis(
     hiddenimports=[
 	    'hushsnap',
 	    'hushsnap.ocr',
-	    'hushsnap.ocr.rapidocr',
+	    'hushsnap.ocr.ppocr',
 	    'hushsnap.ocr.recognition',
 	    'hushsnap.ocr.models',
 	    'hushsnap.ocr.preprocess',

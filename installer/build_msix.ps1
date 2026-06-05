@@ -308,20 +308,20 @@ function Invoke-PostPyInstallerValidation {
     $onnxPatterns = @("*onnxruntime*", "*onnxruntime*.dll")
     $onnxFound = Get-ChildItem -Path $DistDir -Recurse -Include $onnxPatterns -ErrorAction SilentlyContinue
     if (-not $onnxFound) {
-        Write-Fail "onnxruntime DLLs not found in dist — RapidOCR will fail at runtime"
+        Write-Fail "onnxruntime DLLs not found in dist — PP-OCR will fail at runtime"
         $errors++
     } else {
         Write-Pass "onnxruntime DLLs present ($($onnxFound.Count) files)"
     }
 
-    # 2.3 ── RapidOCR model files bundled ────────────────────────────
+    # 2.3 ── PP-OCR model files bundled ────────────────────────────
     $modelDir = Join-Path $DistDir "_internal\rapidocr\models"
     $modelFiles = Get-ChildItem -Path $modelDir -Filter "*.onnx" -ErrorAction SilentlyContinue
     if (-not $modelFiles -or $modelFiles.Count -lt 3) {
-        Write-Fail "RapidOCR ONNX model files missing or incomplete in $modelDir (found $($modelFiles.Count))"
+        Write-Fail "PP-OCR ONNX model files missing or incomplete in $modelDir (found $($modelFiles.Count))"
         $errors++
     } else {
-        Write-Pass "RapidOCR model files present ($($modelFiles.Count) .onnx files)"
+        Write-Pass "PP-OCR model files present ($($modelFiles.Count) .onnx files)"
     }
 
     # 2.4 ── No .py source files leaked into dist root ───────────────

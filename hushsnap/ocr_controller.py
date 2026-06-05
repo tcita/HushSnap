@@ -9,8 +9,8 @@ from .config import (
     update_ocr_pinned,
 )
 from .constants import (
-    OCR_ENGINE_RAPID,
-    OCR_RAPID_IDLE_RELEASE_MS,
+    OCR_ENGINE_PPOCR,
+    OCR_PPOCR_IDLE_RELEASE_MS,
     TRAY_MSG_MEDIUM_MS,
     TRAY_NOTIFICATIONS_ENABLED,
 )
@@ -47,7 +47,7 @@ class OcrController:
         self._next_capture_should_ocr = False
         self._expecting_ocr_result = False
 
-        self._current_engine = OCR_ENGINE_RAPID
+        self._current_engine = OCR_ENGINE_PPOCR
 
         self.bridge.signal.connect(self.on_ocr_finished)
         self.bridge.warmup_finished.connect(self._schedule_post_warmup_trim)
@@ -61,9 +61,9 @@ class OcrController:
         self._trim_timer.setSingleShot(True)
         self._trim_timer.timeout.connect(self._trim_current_engine)
 
-        self._rapid_release_timer = QtCore.QTimer()
-        self._rapid_release_timer.setSingleShot(True)
-        self._rapid_release_timer.timeout.connect(self._release_idle_rapidocr)
+        self._ppocr_release_timer = QtCore.QTimer()
+        self._ppocr_release_timer.setSingleShot(True)
+        self._ppocr_release_timer.timeout.connect(self._release_idle_ppocr)
 
         # Warm up as soon as the event loop starts so the engine is ready
         # before the user's first OCR call. Warmup runs on a background
@@ -104,23 +104,23 @@ class OcrController:
                 "[_trim_current_engine] Trim failed: %s. %s", exc, fmt_memory(),
             )
 
-    def _release_idle_rapidocr(self):
+    def _release_idle_ppocr(self):
         """Release RapidOCR after a longer idle period for low-footprint tray usage."""
         ws_before = get_working_set_mb()
         logging.info(
-            "[_release_idle_rapidocr] RapidOCR idle (5m). Releasing engine. %s",
+            "[_release_idle_ppocr] RapidOCR idle (5m). Releasing engine. %s",
             fmt_memory(),
         )
         try:
-            release_engine(OCR_ENGINE_RAPID)
+            release_engine(OCR_ENGINE_PPOCR)
             ws_after = get_working_set_mb()
             logging.debug(
-                "[_release_idle_rapidocr] Release done. %s (delta=%.1f MB)",
+                "[_release_idle_ppocr] Release done. %s (delta=%.1f MB)",
                 fmt_memory(), ws_after - ws_before,
             )
         except Exception as exc:
             logging.getLogger(__name__).exception(
-                "[_release_idle_rapidocr] Release failed: %s. %s", exc, fmt_memory(),
+                "[_release_idle_ppocr] Release failed: %s. %s", exc, fmt_memory(),
             )
 
     def _handle_pin_toggled(self, pinned):
@@ -151,7 +151,7 @@ class OcrController:
     def on_ocr_finished(self, response):
         self._trim_timer.start(30000)
         engine_name = response.recognition.engine_type if response.recognition else "unknown"
-        self._rapid_release_timer.start(OCR_RAPID_IDLE_RELEASE_MS)
+        self._ppocr_release_timer.start(OCR_PPOCR_IDLE_RELEASE_MS)
         error_part = f", Error: {response.error}" if response.error else ""
         logging.info(
             "[on_ocr_finished] engine=%s, text_len=%d%s. %s",
@@ -203,11 +203,11 @@ class OcrController:
 
     def _start_request(self, pixmap):
         self._trim_timer.stop()
-        self._rapid_release_timer.stop()
+        self._ppocr_release_timer.stop()
         self._expecting_ocr_result = True
         debug_dir = self.user_data_dir if self.save_debug_image else None
 
-        logging.info("[_start_request] engine=%s. %s", OCR_ENGINE_RAPID, fmt_memory())
+        logging.info("[_start_request] engine=%s. %s", OCR_ENGINE_PPOCR, fmt_memory())
 
         # Show "Recognizing…" immediately so the user knows a new OCR pass
         # is in progress — replaces any stale text from a previous result.
@@ -223,7 +223,7 @@ class OcrController:
         request = OcrRequest(
             pixmap=image,
             language_tag="",
-            engine=OCR_ENGINE_RAPID,
+            engine=OCR_ENGINE_PPOCR,
             debug_dir=debug_dir,
         )
         self.service.recognize_async(

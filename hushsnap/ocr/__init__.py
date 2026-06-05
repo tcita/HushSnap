@@ -5,7 +5,7 @@ from .preprocess import (
     OcrPreprocessSettings,
     OcrPreprocessStep,
 )
-from . import rapidocr  # noqa: F401  # triggers engine self-registration (must precede recognition to be default)
+from . import ppocr  # noqa: F401  # triggers engine self-registration (must precede recognition to be default)
 
 from .ocr_service import OcrService
 from .text import OcrTextAdapter, compose_text_from_result, select_text_adapter

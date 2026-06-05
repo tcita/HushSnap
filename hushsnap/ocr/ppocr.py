@@ -3,9 +3,9 @@ import statistics
 import threading
 import time
 
-# Defer rapidocr import to optimize application startup time
+# Defer ppocr library import to optimize application startup time
 from PyQt6 import QtCore, QtGui
-RapidOCR = None
+PPOCR = None
 OCRVersion = None
 
 from .models import OcrBox, OcrLine, OcrRecognition, OcrWord
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # ── pure functions ────────────────────────────────────────────────────
 
-def rapidocr_box_to_bbox(box) -> tuple[float, float, float, float]:
+def ppocr_box_to_bbox(box) -> tuple[float, float, float, float]:
     if not isinstance(box, list) or not box:
         return 0.0, 0.0, 0.0, 0.0
 
@@ -86,18 +86,18 @@ _MIN_GAP_PX = 2.0
 
 
 def _normalize_blocks(blocks: list[dict]) -> list[dict]:
-    """Convert raw RapidOCR blocks to internal representation; filter junk.
+    """Convert raw PP-OCR detection blocks to internal representation; filter junk.
 
     Blocks without a valid bounding box get a minimal placeholder so their
-    text is preserved in the output (RapidOCR may occasionally return text
-    without proper box coordinates in edge cases).
+    text is preserved in the output (the detector may occasionally return
+    text without proper box coordinates in edge cases).
     """
     normalized: list[dict] = []
     for block in (blocks or []):
         text = str(block.get("text", "") or "").strip()
         if not text:
             continue
-        left, top, right, bottom = rapidocr_box_to_bbox(block.get("box"))
+        left, top, right, bottom = ppocr_box_to_bbox(block.get("box"))
         w = right - left
         h = bottom - top
         if w <= 0 or h <= 0:
@@ -338,6 +338,27 @@ def _build_lines_from_ordered_blocks(
     return result
 
 
+def _starts_list_marker(text: str) -> bool:
+    """Check if *text* starts with a numbered / bulleted / dashed list marker."""
+    t = text.lstrip()
+    if not t:
+        return False
+    # Numbered: "1.", "1．", "1)", "1、", "12."
+    if t[0].isdigit():
+        i = 1
+        while i < len(t) and i < 3 and t[i].isdigit():
+            i += 1
+        if i < len(t) and t[i] in '.．)、、':
+            return True
+    # Bullet: ■ ● ○ • ▪ ▸ ►
+    if t[0] in '■●○•▪▸►':
+        return True
+    # Dash list marker: "- " or "– " or "— " (but not "--")
+    if t[0] in '–—-' and len(t) > 1 and t[1] not in '–—-':
+        return True
+    return False
+
+
 def _merge_lines_to_paragraphs(lines: list[OcrLine]) -> list[OcrLine]:
     """Merge consecutive lines into paragraphs using layout + text signals.
 
@@ -347,6 +368,7 @@ def _merge_lines_to_paragraphs(lines: list[OcrLine]) -> list[OcrLine]:
       - Short previous line                  → likely paragraph end
 
     Text signals:
+      - Line starts with list marker         → new paragraph (list item)
       - Line ends with '-'                   → merge (hyphenated word)
       - Line ends with 。or .                → paragraph boundary
       - Open-ended line + next starts lower  → same sentence, merge
@@ -372,6 +394,7 @@ def _merge_lines_to_paragraphs(lines: list[OcrLine]) -> list[OcrLine]:
         curr_text = curr.text.strip()
 
         # ── text signals ─────────────────────────────────────────────
+        starts_list = _starts_list_marker(curr_text)
         hyphen_merge = prev_text.endswith("-")
         period_end = prev_text.endswith(("。", ".", "！", "？", "!", "?"))
         ends_open = prev_text and prev_text[-1] not in "。.！？!?,;；:："
@@ -396,6 +419,10 @@ def _merge_lines_to_paragraphs(lines: list[OcrLine]) -> list[OcrLine]:
         # ── merge decision ───────────────────────────────────────────
         if hyphen_merge and not large_gap:
             para_lines.append(curr)
+        elif starts_list:
+            # List item → start a new paragraph
+            merged.append(_flush_paragraph(para_lines))
+            para_lines = [curr]
         elif period_end and gap > med_h * 0.7:
             merged.append(_flush_paragraph(para_lines))
             para_lines = [curr]
@@ -456,8 +483,8 @@ def _is_heading(
 # ── public API ────────────────────────────────────────────────────────────
 
 
-def compose_rapidocr_structures(blocks: list[dict]) -> list[OcrLine]:
-    """Convert RapidOCR word/character detection blocks into ordered OcrLines.
+def compose_ppocr_structures(blocks: list[dict]) -> list[OcrLine]:
+    """Convert PP-OCR word/character detection blocks into ordered OcrLines.
 
     Pipeline::
 
@@ -536,9 +563,9 @@ def _flush_paragraph(lines: list[OcrLine]) -> OcrLine:
     )
 
 
-def compose_rapidocr_text(blocks: list[dict]) -> str:
+def compose_ppocr_text(blocks: list[dict]) -> str:
     """Compatibility wrapper that returns plain text string."""
-    lines = compose_rapidocr_structures(blocks)
+    lines = compose_ppocr_structures(blocks)
     return "\n".join(line.text for line in lines).strip()
 
 
@@ -555,12 +582,12 @@ def _trim_working_set():
     import gc
 
     before_mb = get_working_set_mb()
-    logger.debug("[RapidOCR] _trim_working_set: before GC  %s", fmt_memory())
+    logger.debug("[PPOCR] _trim_working_set: before GC  %s", fmt_memory())
 
     gc.collect()
 
     after_gc_mb = get_working_set_mb()
-    logger.debug("[RapidOCR] _trim_working_set: after  GC  %s (delta=%.1f MB)",
+    logger.debug("[PPOCR] _trim_working_set: after  GC  %s (delta=%.1f MB)",
                  fmt_memory(), after_gc_mb - before_mb)
 
     try:
@@ -578,20 +605,20 @@ def _trim_working_set():
             ]
             kernel32.SetProcessWorkingSetSize.restype = ctypes.c_int
 
-        logger.debug("[RapidOCR] Calling SetProcessWorkingSetSize(-1, -1)...")
+        logger.debug("[PPOCR] Calling SetProcessWorkingSetSize(-1, -1)...")
         res = kernel32.SetProcessWorkingSetSize(kernel32.GetCurrentProcess(), -1, -1)
 
         after_mb = get_working_set_mb()
         if res != 0:
-            logger.debug("[RapidOCR] _trim_working_set: after  trim %s (delta=%.1f MB)",
+            logger.debug("[PPOCR] _trim_working_set: after  trim %s (delta=%.1f MB)",
                          fmt_memory(), after_mb - after_gc_mb)
         else:
             logger.warning(
-                "[RapidOCR] SetProcessWorkingSetSize failed, err=%d. %s",
+                "[PPOCR] SetProcessWorkingSetSize failed, err=%d. %s",
                 ctypes.get_last_error(), fmt_memory(),
             )
     except Exception as exc:
-        logger.error("[RapidOCR] _trim_working_set failed: %s", exc, exc_info=True)
+        logger.error("[PPOCR] _trim_working_set failed: %s", exc, exc_info=True)
 
 
 def _acquire_request():
@@ -607,27 +634,27 @@ def _release_request():
         _active_requests_cv.notify_all()
 
 
-def _get_engine() -> "RapidOCR":
+def _get_engine() -> "PPOCR":
     global _engine
     if _engine is None:
-        logger.debug("[RapidOCR] _get_engine: Initializing new engine instance...")
+        logger.debug("[PPOCR] _get_engine: Initializing new engine instance...")
         with _engine_lock:
             if _engine is None:
-                global RapidOCR, OCRVersion
-                if RapidOCR is not None:
-                    local_RapidOCR = RapidOCR
+                global PPOCR, OCRVersion
+                if PPOCR is not None:
+                    local_ppocr = PPOCR
                 else:
-                    logger.debug("[RapidOCR] Importing RapidOCR...")
-                    from rapidocr import RapidOCR as local_RapidOCR
+                    logger.debug("[PPOCR] Importing PP-OCR library...")
+                    from rapidocr import RapidOCR as local_ppocr
                 if OCRVersion is not None:
                     local_OCRVersion = OCRVersion
                 else:
-                    logger.debug("[RapidOCR] Importing OCRVersion...")
+                    logger.debug("[PPOCR] Importing OCRVersion...")
                     from rapidocr import OCRVersion as local_OCRVersion
                 
                 ws_before = get_working_set_mb()
-                logging.info("[RapidOCR] Initializing engine singleton (models loading)...")
-                _engine = local_RapidOCR(params={
+                logging.info("[PPOCR] Initializing engine singleton (models loading)...")
+                _engine = local_ppocr(params={
                     "Det.ocr_version": local_OCRVersion.PPOCRV5,
                     "Rec.ocr_version": local_OCRVersion.PPOCRV5,
                     "Cls.ocr_version": local_OCRVersion.PPOCRV5,
@@ -635,14 +662,14 @@ def _get_engine() -> "RapidOCR":
                 })
                 ws_after = get_working_set_mb()
                 logger.debug(
-                    "[RapidOCR] Engine created. %s (delta=%.1f MB)",
+                    "[PPOCR] Engine created. %s (delta=%.1f MB)",
                     fmt_memory(), ws_after - ws_before,
                 )
     return _engine
 
 
 def release_engine():
-    """Release the RapidOCR engine singleton to free memory.
+    """Release the PP-OCR engine singleton to free memory.
 
     Waits for in-flight requests, tears down ONNX sessions, then forces
     garbage collection and a working-set trim. The engine is lazily
@@ -651,7 +678,7 @@ def release_engine():
     global _engine
 
     ws_entry = get_working_set_mb()
-    logger.debug("[RapidOCR] release_engine: entry  %s", fmt_memory())
+    logger.debug("[PPOCR] release_engine: entry  %s", fmt_memory())
 
     with _active_requests_cv:
         while _active_requests > 0:
@@ -659,19 +686,19 @@ def release_engine():
 
         with _engine_lock:
             if _engine is None:
-                logger.debug("[RapidOCR] release_engine: engine already None, skipping")
+                logger.debug("[PPOCR] release_engine: engine already None, skipping")
                 return
             # Let CPython's reference counting clean up ONNX sessions naturally
             _engine = None
 
     ws_before_trim = get_working_set_mb()
-    logger.debug("[RapidOCR] release_engine: after del, before trim  %s (delta from entry=%.1f MB)",
+    logger.debug("[PPOCR] release_engine: after del, before trim  %s (delta from entry=%.1f MB)",
                  fmt_memory(), ws_before_trim - ws_entry)
 
     _trim_working_set()
 
     ws_exit = get_working_set_mb()
-    logger.debug("[RapidOCR] release_engine: exit  %s (total delta=%.1f MB)",
+    logger.debug("[PPOCR] release_engine: exit  %s (total delta=%.1f MB)",
                  fmt_memory(), ws_exit - ws_entry)
 
 
@@ -684,7 +711,7 @@ def _recognize_without_detection(engine, arr) -> OcrRecognition:
     the text might be too small relative to the canvas for the recognizer's 
     fixed-height input window.
     """
-    from ..constants import OCR_ENGINE_RAPID
+    from ..constants import OCR_ENGINE_PPOCR
     import cv2
     import numpy as np
 
@@ -723,30 +750,30 @@ def _recognize_without_detection(engine, arr) -> OcrRecognition:
 
         txts = getattr(rec_result, "txts", None)
         if not txts or not txts[0] or not txts[0].strip():
-            logger.debug("RapidOCR recognition-only fallback returned no text")
+            logger.debug("PP-OCR recognition-only fallback returned no text")
             return OcrRecognition(
                 requested_language_supported=True,
                 engine_language_tag="zh-CN",
-                engine_type=OCR_ENGINE_RAPID,
+                engine_type=OCR_ENGINE_PPOCR,
             )
 
         recognized_text = txts[0].strip()
-        logger.debug("RapidOCR recognition-only fallback succeeded: %r", recognized_text)
+        logger.debug("PP-OCR recognition-only fallback succeeded: %r", recognized_text)
 
         return OcrRecognition(
             text=recognized_text,
             requested_language_supported=True,
             engine_language_tag="zh-CN",
-            engine_type=OCR_ENGINE_RAPID,
+            engine_type=OCR_ENGINE_PPOCR,
         )
     finally:
         engine.use_det = orig_det
         engine.use_cls = orig_cls
 
 
-def recognize_rapidocr_qimage(image_or_result, language_tag: str = "") -> OcrRecognition:
+def recognize_ppocr_qimage(image_or_result, language_tag: str = "") -> OcrRecognition:
     from .preprocess import OcrPreprocessResult
-    from ..constants import OCR_ENGINE_RAPID
+    from ..constants import OCR_ENGINE_PPOCR
 
     if isinstance(image_or_result, OcrPreprocessResult):
         image = image_or_result.image
@@ -761,7 +788,7 @@ def recognize_rapidocr_qimage(image_or_result, language_tag: str = "") -> OcrRec
         original_size = image.size()
 
     if image.isNull():
-        return OcrRecognition(engine_type=OCR_ENGINE_RAPID)
+        return OcrRecognition(engine_type=OCR_ENGINE_PPOCR)
 
     result = None
     try:
@@ -783,7 +810,7 @@ def recognize_rapidocr_qimage(image_or_result, language_tag: str = "") -> OcrRec
             _release_request()
 
         if not json_data:
-            logger.debug("RapidOCR detection returned empty — falling back to recognition-only")
+            logger.debug("PP-OCR detection returned empty — falling back to recognition-only")
             
             # Smart Fallback: If image was padded, crop back to original size for the recognizer.
             # Rationale: The recognition model (CRNN) uses a fixed input height (typically 48px).
@@ -804,7 +831,7 @@ def recognize_rapidocr_qimage(image_or_result, language_tag: str = "") -> OcrRec
             return _recognize_without_detection(engine, fallback_arr)
 
         blocks = [{"text": item["txt"], "box": item["box"]} for item in json_data]
-        lines = compose_rapidocr_structures(blocks)
+        lines = compose_ppocr_structures(blocks)
         text = "\n".join(line.text for line in lines).strip()
         
         return OcrRecognition(
@@ -812,19 +839,19 @@ def recognize_rapidocr_qimage(image_or_result, language_tag: str = "") -> OcrRec
             lines=lines,
             requested_language_supported=True,
             engine_language_tag="zh-CN",
-            engine_type=OCR_ENGINE_RAPID,
+            engine_type=OCR_ENGINE_PPOCR,
         )
     except Exception:
-        logger.exception("RapidOCR engine call failed")
-        return OcrRecognition(engine_type=OCR_ENGINE_RAPID)
+        logger.exception("PP-OCR engine call failed")
+        return OcrRecognition(engine_type=OCR_ENGINE_PPOCR)
 
 
 
-def recognize_rapidocr_result_from_pixmap(
+def recognize_ppocr_result_from_pixmap(
     image_or_result,
     language_tag: str = "",
 ) -> OcrRecognition:
-    """RapidOCR engine entry point. Receives a preprocessed QImage or OcrPreprocessResult."""
+    """PP-OCR engine entry point. Receives a preprocessed QImage or OcrPreprocessResult."""
     if isinstance(image_or_result, QtGui.QImage):
         if image_or_result.isNull():
             return OcrRecognition()
@@ -832,37 +859,37 @@ def recognize_rapidocr_result_from_pixmap(
         if image_or_result.image.isNull():
             return OcrRecognition()
 
-    return recognize_rapidocr_qimage(image_or_result, language_tag=language_tag)
+    return recognize_ppocr_qimage(image_or_result, language_tag=language_tag)
 
 
-def warmup_rapidocr():
-    """Pre-initialize the RapidOCR singleton to avoid cold-start latency."""
+def warmup_ppocr():
+    """Pre-initialize the PP-OCR engine singleton to avoid cold-start latency."""
     ws_before = get_working_set_mb()
     t0 = time.perf_counter()
-    logger.debug("[RapidOCR] warmup_rapidocr: start  %s", fmt_memory())
+    logger.debug("[PPOCR] warmup_ppocr: start  %s", fmt_memory())
     try:
         _get_engine()
         elapsed = (time.perf_counter() - t0) * 1000
         ws_after = get_working_set_mb()
         logger.debug(
-            "[RapidOCR] warmup_rapidocr: done  %s (delta=%.1f MB, took %.1fms)",
+            "[PPOCR] warmup_ppocr: done  %s (delta=%.1f MB, took %.1fms)",
             fmt_memory(), ws_after - ws_before, elapsed,
         )
     except Exception:
-        logger.exception("RapidOCR engine warmup failed")
+        logger.exception("PP-OCR engine warmup failed")
 
 
-# Register RapidOCR engine
+# Register PP-OCR engine
 from .engine import register_engine  # noqa: E402
-from ..constants import OCR_ENGINE_RAPID  # noqa: E402
+from ..constants import OCR_ENGINE_PPOCR  # noqa: E402
 register_engine(
-    OCR_ENGINE_RAPID,
-    recognize=recognize_rapidocr_result_from_pixmap,
+    OCR_ENGINE_PPOCR,
+    recognize=recognize_ppocr_result_from_pixmap,
     release=release_engine,
     trim=_trim_working_set,
-    warmup=warmup_rapidocr,
+    warmup=warmup_ppocr,
     metadata={
-        "display_name": "RapidOCR",
+        "display_name": "PP-OCR",
         "error_prefixes": [],
     },
 )

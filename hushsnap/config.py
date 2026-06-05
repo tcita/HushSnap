@@ -21,7 +21,7 @@ from .constants import (
     MOD_CONTROL,
     MOD_SHIFT,
     MOD_WIN,
-    OCR_ENGINE_RAPID,
+    OCR_ENGINE_PPOCR,
 )
 from .translations import (
     UI_LANG_AUTO,
@@ -426,7 +426,7 @@ def _write_state_data(state_data, state_path=None):
     """Write state data to disk as a minimal TOML file (no comments, not user-editable)."""
     if state_path is None:
         state_path = STATE_PATH
-    engine = _normalize_ocr_engine(state_data.get("ocr_engine")) or OCR_ENGINE_RAPID
+    engine = _normalize_ocr_engine(state_data.get("ocr_engine")) or OCR_ENGINE_PPOCR
     font_size = state_data.get("ocr_font_size", DEFAULT_OCR_FONT_SIZE)
     if not isinstance(font_size, int):
         font_size = DEFAULT_OCR_FONT_SIZE
@@ -449,7 +449,7 @@ def _ensure_default_state_exists(state_path=None):
     if state_path.exists():
         return
     try:
-        _write_state_data({"ocr_engine": OCR_ENGINE_RAPID, "ocr_font_size": DEFAULT_OCR_FONT_SIZE, "ocr_pinned": False}, state_path)
+        _write_state_data({"ocr_engine": OCR_ENGINE_PPOCR, "ocr_font_size": DEFAULT_OCR_FONT_SIZE, "ocr_pinned": False}, state_path)
     except Exception as e:
         logger.debug(f"Failed to ensure default state exists at {state_path}: {e}")
 
@@ -541,7 +541,7 @@ def get_ocr_engine(state_path=None, config_path=None):
     engine = _normalize_ocr_engine(state_data.get("ocr_engine"))
     if engine:
         return engine
-    return OCR_ENGINE_RAPID
+    return OCR_ENGINE_PPOCR
 
 
 def update_ocr_engine(engine, state_path=None):
@@ -551,7 +551,7 @@ def update_ocr_engine(engine, state_path=None):
     _ensure_default_state_exists(state_path)
     try:
         state_data = _load_state_data(state_path)
-        state_data["ocr_engine"] = _normalize_ocr_engine(engine) or OCR_ENGINE_RAPID
+        state_data["ocr_engine"] = _normalize_ocr_engine(engine) or OCR_ENGINE_PPOCR
         _write_state_data(state_data, state_path)
     except Exception as e:
         logger.error(f"Failed to update OCR engine in state: {e}")
@@ -701,8 +701,8 @@ def _normalize_ocr_engine(raw_value):
         return None
 
     normalized = raw_value.strip().lower().replace("-", "").replace("_", "")
-    if normalized in {"rapidocr", "rapid"}:
-        return OCR_ENGINE_RAPID
+    if normalized in {"ppocr"}:
+        return OCR_ENGINE_PPOCR
     return None
 
 

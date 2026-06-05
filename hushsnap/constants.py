@@ -38,9 +38,9 @@ TRAY_MSG_LONG_MS = 4000
 # Disable tray balloon notifications entirely to avoid Windows notification sounds.
 TRAY_NOTIFICATIONS_ENABLED = False
 # OCR engine identifier.
-OCR_ENGINE_RAPID = "rapidocr"
-# Release RapidOCR model after 5 minutes of OCR inactivity.
-OCR_RAPID_IDLE_RELEASE_MS = 5 * 60 * 1000
+OCR_ENGINE_PPOCR = "ppocr"
+# Release PP-OCR model after 5 minutes of OCR inactivity.
+OCR_PPOCR_IDLE_RELEASE_MS = 5 * 60 * 1000
 # Default OCR result text font size (px)
 DEFAULT_OCR_FONT_SIZE = 16
 # Small topmost audit delay in debug mode

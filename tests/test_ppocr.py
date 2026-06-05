@@ -5,14 +5,14 @@ import numpy as np
 import pytest
 from PyQt6 import QtCore, QtGui, QtWidgets
 
-from hushsnap.constants import OCR_ENGINE_RAPID
-from hushsnap.ocr.rapidocr import (
+from hushsnap.constants import OCR_ENGINE_PPOCR
+from hushsnap.ocr.ppocr import (
     _get_engine,
-    compose_rapidocr_text,
+    compose_ppocr_text,
     is_cjk_or_fullwidth,
-    rapidocr_box_to_bbox,
-    recognize_rapidocr_qimage,
-    recognize_rapidocr_result_from_pixmap,
+    ppocr_box_to_bbox,
+    recognize_ppocr_qimage,
+    recognize_ppocr_result_from_pixmap,
     word_separator,
 )
 
@@ -25,36 +25,36 @@ def qapp():
     return app
 
 
-# ── rapidocr_box_to_bbox ──────────────────────────────────────────────
+# ── ppocr_box_to_bbox ──────────────────────────────────────────────
 
-def test_rapidocr_box_to_bbox_four_points():
+def test_ppocr_box_to_bbox_four_points():
     box = [[10, 20], [100, 20], [100, 60], [10, 60]]
-    assert rapidocr_box_to_bbox(box) == (10.0, 20.0, 100.0, 60.0)
+    assert ppocr_box_to_bbox(box) == (10.0, 20.0, 100.0, 60.0)
 
 
-def test_rapidocr_box_to_bbox_empty_list():
-    assert rapidocr_box_to_bbox([]) == (0.0, 0.0, 0.0, 0.0)
+def test_ppocr_box_to_bbox_empty_list():
+    assert ppocr_box_to_bbox([]) == (0.0, 0.0, 0.0, 0.0)
 
 
-def test_rapidocr_box_to_bbox_not_a_list():
-    assert rapidocr_box_to_bbox(None) == (0.0, 0.0, 0.0, 0.0)
-    assert rapidocr_box_to_bbox("string") == (0.0, 0.0, 0.0, 0.0)
-    assert rapidocr_box_to_bbox({}) == (0.0, 0.0, 0.0, 0.0)
+def test_ppocr_box_to_bbox_not_a_list():
+    assert ppocr_box_to_bbox(None) == (0.0, 0.0, 0.0, 0.0)
+    assert ppocr_box_to_bbox("string") == (0.0, 0.0, 0.0, 0.0)
+    assert ppocr_box_to_bbox({}) == (0.0, 0.0, 0.0, 0.0)
 
 
-def test_rapidocr_box_to_bbox_malformed_points():
-    assert rapidocr_box_to_bbox([[]]) == (0.0, 0.0, 0.0, 0.0)
-    assert rapidocr_box_to_bbox([["x"]]) == (0.0, 0.0, 0.0, 0.0)
-    assert rapidocr_box_to_bbox([[1]]) == (0.0, 0.0, 0.0, 0.0)
+def test_ppocr_box_to_bbox_malformed_points():
+    assert ppocr_box_to_bbox([[]]) == (0.0, 0.0, 0.0, 0.0)
+    assert ppocr_box_to_bbox([["x"]]) == (0.0, 0.0, 0.0, 0.0)
+    assert ppocr_box_to_bbox([[1]]) == (0.0, 0.0, 0.0, 0.0)
 
 
-def test_rapidocr_box_to_bbox_single_point():
-    assert rapidocr_box_to_bbox([[5, 7]]) == (5.0, 7.0, 5.0, 7.0)
+def test_ppocr_box_to_bbox_single_point():
+    assert ppocr_box_to_bbox([[5, 7]]) == (5.0, 7.0, 5.0, 7.0)
 
 
-def test_rapidocr_box_to_bbox_tuple_points():
+def test_ppocr_box_to_bbox_tuple_points():
     box = [(0, 0), (50, 0), (50, 30), (0, 30)]
-    assert rapidocr_box_to_bbox(box) == (0.0, 0.0, 50.0, 30.0)
+    assert ppocr_box_to_bbox(box) == (0.0, 0.0, 50.0, 30.0)
 
 
 # ── is_cjk_or_fullwidth ───────────────────────────────────────────────
@@ -120,94 +120,94 @@ def test_word_separator_empty():
     assert word_separator("", "") == ""
 
 
-# ── compose_rapidocr_text ─────────────────────────────────────────────
+# ── compose_ppocr_text ─────────────────────────────────────────────
 
 def _make_block(text, box):
     return {"text": text, "box": box}
 
 
-def test_compose_rapidocr_text_single_block():
+def test_compose_ppocr_text_single_block():
     blocks = [_make_block("hello", [[0, 0], [50, 0], [50, 20], [0, 20]])]
-    assert compose_rapidocr_text(blocks) == "hello"
+    assert compose_ppocr_text(blocks) == "hello"
 
 
-def test_compose_rapidocr_text_empty():
-    assert compose_rapidocr_text([]) == ""
-    assert compose_rapidocr_text(None) == ""
+def test_compose_ppocr_text_empty():
+    assert compose_ppocr_text([]) == ""
+    assert compose_ppocr_text(None) == ""
 
 
-def test_compose_rapidocr_text_empty_string_blocks():
+def test_compose_ppocr_text_empty_string_blocks():
     blocks = [
         _make_block("", [[0, 0], [10, 0], [10, 10], [0, 10]]),
         _make_block("   ", [[10, 0], [20, 0], [20, 10], [10, 10]]),
     ]
-    assert compose_rapidocr_text(blocks) == ""
+    assert compose_ppocr_text(blocks) == ""
 
 
-def test_compose_rapidocr_text_same_line():
+def test_compose_ppocr_text_same_line():
     blocks = [
         _make_block("hello", [[0, 0], [50, 0], [50, 20], [0, 20]]),
         _make_block("world", [[60, 0], [110, 0], [110, 20], [60, 20]]),
     ]
-    assert compose_rapidocr_text(blocks) == "hello world"
+    assert compose_ppocr_text(blocks) == "hello world"
 
 
-def test_compose_rapidocr_text_two_lines():
+def test_compose_ppocr_text_two_lines():
     blocks = [
         _make_block("line1", [[0, 0], [50, 0], [50, 20], [0, 20]]),
         _make_block("line2", [[0, 100], [50, 100], [50, 120], [0, 120]]),
     ]
-    assert compose_rapidocr_text(blocks) == "line1\nline2"
+    assert compose_ppocr_text(blocks) == "line1\nline2"
 
 
-def test_compose_rapidocr_text_cjk_no_spaces():
+def test_compose_ppocr_text_cjk_no_spaces():
     blocks = [
         _make_block("你好", [[0, 0], [40, 0], [40, 20], [0, 20]]),
         _make_block("世界", [[50, 0], [90, 0], [90, 20], [50, 20]]),
     ]
-    assert compose_rapidocr_text(blocks) == "你好世界"
+    assert compose_ppocr_text(blocks) == "你好世界"
 
 
-def test_compose_rapidocr_text_sorts_by_position():
+def test_compose_ppocr_text_sorts_by_position():
     blocks = [
         _make_block("second", [[60, 0], [110, 0], [110, 20], [60, 20]]),
         _make_block("first", [[0, 0], [50, 0], [50, 20], [0, 20]]),
     ]
-    assert compose_rapidocr_text(blocks).startswith("first")
+    assert compose_ppocr_text(blocks).startswith("first")
 
 
-def test_compose_rapidocr_text_large_gap_adds_space():
+def test_compose_ppocr_text_large_gap_adds_space():
     blocks = [
         _make_block("left", [[0, 0], [30, 0], [30, 20], [0, 20]]),
         _make_block("right", [[80, 0], [130, 0], [130, 20], [80, 20]]),
     ]
-    text = compose_rapidocr_text(blocks)
+    text = compose_ppocr_text(blocks)
     assert "left" in text
     assert "right" in text
 
 
-def test_compose_rapidocr_text_none_text():
+def test_compose_ppocr_text_none_text():
     blocks = [
         {"text": None, "box": [[0, 0], [10, 0], [10, 10], [0, 10]]},
         _make_block("ok", [[20, 0], [50, 0], [50, 20], [20, 20]]),
     ]
-    assert compose_rapidocr_text(blocks) == "ok"
+    assert compose_ppocr_text(blocks) == "ok"
 
 
-def test_compose_rapidocr_text_no_box():
+def test_compose_ppocr_text_no_box():
     blocks = [{"text": "hello"}]
-    assert compose_rapidocr_text(blocks) == "hello"
+    assert compose_ppocr_text(blocks) == "hello"
 
 
-def test_compose_rapidocr_text_missing_text_key():
+def test_compose_ppocr_text_missing_text_key():
     blocks = [{"box": [[0, 0], [10, 0], [10, 10], [0, 10]]}]
-    assert compose_rapidocr_text(blocks) == ""
+    assert compose_ppocr_text(blocks) == ""
 
 
 # ── engine singleton ──────────────────────────────────────────────────
 
 def test_engine_singleton_returns_same_instance(monkeypatch):
-    import hushsnap.ocr.rapidocr as rapidocr_module
+    import hushsnap.ocr.ppocr as ppocr_module
 
     # Drain any in-progress daemon warmup thread from previous tests.
     # _get_engine() blocks on _engine_lock until the thread finishes,
@@ -215,9 +215,9 @@ def test_engine_singleton_returns_same_instance(monkeypatch):
     # monkeypatch below.
     _get_engine()
 
-    monkeypatch.setattr(rapidocr_module, "_engine", None)
+    monkeypatch.setattr(ppocr_module, "_engine", None)
     fake = object()
-    monkeypatch.setattr(rapidocr_module, "RapidOCR", lambda **kwargs: fake)
+    monkeypatch.setattr(ppocr_module, "PPOCR", lambda **kwargs: fake)
 
     e1 = _get_engine()
     e2 = _get_engine()
@@ -225,7 +225,7 @@ def test_engine_singleton_returns_same_instance(monkeypatch):
 
 
 def test_release_engine_waits_while_request_is_loading_engine(monkeypatch, qapp):
-    import hushsnap.ocr.rapidocr as rapidocr_module
+    import hushsnap.ocr.ppocr as ppocr_module
 
     fake_engine = _FakeRapidOCREngine([
         ([[0, 0], [50, 0], [50, 20], [0, 20]], "hello", 0.98),
@@ -240,19 +240,19 @@ def test_release_engine_waits_while_request_is_loading_engine(monkeypatch, qapp)
         assert allow_get_engine.wait(timeout=2)
         return fake_engine
 
-    monkeypatch.setattr(rapidocr_module, "_engine", fake_engine)
-    monkeypatch.setattr(rapidocr_module, "_active_requests", 0)
-    monkeypatch.setattr(rapidocr_module, "_get_engine", _blocking_get_engine)
-    monkeypatch.setattr(rapidocr_module, "_trim_working_set", lambda: None)
+    monkeypatch.setattr(ppocr_module, "_engine", fake_engine)
+    monkeypatch.setattr(ppocr_module, "_active_requests", 0)
+    monkeypatch.setattr(ppocr_module, "_get_engine", _blocking_get_engine)
+    monkeypatch.setattr(ppocr_module, "_trim_working_set", lambda: None)
 
     img = QtGui.QImage(100, 100, QtGui.QImage.Format.Format_ARGB32)
     img.fill(QtCore.Qt.GlobalColor.white)
 
     def _recognize():
-        result_holder["result"] = recognize_rapidocr_qimage(img)
+        result_holder["result"] = recognize_ppocr_qimage(img)
 
     def _release():
-        rapidocr_module.release_engine()
+        ppocr_module.release_engine()
         release_done.set()
 
     recognize_thread = threading.Thread(target=_recognize)
@@ -273,10 +273,10 @@ def test_release_engine_waits_while_request_is_loading_engine(monkeypatch, qapp)
     assert not release_thread.is_alive()
     assert release_done.is_set()
     assert result_holder["result"].text == "hello"
-    assert rapidocr_module._active_requests == 0
+    assert ppocr_module._active_requests == 0
 
 
-# ── recognize_rapidocr_qimage ─────────────────────────────────────────
+# ── recognize_ppocr_qimage ─────────────────────────────────────────
 
 class _FakeRapidOCREngine:
     """Simulates the RapidOCR engine — callable, returns RapidOCROutput-like result."""
@@ -295,97 +295,97 @@ class _FakeRapidOCREngine:
         return [{"box": b, "txt": t, "score": s} for b, t, s in self._items]
 
 
-def test_recognize_rapidocr_qimage_blank_image(monkeypatch, qapp):
-    import hushsnap.ocr.rapidocr as rapidocr_module
+def test_recognize_ppocr_qimage_blank_image(monkeypatch, qapp):
+    import hushsnap.ocr.ppocr as ppocr_module
 
     fake_engine = _FakeRapidOCREngine([])
-    monkeypatch.setattr(rapidocr_module, "_get_engine", lambda: fake_engine)
-    monkeypatch.setattr(rapidocr_module, "_engine", fake_engine)
+    monkeypatch.setattr(ppocr_module, "_get_engine", lambda: fake_engine)
+    monkeypatch.setattr(ppocr_module, "_engine", fake_engine)
 
     img = QtGui.QImage(100, 100, QtGui.QImage.Format.Format_ARGB32)
     img.fill(QtCore.Qt.GlobalColor.white)
 
-    result = recognize_rapidocr_qimage(img)
-    assert result.engine_type == OCR_ENGINE_RAPID
+    result = recognize_ppocr_qimage(img)
+    assert result.engine_type == OCR_ENGINE_PPOCR
     assert result.requested_language_supported is True
     assert result.text == ""
 
 
-def test_recognize_rapidocr_qimage_with_text(monkeypatch, qapp):
-    import hushsnap.ocr.rapidocr as rapidocr_module
+def test_recognize_ppocr_qimage_with_text(monkeypatch, qapp):
+    import hushsnap.ocr.ppocr as ppocr_module
 
     fake_engine = _FakeRapidOCREngine([
         ([[0, 0], [50, 0], [50, 20], [0, 20]], "hello", 0.98),
     ])
-    monkeypatch.setattr(rapidocr_module, "_get_engine", lambda: fake_engine)
-    monkeypatch.setattr(rapidocr_module, "_engine", fake_engine)
+    monkeypatch.setattr(ppocr_module, "_get_engine", lambda: fake_engine)
+    monkeypatch.setattr(ppocr_module, "_engine", fake_engine)
 
     img = QtGui.QImage(100, 100, QtGui.QImage.Format.Format_ARGB32)
     img.fill(QtCore.Qt.GlobalColor.white)
 
-    result = recognize_rapidocr_qimage(img)
-    assert result.engine_type == OCR_ENGINE_RAPID
+    result = recognize_ppocr_qimage(img)
+    assert result.engine_type == OCR_ENGINE_PPOCR
     assert "hello" in result.text
 
 
-def test_recognize_rapidocr_qimage_save_failure(monkeypatch, qapp):
+def test_recognize_ppocr_qimage_save_failure(monkeypatch, qapp):
     """When image.save fails, returns empty OcrRecognition with engine type."""
-    import hushsnap.ocr.rapidocr as rapidocr_module
+    import hushsnap.ocr.ppocr as ppocr_module
 
     fake_engine = object()
-    monkeypatch.setattr(rapidocr_module, "_get_engine", lambda: fake_engine)
-    monkeypatch.setattr(rapidocr_module, "_engine", fake_engine)
+    monkeypatch.setattr(ppocr_module, "_get_engine", lambda: fake_engine)
+    monkeypatch.setattr(ppocr_module, "_engine", fake_engine)
 
     img = QtGui.QImage()  # null image — save returns False
-    result = recognize_rapidocr_qimage(img)
-    assert result.engine_type == OCR_ENGINE_RAPID
+    result = recognize_ppocr_qimage(img)
+    assert result.engine_type == OCR_ENGINE_PPOCR
     assert result.text == ""
 
 
-def test_recognize_rapidocr_qimage_engine_exception(monkeypatch, qapp):
-    import hushsnap.ocr.rapidocr as rapidocr_module
+def test_recognize_ppocr_qimage_engine_exception(monkeypatch, qapp):
+    import hushsnap.ocr.ppocr as ppocr_module
 
     def _boom(*args):
         raise RuntimeError("OCR engine crashed")
 
     fake = _FakeRapidOCREngine([])
     monkeypatch.setattr(fake, "__call__", _boom)
-    monkeypatch.setattr(rapidocr_module, "_get_engine", lambda: fake)
-    monkeypatch.setattr(rapidocr_module, "_engine", fake)
+    monkeypatch.setattr(ppocr_module, "_get_engine", lambda: fake)
+    monkeypatch.setattr(ppocr_module, "_engine", fake)
 
     img = QtGui.QImage(100, 100, QtGui.QImage.Format.Format_ARGB32)
     img.fill(QtCore.Qt.GlobalColor.white)
 
-    result = recognize_rapidocr_qimage(img)
-    assert result.engine_type == OCR_ENGINE_RAPID
+    result = recognize_ppocr_qimage(img)
+    assert result.engine_type == OCR_ENGINE_PPOCR
     assert result.text == ""
 
 
-# ── recognize_rapidocr_result_from_pixmap ─────────────────────────────
+# ── recognize_ppocr_result_from_pixmap ─────────────────────────────
 
-def test_recognize_rapidocr_result_from_pixmap_null(monkeypatch, qapp):
-    import hushsnap.ocr.rapidocr as rapidocr_module
+def test_recognize_ppocr_result_from_pixmap_null(monkeypatch, qapp):
+    import hushsnap.ocr.ppocr as ppocr_module
 
     fake_engine = object()
-    monkeypatch.setattr(rapidocr_module, "_get_engine", lambda: fake_engine)
-    monkeypatch.setattr(rapidocr_module, "_engine", fake_engine)
+    monkeypatch.setattr(ppocr_module, "_get_engine", lambda: fake_engine)
+    monkeypatch.setattr(ppocr_module, "_engine", fake_engine)
 
-    result = recognize_rapidocr_result_from_pixmap(QtGui.QPixmap())
+    result = recognize_ppocr_result_from_pixmap(QtGui.QPixmap())
     assert result.text == ""
 
 
-def test_recognize_rapidocr_result_from_pixmap_with_text(monkeypatch, qapp):
-    import hushsnap.ocr.rapidocr as rapidocr_module
+def test_recognize_ppocr_result_from_pixmap_with_text(monkeypatch, qapp):
+    import hushsnap.ocr.ppocr as ppocr_module
 
     fake_engine = _FakeRapidOCREngine([
         ([[0, 0], [60, 0], [60, 25], [0, 25]], "hello world", 0.99),
     ])
-    monkeypatch.setattr(rapidocr_module, "_get_engine", lambda: fake_engine)
-    monkeypatch.setattr(rapidocr_module, "_engine", fake_engine)
+    monkeypatch.setattr(ppocr_module, "_get_engine", lambda: fake_engine)
+    monkeypatch.setattr(ppocr_module, "_engine", fake_engine)
 
     image = QtGui.QImage(100, 100, QtGui.QImage.Format.Format_RGB32)
     image.fill(QtCore.Qt.GlobalColor.white)
 
-    result = recognize_rapidocr_result_from_pixmap(image)
+    result = recognize_ppocr_result_from_pixmap(image)
     assert "hello world" in result.text
-    assert result.engine_type == OCR_ENGINE_RAPID
+    assert result.engine_type == OCR_ENGINE_PPOCR

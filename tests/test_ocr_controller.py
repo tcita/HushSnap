@@ -4,7 +4,7 @@ import pytest
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from hushsnap import ocr_controller
-from hushsnap.constants import OCR_RAPID_IDLE_RELEASE_MS
+from hushsnap.constants import OCR_PPOCR_IDLE_RELEASE_MS
 from hushsnap.ocr import OcrRecognition, OcrResponse
 
 
@@ -199,34 +199,34 @@ def test_memory_trim_timer_behavior(monkeypatch, qapp, tmp_path, sample_pixmap):
     monkeypatch.setattr("hushsnap.ocr.engine.trim_engine", lambda engine: trimmed_engine.append(engine))
 
     controller._trim_current_engine()
-    assert trimmed_engine == ["rapidocr"]
+    assert trimmed_engine == ["ppocr"]
 
 
-def test_rapidocr_idle_release_timer_behavior(monkeypatch, qapp, tmp_path, sample_pixmap):
+def test_ppocr_idle_release_timer_behavior(monkeypatch, qapp, tmp_path, sample_pixmap):
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
 
-    controller._rapid_release_timer.start(5000)
-    assert controller._rapid_release_timer.isActive()
+    controller._ppocr_release_timer.start(5000)
+    assert controller._ppocr_release_timer.isActive()
 
     controller._start_request(sample_pixmap)
-    assert not controller._rapid_release_timer.isActive()
+    assert not controller._ppocr_release_timer.isActive()
 
     controller.on_ocr_finished(
         OcrResponse(
             text="test",
             error="",
             pixmap=sample_pixmap,
-            recognition=OcrRecognition(engine_type="rapidocr"),
+            recognition=OcrRecognition(engine_type="ppocr"),
         )
     )
-    assert controller._rapid_release_timer.isActive()
-    assert controller._rapid_release_timer.interval() == OCR_RAPID_IDLE_RELEASE_MS
+    assert controller._ppocr_release_timer.isActive()
+    assert controller._ppocr_release_timer.interval() == OCR_PPOCR_IDLE_RELEASE_MS
 
     released_engine = []
     monkeypatch.setattr(ocr_controller, "release_engine", lambda engine: released_engine.append(engine))
 
-    controller._release_idle_rapidocr()
-    assert released_engine == ["rapidocr"]
+    controller._release_idle_ppocr()
+    assert released_engine == ["ppocr"]
 
 
 # ── Warmup vs. OCR collision tests ──────────────────────────────────────
