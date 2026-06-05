@@ -3,6 +3,7 @@ import logging
 from PyQt6 import QtCore, QtWidgets
 
 from .config import (
+    get_auto_copy_ocr_result,
     get_config_path,
     get_ocr_pinned,
     update_ocr_pinned,
@@ -190,9 +191,10 @@ class OcrController:
             )
             return
 
-        clipboard = self.app.clipboard()
-        if clipboard is not None:
-            clipboard.setText(recognized)
+        if get_auto_copy_ocr_result(self.config_path):
+            clipboard = self.app.clipboard()
+            if clipboard is not None:
+                clipboard.setText(recognized)
 
         self.popup.show_text(
             recognized,

@@ -16,6 +16,10 @@ from ..config import (
     update_ui_lang_in_config,
     get_ocr_font_size,
     update_ocr_font_size,
+    get_copy_image_to_clipboard,
+    update_copy_image_to_clipboard,
+    get_auto_copy_ocr_result,
+    update_auto_copy_ocr_result,
 )
 from ..system import startup_manager
 from .styles import (
@@ -884,11 +888,72 @@ class SettingsDialogController(QtCore.QObject):
         body_layout.setContentsMargins(16, 16, 16, 8)
         body_layout.setSpacing(8)
 
-        # --- Section: Shortcuts ---
-        shortcuts_header = QtWidgets.QLabel(self.translate("settings_section_shortcuts"))
-        shortcuts_header.setObjectName("sectionHeader")
-        shortcuts_header.setStyleSheet(SECTION_HEADER_STYLE)
-        body_layout.addWidget(shortcuts_header)
+        # ── Section: General ──────────────────────────────────────────
+        general_header = QtWidgets.QLabel(self.translate("settings_section_general"))
+        general_header.setObjectName("sectionHeader")
+        general_header.setStyleSheet(SECTION_HEADER_STYLE)
+        body_layout.addWidget(general_header)
+
+        # --- Language card ---
+        def change_language(index):
+            selected_lang = combo3.itemData(index)
+            try:
+                update_ui_lang_in_config(self.config_path, selected_lang)
+                self.language_changed.emit()
+                dialog.close()
+            except Exception as exc:
+                logger.exception(f"Failed to save language setting: {exc}")
+                _set_status(self.translate("error"), True)
+
+        lang_options = [
+            (self.translate("settings_language_auto"), "auto"),
+            (self.translate("settings_language_en"), "en"),
+            (self.translate("settings_language_zh"), "zh"),
+            (self.translate("settings_language_zh_tw"), "zh-TW"),
+        ]
+
+        current_lang = get_configured_ui_lang(self.config_path)
+
+        card3, combo3 = _make_language_card(
+            self.translate("settings_language_label"),
+            self.translate("settings_language_subtitle"),
+            current_lang,
+            lang_options,
+        )
+        combo3.currentIndexChanged.connect(change_language)
+        body_layout.addWidget(card3)
+
+        # --- Startup card ---
+        async def toggle_startup(checked):
+            success = await startup_manager.set_startup_state(checked)
+            if not success and checked:
+                real_state = await startup_manager.get_startup_state()
+                card4_switch.setChecked(real_state)
+
+        def on_startup_toggled(checked):
+            try:
+                loop = asyncio.new_event_loop()
+                loop.run_until_complete(toggle_startup(checked))
+                loop.close()
+            except Exception as exc:
+                logger.exception(f"Failed to toggle startup state: {exc}")
+
+        loop = asyncio.get_event_loop()
+        initial_startup = loop.run_until_complete(startup_manager.get_startup_state())
+
+        card4, card4_switch = _make_startup_card(
+            self.translate("settings_startup_label"),
+            self.translate("settings_startup_subtitle"),
+            initial_startup,
+        )
+        card4_switch.clicked.connect(on_startup_toggled)
+        body_layout.addWidget(card4)
+
+        # ── Section: Capture ──────────────────────────────────────────
+        capture_header = QtWidgets.QLabel(self.translate("settings_section_capture"))
+        capture_header.setObjectName("sectionHeader")
+        capture_header.setStyleSheet(SECTION_HEADER_STYLE)
+        body_layout.addWidget(capture_header)
 
         # --- Screenshot card ---
         def change_hotkey():
@@ -928,40 +993,27 @@ class SettingsDialogController(QtCore.QObject):
         btn1.clicked.connect(change_hotkey)
         body_layout.addWidget(card1)
 
-        # --- Section: Preferences ---
-        prefs_header = QtWidgets.QLabel(self.translate("settings_section_preferences"))
-        prefs_header.setObjectName("sectionHeader")
-        prefs_header.setStyleSheet(SECTION_HEADER_STYLE)
-        body_layout.addWidget(prefs_header)
-
-        # --- Language card ---
-        def change_language(index):
-            selected_lang = combo3.itemData(index)
+        # --- Auto-copy image card ---
+        def on_copy_image_toggled(checked):
             try:
-                update_ui_lang_in_config(self.config_path, selected_lang)
-                self.language_changed.emit()
-                dialog.close()
+                update_copy_image_to_clipboard(checked, self.config_path)
             except Exception as exc:
-                logger.exception(f"Failed to save language setting: {exc}")
+                logger.exception(f"Failed to toggle copy_image_to_clipboard: {exc}")
                 _set_status(self.translate("error"), True)
 
-        lang_options = [
-            (self.translate("settings_language_auto"), "auto"),
-            (self.translate("settings_language_en"), "en"),
-            (self.translate("settings_language_zh"), "zh"),
-            (self.translate("settings_language_zh_tw"), "zh-TW"),
-        ]
-
-        current_lang = get_configured_ui_lang(self.config_path)
-
-        card3, combo3 = _make_language_card(
-            self.translate("settings_language_label"),
-            self.translate("settings_language_subtitle"),
-            current_lang,
-            lang_options,
+        card_copy_image, switch_copy_image = _make_startup_card(
+            self.translate("settings_copy_image_label"),
+            self.translate("settings_copy_image_subtitle"),
+            get_copy_image_to_clipboard(self.config_path),
         )
-        combo3.currentIndexChanged.connect(change_language)
-        body_layout.addWidget(card3)
+        switch_copy_image.clicked.connect(on_copy_image_toggled)
+        body_layout.addWidget(card_copy_image)
+
+        # ── Section: OCR ──────────────────────────────────────────────
+        ocr_header = QtWidgets.QLabel(self.translate("settings_section_ocr"))
+        ocr_header.setObjectName("sectionHeader")
+        ocr_header.setStyleSheet(SECTION_HEADER_STYLE)
+        body_layout.addWidget(ocr_header)
 
         # --- Font size card ---
         def change_font_size(value):
@@ -1007,31 +1059,21 @@ class SettingsDialogController(QtCore.QObject):
 
         body_layout.addWidget(card5)
 
-        # --- Startup card ---
-        async def toggle_startup(checked):
-            success = await startup_manager.set_startup_state(checked)
-            if not success and checked:
-                real_state = await startup_manager.get_startup_state()
-                card4_switch.setChecked(real_state)
-
-        def on_startup_toggled(checked):
+        # --- Auto-copy OCR result card ---
+        def on_auto_copy_ocr_toggled(checked):
             try:
-                loop = asyncio.new_event_loop()
-                loop.run_until_complete(toggle_startup(checked))
-                loop.close()
+                update_auto_copy_ocr_result(checked, self.config_path)
             except Exception as exc:
-                logger.exception(f"Failed to toggle startup state: {exc}")
+                logger.exception(f"Failed to toggle auto_copy_ocr_result: {exc}")
+                _set_status(self.translate("error"), True)
 
-        loop = asyncio.get_event_loop()
-        initial_startup = loop.run_until_complete(startup_manager.get_startup_state())
-
-        card4, card4_switch = _make_startup_card(
-            self.translate("settings_startup_label"),
-            self.translate("settings_startup_subtitle"),
-            initial_startup,
+        card_copy_ocr, switch_copy_ocr = _make_startup_card(
+            self.translate("settings_auto_copy_ocr_label"),
+            self.translate("settings_auto_copy_ocr_subtitle"),
+            get_auto_copy_ocr_result(self.config_path),
         )
-        card4_switch.clicked.connect(on_startup_toggled)
-        body_layout.addWidget(card4)
+        switch_copy_ocr.clicked.connect(on_auto_copy_ocr_toggled)
+        body_layout.addWidget(card_copy_ocr)
 
         outer_layout.addWidget(body)
 

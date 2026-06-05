@@ -11,6 +11,7 @@ from ctypes import wintypes
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
+from .config import get_copy_image_to_clipboard
 from .constants import (
     CAPTURE_CLICK_THRESHOLD_PX,
     CAPTURE_OVERLAY_RGBA,
@@ -382,10 +383,12 @@ class CaptureWindow(QtWidgets.QWidget):
             captured = None
 
             # If movement is too small, treat it as click -> fullscreen capture.
+            copy_to_clipboard = get_copy_image_to_clipboard()
             if (self.curr_pos - self.start_pos).manhattanLength() <= self.click_threshold:
                 full = self.pixmap.copy()
                 full.setDevicePixelRatio(self.pixmap.devicePixelRatio())
-                self._set_clipboard_pixmap(full, "fullscreen")
+                if copy_to_clipboard:
+                    self._set_clipboard_pixmap(full, "fullscreen")
                 captured = full
             else:
                 # Region capture: convert logical coordinates to physical pixels by screen scale.
@@ -396,12 +399,14 @@ class CaptureWindow(QtWidgets.QWidget):
                 )
                 final = self.pixmap.copy(physical)
                 final.setDevicePixelRatio(ratio)
-                self._set_clipboard_pixmap(final, "region")
+                if copy_to_clipboard:
+                    self._set_clipboard_pixmap(final, "region")
                 captured = final
 
             if captured is not None:
                 self._notify_captured(captured)
-                self._show_copied_toast(event.globalPosition().toPoint())
+                if copy_to_clipboard:
+                    self._show_copied_toast(event.globalPosition().toPoint())
 
             self.start_pos = self.curr_pos = None
             self.close()

@@ -59,8 +59,8 @@ class OcrPopup(QtWidgets.QWidget):
         outer.addWidget(panel, 1)
 
         layout = QtWidgets.QVBoxLayout(panel)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(6)
 
         # ── header ───────────────────────────────────────────────────
         self.header_container = QtWidgets.QFrame()
@@ -87,10 +87,22 @@ class OcrPopup(QtWidgets.QWidget):
         header_layout.addWidget(self.close_btn)
         layout.addWidget(self.header_container)
 
-        # ── scroll area (text block list container) ──────────────────
+        # ── text block (bubble container) ───────────────────────────
+        self.text_block = QtWidgets.QFrame()
+        self.text_block.setObjectName("ocrTextBlock")
+        self.text_block.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding,
+            QtWidgets.QSizePolicy.Policy.Expanding,
+        )
+        # Main layout for the bubble: ScrollArea on top, Buttons on bottom
+        self.bubble_layout = QtWidgets.QVBoxLayout(self.text_block)
+        self.bubble_layout.setContentsMargins(1, 1, 1, 1) # Space for border
+        self.bubble_layout.setSpacing(0)
+
+        # ── scroll area (text container inside bubble) ──────────────
         self.scroll_area = QtWidgets.QScrollArea()
         self.scroll_area.setObjectName("ocrScrollArea")
-        self.scroll_area.setWidgetResizable(False)
+        self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
         self.scroll_area.setHorizontalScrollBarPolicy(
             QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff
@@ -98,19 +110,17 @@ class OcrPopup(QtWidgets.QWidget):
         self.scroll_area.setVerticalScrollBarPolicy(
             QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded
         )
+        self.scroll_area.setStyleSheet("background: transparent; border: none;")
 
-        # ── text block (bubble) ──────────────────────────────────────
-        self.text_block = QtWidgets.QFrame()
-        self.text_block.setObjectName("ocrTextBlock")
-        self.text_block.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Expanding,
-            QtWidgets.QSizePolicy.Policy.Preferred,
-        )
-        text_block_layout = QtWidgets.QVBoxLayout(self.text_block)
-        text_block_layout.setContentsMargins(16, 8, 16, 14)
-        text_block_layout.setSpacing(6)
+        # Inner widget for text
+        self.text_container = QtWidgets.QWidget()
+        self.text_container.setObjectName("ocrTextContainer")
+        self.text_container.setStyleSheet("background: transparent;")
+        text_inner_layout = QtWidgets.QVBoxLayout(self.text_container)
+        text_inner_layout.setContentsMargins(16, 12, 16, 4)
+        text_inner_layout.setSpacing(6)
 
-        # Read-only display label (visible by default)
+        # Read-only display label
         self.text_label = QtWidgets.QLabel()
         self.text_label.setObjectName("ocrTextLabel")
         self.text_label.setWordWrap(True)
@@ -123,9 +133,9 @@ class OcrPopup(QtWidgets.QWidget):
             QtWidgets.QSizePolicy.Policy.Expanding,
             QtWidgets.QSizePolicy.Policy.Preferred,
         )
-        text_block_layout.addWidget(self.text_label)
+        text_inner_layout.addWidget(self.text_label)
 
-        # Editable text edit (hidden until pencil is clicked)
+        # Editable text edit
         self.text_edit = QtWidgets.QPlainTextEdit()
         self.text_edit.setReadOnly(False)
         self.text_edit.setObjectName("ocrText")
@@ -136,14 +146,21 @@ class OcrPopup(QtWidgets.QWidget):
         )
         self.text_edit.setMinimumHeight(80)
         self.text_edit.hide()
-        text_block_layout.addWidget(self.text_edit)
+        text_inner_layout.addWidget(self.text_edit)
+        
+        # Add a stretch here to ensure text stays at the top if the container is tall
+        text_inner_layout.addStretch(1)
 
-        # Button row — read group (Copy + Edit) and edit group (Update + Cancel)
-        self.btn_row = QtWidgets.QHBoxLayout()
-        self.btn_row.setContentsMargins(0, 0, 0, 0)
-        self.btn_row.setSpacing(4)
+        self.scroll_area.setWidget(self.text_container)
+        self.bubble_layout.addWidget(self.scroll_area, 1)
 
-        self.btn_row.addStretch(1)
+        # ── sticky footer (buttons) ─────────────────────────────────
+        self.footer_container = QtWidgets.QFrame()
+        self.footer_container.setObjectName("ocrFooter")
+        footer_layout = QtWidgets.QHBoxLayout(self.footer_container)
+        footer_layout.setContentsMargins(16, 4, 16, 12)
+        footer_layout.setSpacing(4)
+        footer_layout.addStretch(1)
 
         # ── read-mode buttons ─────────────────────────────────────
         self.copy_btn = QtWidgets.QPushButton()
@@ -152,7 +169,7 @@ class OcrPopup(QtWidgets.QWidget):
         self.copy_btn.setIconSize(QtCore.QSize(14, 14))
         self.copy_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.copy_btn.clicked.connect(self._on_copy_clicked)
-        self.btn_row.addWidget(self.copy_btn)
+        footer_layout.addWidget(self.copy_btn)
 
         self.edit_btn = QtWidgets.QPushButton()
         self.edit_btn.setObjectName("ocrEditBtn")
@@ -160,18 +177,9 @@ class OcrPopup(QtWidgets.QWidget):
         self.edit_btn.setIconSize(QtCore.QSize(15, 15))
         self.edit_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.edit_btn.clicked.connect(self._on_edit_clicked)
-        self.btn_row.addWidget(self.edit_btn)
+        footer_layout.addWidget(self.edit_btn)
 
-        # ── edit-mode buttons (hidden until pencil clicked) ───────
-        self.update_btn = QtWidgets.QPushButton()
-        self.update_btn.setObjectName("ocrUpdateBtn")
-        self.update_btn.setFixedSize(28, 24)
-        self.update_btn.setIconSize(QtCore.QSize(14, 14))
-        self.update_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-        self.update_btn.clicked.connect(self._on_update_clicked)
-        self.update_btn.hide()
-        self.btn_row.addWidget(self.update_btn)
-
+        # ── edit-mode buttons ───────
         self.cancel_btn = QtWidgets.QPushButton()
         self.cancel_btn.setObjectName("ocrCancelBtn")
         self.cancel_btn.setFixedSize(28, 24)
@@ -179,13 +187,20 @@ class OcrPopup(QtWidgets.QWidget):
         self.cancel_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.cancel_btn.clicked.connect(self._on_cancel_clicked)
         self.cancel_btn.hide()
-        self.btn_row.addWidget(self.cancel_btn)
+        footer_layout.addWidget(self.cancel_btn)
 
-        text_block_layout.addLayout(self.btn_row)
+        self.update_btn = QtWidgets.QPushButton()
+        self.update_btn.setObjectName("ocrUpdateBtn")
+        self.update_btn.setFixedSize(28, 24)
+        self.update_btn.setIconSize(QtCore.QSize(14, 14))
+        self.update_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self.update_btn.clicked.connect(self._on_update_clicked)
+        self.update_btn.hide()
+        footer_layout.addWidget(self.update_btn)
 
-        self.scroll_area.setWidget(self.text_block)
-        self.scroll_area.setViewportMargins(16, 10, 16, 16)
-        layout.addWidget(self.scroll_area, 1)  # stretch=1, fills remaining space
+        self.bubble_layout.addWidget(self.footer_container)
+
+        layout.addWidget(self.text_block, 1)
 
         # ── caret colour ────────────────────────────────────────────
         pal = self.text_edit.palette()
@@ -467,6 +482,7 @@ class OcrPopup(QtWidgets.QWidget):
             self._plain_text = text
             import html
             self.text_label.setText(f"<div style='line-height: 1.8; white-space: pre-wrap;'>{html.escape(text)}</div>")
+            self.copy_text()
         self.text_edit.hide()
         self.text_label.show()
 
@@ -487,13 +503,9 @@ class OcrPopup(QtWidgets.QWidget):
     # ── height auto-fit (width stays user-controlled) ────────────────
     def _adjust_window_size(self):
         """Fit window height to bubble content; width is untouched."""
-        # Force pending layout so widgets have their final sizes
-        QtWidgets.QApplication.processEvents()
-
         # Always use the formula-based viewport width to avoid garbage values
         # when the window is not yet fully laid out or shown.
-        vp_w = self.width() - 60
-        self.text_block.setFixedWidth(vp_w)
+        vp_w = self.width() - 72
 
         # text_label wraps at viewport width minus its own internal padding (16+16)
         text_w = max(vp_w - 32, 200)
@@ -522,8 +534,8 @@ class OcrPopup(QtWidgets.QWidget):
         # Accumulate: bubble internals + chrome
         header_h = self.header_container.sizeHint().height()
 
-        # chrome_h: viewport margins(10+16) + outer margins(12+12) + panel borders(1+1) + header
-        chrome_h = header_h + 52
+        # chrome_h: panel margins(6+6) + spacing(6) + inner margins + panel borders(1+1) + header
+        chrome_h = header_h + 70
 
         # bubble_h: text + block padding(8+14) + spacing(6) + buttons(24) + text_block borders(1+1)
         bubble_h = text_h + 22 + 34
@@ -544,9 +556,12 @@ class OcrPopup(QtWidgets.QWidget):
         else:
             new_w = self.width()
 
-        # Pin text_block to exactly its content height so the scroll_area never
-        # expands it with blank space (setWidgetResizable is False).
-        self.text_block.setFixedHeight(bubble_h)
+        # With setWidgetResizable(True) and a vertical stretch in text_block_layout,
+        # the bubble will expand to fill the window and buttons will stay at the bottom.
+        # We don't set fixed or minimum height here to avoid fighting the scroll area
+        # during manual window shrinking.
+        self.text_block.setMinimumHeight(0)
+        self.text_block.setMaximumHeight(16777215) # Allow full expansion
 
         self.resize(new_w, int(total_h))
 
@@ -966,9 +981,13 @@ class OcrPopup(QtWidgets.QWidget):
             if edge and self.windowHandle():
                 self.windowHandle().startSystemResize(edge)
             else:
-                self._drag_pos = (
-                    event.globalPosition().toPoint() - self.frameGeometry().topLeft()
-                )
+                # Use startSystemMove for smoother native-feeling drag
+                if self.windowHandle():
+                    self.windowHandle().startSystemMove()
+                else:
+                    self._drag_pos = (
+                        event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+                    )
             event.accept()
 
     def mouseMoveEvent(self, event):
@@ -1002,11 +1021,8 @@ class OcrPopup(QtWidgets.QWidget):
 
     # ── window events ────────────────────────────────────────────────
     def resizeEvent(self, event):
-        """Keep text_block width pinned to viewport width on any window resize."""
+        """Handle window resize; QScrollArea.setWidgetResizable(True) manages internal width."""
         super().resizeEvent(event)
-        vp_w = self.scroll_area.viewport().width()
-        if vp_w > 0:
-            self.text_block.setFixedWidth(vp_w)
 
     def showEvent(self, event):
         super().showEvent(event)

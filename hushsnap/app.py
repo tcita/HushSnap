@@ -10,6 +10,7 @@ from PyQt6 import QtWidgets, QtCore
 
 from .capture_session import CaptureSession
 from .config import (
+    get_app_id,
     get_config_path,
     get_debug_enabled,
     get_user_data_dir,
@@ -120,14 +121,19 @@ def main(boot_start_time=None):
         # Create the Qt application instance with argv0 and any remaining CLI arguments.
         # (currently usually none unless Qt args are provided).
         app = QtWidgets.QApplication(sys.argv)
+        
+        # Set internal Qt application identity
+        app_id = get_app_id()
+        app.setApplicationName(app_id)
+        app.setOrganizationName("HushSnap")
 
         # Give the process a distinct AppUserModelID so Windows shows the
         # application icon in the taskbar instead of the python.exe icon.
         if sys.platform == "win32":
             try:
                 import ctypes
-                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("HushSnap")
-                logger.debug("AppUserModelID set to HushSnap")
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+                logger.debug(f"AppUserModelID set to {app_id}")
             except Exception:
                 pass
 

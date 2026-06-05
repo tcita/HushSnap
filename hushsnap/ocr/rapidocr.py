@@ -1,4 +1,5 @@
 import logging
+import re
 import threading
 import time
 
@@ -240,7 +241,268 @@ def compose_rapidocr_structures(blocks: list[dict]) -> list[OcrLine]:
                 bounding_box=bbox_to_ocr_box(min_l, min_t, max_r, max_b)
             ))
 
-    return final_lines
+    # ── post-processing pipeline (spec ③④) ─────────────────────────
+    # Compute stats needed for column detection
+    valid_boxes = [l.bounding_box for l in final_lines if l.bounding_box.height > 0]
+    avg_w = sum(b.width for b in valid_boxes) / len(valid_boxes) if valid_boxes else 100.0
+    avg_h = sum(b.height for b in valid_boxes) / len(valid_boxes) if valid_boxes else 20.0
+
+    # 1. Multi-column reading order (spec ④)
+    final_lines = _detect_columns_and_reorder(final_lines, avg_w)
+
+    # 2. Merge lines into paragraphs (spec ①②⑤)
+    paragraphs = merge_lines_to_paragraphs(final_lines)
+
+    # 3. Format headings with extra spacing (spec ③)
+    for i, para in enumerate(paragraphs):
+        if _is_heading_candidate(para, paragraphs, avg_h, avg_w):
+            para.text = f"\n{para.text}\n"
+
+    return paragraphs
+
+
+# ── line classification helpers ──────────────────────────────────────
+
+_LIST_MARKER_RE = re.compile(
+    r"^\s*(?:\d+[\.\)]\s|[A-Za-z][\.\)]\s|[•·▪▸►○●◦\-–—]\s)"
+)
+
+def _is_list_item(text: str) -> bool:
+    """Detect if text starts with a list marker (bullet, number, letter)."""
+    return bool(_LIST_MARKER_RE.match(text))
+
+
+def _is_heading_candidate(
+    line: OcrLine, all_lines: list[OcrLine], avg_h: float, avg_w: float
+) -> bool:
+    """Heuristic heading detection using geometry only (no keyword coupling)."""
+    text = line.text.strip()
+    if not text:
+        return False
+
+    box = line.bounding_box
+    # Geometry: noticeably taller font than body text
+    tall = box.height > avg_h * 1.25
+    # Geometry: significantly narrower than average (whitespace on sides)
+    narrow = box.width < avg_w * 0.7
+    # Short text that doesn't fill the line
+    short_text = len(text) < 40 and box.width < avg_w * 0.75
+
+    if not (tall or narrow or short_text):
+        return False
+
+    # Isolation: check gaps before and after
+    idx = all_lines.index(line) if line in all_lines else -1
+    if idx < 0:
+        return False
+
+    isolation_score = 0
+    if idx > 0:
+        prev = all_lines[idx - 1]
+        prev_bottom = prev.bounding_box.y + prev.bounding_box.height
+        gap_before = box.y - prev_bottom
+        if gap_before > avg_h * 1.2:
+            isolation_score += 1
+    else:
+        isolation_score += 1
+
+    if idx < len(all_lines) - 1:
+        next_line = all_lines[idx + 1]
+        gap_after = next_line.bounding_box.y - (box.y + box.height)
+        if gap_after > avg_h * 1.2:
+            isolation_score += 1
+    else:
+        isolation_score += 1
+
+    # Heading = isolated + geometrically distinct
+    return isolation_score >= 1 and (tall or (narrow and short_text))
+
+
+def _detect_columns_and_reorder(
+    lines: list[OcrLine], avg_w: float
+) -> list[OcrLine]:
+    """Detect multi-column layout and reorder for reading order.
+
+    Strategy: cluster lines by their horizontal center. If two clear clusters
+    exist (left / right), read left column first, then right column.
+    Single-column documents pass through unchanged.
+    """
+    if len(lines) < 4:
+        return lines
+
+    centers = [l.bounding_box.x + l.bounding_box.width / 2 for l in lines]
+    min_c, max_c = min(centers), max(centers)
+    span = max_c - min_c
+    if span < avg_w * 1.5:
+        return lines  # too narrow for multi-column
+
+    # Two-means clustering on X centers
+    c0, c1 = min_c, max_c
+    for _ in range(10):
+        g0 = [c for c in centers if abs(c - c0) <= abs(c - c1)]
+        g1 = [c for c in centers if abs(c - c0) > abs(c - c1)]
+        if g0:
+            c0 = sum(g0) / len(g0)
+        if g1:
+            c1 = sum(g1) / len(g1)
+
+    if not g0 or not g1:
+        return lines
+
+    col_gap = abs(c0 - c1)
+    # Only treat as columns if the gap is substantial
+    if col_gap < avg_w * 0.5:
+        return lines
+
+    left_col = [l for l in lines if abs((l.bounding_box.x + l.bounding_box.width / 2) - c0) <= abs((l.bounding_box.x + l.bounding_box.width / 2) - c1)]
+    right_col = [l for l in lines if l not in left_col]
+
+    # Sort each column by Y, then concatenate left → right
+    left_col.sort(key=lambda l: l.bounding_box.y)
+    right_col.sort(key=lambda l: l.bounding_box.y)
+
+    logger.debug("Multi-column detected: left=%d lines, right=%d lines", len(left_col), len(right_col))
+    return left_col + right_col
+
+
+# ── paragraph merging (enhanced with text signals) ───────────────────
+
+def merge_lines_to_paragraphs(lines: list[OcrLine]) -> list[OcrLine]:
+    """Merge consecutive OCR lines into paragraphs using layout + text signals.
+
+    Layout signals (from spec ①②):
+      - Line gap < 1.5× average line height  (normal inter-line spacing)
+      - Left edges align within tolerance     (same column / no indent change)
+      - Short previous line → paragraph end
+
+    Text signals (from spec ⑤):
+      - Line ends with '-' hyphen → always merge (broken word)
+      - Line ends with '。' or '.'  → paragraph boundary
+      - Line ends without punct and next starts lowercase → same sentence, merge
+    """
+    if len(lines) <= 1:
+        return lines
+
+    valid = [l for l in lines if l.bounding_box.height > 0]
+    if not valid:
+        return lines
+
+    avg_h = sum(l.bounding_box.height for l in valid) / len(valid)
+    avg_w = sum(l.bounding_box.width for l in valid) / len(valid)
+    global_right = max(l.bounding_box.x + l.bounding_box.width for l in valid)
+
+    PARA_GAP_RATIO = 1.5
+    X_ALIGN_TOLERANCE = max(avg_w * 0.12, 12.0)
+    SHORT_LINE_RATIO = 0.65
+    INDENT_THRESHOLD = max(avg_w * 0.18, 15.0)
+
+    merged: list[OcrLine] = []
+    para_lines: list[OcrLine] = [lines[0]]
+
+    for i in range(1, len(lines)):
+        prev = lines[i - 1]
+        curr = lines[i]
+
+        prev_text = prev.text.strip()
+        curr_text = curr.text.strip()
+
+        # ── text signals (spec ⑤) ──────────────────────────────────
+        # Hyphenation: line ends with '-' → always merge (broken word)
+        hyphen_merge = prev_text.endswith("-")
+
+        # Period boundary: line ends with 。or . → paragraph boundary
+        period_end = prev_text.endswith(("。", ".", "！", "？", "!", "?"))
+
+        # Lowercase continuation: prev has no end punct, next starts lowercase
+        ends_open = not prev_text[-1] in "。.！？!?,;；:："
+        next_starts_lower = curr_text and curr_text[0].islower()
+        lowercase_continue = ends_open and next_starts_lower
+
+        # ── layout signals ─────────────────────────────────────────
+        prev_bottom = prev.bounding_box.y + prev.bounding_box.height
+        curr_top = curr.bounding_box.y
+        gap = curr_top - prev_bottom
+
+        if gap <= 1.0:
+            para_lines.append(curr)
+            continue
+
+        prev_left = prev.bounding_box.x
+        curr_left = curr.bounding_box.x
+        x_shift = abs(curr_left - prev_left)
+
+        prev_right = prev.bounding_box.x + prev.bounding_box.width
+        prev_is_short = (global_right - prev_right) > avg_w * (1.0 - SHORT_LINE_RATIO)
+
+        large_gap = gap > avg_h * PARA_GAP_RATIO
+        indent_jump = x_shift > INDENT_THRESHOLD
+
+        # ── merge decision ──────────────────────────────────────────
+        # Text signals only apply when layout says lines are adjacent
+        text_signals_active = not large_gap and not indent_jump
+
+        if text_signals_active and (hyphen_merge or lowercase_continue):
+            para_lines.append(curr)
+        elif period_end and gap > avg_h * 0.8:
+            # Period + spacing → definite paragraph break
+            merged.append(_flush_paragraph(para_lines))
+            para_lines = [curr]
+        elif large_gap or indent_jump or prev_is_short:
+            merged.append(_flush_paragraph(para_lines))
+            para_lines = [curr]
+        elif x_shift <= X_ALIGN_TOLERANCE:
+            para_lines.append(curr)
+        else:
+            merged.append(_flush_paragraph(para_lines))
+            para_lines = [curr]
+
+    merged.append(_flush_paragraph(para_lines))
+    return merged
+
+
+
+def _flush_paragraph(lines: list[OcrLine]) -> OcrLine:
+    """Merge a paragraph's lines into one OcrLine with flowing text.
+
+    Handles hyphenation repair: if a line ends with '-' it is a broken word;
+    the hyphen is stripped and the next line is joined without a separator.
+    """
+    if len(lines) == 1:
+        return lines[0]
+
+    parts: list[str] = []
+    prev_line: OcrLine | None = None
+    for line in lines:
+        text = line.text
+        if prev_line is not None:
+            # Hyphenation repair (spec ⑤): strip trailing '-' and join directly
+            if prev_line.text.rstrip().endswith("-"):
+                # Remove the trailing hyphen from the previous part
+                if parts:
+                    parts[-1] = parts[-1].rstrip()[:-1]
+            else:
+                sep = word_separator(prev_line.text, text)
+                if sep:
+                    parts.append(sep)
+        parts.append(text)
+        prev_line = line
+
+    merged_text = "".join(parts).strip()
+
+    min_x = min(l.bounding_box.x for l in lines)
+    min_y = min(l.bounding_box.y for l in lines)
+    max_x = max(l.bounding_box.x + l.bounding_box.width for l in lines)
+    max_y = max(l.bounding_box.y + l.bounding_box.height for l in lines)
+
+    all_words: list[OcrWord] = []
+    for line in lines:
+        all_words.extend(line.words)
+
+    return OcrLine(
+        text=merged_text,
+        words=all_words,
+        bounding_box=OcrBox(x=min_x, y=min_y, width=max_x - min_x, height=max_y - min_y),
+    )
 
 
 def compose_rapidocr_text(blocks: list[dict]) -> str:

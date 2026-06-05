@@ -184,6 +184,31 @@ def select_text_adapter(language_tag: str) -> OcrTextAdapter:
     return LANGUAGE_TEXT_ADAPTERS[-1]
 
 
+def _postprocess_layout_text(text: str) -> str:
+    """Final text-level fixes after layout composition (spec ⑤)."""
+    if not text:
+        return text
+
+    # Normalize excessive blank lines: max 2 consecutive newlines
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    # Remove leading / trailing newlines that were injected for spacing
+    text = text.strip()
+
+    # Ensure period-ended lines keep their paragraph break (already handled
+    # by merge_lines_to_paragraphs; this is a safety net for any remaining
+    # single-newline breaks that should be double)
+    lines = text.split("\n")
+    result: list[str] = []
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            result.append("")  # blank line — keep as paragraph separator
+            continue
+        result.append(stripped)
+    return "\n".join(result).strip()
+
+
 def compose_text_from_result(result: OcrRecognition, language_tag: str = "") -> str:
     adapter = select_text_adapter(language_tag)
 
@@ -199,4 +224,6 @@ def compose_text_from_result(result: OcrRecognition, language_tag: str = "") -> 
     if not built_lines:
         return adapter.finalize_text(result.text)
 
-    return adapter.finalize_text("\n".join(built_lines).strip())
+    return adapter.finalize_text(
+        _postprocess_layout_text("\n\n".join(built_lines))
+    )

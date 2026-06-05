@@ -26,9 +26,6 @@ CAPTURE_DEBUG_LOG_FILENAME = "hushsnap.log"
 # Tray icon filename
 APP_ICON_FILENAME = "ico.ico"
 
-# Named mutex for single-instance enforcement
-SINGLE_INSTANCE_MUTEX = "Local\\hushsnap.SingleInstance"
-
 # --- 3. Logic thresholds and timing (ms/px) ---
 # Hotkey re-registration debounce delay
 RELOAD_TIMER_MS = 300

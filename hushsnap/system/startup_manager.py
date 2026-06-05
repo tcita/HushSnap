@@ -8,7 +8,9 @@ import os
 import sys
 import ctypes
 import asyncio
+import winreg
 from pathlib import Path
+from ..config import get_startup_reg_name
 
 logger = logging.getLogger(__name__)
 
@@ -20,11 +22,9 @@ def is_running_as_package() -> bool:
     Check if the application is running within an MSIX/AppX package container.
     """
     try:
-        # GetCurrentPackageFullName returns APPMODEL_ERROR_NO_PACKAGE (15700L) if not in a package.
         kernel32 = ctypes.windll.kernel32
         length = ctypes.c_uint32(0)
         res = kernel32.GetCurrentPackageFullName(ctypes.byref(length), None)
-        # 15700 is APPMODEL_ERROR_NO_PACKAGE
         return res != 15700
     except (AttributeError, Exception):
         return False
@@ -39,56 +39,56 @@ def _get_startup_shortcut_path() -> Path:
 async def get_startup_state() -> bool:
     """
     Get the current "Launch at startup" state.
-    
-    Returns:
-        bool: True if enabled, False otherwise.
     """
     if is_running_as_package():
         try:
             import winrt.windows.applicationmodel as appmodel
             task = await appmodel.StartupTask.get_async(MSIX_STARTUP_TASK_ID)
-            # ENABLED = 2, ENABLED_BY_POLICY = 4
             return task.state in (appmodel.StartupTaskState.ENABLED, appmodel.StartupTaskState.ENABLED_BY_POLICY)
         except Exception as e:
             logger.error(f"Failed to get MSIX startup state: {e}")
             return False
     else:
-        # Fallback for non-MSIX installations: check Registry and Startup folder shortcut.
-        
-        # 1. Check Registry
+        # Check Registry
         registry_enabled = False
         try:
-            import winreg
             key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+            reg_name = get_startup_reg_name()
             try:
                 with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_READ) as key:
-                    winreg.QueryValueEx(key, "HushSnap")
+                    winreg.QueryValueEx(key, reg_name)
                     registry_enabled = True
             except FileNotFoundError:
                 pass
         except Exception as e:
             logger.error(f"Failed to check registry startup state: {e}")
 
-        # 2. Check Startup folder shortcut
-        shortcut_path = _get_startup_shortcut_path()
-        shortcut_enabled = shortcut_path.exists()
-        
+        shortcut_enabled = _get_startup_shortcut_path().exists()
         return registry_enabled or shortcut_enabled
 
 async def set_startup_state(enable: bool) -> bool:
     """
     Enable or disable "Launch at startup".
-    
-    Args:
-        enable (bool): True to enable, False to disable.
-        
-    Returns:
-        bool: Resulting state.
     """
     if is_running_as_package():
         try:
             import winrt.windows.applicationmodel as appmodel
             task = await appmodel.StartupTask.get_async(MSIX_STARTUP_TASK_ID)
+            
+            # MSIX Cleanup: If enabling MSIX, wipe legacy registry entries to avoid double-launches
+            if enable:
+                try:
+                    key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+                    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE) as key:
+                        for name in ("HushSnap", "HushSnap_Dev"):
+                            try:
+                                winreg.DeleteValue(key, name)
+                                logger.info(f"Cleaned up legacy registry startup entry: {name}")
+                            except FileNotFoundError:
+                                pass
+                except Exception as e:
+                    logger.debug(f"Legacy registry cleanup skipped: {e}")
+
             if enable:
                 result = await task.request_enable_async()
                 return result in (appmodel.StartupTaskState.ENABLED, appmodel.StartupTaskState.ENABLED_BY_POLICY)
@@ -99,38 +99,35 @@ async def set_startup_state(enable: bool) -> bool:
             logger.error(f"Failed to set MSIX startup state: {e}")
             return False
     else:
-        # Fallback for traditional installations: use Registry but ALSO clean up shortcut
         try:
-            import winreg
             key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+            reg_name = get_startup_reg_name()
             
-            # Clean up shortcut if we are disabling or if we want to "take over" via registry
             shortcut_path = _get_startup_shortcut_path()
             if shortcut_path.exists():
                 try:
                     shortcut_path.unlink()
-                except Exception as e:
-                    logger.warning(f"Failed to delete startup shortcut: {e}")
+                except Exception:
+                    pass
 
             if enable:
                 if getattr(sys, 'frozen', False):
-                    # PyInstaller bundle: sys.executable is HushSnap.exe
                     cmd = f'"{sys.executable}"'
                 else:
-                    # Running from source: need pythonw.exe + path to HushSnap.py
                     _python_dir = Path(sys.executable).parent
                     _pythonw = _python_dir / "pythonw.exe"
                     if not _pythonw.exists():
                         _pythonw = _python_dir / "python.exe"
                     _entry = (Path(__file__).resolve().parent.parent.parent / "HushSnap.py").resolve()
                     cmd = f'"{_pythonw}" "{_entry}"'
+                
                 with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE) as key:
-                    winreg.SetValueEx(key, "HushSnap", 0, winreg.REG_SZ, cmd)
+                    winreg.SetValueEx(key, reg_name, 0, winreg.REG_SZ, cmd)
                 return True
             else:
                 try:
                     with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE) as key:
-                        winreg.DeleteValue(key, "HushSnap")
+                        winreg.DeleteValue(key, reg_name)
                 except FileNotFoundError:
                     pass
                 return False

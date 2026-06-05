@@ -22,7 +22,6 @@ from .constants import (
     MOD_SHIFT,
     MOD_WIN,
     OCR_ENGINE_RAPID,
-    SINGLE_INSTANCE_MUTEX,
 )
 from .translations import (
     UI_LANG_AUTO,
@@ -45,6 +44,22 @@ _ERROR_ALREADY_EXISTS = 183
 
 logger = logging.getLogger(__name__)
 
+# --- Environment Isolation ---
+_is_frozen = getattr(sys, "frozen", False)
+
+def get_app_id() -> str:
+    """Get the application identifier for AppUserModelID and registration."""
+    return "HushSnap" if _is_frozen else "HushSnap_Dev"
+
+def get_mutex_name() -> str:
+    """Get the unique mutex name for single-instance detection."""
+    suffix = "" if _is_frozen else ".Dev"
+    return f"Local\\hushsnap.SingleInstance{suffix}"
+
+def get_startup_reg_name() -> str:
+    """Get the registry key name for startup execution."""
+    return "HushSnap" if _is_frozen else "HushSnap_Dev"
+
 # ── Config defaults (single source of truth for new-key migration) ────
 # When a new config key is added, append it here.  _ensure_default_config_exists
 # will automatically fill it into existing config files without overwriting
@@ -53,6 +68,8 @@ _CONFIG_DEFAULTS = {
     "hotkey": DEFAULT_HOTKEY,
     "language": UI_LANG_AUTO,
     "debug": False,
+    "copy_image_to_clipboard": True,
+    "auto_copy_ocr_result": True,
 }
 
 
@@ -470,6 +487,46 @@ def get_debug_enabled(config_path=None):
     return bool(config_data.get("debug", False))
 
 
+def get_copy_image_to_clipboard(config_path=None):
+    """Read 'copy_image_to_clipboard' from config (default True)."""
+    if config_path is None:
+        config_path = get_config_path()
+    config_data = _load_config_data(config_path)
+    return bool(config_data.get("copy_image_to_clipboard", True))
+
+
+def update_copy_image_to_clipboard(enabled, config_path=None):
+    """Update and persist 'copy_image_to_clipboard' in config."""
+    if config_path is None:
+        config_path = get_config_path()
+    config_data = _load_config_data(config_path)
+    config_data["copy_image_to_clipboard"] = bool(enabled)
+    try:
+        _write_config_data(config_path, config_data)
+    except Exception as e:
+        logger.error(f"Failed to update copy_image_to_clipboard: {e}")
+
+
+def get_auto_copy_ocr_result(config_path=None):
+    """Read 'auto_copy_ocr_result' from config (default True)."""
+    if config_path is None:
+        config_path = get_config_path()
+    config_data = _load_config_data(config_path)
+    return bool(config_data.get("auto_copy_ocr_result", True))
+
+
+def update_auto_copy_ocr_result(enabled, config_path=None):
+    """Update and persist 'auto_copy_ocr_result' in config."""
+    if config_path is None:
+        config_path = get_config_path()
+    config_data = _load_config_data(config_path)
+    config_data["auto_copy_ocr_result"] = bool(enabled)
+    try:
+        _write_config_data(config_path, config_data)
+    except Exception as e:
+        logger.error(f"Failed to update auto_copy_ocr_result: {e}")
+
+
 def get_ocr_engine(state_path=None, config_path=None):
     """Read OCR engine from state file, with migration fallback from config."""
     if state_path is None:
@@ -725,7 +782,7 @@ def is_already_running():
         handle: Unique mutex handle if this is the first instance.
         None:   If another instance is already running.
     """
-    mutex_name = SINGLE_INSTANCE_MUTEX
+    mutex_name = get_mutex_name()
     handle = _create_mutex(
     None,          
     False,         # bInitialOwner: Create the mutex object only, without acquiring the lock.
