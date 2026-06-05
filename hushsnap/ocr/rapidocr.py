@@ -1,5 +1,5 @@
 import logging
-import re
+import statistics
 import threading
 import time
 
@@ -62,339 +62,304 @@ def word_separator(left: str, right: str) -> str:
     return " "
 
 
-def compose_rapidocr_structures(blocks: list[dict]) -> list[OcrLine]:
-    normalized_blocks = []
-    vertical_aspect_count = 0
-    total_valid = 0
+# ── XY-Cut layout engine ───────────────────────────────────────────────
+# Hierarchical recursive XY-Cut with adaptive per-region thresholds.
+#
+# Design (synthesised from three canonical variants):
+#   1. CC-based XY-Cut   (Ha, Haralick & Phillips 1995) — bbox input, recursive alternation
+#   2. ARXYC              (Sylwester 2001)              — gap-ratio threshold, locally adaptive
+#   3. Augmented XY-Cut   (Gu et al. 2022)              — sorted-adjacency gap detection
+#
+# Thresholds are multiples of local character metrics → DPI- and font-agnostic.
 
-    for block in blocks or []:
+# Gap thresholds expressed as multiples of local character metrics.
+# These are unitless ratios — they scale automatically with DPI and font size.
+_GAP_RATIO_H_REGION = 2.5   # Y-gap > 2.5× char_h → horizontal region (header/body/footer)
+_GAP_RATIO_H_LINE   = 0.4   # Y-gap > 0.4× char_h → text line separator
+_GAP_RATIO_V_COLUMN = 3.5   # X-gap > 3.5× char_w → column separator
+_GAP_RATIO_V_WORD   = 1.8   # X-gap > 1.8× char_w → word separator (Latin only)
+
+# Minimum gap in pixels to avoid splitting on sub-pixel noise
+_MIN_GAP_PX = 2.0
+
+# ---------------------------------------------------------------------------
+
+
+def _normalize_blocks(blocks: list[dict]) -> list[dict]:
+    """Convert raw RapidOCR blocks to internal representation; filter junk.
+
+    Blocks without a valid bounding box get a minimal placeholder so their
+    text is preserved in the output (RapidOCR may occasionally return text
+    without proper box coordinates in edge cases).
+    """
+    normalized: list[dict] = []
+    for block in (blocks or []):
         text = str(block.get("text", "") or "").strip()
         if not text:
             continue
         left, top, right, bottom = rapidocr_box_to_bbox(block.get("box"))
         w = right - left
         h = bottom - top
-        
-        # Heuristic: if height is significantly greater than width, it's likely a vertical block.
-        if h > w * 1.4:
-            vertical_aspect_count += 1
-        total_valid += 1
-        
-        normalized_blocks.append(
-            {
-                "text": text,
-                "left": left,
-                "top": top,
-                "right": right,
-                "bottom": bottom,
-                "width": w,
-                "height": h,
-                "center_x": (left + right) / 2,
-                "center_y": (top + bottom) / 2,
-                "raw_box": block.get("box"),
-            }
-        )
+        if w <= 0 or h <= 0:
+            # Block has text but no valid bbox — give it a minimal placement
+            w, h = 1.0, 1.0
+        normalized.append({
+            "text": text,
+            "left": left, "top": top,
+            "right": right, "bottom": bottom,
+            "width": max(w, 0.0), "height": max(h, 0.0),
+            "center_x": (left + right) / 2,
+            "center_y": (top + bottom) / 2,
+        })
+    return normalized
 
-    if not normalized_blocks:
+
+def _region_metrics(blocks: list[dict]) -> dict:
+    """Compute per-region adaptive metrics (median height / width)."""
+    heights = [b["height"] for b in blocks]
+    widths = [b["width"] for b in blocks]
+    return {
+        "med_h": statistics.median(heights) if heights else 15.0,
+        "med_w": statistics.median(widths) if widths else 15.0,
+    }
+
+
+def _detect_gaps(
+    sorted_blocks: list[dict], direction: str, threshold: float
+) -> list[tuple[int, float]]:
+    """Find gaps between adjacent blocks along *direction* that exceed *threshold*."""
+    gaps: list[tuple[int, float]] = []
+    for i in range(len(sorted_blocks) - 1):
+        curr = sorted_blocks[i]
+        nxt = sorted_blocks[i + 1]
+        if direction == "y":
+            gap = nxt["center_y"] - curr["center_y"]
+        else:
+            gap = nxt["left"] - curr["right"]
+        if gap > threshold:
+            gaps.append((i, gap))
+    return gaps
+
+
+def _leaf_reading_order(
+    blocks: list[dict], came_from: str
+) -> list[dict]:
+    """Sort blocks within a terminal (leaf) region for reading order.
+
+    Vertical CJK text (e.g. sidebars, traditional documents)::
+
+      * Single column — only top→bottom order matters (column direction irrelevant)
+      * Multiple columns — traditional convention: right→left, top→bottom
+
+    Horizontal text (default): top→bottom, left→right.
+    """
+    if len(blocks) <= 1:
+        return list(blocks)
+
+    # ── detect vertical CJK ──────────────────────────────────────────
+    tall_count = sum(1 for b in blocks if b["height"] > b["width"] * 1.3)
+    is_vertical_cjk = len(blocks) >= 3 and tall_count / len(blocks) > 0.5
+
+    if is_vertical_cjk:
+        # Are blocks clustered at a single X position or spread across columns?
+        x_centers = sorted(b["center_x"] for b in blocks)
+        x_span = x_centers[-1] - x_centers[0]
+        widths = [b["width"] for b in blocks]
+        med_w = statistics.median(widths) if widths else 15.0
+
+        if x_span > med_w * 2.0:
+            # Multi-column vertical CJK → traditional right→left column order.
+            blocks.sort(key=lambda b: b["center_x"])
+
+            columns: list[list[dict]] = []
+            for block in blocks:
+                if not columns:
+                    columns.append([block])
+                    continue
+                last = columns[-1]
+                avg_cx = sum(b["center_x"] for b in last) / len(last)
+                avg_w = sum(b["width"] for b in last) / len(last)
+                if (
+                    abs(block["center_x"] - avg_cx)
+                    <= max(avg_w, block["width"]) * 0.8
+                ):
+                    last.append(block)
+                else:
+                    columns.append([block])
+
+            # Sort columns right→left (larger center_x = further right)
+            columns.sort(
+                key=lambda col: -sum(b["center_x"] for b in col) / len(col)
+            )
+
+            # Sort top→bottom within each column
+            result: list[dict] = []
+            for col in columns:
+                col.sort(key=lambda b: b["center_y"])
+                result.extend(col)
+            blocks = result
+        else:
+            # Single-column vertical → top→bottom only (X order irrelevant)
+            blocks.sort(key=lambda b: b["center_y"])
+    else:
+        # Standard horizontal: top→bottom, left→right
+        blocks.sort(key=lambda b: (b["center_y"], b["left"]))
+
+    return blocks
+
+
+def _xy_cut(
+    blocks: list[dict], direction: str, depth: int = 0
+) -> list[dict]:
+    """Recursive XY-Cut: partition blocks by alternating Y/X projection gaps.
+
+    Returns blocks in reading order:
+
+    * Y-cut first (top-level) → separate horizontal regions (header / body / footer)
+    * X-cut within each region → separate columns
+    * Y-cut within each column → separate text lines
+    * Terminal: sort for reading direction (handles CJK vertical text)
+    """
+    if len(blocks) <= 1:
+        return list(blocks)
+
+    m = _region_metrics(blocks)
+    med_h = m["med_h"]
+    med_w = m["med_w"]
+
+    # ── gap threshold: coarse at top level, fine at deeper levels ────
+    if direction == "y":
+        threshold = med_h * (
+            _GAP_RATIO_H_REGION if depth == 0 else _GAP_RATIO_H_LINE
+        )
+    else:
+        # X direction: column gaps only (never split individual words)
+        threshold = med_w * _GAP_RATIO_V_COLUMN
+
+    threshold = max(threshold, _MIN_GAP_PX)
+
+    # ── sort + detect gaps ───────────────────────────────────────────
+    if direction == "y":
+        sorted_blocks = sorted(blocks, key=lambda b: (b["center_y"], b["left"]))
+    else:
+        sorted_blocks = sorted(blocks, key=lambda b: (b["left"], b["center_y"]))
+
+    gaps = _detect_gaps(sorted_blocks, direction, threshold)
+
+    if not gaps:
+        # Terminal: no significant gaps → leaf region
+        return _leaf_reading_order(sorted_blocks, direction)
+
+    # Split at the largest gap
+    gaps.sort(key=lambda g: -g[1])
+    split_idx, _best_gap = gaps[0]
+
+    group1 = sorted_blocks[:split_idx + 1]
+    group2 = sorted_blocks[split_idx + 1:]
+
+    next_dir = "x" if direction == "y" else "y"
+
+    result: list[dict] = []
+    result.extend(_xy_cut(group1, next_dir, depth + 1))
+    result.extend(_xy_cut(group2, next_dir, depth + 1))
+    return result
+
+
+def _build_lines_from_ordered_blocks(
+    ordered_blocks: list[dict],
+) -> list[OcrLine]:
+    """Group reading-order blocks into OcrLine objects via center_y proximity."""
+    if not ordered_blocks:
         return []
 
-    # Enhanced vertical layout detection:
-    # 1. Check aspect ratios of individual blocks
-    # 2. Compare vertical alignment vs horizontal neighbor trends using weighted evidence
-    vert_align_count = 0.0
-    horiz_neighbor_count = 0.0
-    sample_blocks = normalized_blocks[:20]
-    for i in range(len(sample_blocks)):
-        for j in range(i + 1, len(sample_blocks)):
-            bi, bj = sample_blocks[i], sample_blocks[j]
-            x_dist = abs(bi["center_x"] - bj["center_x"])
-            y_dist = abs(bi["center_y"] - bj["center_y"])
-            
-            # Potential vertical alignment (same column)
-            if x_dist < min(bi["width"], bj["width"]) * 0.25:
-                avg_h = min(bi["height"], bj["height"])
-                if 0.7 * avg_h < y_dist < 2.0 * avg_h:
-                    vert_align_count += 1.5  # Strong evidence: typical character spacing
-                elif y_dist < 4.0 * avg_h:
-                    vert_align_count += 0.5  # Weak evidence: distant but aligned
-                else:
-                    vert_align_count += 0.1  # Trace evidence: very distant
-            
-            # Potential horizontal neighbor (same line)
-            if y_dist < min(bi["height"], bj["height"]) * 0.3 and x_dist > min(bi["width"], bj["width"]) * 0.5:
-                horiz_neighbor_count += 1.0
+    heights = [b["height"] for b in ordered_blocks]
+    med_h = statistics.median(heights) if heights else 15.0
 
-    # Heuristic: Switch to vertical ONLY if:
-    # - More than half the blocks are tall (classic vertical line boxes)
-    # - OR Vertical alignment is very strong AND overwhelmingly outweighs horizontal connections
-    is_vertical = (vertical_aspect_count / total_valid > 0.5)
-    if not is_vertical:
-        # Very conservative threshold: vertical evidence must be at least 2.5x horizontal 
-        # to overcome the default horizontal bias.
-        is_vertical = (vert_align_count > 5.0) and (vert_align_count > horiz_neighbor_count * 2.5)
+    # Group consecutive blocks whose center_y is within 0.6× median height
+    line_groups: list[list[dict]] = []
+    current_line = [ordered_blocks[0]]
 
-    final_lines: list[OcrLine] = []
+    for block in ordered_blocks[1:]:
+        avg_y = sum(b["center_y"] for b in current_line) / len(current_line)
+        avg_h = sum(b["height"] for b in current_line) / len(current_line)
+        if abs(block["center_y"] - avg_y) < avg_h * 0.6:
+            current_line.append(block)
+        else:
+            line_groups.append(current_line)
+            current_line = [block]
 
-    if is_vertical:
-        logger.debug("Vertical layout detected (aspect_score=%d, vert_align=%d, horiz_neigh=%d)", 
-                     vertical_aspect_count, vert_align_count, horiz_neighbor_count)
-        # 1. Sort columns from right to left (CJK standard)
-        normalized_blocks.sort(key=lambda item: (-item["center_x"], item["center_y"]))
-        
-        columns: list[list[dict]] = []
-        for block in normalized_blocks:
-            if not columns:
-                columns.append([block])
-                continue
+    line_groups.append(current_line)
 
-            last_col = columns[-1]
-            avg_width = sum(item["width"] for item in last_col) / len(last_col)
-            avg_center_x = sum(item["center_x"] for item in last_col) / len(last_col)
-            
-            # Group into the same column if horizontal center is close enough
-            if abs(block["center_x"] - avg_center_x) <= max(avg_width, block["width"]) * 0.7:
-                last_col.append(block)
-            else:
-                columns.append([block])
+    # Build OcrLine objects
+    result: list[OcrLine] = []
+    for group in line_groups:
+        # ── sort within line ─────────────────────────────────────────
+        # Horizontal text: left→right (standard).
+        # Vertical CJK text: preserve the column order that _leaf_reading_order
+        #   already established (right→left).  Sorting by left here would
+        #   reverse it back to left→right.
+        tall_in_group = sum(
+            1 for b in group if b["height"] > b["width"] * 1.3
+        )
+        if tall_in_group / len(group) > 0.5 and len(group) >= 3:
+            # Vertical CJK — keep _leaf_reading_order sequence
+            pass
+        else:
+            group.sort(key=lambda b: b["left"])
+        words: list[OcrWord] = []
+        text_parts: list[str] = []
+        prev_text = ""
 
-        for col in columns:
-            col.sort(key=lambda item: item["center_y"])
-            words: list[OcrWord] = []
-            line_text_parts: list[str] = []
-            prev_block = None
-            
-            min_l, min_t, max_r, max_b = float("inf"), float("inf"), float("-inf"), float("-inf")
-            
-            for block in col:
-                text = block["text"]
-                sep = word_separator(prev_block["text"], text) if prev_block else ""
-                if sep:
-                    line_text_parts.append(sep)
-                line_text_parts.append(text)
-                
-                words.append(OcrWord(
-                    text=text,
-                    bounding_box=bbox_to_ocr_box(block["left"], block["top"], block["right"], block["bottom"])
-                ))
-                min_l, min_t = min(min_l, block["left"]), min(min_t, block["top"])
-                max_r, max_b = max(max_r, block["right"]), max(max_b, block["bottom"])
-                prev_block = block
-                
-            final_lines.append(OcrLine(
-                text="".join(line_text_parts).strip(),
-                words=words,
-                bounding_box=bbox_to_ocr_box(min_l, min_t, max_r, max_b)
-            ))
-    else:
-        # Standard horizontal mode: Robust Multi-line Grouping
-        # We sort by center_y first to get a general top-to-bottom flow
-        normalized_blocks.sort(key=lambda item: item["center_y"])
-        
-        line_groups: list[list[dict]] = []
-        for block in normalized_blocks:
-            # Look for an existing line that this block could belong to
-            found_line = False
-            for line in line_groups:
-                # Use the average center_y and height of the line for matching
-                avg_line_y = sum(item["center_y"] for item in line) / len(line)
-                avg_line_h = sum(item["height"] for item in line) / len(line)
-                
-                # If the block's center is within 50% of the line's height
-                if abs(block["center_y"] - avg_line_y) < avg_line_h * 0.5:
-                    line.append(block)
-                    found_line = True
-                    break
-            
-            if not found_line:
-                line_groups.append([block])
+        min_l = min(b["left"] for b in group)
+        min_t = min(b["top"] for b in group)
+        max_r = max(b["right"] for b in group)
+        max_b = max(b["bottom"] for b in group)
 
-        # After grouping into lines, sort each line by X-coordinate
-        # and then sort the lines themselves by their average Y-coordinate
-        line_groups.sort(key=lambda line: sum(item["center_y"] for item in line) / len(line))
-
-        for line in line_groups:
-            line.sort(key=lambda item: item["left"])
-            words: list[OcrWord] = []
-            line_text_parts: list[str] = []
-            prev_block = None
-            
-            min_l, min_t, max_r, max_b = float("inf"), float("inf"), float("-inf"), float("-inf")
-
-            for block in line:
-                text = block["text"]
-                sep = word_separator(prev_block["text"], text) if prev_block else ""
-                if sep:
-                    line_text_parts.append(sep)
-                line_text_parts.append(text)
-                
-                words.append(OcrWord(
-                    text=text,
-                    bounding_box=bbox_to_ocr_box(block["left"], block["top"], block["right"], block["bottom"])
-                ))
-                min_l, min_t = min(min_l, block["left"]), min(min_t, block["top"])
-                max_r, max_b = max(max_r, block["right"]), max(max_b, block["bottom"])
-                prev_block = block
-
-            final_lines.append(OcrLine(
-                text="".join(line_text_parts).strip(),
-                words=words,
-                bounding_box=bbox_to_ocr_box(min_l, min_t, max_r, max_b)
+        for block in group:
+            sep = word_separator(prev_text, block["text"]) if prev_text else ""
+            if sep:
+                text_parts.append(sep)
+            text_parts.append(block["text"])
+            prev_text = block["text"]
+            words.append(OcrWord(
+                text=block["text"],
+                bounding_box=bbox_to_ocr_box(
+                    block["left"], block["top"],
+                    block["right"], block["bottom"],
+                ),
             ))
 
-    # ── post-processing pipeline (spec ③④) ─────────────────────────
-    # Compute stats needed for column detection
-    valid_boxes = [l.bounding_box for l in final_lines if l.bounding_box.height > 0]
-    avg_w = sum(b.width for b in valid_boxes) / len(valid_boxes) if valid_boxes else 100.0
-    avg_h = sum(b.height for b in valid_boxes) / len(valid_boxes) if valid_boxes else 20.0
+        result.append(OcrLine(
+            text="".join(text_parts).strip(),
+            words=words,
+            bounding_box=bbox_to_ocr_box(min_l, min_t, max_r, max_b),
+        ))
 
-    # 1. Multi-column reading order (spec ④)
-    final_lines = _detect_columns_and_reorder(final_lines, avg_w)
-
-    # 2. Merge lines into paragraphs (spec ①②⑤)
-    paragraphs = merge_lines_to_paragraphs(final_lines)
-
-    # 3. Format headings with extra spacing (spec ③)
-    for i, para in enumerate(paragraphs):
-        if _is_heading_candidate(para, paragraphs, avg_h, avg_w):
-            para.text = f"\n{para.text}\n"
-
-    return paragraphs
+    return result
 
 
-# ── line classification helpers ──────────────────────────────────────
+def _merge_lines_to_paragraphs(lines: list[OcrLine]) -> list[OcrLine]:
+    """Merge consecutive lines into paragraphs using layout + text signals.
 
-_LIST_MARKER_RE = re.compile(
-    r"^\s*(?:\d+[\.\)]\s|[A-Za-z][\.\)]\s|[•·▪▸►○●◦\-–—]\s)"
-)
+    Layout signals (XY-Cut already resolved column / reading order):
+      - Line gap < 1.6× median line height  → same paragraph
+      - Significant left-edge shift          → new paragraph (indent)
+      - Short previous line                  → likely paragraph end
 
-def _is_list_item(text: str) -> bool:
-    """Detect if text starts with a list marker (bullet, number, letter)."""
-    return bool(_LIST_MARKER_RE.match(text))
-
-
-def _is_heading_candidate(
-    line: OcrLine, all_lines: list[OcrLine], avg_h: float, avg_w: float
-) -> bool:
-    """Heuristic heading detection using geometry only (no keyword coupling)."""
-    text = line.text.strip()
-    if not text:
-        return False
-
-    box = line.bounding_box
-    # Geometry: noticeably taller font than body text
-    tall = box.height > avg_h * 1.25
-    # Geometry: significantly narrower than average (whitespace on sides)
-    narrow = box.width < avg_w * 0.7
-    # Short text that doesn't fill the line
-    short_text = len(text) < 40 and box.width < avg_w * 0.75
-
-    if not (tall or narrow or short_text):
-        return False
-
-    # Isolation: check gaps before and after
-    idx = all_lines.index(line) if line in all_lines else -1
-    if idx < 0:
-        return False
-
-    isolation_score = 0
-    if idx > 0:
-        prev = all_lines[idx - 1]
-        prev_bottom = prev.bounding_box.y + prev.bounding_box.height
-        gap_before = box.y - prev_bottom
-        if gap_before > avg_h * 1.2:
-            isolation_score += 1
-    else:
-        isolation_score += 1
-
-    if idx < len(all_lines) - 1:
-        next_line = all_lines[idx + 1]
-        gap_after = next_line.bounding_box.y - (box.y + box.height)
-        if gap_after > avg_h * 1.2:
-            isolation_score += 1
-    else:
-        isolation_score += 1
-
-    # Heading = isolated + geometrically distinct
-    return isolation_score >= 1 and (tall or (narrow and short_text))
-
-
-def _detect_columns_and_reorder(
-    lines: list[OcrLine], avg_w: float
-) -> list[OcrLine]:
-    """Detect multi-column layout and reorder for reading order.
-
-    Strategy: cluster lines by their horizontal center. If two clear clusters
-    exist (left / right), read left column first, then right column.
-    Single-column documents pass through unchanged.
-    """
-    if len(lines) < 4:
-        return lines
-
-    centers = [l.bounding_box.x + l.bounding_box.width / 2 for l in lines]
-    min_c, max_c = min(centers), max(centers)
-    span = max_c - min_c
-    if span < avg_w * 1.5:
-        return lines  # too narrow for multi-column
-
-    # Two-means clustering on X centers
-    c0, c1 = min_c, max_c
-    for _ in range(10):
-        g0 = [c for c in centers if abs(c - c0) <= abs(c - c1)]
-        g1 = [c for c in centers if abs(c - c0) > abs(c - c1)]
-        if g0:
-            c0 = sum(g0) / len(g0)
-        if g1:
-            c1 = sum(g1) / len(g1)
-
-    if not g0 or not g1:
-        return lines
-
-    col_gap = abs(c0 - c1)
-    # Only treat as columns if the gap is substantial
-    if col_gap < avg_w * 0.5:
-        return lines
-
-    left_col = [l for l in lines if abs((l.bounding_box.x + l.bounding_box.width / 2) - c0) <= abs((l.bounding_box.x + l.bounding_box.width / 2) - c1)]
-    right_col = [l for l in lines if l not in left_col]
-
-    # Sort each column by Y, then concatenate left → right
-    left_col.sort(key=lambda l: l.bounding_box.y)
-    right_col.sort(key=lambda l: l.bounding_box.y)
-
-    logger.debug("Multi-column detected: left=%d lines, right=%d lines", len(left_col), len(right_col))
-    return left_col + right_col
-
-
-# ── paragraph merging (enhanced with text signals) ───────────────────
-
-def merge_lines_to_paragraphs(lines: list[OcrLine]) -> list[OcrLine]:
-    """Merge consecutive OCR lines into paragraphs using layout + text signals.
-
-    Layout signals (from spec ①②):
-      - Line gap < 1.5× average line height  (normal inter-line spacing)
-      - Left edges align within tolerance     (same column / no indent change)
-      - Short previous line → paragraph end
-
-    Text signals (from spec ⑤):
-      - Line ends with '-' hyphen → always merge (broken word)
-      - Line ends with '。' or '.'  → paragraph boundary
-      - Line ends without punct and next starts lowercase → same sentence, merge
+    Text signals:
+      - Line ends with '-'                   → merge (hyphenated word)
+      - Line ends with 。or .                → paragraph boundary
+      - Open-ended line + next starts lower  → same sentence, merge
     """
     if len(lines) <= 1:
-        return lines
+        return list(lines)
 
-    valid = [l for l in lines if l.bounding_box.height > 0]
-    if not valid:
-        return lines
-
-    avg_h = sum(l.bounding_box.height for l in valid) / len(valid)
-    avg_w = sum(l.bounding_box.width for l in valid) / len(valid)
-    global_right = max(l.bounding_box.x + l.bounding_box.width for l in valid)
-
-    PARA_GAP_RATIO = 1.5
-    X_ALIGN_TOLERANCE = max(avg_w * 0.12, 12.0)
-    SHORT_LINE_RATIO = 0.65
-    INDENT_THRESHOLD = max(avg_w * 0.18, 15.0)
+    heights = [l.bounding_box.height for l in lines if l.bounding_box.height > 0]
+    if not heights:
+        return list(lines)
+    med_h = statistics.median(heights)
+    widths = [l.bounding_box.width for l in lines if l.bounding_box.width > 0]
+    med_w = statistics.median(widths) if widths else 300.0
 
     merged: list[OcrLine] = []
     para_lines: list[OcrLine] = [lines[0]]
@@ -406,51 +371,38 @@ def merge_lines_to_paragraphs(lines: list[OcrLine]) -> list[OcrLine]:
         prev_text = prev.text.strip()
         curr_text = curr.text.strip()
 
-        # ── text signals (spec ⑤) ──────────────────────────────────
-        # Hyphenation: line ends with '-' → always merge (broken word)
+        # ── text signals ─────────────────────────────────────────────
         hyphen_merge = prev_text.endswith("-")
-
-        # Period boundary: line ends with 。or . → paragraph boundary
         period_end = prev_text.endswith(("。", ".", "！", "？", "!", "?"))
-
-        # Lowercase continuation: prev has no end punct, next starts lowercase
-        ends_open = not prev_text[-1] in "。.！？!?,;；:："
+        ends_open = prev_text and prev_text[-1] not in "。.！？!?,;；:："
         next_starts_lower = curr_text and curr_text[0].islower()
         lowercase_continue = ends_open and next_starts_lower
 
-        # ── layout signals ─────────────────────────────────────────
+        # ── layout signals ───────────────────────────────────────────
         prev_bottom = prev.bounding_box.y + prev.bounding_box.height
         curr_top = curr.bounding_box.y
         gap = curr_top - prev_bottom
 
-        if gap <= 1.0:
-            para_lines.append(curr)
-            continue
-
-        prev_left = prev.bounding_box.x
-        curr_left = curr.bounding_box.x
-        x_shift = abs(curr_left - prev_left)
-
+        x_shift = abs(curr.bounding_box.x - prev.bounding_box.x)
         prev_right = prev.bounding_box.x + prev.bounding_box.width
-        prev_is_short = (global_right - prev_right) > avg_w * (1.0 - SHORT_LINE_RATIO)
+        global_right = max(
+            l.bounding_box.x + l.bounding_box.width for l in lines
+        )
+        prev_is_short = (global_right - prev_right) > med_w * 0.35
 
-        large_gap = gap > avg_h * PARA_GAP_RATIO
-        indent_jump = x_shift > INDENT_THRESHOLD
+        large_gap = gap > med_h * 1.6
+        indent_jump = x_shift > max(med_w * 0.15, 12.0)
 
-        # ── merge decision ──────────────────────────────────────────
-        # Text signals only apply when layout says lines are adjacent
-        text_signals_active = not large_gap and not indent_jump
-
-        if text_signals_active and (hyphen_merge or lowercase_continue):
+        # ── merge decision ───────────────────────────────────────────
+        if hyphen_merge and not large_gap:
             para_lines.append(curr)
-        elif period_end and gap > avg_h * 0.8:
-            # Period + spacing → definite paragraph break
+        elif period_end and gap > med_h * 0.7:
             merged.append(_flush_paragraph(para_lines))
             para_lines = [curr]
         elif large_gap or indent_jump or prev_is_short:
             merged.append(_flush_paragraph(para_lines))
             para_lines = [curr]
-        elif x_shift <= X_ALIGN_TOLERANCE:
+        elif gap <= med_h * 1.6:
             para_lines.append(curr)
         else:
             merged.append(_flush_paragraph(para_lines))
@@ -460,32 +412,111 @@ def merge_lines_to_paragraphs(lines: list[OcrLine]) -> list[OcrLine]:
     return merged
 
 
+def _is_heading(
+    line: OcrLine, all_lines: list[OcrLine], med_h: float, med_w: float,
+) -> bool:
+    """Detect heading lines via geometry + isolation (no keyword coupling)."""
+    text = line.text.strip()
+    if not text or len(text) > 60:
+        return False
+
+    box = line.bounding_box
+    tall = box.height > med_h * 1.25
+    short_text = len(text) < 50 and box.width < med_w * 0.75
+
+    if not (tall or short_text):
+        return False
+
+    # Check isolation (gaps above / below)
+    try:
+        idx = all_lines.index(line)
+    except ValueError:
+        return False
+
+    isolation = 0
+    if idx > 0:
+        prev = all_lines[idx - 1]
+        gap_before = box.y - (prev.bounding_box.y + prev.bounding_box.height)
+        if gap_before > med_h * 1.0:
+            isolation += 1
+    else:
+        isolation += 1
+
+    if idx < len(all_lines) - 1:
+        nxt = all_lines[idx + 1]
+        gap_after = nxt.bounding_box.y - (box.y + box.height)
+        if gap_after > med_h * 1.0:
+            isolation += 1
+    else:
+        isolation += 1
+
+    return isolation >= 1 and (tall or short_text)
+
+
+# ── public API ────────────────────────────────────────────────────────────
+
+
+def compose_rapidocr_structures(blocks: list[dict]) -> list[OcrLine]:
+    """Convert RapidOCR word/character detection blocks into ordered OcrLines.
+
+    Pipeline::
+
+      1. Normalize raw blocks (filter empty / zero-size)
+      2. Hierarchical recursive XY-Cut → reading order
+      3. Group ordered blocks into OcrLine objects (center_y proximity)
+      4. Merge consecutive lines into paragraphs (gap + text signals)
+      5. Annotate headings with extra spacing
+    """
+    # Step 1 — normalize
+    normalized = _normalize_blocks(blocks)
+    if not normalized:
+        return []
+
+    # Step 2 — recursive XY-Cut → ordered blocks in reading order
+    ordered = _xy_cut(normalized, direction="y", depth=0)
+
+    # Step 3 — group into OcrLine objects
+    lines = _build_lines_from_ordered_blocks(ordered)
+    if not lines:
+        return []
+
+    # Step 4 — merge into paragraphs
+    paragraphs = _merge_lines_to_paragraphs(lines)
+
+    # Step 5 — annotate headings
+    valid = [p for p in paragraphs if p.bounding_box.height > 0]
+    if valid:
+        med_h = statistics.median([p.bounding_box.height for p in valid])
+        med_w = statistics.median([p.bounding_box.width for p in valid])
+        for para in paragraphs:
+            if _is_heading(para, paragraphs, med_h, med_w):
+                para.text = f"\n{para.text}\n"
+
+    return paragraphs
+
 
 def _flush_paragraph(lines: list[OcrLine]) -> OcrLine:
-    """Merge a paragraph's lines into one OcrLine with flowing text.
+    """Merge a paragraph's constituent lines into one OcrLine.
 
-    Handles hyphenation repair: if a line ends with '-' it is a broken word;
-    the hyphen is stripped and the next line is joined without a separator.
+    Handles hyphenation repair: strips trailing '-' and joins without separator.
     """
     if len(lines) == 1:
         return lines[0]
 
     parts: list[str] = []
-    prev_line: OcrLine | None = None
+    prev_text = ""
     for line in lines:
         text = line.text
-        if prev_line is not None:
-            # Hyphenation repair (spec ⑤): strip trailing '-' and join directly
-            if prev_line.text.rstrip().endswith("-"):
-                # Remove the trailing hyphen from the previous part
+        if prev_text:
+            if prev_text.rstrip().endswith("-"):
                 if parts:
                     parts[-1] = parts[-1].rstrip()[:-1]
             else:
-                sep = word_separator(prev_line.text, text)
+                sep = word_separator(prev_text, text)
                 if sep:
                     parts.append(sep)
         parts.append(text)
-        prev_line = line
+        prev_text = text
 
     merged_text = "".join(parts).strip()
 
