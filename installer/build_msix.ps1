@@ -5,9 +5,7 @@ param(
     [string]$PublisherDisplayName = "TCITA Studio",
     [string]$DisplayName = "HushSnap",
     [string]$Version,
-    [switch]$Rebuild,
-    [switch]$SkipValidation,
-    [switch]$Dev
+    [switch]$SkipValidation
 )
 
 $ErrorActionPreference = "Stop"
@@ -149,13 +147,11 @@ function Invoke-PreBuildValidation {
         $allInitFiles = Get-ChildItem -Path $pkgDir -Recurse -Filter "__init__.py"
         foreach ($initFile in $allInitFiles) {
             $imports = Select-String -Path $initFile.FullName -Pattern 'from \.(\S+) import|from \.\.(\S+) import' -AllMatches
-            # Non-fatal: just warn about potential hidden import gaps
-            # The main check above (1.1) covers the common case
         }
         Write-Pass "All __init__.py files present in source tree"
     }
 
-    # 1.2 ── __init__.py version is clean "dev" (not leaked from crash) ─
+    # 1.3 ── __init__.py version is clean "dev" (not leaked from crash) ─
     $initPyPath = Join-Path $RootDir "hushsnap\__init__.py"
     $initPyContent = Get-Content $initPyPath -Raw
     if ($initPyContent -match '__version__\s*=\s*"dev"') {
@@ -169,7 +165,7 @@ function Invoke-PreBuildValidation {
         $errors++
     }
 
-    # 1.3 ── Critical Python imports resolve ────────────────────────
+    # 1.4 ── Critical Python imports resolve ────────────────────────
     $criticalModules = @("rapidocr", "onnxruntime", "PyQt6", "numpy", "winrt")
     foreach ($mod in $criticalModules) {
         $result = & python.exe -c "import $mod" 2>&1
@@ -180,7 +176,7 @@ function Invoke-PreBuildValidation {
     }
     Write-Pass "All critical Python modules importable"
 
-    # 1.4 ── Git working tree status (warning only) ─────────────────
+    # 1.5 ── Git working tree status (warning only) ─────────────────
     $gitStatus = & git -C $RootDir status --porcelain 2>$null
     if ($gitStatus) {
         Write-Warn "Git working tree has uncommitted changes:"
@@ -190,7 +186,7 @@ function Invoke-PreBuildValidation {
         Write-Pass "Git working tree is clean"
     }
 
-    # 1.5 ── Git tag exists for version ─────────────────────────────
+    # 1.6 ── Git tag exists for version ─────────────────────────────
     $gitTag = & git -C $RootDir describe --tags --abbrev=0 2>$null
     if (-not $gitTag) {
         Write-Fail "No git tag found — MSIX version is unknown. Create one: git tag -a v0.3.0 -m 'release v0.3.0'"
@@ -199,16 +195,15 @@ function Invoke-PreBuildValidation {
         Write-Pass "Git tag found: $gitTag"
     }
 
-    # 1.6 ── Default config template has debug = false ─────────────
+    # 1.7 ── Default config template has debug = false ─────────────
     $configPyPath = Join-Path $pkgDir "config.py"
     $debugLine = Select-String -Path $configPyPath -Pattern '"debug"\s*:\s*False' | Select-Object -First 1
     if ($debugLine) {
         Write-Pass "Default config template: debug = false"
     } else {
-        # Double-check: maybe it's true
         $debugTrue = Select-String -Path $configPyPath -Pattern '"debug"\s*:\s*True' | Select-Object -First 1
         if ($debugTrue) {
-            Write-Fail "Default config template has debug = True in _ensure_default_config_exists() — should be False for release"
+            Write-Fail "Default config template has debug = True — should be False for release"
             $errors++
         } else {
             Write-Fail "Could not verify 'debug = false' in config.py _ensure_default_config_exists()"
@@ -216,7 +211,7 @@ function Invoke-PreBuildValidation {
         }
     }
 
-    # 1.7 ── No runtime config/state files leaked into project ─────
+    # 1.8 ── No runtime config/state files leaked into project ─────
     $leakedConfigs = @(
         (Get-ChildItem -Path $RootDir -Recurse -Filter "hushsnap_config.toml" -ErrorAction SilentlyContinue),
         (Get-ChildItem -Path $RootDir -Recurse -Filter "hushsnap_state.toml" -ErrorAction SilentlyContinue)
@@ -231,7 +226,7 @@ function Invoke-PreBuildValidation {
         Write-Pass "No runtime config/state files leaked into project tree"
     }
 
-    # 1.8 ── No .log files in project tree ──────────────────────────
+    # 1.9 ── No .log files in project tree ──────────────────────────
     $logFiles = Get-ChildItem -Path $RootDir -Recurse -Filter "*.log" -ErrorAction SilentlyContinue
     if ($logFiles) {
         foreach ($f in $logFiles) {
@@ -243,10 +238,7 @@ function Invoke-PreBuildValidation {
         Write-Pass "No .log files in project tree"
     }
 
-    # 1.9 ── No debug/artifact files in project tree ────────────────
-    # Note: __pycache__/*.pyc and build/*/localpycs/*.pyc are normal
-    # Python/PyInstaller caches — they are NOT bundled in the MSIX.
-    # Only flag files that indicate leaked dev/test artifacts.
+    # 1.10 ── No debug/artifact files in project tree ───────────────
     $debugArtifacts = Get-ChildItem -Path $RootDir -Recurse -Include @("ocr_debug_*.png", "*.pdb") -ErrorAction SilentlyContinue
     if ($debugArtifacts) {
         foreach ($f in $debugArtifacts) {
@@ -257,7 +249,7 @@ function Invoke-PreBuildValidation {
         Write-Pass "No debug artifacts (ocr_debug_*.png, *.pdb) in project tree"
     }
 
-    # 1.10 ── Orphan .pyc files outside __pycache__ (stale cache) ──
+    # 1.11 ── Orphan .pyc files outside __pycache__ (stale cache) ──
     $orphanPyc = Get-ChildItem -Path $RootDir -Recurse -Filter "*.pyc" -ErrorAction SilentlyContinue |
         Where-Object { $_.DirectoryName -notmatch '__pycache__|localpycs' }
     if ($orphanPyc) {
@@ -269,7 +261,7 @@ function Invoke-PreBuildValidation {
         Write-Pass "No orphan .pyc files outside __pycache__"
     }
 
-    # 1.11 ── __pycache__ directories are present (info only) ───────
+    # 1.12 ── __pycache__ directories are present (info only) ───────
     $pycacheDirs = Get-ChildItem -Path $RootDir -Recurse -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue
     if ($pycacheDirs) {
         Write-Pass "__pycache__ directories present ($($pycacheDirs.Count)) — normal, not bundled"
@@ -422,7 +414,10 @@ function Invoke-PostMSIXValidation {
     }
 }
 
-# 1) Locate tools from the Windows SDK
+# ══════════════════════════════════════════════════════════════════════
+#  1. Locate makeappx.exe from the Windows SDK
+# ══════════════════════════════════════════════════════════════════════
+
 $sdkPath = "C:\Program Files (x86)\Windows Kits\10\bin"
 Write-Host "Locating Windows SDK packaging tools..." -ForegroundColor Cyan
 
@@ -437,24 +432,20 @@ if (-not $makeappx) {
 
 Write-Host "  [Found] MakeAppx: $makeappx" -ForegroundColor Green
 
-# 2) Set up paths
+# ══════════════════════════════════════════════════════════════════════
+#  2. Paths
+# ══════════════════════════════════════════════════════════════════════
+
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $rootDir = Resolve-Path (Join-Path $scriptDir "..")
 $distDir = Join-Path $rootDir "dist\HushSnap"
-if ($Dev) {
-    # Loose-folder registration keeps using this path after the build finishes.
-    # Keep it separate so release packaging never deletes the registered dev app.
-    $stageDir = Join-Path $rootDir "build\msix_stage_dev"
-} else {
-    $stageDir = Join-Path $rootDir "build\msix_stage_release"
-}
+$stageDir = Join-Path $rootDir "build\msix_stage"
 
-# 3) Resolve and parse version
-if ($Dev) {
-    # Dev build: use fixed default version, no git tag required
-    $rawVersion = "0.0.0.0"
-    Write-Host "Dev build: using default version '$rawVersion' (git tag bypassed)" -ForegroundColor Cyan
-} elseif (-not $Version) {
+# ══════════════════════════════════════════════════════════════════════
+#  3. Version resolution
+# ══════════════════════════════════════════════════════════════════════
+
+if (-not $Version) {
     $gitTag = & git -C $rootDir describe --tags --abbrev=0 2>$null
     if ($gitTag) {
         $rawVersion = $gitTag.TrimStart('v')
@@ -463,10 +454,8 @@ if ($Dev) {
         Write-Host ""
         Write-Host "==========================================================" -ForegroundColor Red
         Write-Host "  ERROR: No git tag found in repository!" -ForegroundColor Red
-        Write-Host "  The MSIX build requires an annotated tag to determine" -ForegroundColor Red
-        Write-Host "  the version number (e.g. 'v0.3.0')." -ForegroundColor Red
         Write-Host "  Create one first: git tag -a v0.3.0 -m 'release v0.3.0'" -ForegroundColor Red
-        Write-Host "  Or override manually: build_msix.ps1 -Version '0.3.0'" -ForegroundColor Red
+        Write-Host "  Or override: build_msix.ps1 -Version '0.3.0'" -ForegroundColor Red
         Write-Host "==========================================================" -ForegroundColor Red
         Write-Host ""
         throw "Version resolution failed: no git tag found."
@@ -476,7 +465,7 @@ if ($Dev) {
     Write-Host "Using provided version '$rawVersion'" -ForegroundColor Green
 }
 
-# Convert SemVer (e.g. 0.0.1) to Quad format (e.g. 0.0.1.0)
+# Convert SemVer → Quad (MSIX requires 4 parts)
 $versionParts = $rawVersion -split '\.'
 while ($versionParts.Count -lt 4) {
     $versionParts += "0"
@@ -484,43 +473,40 @@ while ($versionParts.Count -lt 4) {
 $quadVersion = ($versionParts[0..3] -join ".")
 Write-Host "Configured MSIX package version to '$quadVersion'" -ForegroundColor Green
 
-# ── CHECKPOINT 1: Pre-build validation ───────────────────────────
-if ((-not $SkipValidation) -and (-not $Dev)) {
+# ══════════════════════════════════════════════════════════════════════
+#  CHECKPOINT 1 — Pre-build validation
+# ══════════════════════════════════════════════════════════════════════
+
+if (-not $SkipValidation) {
     Invoke-PreBuildValidation -RootDir $rootDir -SpecPath (Join-Path $rootDir "HushSnap.spec")
 }
 
-# 4) Build with PyInstaller
+# ══════════════════════════════════════════════════════════════════════
+#  4. PyInstaller build
+# ══════════════════════════════════════════════════════════════════════
+
 $initPyPath = Join-Path $rootDir "hushsnap\__init__.py"
 
-if ($Dev) {
-    # Dev build: keep __init__.py as "dev", no version injection needed
-    Write-Host "Dev build: keeping __init__.py version as 'dev' (no injection)" -ForegroundColor Cyan
+# Clean previous dist output (PyInstaller --clean handles the analysis
+# cache; we only need to ensure the output directory is fresh).
+if (Test-Path $distDir) {
+    Remove-Item -Path $distDir -Recurse -Force -ErrorAction SilentlyContinue
+}
 
-    Write-Host "Building HushSnap with PyInstaller..." -ForegroundColor Cyan
+# Inject version into __init__.py, build, then restore.
+$initPyHadBom = Test-Utf8Bom -Path $initPyPath
+$initPyBackup = Get-Content -Path $initPyPath -Raw
+try {
+    Write-Host "Injecting version '$rawVersion' into __init__.py for build..." -ForegroundColor Cyan
+    $patchedInit = $initPyBackup -replace '__version__\s*=\s*"[^"]*"', "__version__ = `"$rawVersion`""
+    Write-Utf8FileExact -Path $initPyPath -Content $patchedInit -IncludeBom $initPyHadBom
 
-    # Stop only processes using paths this build may overwrite.
+    Write-Host "Building HushSnap with PyInstaller (clean)..." -ForegroundColor Cyan
+
     Stop-HushSnapProcessesInPaths -RootPaths @($distDir, $stageDir)
 
-    # Dev builds always clean to prevent stale bytecode / renamed modules
-    # from a previous build leaking into the package.
-    # 1) PyInstaller caches (module analysis memoisation).
-    if (Test-Path $distDir) {
-        Remove-Item -Path $distDir -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    $buildDir = Join-Path $rootDir "build\HushSnap"
-    if (Test-Path $buildDir) {
-        Remove-Item -Path $buildDir -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    # 2) Source-tree __pycache__ (orphan .pyc files after renames are valid
-    #    sourceless imports in Python 3 — PyInstaller will bundle them).
-    Get-ChildItem -Path $rootDir -Recurse -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue |
-        ForEach-Object { Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
-
     $specPath = Join-Path $rootDir "HushSnap.spec"
-    $pyinstallerArgs = @("--noconfirm", "--clean")
-    $pyinstallerArgs += $specPath
-
-    & pyinstaller $pyinstallerArgs
+    & pyinstaller "--noconfirm", "--clean", $specPath
     if ($LASTEXITCODE -ne 0) {
         throw "PyInstaller build failed with exit code $LASTEXITCODE"
     }
@@ -528,60 +514,25 @@ if ($Dev) {
     if (-not (Test-Path $distDir)) {
         throw "PyInstaller build directory not found at: $distDir"
     }
-} else {
-    # Release build: inject version into __init__.py then compile
-    $initPyHadBom = Test-Utf8Bom -Path $initPyPath
-    $initPyBackup = Get-Content -Path $initPyPath -Raw
-    try {
-        Write-Host "Injecting version '$rawVersion' into __init__.py for build..." -ForegroundColor Cyan
-        $patchedInit = $initPyBackup -replace '__version__\s*=\s*"[^"]*"', "__version__ = `"$rawVersion`""
-        Write-Utf8FileExact -Path $initPyPath -Content $patchedInit -IncludeBom $initPyHadBom
-
-        Write-Host "Building HushSnap with PyInstaller..." -ForegroundColor Cyan
-
-        # Stop only processes using paths this build may overwrite.
-        Stop-HushSnapProcessesInPaths -RootPaths @($distDir, $stageDir)
-
-        if ($Rebuild) {
-            if (Test-Path $distDir) {
-                Remove-Item -Path $distDir -Recurse -Force -ErrorAction SilentlyContinue
-            }
-            $buildDir = Join-Path $rootDir "build\HushSnap"
-            if (Test-Path $buildDir) {
-                Remove-Item -Path $buildDir -Recurse -Force -ErrorAction SilentlyContinue
-            }
-        }
-
-        $specPath = Join-Path $rootDir "HushSnap.spec"
-        $pyinstallerArgs = @("--noconfirm")
-        if ($Rebuild) {
-            $pyinstallerArgs += "--clean"
-        }
-        $pyinstallerArgs += $specPath
-
-        & pyinstaller $pyinstallerArgs
-        if ($LASTEXITCODE -ne 0) {
-            throw "PyInstaller build failed with exit code $LASTEXITCODE"
-        }
-
-        if (-not (Test-Path $distDir)) {
-            throw "PyInstaller build directory not found at: $distDir"
-        }
-    } finally {
-        Write-Host "Restoring __init__.py to dev placeholder..." -ForegroundColor Cyan
-        Write-Utf8FileExact -Path $initPyPath -Content $initPyBackup -IncludeBom $initPyHadBom
-    }
+} finally {
+    Write-Host "Restoring __init__.py to dev placeholder..." -ForegroundColor Cyan
+    Write-Utf8FileExact -Path $initPyPath -Content $initPyBackup -IncludeBom $initPyHadBom
 }
 
-# ── CHECKPOINT 2: Post-PyInstaller validation ─────────────────────
-if ((-not $SkipValidation) -and (-not $Dev)) {
+# ══════════════════════════════════════════════════════════════════════
+#  CHECKPOINT 2 — Post-PyInstaller validation
+# ══════════════════════════════════════════════════════════════════════
+
+if (-not $SkipValidation) {
     Invoke-PostPyInstallerValidation -DistDir $distDir
 }
 
-# 5) Clean and prepare staging directory
+# ══════════════════════════════════════════════════════════════════════
+#  5. Prepare staging directory
+# ══════════════════════════════════════════════════════════════════════
+
 Write-Host "Preparing staging folder..." -ForegroundColor Cyan
 if (Test-Path $stageDir) {
-    # Retry removal — Windows may briefly lock .pyd files (AV, indexer, previous build)
     $retryCount = 0
     $maxRetries = 5
     while ($true) {
@@ -599,21 +550,24 @@ if (Test-Path $stageDir) {
 }
 New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
 
-# Copy build files to staging directory
-Write-Host "Copying HushSnap binaries to staging directory..." -ForegroundColor Cyan
 Copy-Item -Path "$distDir\*" -Destination $stageDir -Recurse -Force
 
-# 6) Generate Visual Assets
+# ══════════════════════════════════════════════════════════════════════
+#  6. Generate visual assets
+# ══════════════════════════════════════════════════════════════════════
+
 $assetsStageDir = Join-Path $stageDir "Assets"
 New-Item -ItemType Directory -Path $assetsStageDir -Force | Out-Null
 
 Write-Host "Generating PNG visual assets from ico.ico..." -ForegroundColor Cyan
 $icoPath = Join-Path $rootDir "ico.ico"
 $generatorScript = Join-Path $rootDir "tools\generate_msix_assets.py"
-
 & python.exe $generatorScript $icoPath $assetsStageDir
 
-# 7) Compile AppxManifest.xml
+# ══════════════════════════════════════════════════════════════════════
+#  7. Compile AppxManifest.xml
+# ══════════════════════════════════════════════════════════════════════
+
 Write-Host "Compiling AppxManifest.xml..." -ForegroundColor Cyan
 $manifestTemplatePath = Join-Path $scriptDir "AppxManifest_template.xml"
 if (-not (Test-Path $manifestTemplatePath)) {
@@ -632,14 +586,12 @@ $manifestPath = Join-Path $stageDir "AppxManifest.xml"
 $manifestContent | Set-Content -Path $manifestPath -Encoding UTF8
 Write-Host "  [Created] AppxManifest.xml" -ForegroundColor Green
 
-# 8) Packaging
-if ($Dev) {
-    $outputDir = Join-Path $rootDir "dist-installer-dev"
-    $msixFilename = "HushSnap_Dev.msix"
-} else {
-    $outputDir = Join-Path $rootDir "dist-installer"
-    $msixFilename = "HushSnap.msix"
-}
+# ══════════════════════════════════════════════════════════════════════
+#  8. Package MSIX
+# ══════════════════════════════════════════════════════════════════════
+
+$outputDir = Join-Path $rootDir "dist-installer"
+$msixFilename = "HushSnap.msix"
 
 if (-not (Test-Path $outputDir)) {
     New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
@@ -650,45 +602,18 @@ Write-Host "Packaging staging folder into MSIX..." -ForegroundColor Cyan
 & $makeappx pack /d $stageDir /p $msixPath /o
 Write-Host "  [Success] MSIX package created: $msixPath" -ForegroundColor Green
 
-# ── CHECKPOINT 3: Post-MSIX validation ────────────────────────────
-if ((-not $SkipValidation) -and (-not $Dev)) {
+# ══════════════════════════════════════════════════════════════════════
+#  CHECKPOINT 3 — Post-MSIX validation
+# ══════════════════════════════════════════════════════════════════════
+
+if (-not $SkipValidation) {
     Invoke-PostMSIXValidation -MsixPath $msixPath -StageDir $stageDir
-}
-
-# ── Dev registration ─────────────────────────────────────────
-if ($Dev) {
-    Write-Host ""
-    Write-Host "==========================================================" -ForegroundColor Cyan
-    Write-Host "Registering HushSnap Developer MSIX (Loose Folder)..." -ForegroundColor Cyan
-    Write-Host "==========================================================" -ForegroundColor Cyan
-
-    $manifestPath = Join-Path $stageDir "AppxManifest.xml"
-    if (Test-Path $manifestPath) {
-        Write-Host "Registering package with Windows (Developer Mode required)..." -ForegroundColor Cyan
-        Add-AppxPackage -Register -Path $manifestPath
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host ""
-            Write-Host "[OK] HushSnap successfully registered in MSIX container!" -ForegroundColor Green
-            Write-Host "[OK] You can now search 'HushSnap' in the Start Menu and run it." -ForegroundColor Green
-            Write-Host "[OK] To update after code changes: re-run build_msix_dev.bat" -ForegroundColor Green
-        } else {
-            Write-Host ""
-            Write-Host "ERROR: Registration failed." -ForegroundColor Red
-            Write-Host "Please make sure Windows Developer Mode is enabled:" -ForegroundColor Red
-            Write-Host "Go to Settings -> System -> For developers, and turn ON Developer Mode." -ForegroundColor Red
-        }
-    } else {
-        Write-Host "ERROR: Staging AppxManifest not found at: $manifestPath" -ForegroundColor Red
-    }
 }
 
 Write-Host ""
 Write-Host "==========================================================" -ForegroundColor Green
 Write-Host "HushSnap MSIX Packaging successfully completed!" -ForegroundColor Green
 Write-Host "Output File: $msixPath" -ForegroundColor Green
-if ($Dev) {
-    Write-Host "Build Type: DEVELOPMENT (version 0.0.0.0, registered locally)" -ForegroundColor Cyan
-} else {
-    Write-Host "Note: This package is UNSIGNED. Perfect for uploading to Partner Center." -ForegroundColor Yellow
-}
+Write-Host "Note: This package is UNSIGNED. Sign it before local testing:" -ForegroundColor Yellow
+Write-Host "  SignTool sign /fd SHA256 /a /f <cert>.pfx /p <password> $msixPath" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Green

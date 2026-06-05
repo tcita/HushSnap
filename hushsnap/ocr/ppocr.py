@@ -94,9 +94,11 @@ def _normalize_blocks(blocks: list[dict]) -> list[dict]:
     """
     normalized: list[dict] = []
     for block in (blocks or []):
-        text = str(block.get("text", "") or "").strip()
-        if not text:
+        raw_text = str(block.get("text", "") or "")
+        # Filter out truly empty or whitespace-only blocks
+        if not raw_text.strip():
             continue
+            
         left, top, right, bottom = ppocr_box_to_bbox(block.get("box"))
         w = right - left
         h = bottom - top
@@ -104,7 +106,7 @@ def _normalize_blocks(blocks: list[dict]) -> list[dict]:
             # Block has text but no valid bbox — give it a minimal placement
             w, h = 1.0, 1.0
         normalized.append({
-            "text": text,
+            "text": raw_text,
             "left": left, "top": top,
             "right": right, "bottom": bottom,
             "width": max(w, 0.0), "height": max(h, 0.0),
@@ -301,14 +303,10 @@ def _build_lines_from_ordered_blocks(
         tall_in_group = sum(
             1 for b in group if b["height"] > b["width"] * 1.3
         )
-        if tall_in_group / len(group) > 0.5 and len(group) >= 3:
-            # Vertical CJK — keep _leaf_reading_order sequence
-            pass
-        else:
-            group.sort(key=lambda b: b["left"])
+        group.sort(key=lambda b: b["left"])
         words: list[OcrWord] = []
         text_parts: list[str] = []
-        prev_text = ""
+        prev_block = None
 
         min_l = min(b["left"] for b in group)
         min_t = min(b["top"] for b in group)
@@ -316,11 +314,27 @@ def _build_lines_from_ordered_blocks(
         max_b = max(b["bottom"] for b in group)
 
         for block in group:
-            sep = word_separator(prev_text, block["text"]) if prev_text else ""
-            if sep:
-                text_parts.append(sep)
+            if prev_block:
+                # 1. Default separator based on character logic (handles Latin spaces, CJK-English boundaries)
+                sep = word_separator(prev_block["text"], block["text"])
+                
+                # 2. Geometric separator: if blocks are physically far apart, add proportional spaces.
+                # Threshold: strictly add spaces only if the gap is >= 2.0x character height.
+                gap = block["left"] - prev_block["right"]
+                
+                # Reference width for a single visual space (used for count calculation)
+                ref_space_w = block["height"] * 0.75
+                
+                if gap >= block["height"] * 2.0:
+                    # It's a significant visual gap (at least 2 characters wide).
+                    # Calculate number of spaces based on the gap size.
+                    geom_spaces = max(1, round(gap / ref_space_w))
+                    sep = " " * geom_spaces
+                
+                if sep:
+                    text_parts.append(sep)
+
             text_parts.append(block["text"])
-            prev_text = block["text"]
             words.append(OcrWord(
                 text=block["text"],
                 bounding_box=bbox_to_ocr_box(
@@ -328,9 +342,10 @@ def _build_lines_from_ordered_blocks(
                     block["right"], block["bottom"],
                 ),
             ))
+            prev_block = block
 
         result.append(OcrLine(
-            text="".join(text_parts).strip(),
+            text="".join(text_parts).rstrip(),
             words=words,
             bounding_box=bbox_to_ocr_box(min_l, min_t, max_r, max_b),
         ))
@@ -371,7 +386,7 @@ def _merge_lines_to_paragraphs(lines: list[OcrLine]) -> list[OcrLine]:
       - Line starts with list marker         → new paragraph (list item)
       - Line ends with '-'                   → merge (hyphenated word)
       - Line ends with 。or .                → paragraph boundary
-      - Open-ended line + next starts lower  → same sentence, merge
+      - Line ends with code delimiters       → new line (source code)
     """
     if len(lines) <= 1:
         return list(lines)
@@ -382,6 +397,9 @@ def _merge_lines_to_paragraphs(lines: list[OcrLine]) -> list[OcrLine]:
     med_h = statistics.median(heights)
     widths = [l.bounding_box.width for l in lines if l.bounding_box.width > 0]
     med_w = statistics.median(widths) if widths else 300.0
+
+    # Characters that typically end a source-code line (never prose).
+    _CODE_LINE_ENDS = frozenset(")}]{;:")
 
     merged: list[OcrLine] = []
     para_lines: list[OcrLine] = [lines[0]]
@@ -397,9 +415,7 @@ def _merge_lines_to_paragraphs(lines: list[OcrLine]) -> list[OcrLine]:
         starts_list = _starts_list_marker(curr_text)
         hyphen_merge = prev_text.endswith("-")
         period_end = prev_text.endswith(("。", ".", "！", "？", "!", "?"))
-        ends_open = prev_text and prev_text[-1] not in "。.！？!?,;；:："
-        next_starts_lower = curr_text and curr_text[0].islower()
-        lowercase_continue = ends_open and next_starts_lower
+        code_line_end = prev_text and prev_text[-1] in _CODE_LINE_ENDS
 
         # ── layout signals ───────────────────────────────────────────
         prev_bottom = prev.bounding_box.y + prev.bounding_box.height
@@ -419,8 +435,8 @@ def _merge_lines_to_paragraphs(lines: list[OcrLine]) -> list[OcrLine]:
         # ── merge decision ───────────────────────────────────────────
         if hyphen_merge and not large_gap:
             para_lines.append(curr)
-        elif starts_list:
-            # List item → start a new paragraph
+        elif starts_list or code_line_end:
+            # List item or source-code line → start a new paragraph
             merged.append(_flush_paragraph(para_lines))
             para_lines = [curr]
         elif period_end and gap > med_h * 0.7:
@@ -493,6 +509,7 @@ def compose_ppocr_structures(blocks: list[dict]) -> list[OcrLine]:
       3. Group ordered blocks into OcrLine objects (center_y proximity)
       4. Merge consecutive lines into paragraphs (gap + text signals)
       5. Annotate headings with extra spacing
+      6. Preserve left indentation (relative to block minimum-x)
     """
     # Step 1 — normalize
     normalized = _normalize_blocks(blocks)
@@ -507,6 +524,10 @@ def compose_ppocr_structures(blocks: list[dict]) -> list[OcrLine]:
     if not lines:
         return []
 
+    # Step 3.5 — preserve left indentation (before paragraph merging,
+    # so indentation survives the _flush_paragraph join).
+    _apply_indentation(lines)
+
     # Step 4 — merge into paragraphs
     paragraphs = _merge_lines_to_paragraphs(lines)
 
@@ -520,6 +541,45 @@ def compose_ppocr_structures(blocks: list[dict]) -> list[OcrLine]:
                 para.text = f"\n{para.text}\n"
 
     return paragraphs
+
+
+def _apply_indentation(lines: list[OcrLine]) -> None:
+    """Prepend spaces to each line based on relative left offset.
+
+    Uses the absolute left edge of the capture (x=0) as the baseline.
+    Estimates space count using the line's height and CJK-awareness.
+    """
+    for line in lines:
+        box = line.bounding_box
+        if box.height <= 0 or not line.text:
+            continue
+
+        # If the line already has spaces from the engine, count them.
+        existing_spaces = len(line.text) - len(line.text.lstrip(' '))
+        
+        # Use absolute x=0 as baseline to preserve screen layout
+        offset = box.x
+        
+        if offset < 3.0: # ignore minor alignment noise
+            continue
+            
+        # Robust character width estimate:
+        # A standard space in many proportional fonts is roughly 0.25x-0.4x line height.
+        # However, to avoid "exaggerated" indentation, we treat spaces as wider.
+        # Using ~0.75x line height makes 1 indentation level feel more natural.
+        ref_space_w = box.height * 0.75
+        
+        spaces = round(offset / ref_space_w)
+        
+        # Limit to 2 spaces per "unit" of visual indentation if possible?
+        # No, we just use a larger divisor to scale it down naturally.
+        
+        # Avoid double indentation
+        to_add = max(0, spaces - existing_spaces)
+        to_add = min(to_add, 32)  # cap extreme values
+        
+        if to_add > 0:
+            line.text = (" " * to_add) + line.text
 
 
 def _flush_paragraph(lines: list[OcrLine]) -> OcrLine:
@@ -545,7 +605,7 @@ def _flush_paragraph(lines: list[OcrLine]) -> OcrLine:
         parts.append(text)
         prev_text = text
 
-    merged_text = "".join(parts).strip()
+    merged_text = "".join(parts).rstrip()
 
     min_x = min(l.bounding_box.x for l in lines)
     min_y = min(l.bounding_box.y for l in lines)
@@ -566,7 +626,7 @@ def _flush_paragraph(lines: list[OcrLine]) -> OcrLine:
 def compose_ppocr_text(blocks: list[dict]) -> str:
     """Compatibility wrapper that returns plain text string."""
     lines = compose_ppocr_structures(blocks)
-    return "\n".join(line.text for line in lines).strip()
+    return "\n".join(line.text for line in lines).rstrip()
 
 
 # ── engine singleton ───────────────────────────────────────────────────
@@ -832,7 +892,7 @@ def recognize_ppocr_qimage(image_or_result, language_tag: str = "") -> OcrRecogn
 
         blocks = [{"text": item["txt"], "box": item["box"]} for item in json_data]
         lines = compose_ppocr_structures(blocks)
-        text = "\n".join(line.text for line in lines).strip()
+        text = "\n".join(line.text for line in lines).rstrip()
         
         return OcrRecognition(
             text=text,

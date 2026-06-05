@@ -64,10 +64,14 @@ def get_startup_reg_name() -> str:
 # When a new config key is added, append it here.  _ensure_default_config_exists
 # will automatically fill it into existing config files without overwriting
 # values the user has already customised.
+# ── Config defaults (single source of truth for new-key migration) ────
+# When a new config key is added, append it here.  _ensure_default_config_exists
+# will automatically fill it into existing config files without overwriting
+# values the user has already customised.
 _CONFIG_DEFAULTS = {
     "hotkey": DEFAULT_HOTKEY,
     "language": UI_LANG_AUTO,
-    "debug": False,
+    "debug": not _is_frozen,   # True for source runs, False for packaged builds
     "copy_image_to_clipboard": True,
     "auto_copy_ocr_result": True,
 }
@@ -484,7 +488,7 @@ def get_debug_enabled(config_path=None):
     if config_path is None:
         config_path = get_config_path()
     config_data = _load_config_data(config_path)
-    return bool(config_data.get("debug", False))
+    return bool(config_data.get("debug", not _is_frozen))
 
 
 def get_copy_image_to_clipboard(config_path=None):

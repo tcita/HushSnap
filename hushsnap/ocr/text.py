@@ -52,19 +52,26 @@ def is_space_joining_word(token: str) -> bool:
 
 
 def cleanup_ocr_text_line(text: str) -> str:
-    """Normalize spacing around punctuation and CJK scripts."""
-    text = re.sub(rf"(?<=[{NO_SPACE_SCRIPT_CHAR_CLASS}])\s+(?=[{NO_SPACE_SCRIPT_CHAR_CLASS}])", "", text)
+    """Normalize spacing around punctuation.
+
+    CJK space-stripping is intentionally NOT done here — the layout engine
+    (ppocr._build_lines_from_ordered_blocks) is the authority on inter-word
+    spacing.  It uses both character-based logic (word_separator) and geometric
+    gap detection to decide where spaces belong.  Stripping spaces here would
+    undo deliberate spacing inserted by the layout engine for visual gaps.
+    """
     text = re.sub(r"\s+([,;:.!?])", r"\1", text)
     text = re.sub(r"([,;:.!?])(?=[A-Za-z0-9])", r"\1 ", text)
     return text
 
 
 def normalize_token_text(token: str) -> str:
-    return unicodedata.normalize("NFKC", (token or "").strip())
+    # Preserve original spacing inside tokens but remove trailing junk
+    return unicodedata.normalize("NFKC", (token or "").rstrip())
 
 
 def compose_default_line_text(line: OcrLine) -> str:
-    return cleanup_ocr_text_line((line.text or "").strip())
+    return cleanup_ocr_text_line((line.text or "").rstrip())
 
 
 def compose_spaced_line_text(line: OcrLine) -> str:
@@ -72,32 +79,9 @@ def compose_spaced_line_text(line: OcrLine) -> str:
 
 
 def compose_cjk_line_text(line: OcrLine) -> str:
-    if not line.words:
-        return compose_default_line_text(line)
-
-    parts: list[str] = []
-    is_first_word = True
-    previous_wants_space = False
-
-    for word in line.words:
-        token = normalize_token_text(word.text)
-        if not token:
-            continue
-
-        current_wants_space = is_space_joining_word(token)
-        if is_first_word or (not current_wants_space and not previous_wants_space):
-            parts.append(token)
-        else:
-            parts.append(f" {token}")
-
-        is_first_word = False
-        previous_wants_space = current_wants_space
-
-    joined = "".join(parts).strip()
-    if not joined:
-        joined = (line.text or "").strip()
-
-    return cleanup_ocr_text_line(joined)
+    # If it's already a pre-composed line with indentation (e.g. from PP-OCR layout)
+    # we just return it with trailing spaces removed.
+    return (line.text or "").rstrip()
 
 
 def normalize_ocr_text(text: str) -> str:
@@ -107,10 +91,14 @@ def normalize_ocr_text(text: str) -> str:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     cleaned_lines: list[str] = []
     for line in text.split("\n"):
-        line = line.strip()
-        if not line:
+        # Keep leading spaces (indentation), only strip trailing
+        cleaned_line = line.rstrip()
+        if not cleaned_line.strip():
+            # If the line is only whitespace, we preserve a truly empty line 
+            # for paragraph separation, but don't keep the spaces.
+            cleaned_lines.append("")
             continue
-        cleaned_lines.append(line)
+        cleaned_lines.append(cleaned_line)
     return "\n".join(cleaned_lines).strip()
 
 
@@ -192,20 +180,20 @@ def _postprocess_layout_text(text: str) -> str:
     # Normalize excessive blank lines: max 2 consecutive newlines
     text = re.sub(r"\n{3,}", "\n\n", text)
 
-    # Remove leading / trailing newlines that were injected for spacing
-    text = text.strip()
+    # Note: we use rstrip() here because leading whitespace 
+    # might be intentional indentation from the layout engine.
+    text = text.rstrip()
 
-    # Ensure period-ended lines keep their paragraph break (already handled
-    # by merge_lines_to_paragraphs; this is a safety net for any remaining
-    # single-newline breaks that should be double)
+    # Ensure whitespace-only lines are truly empty for paragraph separation,
+    # while preserving indentation on non-empty lines.
     lines = text.split("\n")
     result: list[str] = []
-    for i, line in enumerate(lines):
-        stripped = line.strip()
-        if not stripped:
-            result.append("")  # blank line — keep as paragraph separator
+    for line in lines:
+        cleaned = line.rstrip()
+        if not cleaned.strip():
+            result.append("")  # truly blank line
             continue
-        result.append(stripped)
+        result.append(cleaned)
     return "\n".join(result).strip()
 
 

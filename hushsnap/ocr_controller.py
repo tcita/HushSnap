@@ -176,7 +176,7 @@ class OcrController:
             )
             return
 
-        recognized = (text or "").strip()
+        recognized = (text or "").rstrip()
 
         if not recognized:
             logging.info("OCR result is empty.")

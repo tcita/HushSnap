@@ -1,9 +1,12 @@
 @echo off
 chcp 65001 >nul
 echo ==========================================================
-echo HushSnap MSIX Packaging - RELEASE Build
-echo (For Partner Center upload)
+echo HushSnap MSIX Packaging
 echo ==========================================================
+echo.
+echo Workflow:
+echo   1. Quick dev test:  python HushSnap.py
+echo   2. Pre-push test:   build_msix.bat ^(then sign + install^)
 echo.
 
 powershell -ExecutionPolicy Bypass -File "%~dp0installer\build_msix.ps1" %*
@@ -17,10 +20,8 @@ if not %errorLevel% == 0 (
 
 echo.
 echo Build succeeded!
-powershell -Command "$v = (& git -C '%~dp0' describe --tags --abbrev=0 2>$null) -replace '^v',''; if (-not $v) { $v = 'unknown' }; Write-Host '  Version:' $v"
 echo.
-echo NOTE: This MSIX is for Partner Center upload (unsigned).
-echo For local dev testing, use: build_msix_dev.bat
+echo Next: sign the MSIX with your certificate, then install.
 echo.
 timeout /t 5 /nobreak >nul
 exit /b 0
