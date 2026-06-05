@@ -501,21 +501,23 @@ if ($Dev) {
     # Stop only processes using paths this build may overwrite.
     Stop-HushSnapProcessesInPaths -RootPaths @($distDir, $stageDir)
 
-    if ($Rebuild) {
-        if (Test-Path $distDir) {
-            Remove-Item -Path $distDir -Recurse -Force -ErrorAction SilentlyContinue
-        }
-        $buildDir = Join-Path $rootDir "build\HushSnap"
-        if (Test-Path $buildDir) {
-            Remove-Item -Path $buildDir -Recurse -Force -ErrorAction SilentlyContinue
-        }
+    # Dev builds always clean to prevent stale bytecode / renamed modules
+    # from a previous build leaking into the package.
+    # 1) PyInstaller caches (module analysis memoisation).
+    if (Test-Path $distDir) {
+        Remove-Item -Path $distDir -Recurse -Force -ErrorAction SilentlyContinue
     }
+    $buildDir = Join-Path $rootDir "build\HushSnap"
+    if (Test-Path $buildDir) {
+        Remove-Item -Path $buildDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    # 2) Source-tree __pycache__ (orphan .pyc files after renames are valid
+    #    sourceless imports in Python 3 — PyInstaller will bundle them).
+    Get-ChildItem -Path $rootDir -Recurse -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue |
+        ForEach-Object { Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
 
     $specPath = Join-Path $rootDir "HushSnap.spec"
-    $pyinstallerArgs = @("--noconfirm")
-    if ($Rebuild) {
-        $pyinstallerArgs += "--clean"
-    }
+    $pyinstallerArgs = @("--noconfirm", "--clean")
     $pyinstallerArgs += $specPath
 
     & pyinstaller $pyinstallerArgs
