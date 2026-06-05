@@ -20,16 +20,11 @@ dist-installer-test/
 .antigravitycli/
 
 # Tool output / profiling data
-tools/health_idle.csv
-tools/health_ppocr_hot_idle.csv
-tools/health_reports/
-tools/WACK_reports/
+tools/
 /ocr_preprocess_test
 DEV.lnk
 RELEASE.lnk
 sign.lnk
 
-EXPERIMENT_SUMMARY.md
-/PPOCR-main
 /RapidOCR-main
-/pic-for-test
+/for-test
