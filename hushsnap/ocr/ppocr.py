@@ -1,4 +1,5 @@
 import logging
+import re
 import statistics
 import threading
 import time
@@ -77,7 +78,6 @@ def word_separator(left: str, right: str) -> str:
 _GAP_RATIO_H_REGION = 2.5   # Y-gap > 2.5× char_h → horizontal region (header/body/footer)
 _GAP_RATIO_H_LINE   = 0.4   # Y-gap > 0.4× char_h → text line separator
 _GAP_RATIO_V_COLUMN = 3.5   # X-gap > 3.5× char_w → column separator
-_GAP_RATIO_V_WORD   = 1.8   # X-gap > 1.8× char_w → word separator (Latin only)
 
 # Minimum gap in pixels to avoid splitting on sub-pixel noise
 _MIN_GAP_PX = 2.0
@@ -270,7 +270,13 @@ def _xy_cut(
 def _build_lines_from_ordered_blocks(
     ordered_blocks: list[dict],
 ) -> list[OcrLine]:
-    """Group reading-order blocks into OcrLine objects via center_y proximity."""
+    """Group reading-order blocks into OcrLine objects via center_y proximity.
+
+    Within each line, blocks are joined left→right using *word_separator*
+    (one space or nothing, based on character-class boundaries).
+    Geometric-gap spacing has been intentionally removed — it was fragile
+    across varying DPI, font sizes, and OCR detection granularities.
+    """
     if not ordered_blocks:
         return []
 
@@ -292,20 +298,12 @@ def _build_lines_from_ordered_blocks(
 
     line_groups.append(current_line)
 
-    # Build OcrLine objects
+    # Build OcrLine objects — simple character-class spacing only
     result: list[OcrLine] = []
     for group in line_groups:
-        # ── sort within line ─────────────────────────────────────────
-        # Horizontal text: left→right (standard).
-        # Vertical CJK text: preserve the column order that _leaf_reading_order
-        #   already established (right→left).  Sorting by left here would
-        #   reverse it back to left→right.
-        tall_in_group = sum(
-            1 for b in group if b["height"] > b["width"] * 1.3
-        )
         group.sort(key=lambda b: b["left"])
-        words: list[OcrWord] = []
         text_parts: list[str] = []
+        words: list[OcrWord] = []
         prev_block = None
 
         min_l = min(b["left"] for b in group)
@@ -315,22 +313,7 @@ def _build_lines_from_ordered_blocks(
 
         for block in group:
             if prev_block:
-                # 1. Default separator based on character logic (handles Latin spaces, CJK-English boundaries)
                 sep = word_separator(prev_block["text"], block["text"])
-                
-                # 2. Geometric separator: if blocks are physically far apart, add proportional spaces.
-                # Threshold: strictly add spaces only if the gap is >= 2.0x character height.
-                gap = block["left"] - prev_block["right"]
-                
-                # Reference width for a single visual space (used for count calculation)
-                ref_space_w = block["height"] * 0.75
-                
-                if gap >= block["height"] * 2.0:
-                    # It's a significant visual gap (at least 2 characters wide).
-                    # Calculate number of spaces based on the gap size.
-                    geom_spaces = max(1, round(gap / ref_space_w))
-                    sep = " " * geom_spaces
-                
                 if sep:
                     text_parts.append(sep)
 
@@ -353,41 +336,78 @@ def _build_lines_from_ordered_blocks(
     return result
 
 
-def _starts_list_marker(text: str) -> bool:
-    """Check if *text* starts with a numbered / bulleted / dashed list marker."""
-    t = text.lstrip()
-    if not t:
-        return False
-    # Numbered: "1.", "1．", "1)", "1、", "12."
-    if t[0].isdigit():
-        i = 1
-        while i < len(t) and i < 3 and t[i].isdigit():
-            i += 1
-        if i < len(t) and t[i] in '.．)、、':
-            return True
-    # Bullet: ■ ● ○ • ▪ ▸ ►
-    if t[0] in '■●○•▪▸►':
-        return True
-    # Dash list marker: "- " or "– " or "— " (but not "--")
-    if t[0] in '–—-' and len(t) > 1 and t[1] not in '–—-':
-        return True
-    return False
+# ── CJK spacing post-processing (core patterns from pangu.py) ──────────
+# Applied as a final safety net: PP-OCR sometimes merges CJK+Latin into
+# a single detection block, so block-level word_separator() misses those
+# boundaries.  These two regexes catch them.
+# Reference: https://github.com/vinta/pangu.py (MIT licensed)
+#
+# CJK Unicode blocks (verified code points):
+#   CJK Radicals Supplement       ⺀-⻿
+#   Kangxi Radicals               ⼀-⿟
+#   Hiragana                      ぀-ゟ
+#   Katakana                      ゠-ヺ
+#   Katakana/Hiragana marks       ー-ヿ
+#   Bopomofo                      ㄀-ㄯ
+#   Enclosed CJK Letters          ㈀-㋿
+#   CJK Extension A               㐀-䶿
+#   CJK Unified Ideographs        一-鿿
+#   CJK Compatibility             豈-﫿
+_CJK_RANGES = (
+    r'⺀-⻿'
+    r'⼀-⿟'
+    r'぀-ゟ'
+    r'゠-ヺ'
+    r'ー-ヿ'
+    r'㄀-ㄯ'
+    r'㈀-㋿'
+    r'㐀-䶿'
+    r'一-鿿'
+    r'豈-﫿'
+)
+
+# Non-CJK (ANS) character class matched on the other side of the boundary:
+#   A-Z a-z          Latin letters
+#   Ͱ-Ͽ    Greek and Coptic
+#   0-9              digits
+#   @$%^&*\-+\\=\|/  common symbols
+#   ¡-ÿ    Latin-1 Supplement
+#   ⅐-↏    Number Forms
+#   ✀-➿    Dingbats
+_ANS_CLASS = (
+    r'A-Za-z'
+    r'Ͱ-Ͽ'
+    r'0-9'
+    r'@$%^&*\-+\\=\|/'
+    r'¡-ÿ'
+    r'⅐-↏'
+    r'✀-➿'
+)
+
+# CJK followed by ANS → insert space
+_CJK_ANS_RE = re.compile(f'([{_CJK_RANGES}])([{_ANS_CLASS}])')
+
+# ANS followed by CJK → insert space
+_ANS_CJK_RE = re.compile(
+    f'([{_ANS_CLASS}~!;:,./?])([{_CJK_RANGES}])'
+)
 
 
-def _merge_lines_to_paragraphs(lines: list[OcrLine]) -> list[OcrLine]:
-    """Merge consecutive lines into paragraphs using layout + text signals.
+def _apply_cjk_spacing(text: str) -> str:
+    """Ensure a single space between CJK and Latin characters.
 
-    Layout signals (XY-Cut already resolved column / reading order):
-      - Line gap < 1.6× median line height  → same paragraph
-      - Significant left-edge shift          → new paragraph (indent)
-      - Short previous line                  → likely paragraph end
-
-    Text signals:
-      - Line starts with list marker         → new paragraph (list item)
-      - Line ends with '-'                   → merge (hyphenated word)
-      - Line ends with 。or .                → paragraph boundary
-      - Line ends with code delimiters       → new line (source code)
+    Idempotent: will not double-space text that already has correct spacing.
     """
+    if not text:
+        return text
+    text = _CJK_ANS_RE.sub(r'\1 \2', text)
+    text = _ANS_CJK_RE.sub(r'\1 \2', text)
+    return text
+
+
+def _separate_paragraphs(lines: list[OcrLine]) -> list[OcrLine]:
+    """Insert a trailing blank-line marker on lines whose Y-gap to the
+    next line exceeds 1.6× median line height (simple paragraph boundary)."""
     if len(lines) <= 1:
         return list(lines)
 
@@ -395,121 +415,33 @@ def _merge_lines_to_paragraphs(lines: list[OcrLine]) -> list[OcrLine]:
     if not heights:
         return list(lines)
     med_h = statistics.median(heights)
-    widths = [l.bounding_box.width for l in lines if l.bounding_box.width > 0]
-    med_w = statistics.median(widths) if widths else 300.0
-
-    # Characters that typically end a source-code line (never prose).
-    _CODE_LINE_ENDS = frozenset(")}]{;:")
-
-    merged: list[OcrLine] = []
-    para_lines: list[OcrLine] = [lines[0]]
 
     for i in range(1, len(lines)):
         prev = lines[i - 1]
         curr = lines[i]
-
-        prev_text = prev.text.strip()
-        curr_text = curr.text.strip()
-
-        # ── text signals ─────────────────────────────────────────────
-        starts_list = _starts_list_marker(curr_text)
-        hyphen_merge = prev_text.endswith("-")
-        period_end = prev_text.endswith(("。", ".", "！", "？", "!", "?"))
-        code_line_end = prev_text and prev_text[-1] in _CODE_LINE_ENDS
-
-        # ── layout signals ───────────────────────────────────────────
         prev_bottom = prev.bounding_box.y + prev.bounding_box.height
         curr_top = curr.bounding_box.y
         gap = curr_top - prev_bottom
 
-        x_shift = abs(curr.bounding_box.x - prev.bounding_box.x)
-        prev_right = prev.bounding_box.x + prev.bounding_box.width
-        global_right = max(
-            l.bounding_box.x + l.bounding_box.width for l in lines
-        )
-        prev_is_short = (global_right - prev_right) > med_w * 0.35
+        if gap > med_h * 1.6:
+            lines[i - 1].text = lines[i - 1].text.rstrip() + "\n"
 
-        large_gap = gap > med_h * 1.6
-        indent_jump = x_shift > max(med_w * 0.15, 12.0)
-
-        # ── merge decision ───────────────────────────────────────────
-        if hyphen_merge and not large_gap:
-            para_lines.append(curr)
-        elif starts_list or code_line_end:
-            # List item or source-code line → start a new paragraph
-            merged.append(_flush_paragraph(para_lines))
-            para_lines = [curr]
-        elif period_end and gap > med_h * 0.7:
-            merged.append(_flush_paragraph(para_lines))
-            para_lines = [curr]
-        elif large_gap or indent_jump or prev_is_short:
-            merged.append(_flush_paragraph(para_lines))
-            para_lines = [curr]
-        elif gap <= med_h * 1.6:
-            para_lines.append(curr)
-        else:
-            merged.append(_flush_paragraph(para_lines))
-            para_lines = [curr]
-
-    merged.append(_flush_paragraph(para_lines))
-    return merged
-
-
-def _is_heading(
-    line: OcrLine, all_lines: list[OcrLine], med_h: float, med_w: float,
-) -> bool:
-    """Detect heading lines via geometry + isolation (no keyword coupling)."""
-    text = line.text.strip()
-    if not text or len(text) > 60:
-        return False
-
-    box = line.bounding_box
-    tall = box.height > med_h * 1.25
-    short_text = len(text) < 50 and box.width < med_w * 0.75
-
-    if not (tall or short_text):
-        return False
-
-    # Check isolation (gaps above / below)
-    try:
-        idx = all_lines.index(line)
-    except ValueError:
-        return False
-
-    isolation = 0
-    if idx > 0:
-        prev = all_lines[idx - 1]
-        gap_before = box.y - (prev.bounding_box.y + prev.bounding_box.height)
-        if gap_before > med_h * 1.0:
-            isolation += 1
-    else:
-        isolation += 1
-
-    if idx < len(all_lines) - 1:
-        nxt = all_lines[idx + 1]
-        gap_after = nxt.bounding_box.y - (box.y + box.height)
-        if gap_after > med_h * 1.0:
-            isolation += 1
-    else:
-        isolation += 1
-
-    return isolation >= 1 and (tall or short_text)
+    return lines
 
 
 # ── public API ────────────────────────────────────────────────────────────
 
 
 def compose_ppocr_structures(blocks: list[dict]) -> list[OcrLine]:
-    """Convert PP-OCR word/character detection blocks into ordered OcrLines.
+    """Convert PP-OCR detection blocks into ordered OcrLines.
 
     Pipeline::
 
       1. Normalize raw blocks (filter empty / zero-size)
       2. Hierarchical recursive XY-Cut → reading order
       3. Group ordered blocks into OcrLine objects (center_y proximity)
-      4. Merge consecutive lines into paragraphs (gap + text signals)
-      5. Annotate headings with extra spacing
-      6. Preserve left indentation (relative to block minimum-x)
+      4. Separate paragraphs by Y-gap threshold
+      5. Post-process CJK↔Latin spacing (pangu-style safety net)
     """
     # Step 1 — normalize
     normalized = _normalize_blocks(blocks)
@@ -519,108 +451,19 @@ def compose_ppocr_structures(blocks: list[dict]) -> list[OcrLine]:
     # Step 2 — recursive XY-Cut → ordered blocks in reading order
     ordered = _xy_cut(normalized, direction="y", depth=0)
 
-    # Step 3 — group into OcrLine objects
+    # Step 3 — group into OcrLine objects (character-class spacing only)
     lines = _build_lines_from_ordered_blocks(ordered)
     if not lines:
         return []
 
-    # Step 3.5 — preserve left indentation (before paragraph merging,
-    # so indentation survives the _flush_paragraph join).
-    _apply_indentation(lines)
+    # Step 4 — simple paragraph separation by Y-gap
+    lines = _separate_paragraphs(lines)
 
-    # Step 4 — merge into paragraphs
-    paragraphs = _merge_lines_to_paragraphs(lines)
-
-    # Step 5 — annotate headings
-    valid = [p for p in paragraphs if p.bounding_box.height > 0]
-    if valid:
-        med_h = statistics.median([p.bounding_box.height for p in valid])
-        med_w = statistics.median([p.bounding_box.width for p in valid])
-        for para in paragraphs:
-            if _is_heading(para, paragraphs, med_h, med_w):
-                para.text = f"\n{para.text}\n"
-
-    return paragraphs
-
-
-def _apply_indentation(lines: list[OcrLine]) -> None:
-    """Prepend spaces to each line based on relative left offset.
-
-    Uses the absolute left edge of the capture (x=0) as the baseline.
-    Estimates space count using the line's height and CJK-awareness.
-    """
+    # Step 5 — CJK spacing safety net (pangu-inspired regex)
     for line in lines:
-        box = line.bounding_box
-        if box.height <= 0 or not line.text:
-            continue
+        line.text = _apply_cjk_spacing(line.text)
 
-        # If the line already has spaces from the engine, count them.
-        existing_spaces = len(line.text) - len(line.text.lstrip(' '))
-        
-        # Use absolute x=0 as baseline to preserve screen layout
-        offset = box.x
-        
-        if offset < 3.0: # ignore minor alignment noise
-            continue
-            
-        # Robust character width estimate:
-        # A standard space in many proportional fonts is roughly 0.25x-0.4x line height.
-        # However, to avoid "exaggerated" indentation, we treat spaces as wider.
-        # Using ~0.75x line height makes 1 indentation level feel more natural.
-        ref_space_w = box.height * 0.75
-        
-        spaces = round(offset / ref_space_w)
-        
-        # Limit to 2 spaces per "unit" of visual indentation if possible?
-        # No, we just use a larger divisor to scale it down naturally.
-        
-        # Avoid double indentation
-        to_add = max(0, spaces - existing_spaces)
-        to_add = min(to_add, 32)  # cap extreme values
-        
-        if to_add > 0:
-            line.text = (" " * to_add) + line.text
-
-
-def _flush_paragraph(lines: list[OcrLine]) -> OcrLine:
-    """Merge a paragraph's constituent lines into one OcrLine.
-
-    Handles hyphenation repair: strips trailing '-' and joins without separator.
-    """
-    if len(lines) == 1:
-        return lines[0]
-
-    parts: list[str] = []
-    prev_text = ""
-    for line in lines:
-        text = line.text
-        if prev_text:
-            if prev_text.rstrip().endswith("-"):
-                if parts:
-                    parts[-1] = parts[-1].rstrip()[:-1]
-            else:
-                sep = word_separator(prev_text, text)
-                if sep:
-                    parts.append(sep)
-        parts.append(text)
-        prev_text = text
-
-    merged_text = "".join(parts).rstrip()
-
-    min_x = min(l.bounding_box.x for l in lines)
-    min_y = min(l.bounding_box.y for l in lines)
-    max_x = max(l.bounding_box.x + l.bounding_box.width for l in lines)
-    max_y = max(l.bounding_box.y + l.bounding_box.height for l in lines)
-
-    all_words: list[OcrWord] = []
-    for line in lines:
-        all_words.extend(line.words)
-
-    return OcrLine(
-        text=merged_text,
-        words=all_words,
-        bounding_box=OcrBox(x=min_x, y=min_y, width=max_x - min_x, height=max_y - min_y),
-    )
+    return lines
 
 
 def compose_ppocr_text(blocks: list[dict]) -> str:

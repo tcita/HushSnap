@@ -32,38 +32,42 @@ def _translate(key, **kwargs):
 
 
 def test_ocr_popup_text_edit_is_not_read_only(qapp):
-    """The underlying text edit widget must be editable (not read-only)."""
+    """The text edit becomes editable after entering edit mode."""
     popup = OcrPopup(_translate)
+    popup.show_text("hello")
 
+    # Starts read-only (display mode)
+    assert popup.text_edit.isReadOnly()
+
+    # Becomes writable after entering edit mode
+    popup.edit_btn.click()
     assert not popup.text_edit.isReadOnly()
 
 
 def test_ocr_popup_starts_in_read_only_display_mode(qapp):
-    """After show_text the label is visible and text_edit is hidden."""
+    """After show_text the widget is in read-only display mode."""
     popup = OcrPopup(_translate)
     popup.show_text("hello")
 
-    assert not popup.text_label.isHidden()
-    assert popup.text_edit.isHidden()
+    assert popup.text_edit.isReadOnly()
     assert not popup._editing
+    assert popup.text_edit.toPlainText() == "hello"
 
 
 def test_ocr_popup_edit_btn_enters_edit_mode(qapp):
-    """Clicking the pencil button switches to editable text_edit."""
+    """Clicking the pencil button switches to editable mode."""
     popup = OcrPopup(_translate)
     popup.show_text("original")
 
-    # Click pencil to enter edit mode
     popup.edit_btn.click()
 
     assert popup._editing
-    assert popup.text_label.isHidden()
-    assert not popup.text_edit.isHidden()
+    assert not popup.text_edit.isReadOnly()
     assert popup.text_edit.toPlainText() == "original"
 
 
 def test_ocr_popup_edit_btn_exits_edit_mode_and_saves(qapp):
-    """Update button saves edits back to the label."""
+    """Update button saves edits and returns to read-only display."""
     popup = OcrPopup(_translate)
     popup.show_text("original")
 
@@ -74,8 +78,7 @@ def test_ocr_popup_edit_btn_exits_edit_mode_and_saves(qapp):
     popup.update_btn.click()
 
     assert not popup._editing
-    assert not popup.text_label.isHidden()
-    assert popup.text_edit.isHidden()
+    assert popup.text_edit.isReadOnly()
     assert popup.get_plain_text() == "edited text"
 
 

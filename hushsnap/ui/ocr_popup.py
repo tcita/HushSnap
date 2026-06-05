@@ -347,7 +347,7 @@ class OcrPopup(QtWidgets.QWidget):
         self.close_btn.setToolTip(self.translate("close_btn"))
 
     # ── show / hide text ─────────────────────────────────────────────
-    def show_text(self, text, pixmap=None):
+    def show_text(self, text, pixmap=None, lines=None):
         self._is_refreshing = True
         if pixmap is not None:
             self._last_pixmap = pixmap
@@ -365,8 +365,8 @@ class OcrPopup(QtWidgets.QWidget):
 
         self._is_refreshing = False
 
-        # First adjust layout size synchronously
-        self._adjust_window_size()
+        # First adjust layout size synchronously (fit width to content)
+        self._adjust_window_size(fit_width=True)
 
         # Ensure the bubble is always shown from the top
         self.text_edit.verticalScrollBar().setValue(0)
@@ -429,6 +429,8 @@ class OcrPopup(QtWidgets.QWidget):
 
     def _exit_edit_mode(self, save=True):
         """Switch from editable text edit back to read-only label."""
+        if not self._editing:
+            return  # nothing to do — avoids an unnecessary _adjust_window_size call
         self._editing = False
         if save:
             self._plain_text = self.text_edit.toPlainText()
@@ -454,24 +456,60 @@ class OcrPopup(QtWidgets.QWidget):
         QtCore.QTimer.singleShot(0, self._adjust_window_size)
 
     # ── height auto-fit (width stays user-controlled) ────────────────
-    def _adjust_window_size(self):
-        """Fit window height to bubble content; width is untouched."""
-        # Always use the formula-based viewport width to avoid garbage values
-        # when the window is not yet fully laid out or shown.
+    def _adjust_window_size(self, fit_width=False):
+        """Fit window size to bubble content.
+
+        Height is always adjusted to prevent vertical overflow.
+        Width is adjusted only on the initial ``show_text`` call
+        (*fit_width*=True); subsequent resize events honour the user's
+        chosen width.
+        """
+        font = self.text_edit.font()
+        fm = QtGui.QFontMetrics(font)
+        text = self.text_edit.toPlainText() or " "
+
+        # ── width: fit to the longest unwrapped line ──
+        if fit_width:
+            max_line_px = 0.0
+            for line in text.split("\n"):
+                w = fm.horizontalAdvance(line)
+                if w > max_line_px:
+                    max_line_px = w
+            max_line_px = max(max_line_px, 200.0)
+
+            content_w = max_line_px
+
+            # Window chrome: outer margins + panel padding + borders +
+            #                 viewport margins + scrollbar + safety buffer
+            chrome_w = 110
+            desired_w = int(content_w + chrome_w)
+            desired_w = max(desired_w, WINDOW_MIN_WIDTH)
+
+            screen = QtWidgets.QApplication.screenAt(self.pos())
+            if not screen:
+                screen = QtWidgets.QApplication.screenAt(QtGui.QCursor.pos()) or QtWidgets.QApplication.primaryScreen()
+            if screen:
+                max_w = int(screen.availableGeometry().width() * 0.75)
+                desired_w = min(desired_w, max_w)
+
+            self.resize(desired_w, self.height())
+
+        # ── height ─────────────────────────────────────────────────
+        # Viewport width = window − outer_margins(24) − panel_padding(12)
+        #                  − viewport_margins(32) − borders(4) ≈ 72
         vp_w = self.width() - 72
 
         # padding (16+16)
         text_w = max(vp_w - 32, 200)
 
-        font = self.text_edit.font()
         # Use QTextDocument to calculate exact height of the plain text with wrapping
         td = QtGui.QTextDocument()
         td.setDocumentMargin(0)
         td.setDefaultFont(font)
         td.setTextWidth(text_w)
         # QPlainTextEdit uses plain text, so we use setPlainText for measurement
-        td.setPlainText(self.text_edit.toPlainText() or " ")
-        
+        td.setPlainText(text)
+
         # Add a small buffer for line spacing
         text_h = int(td.size().height()) + 8
         td.deleteLater()
@@ -494,7 +532,7 @@ class OcrPopup(QtWidgets.QWidget):
         screen = QtWidgets.QApplication.screenAt(self.pos())
         if not screen or not self.isVisible():
             screen = QtWidgets.QApplication.screenAt(QtGui.QCursor.pos()) or QtWidgets.QApplication.primaryScreen()
-        
+
         if screen:
             area = screen.availableGeometry()
             # Don't exceed screen dimensions

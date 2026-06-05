@@ -55,10 +55,9 @@ def cleanup_ocr_text_line(text: str) -> str:
     """Normalize spacing around punctuation.
 
     CJK space-stripping is intentionally NOT done here — the layout engine
-    (ppocr._build_lines_from_ordered_blocks) is the authority on inter-word
-    spacing.  It uses both character-based logic (word_separator) and geometric
-    gap detection to decide where spaces belong.  Stripping spaces here would
-    undo deliberate spacing inserted by the layout engine for visual gaps.
+    (ppocr._build_lines_from_ordered_blocks + _apply_cjk_spacing) is the
+    authority on inter-word spacing via word_separator() and pangu-style
+    CJK↔Latin regexes.  Stripping spaces here would undo that work.
     """
     text = re.sub(r"\s+([,;:.!?])", r"\1", text)
     text = re.sub(r"([,;:.!?])(?=[A-Za-z0-9])", r"\1 ", text)
@@ -213,5 +212,5 @@ def compose_text_from_result(result: OcrRecognition, language_tag: str = "") -> 
         return adapter.finalize_text(result.text)
 
     return adapter.finalize_text(
-        _postprocess_layout_text("\n\n".join(built_lines))
+        _postprocess_layout_text("\n".join(built_lines))
     )

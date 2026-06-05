@@ -120,7 +120,7 @@ def test_ocr_finished_copies_text_and_updates_popup(monkeypatch, qapp, tmp_path,
 
     shown = {}
 
-    def _show_text(text, pixmap=None):
+    def _show_text(text, pixmap=None, lines=None):
         shown["text"] = text
         shown["pixmap"] = pixmap
 
@@ -128,7 +128,7 @@ def test_ocr_finished_copies_text_and_updates_popup(monkeypatch, qapp, tmp_path,
     qapp.clipboard().clear()
 
     controller.on_ocr_finished(
-        OcrResponse(text=" hello world ", error="", pixmap=sample_pixmap, recognition=OcrRecognition())
+        OcrResponse(text="hello world", error="", pixmap=sample_pixmap, recognition=OcrRecognition())
     )
 
     assert qapp.clipboard().text() == "hello world"

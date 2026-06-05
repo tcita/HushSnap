@@ -157,7 +157,8 @@ def test_compose_ppocr_text_two_lines():
         _make_block("line1", [[0, 0], [50, 0], [50, 20], [0, 20]]),
         _make_block("line2", [[0, 100], [50, 100], [50, 120], [0, 120]]),
     ]
-    assert compose_ppocr_text(blocks) == "line1\nline2"
+    # 100 px gap ≫ 1.6× line height → paragraph break with blank line
+    assert compose_ppocr_text(blocks) == "line1\n\nline2"
 
 
 def test_compose_ppocr_text_cjk_no_spaces():

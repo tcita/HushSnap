@@ -104,11 +104,12 @@ def test_compose_text_from_result_keeps_chinese_tokens_intact():
     result = ocr.OcrRecognition(
         lines=[
             ocr.OcrLine(
+                text="沪 A 测试",
                 words=[
                     ocr.OcrWord(text="沪"),
                     ocr.OcrWord(text="A"),
                     ocr.OcrWord(text="测试"),
-                ]
+                ],
             )
         ]
     )

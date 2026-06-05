@@ -199,6 +199,7 @@ class OcrController:
         self.popup.show_text(
             recognized,
             pixmap=pixmap,
+            lines=response.recognition.lines if response.recognition else None,
         )
 
     def _start_request(self, pixmap):
