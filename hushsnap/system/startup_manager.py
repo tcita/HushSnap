@@ -30,11 +30,12 @@ def is_running_as_package() -> bool:
         return False
 
 def _get_startup_shortcut_path() -> Path:
-    """Get the path to the HushSnap shortcut in the user's Startup folder."""
+    """Get the version-isolated shortcut path in the user's Startup folder."""
     appdata = os.getenv("APPDATA")
     if not appdata:
         return Path()
-    return Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup" / "HushSnap.lnk"
+    name = get_startup_reg_name()  # "HushSnap" or "HushSnap_Dev"
+    return Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup" / f"{name}.lnk"
 
 async def get_startup_state() -> bool:
     """
@@ -74,20 +75,6 @@ async def set_startup_state(enable: bool) -> bool:
         try:
             import winrt.windows.applicationmodel as appmodel
             task = await appmodel.StartupTask.get_async(MSIX_STARTUP_TASK_ID)
-            
-            # MSIX Cleanup: If enabling MSIX, wipe legacy registry entries to avoid double-launches
-            if enable:
-                try:
-                    key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
-                    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE) as key:
-                        for name in ("HushSnap", "HushSnap_Dev"):
-                            try:
-                                winreg.DeleteValue(key, name)
-                                logger.info(f"Cleaned up legacy registry startup entry: {name}")
-                            except FileNotFoundError:
-                                pass
-                except Exception as e:
-                    logger.debug(f"Legacy registry cleanup skipped: {e}")
 
             if enable:
                 result = await task.request_enable_async()
@@ -114,13 +101,13 @@ async def set_startup_state(enable: bool) -> bool:
                 if getattr(sys, 'frozen', False):
                     cmd = f'"{sys.executable}"'
                 else:
-                    _python_dir = Path(sys.executable).parent
-                    _pythonw = _python_dir / "pythonw.exe"
-                    if not _pythonw.exists():
-                        _pythonw = _python_dir / "python.exe"
-                    _entry = (Path(__file__).resolve().parent.parent.parent / "HushSnap.py").resolve()
-                    cmd = f'"{_pythonw}" "{_entry}"'
-                
+                    python_dir = Path(sys.executable).parent
+                    pythonw = python_dir / "pythonw.exe"
+                    if not pythonw.exists():
+                        pythonw = python_dir / "python.exe"
+                    entry = (Path(__file__).resolve().parent.parent.parent / "HushSnap.py").resolve()
+                    cmd = f'"{pythonw}" "{entry}"'
+
                 with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE) as key:
                     winreg.SetValueEx(key, reg_name, 0, winreg.REG_SZ, cmd)
                 return True

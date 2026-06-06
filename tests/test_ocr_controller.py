@@ -138,10 +138,10 @@ def test_ocr_finished_copies_text_and_updates_popup(monkeypatch, qapp, tmp_path,
 
 def test_should_ocr_next_capture_sets_flag(monkeypatch, qapp, tmp_path):
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    assert controller._next_capture_should_ocr is False
+    assert controller.next_capture_should_ocr is False
 
     controller.enable_ocr_next_capture()
-    assert controller._next_capture_should_ocr is True
+    assert controller.next_capture_should_ocr is True
 
 
 def test_handle_capture_completed_skips_when_not_enabled(monkeypatch, qapp, tmp_path, sample_pixmap):
@@ -184,7 +184,7 @@ def test_memory_trim_timer_behavior(monkeypatch, qapp, tmp_path, sample_pixmap):
     controller._trim_timer.start(5000)
     assert controller._trim_timer.isActive()
 
-    controller._start_request(sample_pixmap)
+    controller.start_request(sample_pixmap)
     assert not controller._trim_timer.isActive()
 
     # 2. Finish OCR -> timer should start
@@ -208,7 +208,7 @@ def test_ppocr_idle_release_timer_behavior(monkeypatch, qapp, tmp_path, sample_p
     controller._ppocr_release_timer.start(5000)
     assert controller._ppocr_release_timer.isActive()
 
-    controller._start_request(sample_pixmap)
+    controller.start_request(sample_pixmap)
     assert not controller._ppocr_release_timer.isActive()
 
     controller.on_ocr_finished(
@@ -235,7 +235,7 @@ def test_warmup_skipped_when_ocr_already_requested(monkeypatch, qapp, tmp_path):
     """If user already triggered OCR, skip warmup — the OCR path will
     initialize the engine on its own."""
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    controller._next_capture_should_ocr = True
+    controller.next_capture_should_ocr = True
 
     warmup_calls = []
     monkeypatch.setattr(
@@ -246,14 +246,14 @@ def test_warmup_skipped_when_ocr_already_requested(monkeypatch, qapp, tmp_path):
     controller._background_warmup()
 
     assert warmup_calls == []
-    assert controller._next_capture_should_ocr is True
+    assert controller.next_capture_should_ocr is True
 
 
 def test_warmup_runs_when_no_ocr_pending(monkeypatch, qapp, tmp_path):
     """Warmup should initialize the engine and emit warmup_finished
     when no OCR request is in progress."""
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    controller._next_capture_should_ocr = False
+    controller.next_capture_should_ocr = False
     controller._expecting_ocr_result = False
 
     warmup_calls = []
@@ -301,7 +301,7 @@ def test_post_warmup_trim_starts_timer_when_idle(monkeypatch, qapp, tmp_path):
     """_schedule_post_warmup_trim should start the trim timer (interval=0)
     when no OCR is pending."""
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    controller._next_capture_should_ocr = False
+    controller.next_capture_should_ocr = False
     controller._expecting_ocr_result = False
 
     controller._trim_timer.stop()
@@ -323,7 +323,7 @@ def test_ocr_request_cancels_pending_trim(monkeypatch, qapp, tmp_path, sample_pi
     controller._trim_timer.start(0)
     assert controller._trim_timer.isActive()
 
-    controller._start_request(sample_pixmap)
+    controller.start_request(sample_pixmap)
 
     assert not controller._trim_timer.isActive()
 
@@ -332,7 +332,7 @@ def test_warmup_finished_signal_triggers_trim(monkeypatch, qapp, tmp_path):
     """The warmup_finished Qt signal must be connected to
     _schedule_post_warmup_trim, which starts the trim timer when idle."""
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    controller._next_capture_should_ocr = False
+    controller.next_capture_should_ocr = False
     controller._expecting_ocr_result = False
 
     controller._trim_timer.stop()

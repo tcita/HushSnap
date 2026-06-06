@@ -160,7 +160,7 @@ def main(boot_start_time=None):
         # Defer via singleShot so CaptureWindow has fully closed before the
         # thumbnail appears — avoids a DWM focus-race in the MSIX container
         # that causes the thumbnail to flash and immediately dismiss.
-        if not ocr_controller._next_capture_should_ocr:
+        if not ocr_controller.next_capture_should_ocr:
             try:
                 pil_img = qpixmap_to_pil(captured_pixmap)
                 QtCore.QTimer.singleShot(50, lambda img=pil_img: _show_thumbnail_safe(img))
@@ -176,7 +176,7 @@ def main(boot_start_time=None):
             logging.getLogger(__name__).exception("Failed to show thumbnail (deferred)")
 
     # --- Thumbnail Interaction Handlers ---
-    from .ui.thumbnail import _manager as thumbnail_manager
+    from .ui.thumbnail import thumbnail_manager
 
     def handle_thumbnail_clicked(pil_img):
         """Thumbnail left-click: trigger OCR."""
@@ -190,7 +190,7 @@ def main(boot_start_time=None):
             QtGui.QImage.Format.Format_RGBA8888,
         ).copy()
         qpixmap = QtGui.QPixmap.fromImage(qimage)
-        ocr_controller._start_request(qpixmap)
+        ocr_controller.start_request(qpixmap)
 
     def handle_open_viewer(pil_img):
         """Thumbnail context menu: Open with default image viewer."""

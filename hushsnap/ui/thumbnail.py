@@ -441,7 +441,7 @@ class ThumbnailManager(QtCore.QObject):
         win.show()
 
 # Global manager instance
-_manager = ThumbnailManager()
+thumbnail_manager = ThumbnailManager()
 
 def qpixmap_to_pil(pixmap: QtGui.QPixmap) -> Image.Image:
     """Convert QPixmap to PIL Image via PNG buffer for maximum compatibility."""
@@ -455,5 +455,5 @@ def show_thumbnail(pil_image: Image.Image):
     Public API to show a floating thumbnail.
     Safe to call from any thread.
     """
-    if _manager:
-        _manager.show_signal.emit(pil_image)
+    if thumbnail_manager:
+        thumbnail_manager.show_signal.emit(pil_image)

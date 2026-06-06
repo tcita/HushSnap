@@ -72,17 +72,17 @@ def test_thumbnail_scaling_and_centering(qapp):
 
 def test_thumbnail_manager_single_instance(qapp):
     """ThumbnailManager must close the previous thumbnail when showing a new one."""
-    from hushsnap.ui.thumbnail import _manager
+    from hushsnap.ui.thumbnail import thumbnail_manager
     
     img1 = Image.new("RGBA", (100, 100), (255, 0, 0, 255))
     img2 = Image.new("RGBA", (100, 100), (0, 255, 0, 255))
     
-    _manager._do_show(img1)
-    assert len(_manager._windows) == 1
-    win1 = _manager._windows[0]
+    thumbnail_manager._do_show(img1)
+    assert len(thumbnail_manager._windows) == 1
+    win1 = thumbnail_manager._windows[0]
     
-    _manager._do_show(img2)
-    assert len(_manager._windows) == 1
-    win2 = _manager._windows[0]
+    thumbnail_manager._do_show(img2)
+    assert len(thumbnail_manager._windows) == 1
+    win2 = thumbnail_manager._windows[0]
     
     assert win1 != win2
