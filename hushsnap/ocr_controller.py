@@ -44,7 +44,7 @@ class OcrController:
         self.bridge = SignalBridge()
         self.tray_icon = None
         self.capture_requester = None
-        self._next_capture_should_ocr = False
+        self.next_capture_should_ocr = False
         self._expecting_ocr_result = False
 
         self._current_engine = OCR_ENGINE_PPOCR
@@ -78,11 +78,11 @@ class OcrController:
 
     def enable_ocr_next_capture(self):
         """Enable OCR for the next capture (used by OCR hotkey)."""
-        self._next_capture_should_ocr = True
+        self.next_capture_should_ocr = True
 
     def _trim_current_engine(self):
         """Trim working set of the current OCR engine to minimize idle footprint."""
-        if self._next_capture_should_ocr or self._expecting_ocr_result:
+        if self.next_capture_should_ocr or self._expecting_ocr_result:
             logging.debug("[_trim_current_engine] Skipping trim: OCR request is active")
             return
 
@@ -140,13 +140,13 @@ class OcrController:
 
     def handle_capture_completed(self, captured_pixmap):
         """Start OCR after a screenshot if OCR is enabled for this capture."""
-        logging.info(f"Capture completed. next_capture_should_ocr: {self._next_capture_should_ocr}")
-        if not self._next_capture_should_ocr:
+        logging.info(f"Capture completed. next_capture_should_ocr: {self.next_capture_should_ocr}")
+        if not self.next_capture_should_ocr:
             return
 
         # Consume the intent flag once capture is done
-        self._next_capture_should_ocr = False
-        self._start_request(captured_pixmap.copy())
+        self.next_capture_should_ocr = False
+        self.start_request(captured_pixmap.copy())
 
     def on_ocr_finished(self, response):
         self._trim_timer.start(30000)
@@ -202,13 +202,13 @@ class OcrController:
             lines=response.recognition.lines if response.recognition else None,
         )
 
-    def _start_request(self, pixmap):
+    def start_request(self, pixmap):
         self._trim_timer.stop()
         self._ppocr_release_timer.stop()
         self._expecting_ocr_result = True
         debug_dir = self.user_data_dir if self.save_debug_image else None
 
-        logging.info("[_start_request] engine=%s. %s", OCR_ENGINE_PPOCR, fmt_memory())
+        logging.info("[start_request] engine=%s. %s", OCR_ENGINE_PPOCR, fmt_memory())
 
         # Show "Recognizing…" immediately so the user knows a new OCR pass
         # is in progress — replaces any stale text from a previous result.
@@ -247,7 +247,7 @@ class OcrController:
         # before the event loop started processing this timer callback),
         # skip warmup — the OCR request will initialize the engine via its
         # own call to _get_engine(), making warmup redundant.
-        if self._next_capture_should_ocr or self._expecting_ocr_result:
+        if self.next_capture_should_ocr or self._expecting_ocr_result:
             logging.info(
                 "[_background_warmup] Skipping warmup: OCR already requested "
                 "(engine will be initialized by the OCR path)"
@@ -289,9 +289,9 @@ class OcrController:
         """Trim memory after successful warmup, unless an OCR request is active."""
         logging.debug(
             "[_schedule_post_warmup_trim] Signal received. next_capture_should_ocr=%s, expecting_ocr_result=%s. %s",
-            self._next_capture_should_ocr, self._expecting_ocr_result, fmt_memory(),
+            self.next_capture_should_ocr, self._expecting_ocr_result, fmt_memory(),
         )
-        if self._next_capture_should_ocr or self._expecting_ocr_result:
+        if self.next_capture_should_ocr or self._expecting_ocr_result:
             logging.info("[_schedule_post_warmup_trim] Post-warmup trim skipped: OCR request in progress")
             return
 
