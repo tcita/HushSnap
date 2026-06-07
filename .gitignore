@@ -20,7 +20,7 @@ dist-installer-test/
 .antigravitycli/
 
 # Tool output / profiling data
-tools/
+scratch/
 /ocr_preprocess_test
 DEV.lnk
 RELEASE.lnk
@@ -28,5 +28,5 @@ sign.lnk
 
 
 /for-test
-/tools
+/scratch
 /RapidOCR

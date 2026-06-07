@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import gc
+import argparse
 import psutil
 import logging
 from pathlib import Path
@@ -67,7 +68,7 @@ class BenchmarkRunner:
         else:
             logger.debug("[Benchmark] Status update received: %s", response.text)
 
-    def run_benchmark(self, iterations=10):
+    def run_benchmark(self, iterations=10, interval=5.0):
         print(f"\n{'='*70}")
         print(f" HUSHSNAP High-Fidelity OCR Full Workflow Benchmark (Sample: {Path(self.image_path).name})")
         print(f"{'='*70}")
@@ -78,7 +79,7 @@ class BenchmarkRunner:
         for i in range(iterations):
             print(f"\n[Iteration {i+1}/{iterations}] Preparing to simulate full lifecycle...")
             gc.collect()
-            time.sleep(1.0)
+            time.sleep(interval)
 
             initial_pv = get_private_bytes_mb()
             initial_ws = get_working_set_mb()
@@ -127,10 +128,32 @@ class BenchmarkRunner:
         print(f"{'='*70}")
 
 if __name__ == "__main__":
-    img = os.path.join(str(project_root), "tools", "0.png")
-    if not os.path.exists(img):
-        print(f"Error: Could not find test sample {img}")
+    parser = argparse.ArgumentParser(
+        description="HushSnap OCR benchmark — measure end-to-end latency and memory"
+    )
+    parser.add_argument(
+        "image",
+        help="Image filename in scratch/ or absolute path"
+    )
+    parser.add_argument(
+        "-s", "--interval",
+        type=float, default=5.0,
+        help="Seconds between OCR iterations, simulating user pacing (default: 5.0)"
+    )
+    parser.add_argument(
+        "-n", "--iterations",
+        type=int, default=5,
+        help="Number of OCR iterations (default: 5)"
+    )
+    args = parser.parse_args()
+
+    # Resolve image path: absolute, or relative to scratch/
+    img_path = Path(args.image)
+    if not img_path.is_absolute():
+        img_path = project_root / "scratch" / img_path
+    if not img_path.exists():
+        print(f"Error: Could not find test sample {img_path}")
         sys.exit(1)
 
-    runner = BenchmarkRunner(img)
-    runner.run_benchmark(iterations=5)
+    runner = BenchmarkRunner(str(img_path))
+    runner.run_benchmark(iterations=args.iterations, interval=args.interval)
