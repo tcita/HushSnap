@@ -152,6 +152,56 @@ def get_memory_stats() -> dict[str, float]:
     }
 
 
+def get_page_fault_count() -> int:
+    """Return total page fault count for the process, or -1 on failure.
+
+    Page fault delta between iterations is a strong signal for cold (disk I/O)
+    vs warm (cached) state.  Hard faults cause disk reads; soft faults merely
+    update page-table entries for already-resident pages.
+    """
+    handle = _init()
+    if handle is None or _GET_PROCESS_MEMORY_INFO is None:
+        return -1
+
+    try:
+        counters = _PROCESS_MEMORY_COUNTERS()
+        counters.cb = ctypes.sizeof(_PROCESS_MEMORY_COUNTERS)
+        if _GET_PROCESS_MEMORY_INFO(handle, ctypes.byref(counters), counters.cb):
+            return counters.PageFaultCount
+    except Exception:
+        logger.debug("get_page_fault_count failed", exc_info=True)
+    return -1
+
+
+_HANDLE_COUNT_FN = None
+
+
+def get_handle_count() -> int:
+    """Return number of open kernel handles for the process, or -1 on failure.
+
+    Useful as a leak detector: a monotonically increasing handle count across
+    OCR iterations suggests file / thread / GDI objects are not being closed.
+    """
+    global _HANDLE_COUNT_FN
+    handle = _init()
+    if handle is None:
+        return -1
+
+    try:
+        if _HANDLE_COUNT_FN is None:
+            kernel32 = ctypes.windll.kernel32
+            _HANDLE_COUNT_FN = kernel32.GetProcessHandleCount
+            _HANDLE_COUNT_FN.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.wintypes.DWORD)]
+            _HANDLE_COUNT_FN.restype = ctypes.wintypes.BOOL
+
+        count = ctypes.wintypes.DWORD()
+        if _HANDLE_COUNT_FN(handle, ctypes.byref(count)):
+            return count.value
+    except Exception:
+        logger.debug("get_handle_count failed", exc_info=True)
+    return -1
+
+
 def fmt_memory() -> str:
     """One-line human-readable memory summary for debug logs."""
     ws = get_working_set_mb()
