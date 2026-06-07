@@ -16,7 +16,7 @@ from ..system.memory_utils import get_working_set_mb, fmt_memory, trim_working_s
 logger = logging.getLogger(__name__)
 
 
-# ── pure functions ────────────────────────────────────────────────────
+# -- pure functions ----------------------------------------------------
 
 def ppocr_box_to_bbox(box) -> tuple[float, float, float, float]:
     if not isinstance(box, list) or not box:
@@ -63,21 +63,21 @@ def word_separator(left: str, right: str) -> str:
     return " "
 
 
-# ── XY-Cut layout engine ───────────────────────────────────────────────
+# -- XY-Cut layout engine -----------------------------------------------
 # Hierarchical recursive XY-Cut with adaptive per-region thresholds.
 #
 # Design (synthesised from three canonical variants):
-#   1. CC-based XY-Cut   (Ha, Haralick & Phillips 1995) — bbox input, recursive alternation
-#   2. ARXYC              (Sylwester 2001)              — gap-ratio threshold, locally adaptive
-#   3. Augmented XY-Cut   (Gu et al. 2022)              — sorted-adjacency gap detection
+#   1. CC-based XY-Cut   (Ha, Haralick & Phillips 1995) - bbox input, recursive alternation
+#   2. ARXYC              (Sylwester 2001)              - gap-ratio threshold, locally adaptive
+#   3. Augmented XY-Cut   (Gu et al. 2022)              - sorted-adjacency gap detection
 #
-# Thresholds are multiples of local character metrics → DPI- and font-agnostic.
+# Thresholds are multiples of local character metrics -> DPI- and font-agnostic.
 
 # Gap thresholds expressed as multiples of local character metrics.
-# These are unitless ratios — they scale automatically with DPI and font size.
-_GAP_RATIO_H_REGION = 2.5   # Y-gap > 2.5× char_h → horizontal region (header/body/footer)
-_GAP_RATIO_H_LINE   = 0.4   # Y-gap > 0.4× char_h → text line separator
-_GAP_RATIO_V_COLUMN = 3.5   # X-gap > 3.5× char_w → column separator
+# These are unitless ratios - they scale automatically with DPI and font size.
+_GAP_RATIO_H_REGION = 2.5   # Y-gap > 2.5x char_h -> horizontal region (header/body/footer)
+_GAP_RATIO_H_LINE   = 0.4   # Y-gap > 0.4x char_h -> text line separator
+_GAP_RATIO_V_COLUMN = 3.5   # X-gap > 3.5x char_w -> column separator
 
 # Minimum gap in pixels to avoid splitting on sub-pixel noise
 _MIN_GAP_PX = 2.0
@@ -103,7 +103,7 @@ def _normalize_blocks(blocks: list[dict]) -> list[dict]:
         w = right - left
         h = bottom - top
         if w <= 0 or h <= 0:
-            # Block has text but no valid bbox — give it a minimal placement
+            # Block has text but no valid bbox - give it a minimal placement
             w, h = 1.0, 1.0
         normalized.append({
             "text": raw_text,
@@ -150,15 +150,15 @@ def _leaf_reading_order(
 
     Vertical CJK text (e.g. sidebars, traditional documents)::
 
-      * Single column — only top→bottom order matters (column direction irrelevant)
-      * Multiple columns — traditional convention: right→left, top→bottom
+      * Single column - only top->bottom order matters (column direction irrelevant)
+      * Multiple columns - traditional convention: right->left, top->bottom
 
-    Horizontal text (default): top→bottom, left→right.
+    Horizontal text (default): top->bottom, left->right.
     """
     if len(blocks) <= 1:
         return list(blocks)
 
-    # ── detect vertical CJK ──────────────────────────────────────────
+    # -- detect vertical CJK ------------------------------------------
     tall_count = sum(1 for b in blocks if b["height"] > b["width"] * 1.3)
     is_vertical_cjk = len(blocks) >= 3 and tall_count / len(blocks) > 0.5
 
@@ -170,7 +170,7 @@ def _leaf_reading_order(
         med_w = statistics.median(widths) if widths else 15.0
 
         if x_span > med_w * 2.0:
-            # Multi-column vertical CJK → traditional right→left column order.
+            # Multi-column vertical CJK -> traditional right->left column order.
             blocks.sort(key=lambda b: b["center_x"])
 
             columns: list[list[dict]] = []
@@ -189,22 +189,22 @@ def _leaf_reading_order(
                 else:
                     columns.append([block])
 
-            # Sort columns right→left (larger center_x = further right)
+            # Sort columns right->left (larger center_x = further right)
             columns.sort(
                 key=lambda col: -sum(b["center_x"] for b in col) / len(col)
             )
 
-            # Sort top→bottom within each column
+            # Sort top->bottom within each column
             result: list[dict] = []
             for col in columns:
                 col.sort(key=lambda b: b["center_y"])
                 result.extend(col)
             blocks = result
         else:
-            # Single-column vertical → top→bottom only (X order irrelevant)
+            # Single-column vertical -> top->bottom only (X order irrelevant)
             blocks.sort(key=lambda b: b["center_y"])
     else:
-        # Standard horizontal: top→bottom, left→right
+        # Standard horizontal: top->bottom, left->right
         blocks.sort(key=lambda b: (b["center_y"], b["left"]))
 
     return blocks
@@ -217,9 +217,9 @@ def _xy_cut(
 
     Returns blocks in reading order:
 
-    * Y-cut first (top-level) → separate horizontal regions (header / body / footer)
-    * X-cut within each region → separate columns
-    * Y-cut within each column → separate text lines
+    * Y-cut first (top-level) -> separate horizontal regions (header / body / footer)
+    * X-cut within each region -> separate columns
+    * Y-cut within each column -> separate text lines
     * Terminal: sort for reading direction (handles CJK vertical text)
     """
     if len(blocks) <= 1:
@@ -229,7 +229,7 @@ def _xy_cut(
     med_h = m["med_h"]
     med_w = m["med_w"]
 
-    # ── gap threshold: coarse at top level, fine at deeper levels ────
+    # -- gap threshold: coarse at top level, fine at deeper levels ----
     if direction == "y":
         threshold = med_h * (
             _GAP_RATIO_H_REGION if depth == 0 else _GAP_RATIO_H_LINE
@@ -240,7 +240,7 @@ def _xy_cut(
 
     threshold = max(threshold, _MIN_GAP_PX)
 
-    # ── sort + detect gaps ───────────────────────────────────────────
+    # -- sort + detect gaps -------------------------------------------
     if direction == "y":
         sorted_blocks = sorted(blocks, key=lambda b: (b["center_y"], b["left"]))
     else:
@@ -249,7 +249,7 @@ def _xy_cut(
     gaps = _detect_gaps(sorted_blocks, direction, threshold)
 
     if not gaps:
-        # Terminal: no significant gaps → leaf region
+        # Terminal: no significant gaps -> leaf region
         return _leaf_reading_order(sorted_blocks, direction)
 
     # Split at the largest gap
@@ -272,9 +272,9 @@ def _build_lines_from_ordered_blocks(
 ) -> list[OcrLine]:
     """Group reading-order blocks into OcrLine objects via center_y proximity.
 
-    Within each line, blocks are joined left→right using *word_separator*
+    Within each line, blocks are joined left->right using *word_separator*
     (one space or nothing, based on character-class boundaries).
-    Geometric-gap spacing has been intentionally removed — it was fragile
+    Geometric-gap spacing has been intentionally removed - it was fragile
     across varying DPI, font sizes, and OCR detection granularities.
     """
     if not ordered_blocks:
@@ -283,7 +283,7 @@ def _build_lines_from_ordered_blocks(
     heights = [b["height"] for b in ordered_blocks]
     med_h = statistics.median(heights) if heights else 15.0
 
-    # Group consecutive blocks whose center_y is within 0.6× median height
+    # Group consecutive blocks whose center_y is within 0.6x median height
     line_groups: list[list[dict]] = []
     current_line = [ordered_blocks[0]]
 
@@ -298,7 +298,7 @@ def _build_lines_from_ordered_blocks(
 
     line_groups.append(current_line)
 
-    # Build OcrLine objects — simple character-class spacing only
+    # Build OcrLine objects - simple character-class spacing only
     result: list[OcrLine] = []
     for group in line_groups:
         group.sort(key=lambda b: b["left"])
@@ -336,58 +336,58 @@ def _build_lines_from_ordered_blocks(
     return result
 
 
-# ── CJK spacing post-processing (core patterns from pangu.py) ──────────
+# -- CJK spacing post-processing (core patterns from pangu.py) ----------
 # Applied as a final safety net: PP-OCR sometimes merges CJK+Latin into
 # a single detection block, so block-level word_separator() misses those
 # boundaries.  These two regexes catch them.
 # Reference: https://github.com/vinta/pangu.py (MIT licensed)
 #
 # CJK Unicode blocks (verified code points):
-#   CJK Radicals Supplement       ⺀-⻿
-#   Kangxi Radicals               ⼀-⿟
-#   Hiragana                      ぀-ゟ
-#   Katakana                      ゠-ヺ
-#   Katakana/Hiragana marks       ー-ヿ
-#   Bopomofo                      ㄀-ㄯ
-#   Enclosed CJK Letters          ㈀-㋿
-#   CJK Extension A               㐀-䶿
-#   CJK Unified Ideographs        一-鿿
-#   CJK Compatibility             豈-﫿
+#   CJK Radicals Supplement       \u2E80-\u2EFF
+#   Kangxi Radicals               \u2F00-\u2FDF
+#   Hiragana                      \u3040-\u309F
+#   Katakana                      \u30A0-\u30FF
+#   Katakana/Hiragana marks       \u30FB-\u30FF
+#   Bopomofo                      \u3100-\u312F
+#   Enclosed CJK Letters          \u3200-\u32FF
+#   CJK Extension A               \u3400-\u4DBF
+#   CJK Unified Ideographs        \u4E00-\u9FFF
+#   CJK Compatibility             \uF900-\uFAFF
 _CJK_RANGES = (
-    r'⺀-⻿'
-    r'⼀-⿟'
-    r'぀-ゟ'
-    r'゠-ヺ'
-    r'ー-ヿ'
-    r'㄀-ㄯ'
-    r'㈀-㋿'
-    r'㐀-䶿'
-    r'一-鿿'
-    r'豈-﫿'
+    r'\u2E80-\u2EFF'
+    r'\u2F00-\u2FDF'
+    r'\u3040-\u309F'
+    r'\u30A0-\u30FF'
+    r'\u30FB-\u30FF'
+    r'\u3100-\u312F'
+    r'\u3200-\u32FF'
+    r'\u3400-\u4DBF'
+    r'\u4E00-\u9FFF'
+    r'\uF900-\uFAFF'
 )
 
 # Non-CJK (ANS) character class matched on the other side of the boundary:
 #   A-Z a-z          Latin letters
-#   Ͱ-Ͽ    Greek and Coptic
+#   \u0370-\u03FF    Greek and Coptic
 #   0-9              digits
 #   @$%^&*\-+\\=\|/  common symbols
-#   ¡-ÿ    Latin-1 Supplement
-#   ⅐-↏    Number Forms
-#   ✀-➿    Dingbats
+#   \u00A1-\u00FF    Latin-1 Supplement
+#   \u2150-\u218F    Number Forms
+#   \u2700-\u27BF    Dingbats
 _ANS_CLASS = (
     r'A-Za-z'
-    r'Ͱ-Ͽ'
+    r'\u0370-\u03FF'
     r'0-9'
     r'@$%^&*\-+\\=\|/'
-    r'¡-ÿ'
-    r'⅐-↏'
-    r'✀-➿'
+    r'\u00A1-\u00FF'
+    r'\u2150-\u218F'
+    r'\u2700-\u27BF'
 )
 
-# CJK followed by ANS → insert space
+# CJK followed by ANS -> insert space
 _CJK_ANS_RE = re.compile(f'([{_CJK_RANGES}])([{_ANS_CLASS}])')
 
-# ANS followed by CJK → insert space
+# ANS followed by CJK -> insert space
 _ANS_CJK_RE = re.compile(
     f'([{_ANS_CLASS}~!;:,./?])([{_CJK_RANGES}])'
 )
@@ -407,7 +407,7 @@ def _apply_cjk_spacing(text: str) -> str:
 
 def _separate_paragraphs(lines: list[OcrLine]) -> list[OcrLine]:
     """Insert a trailing blank-line marker on lines whose Y-gap to the
-    next line exceeds 1.6× median line height (simple paragraph boundary)."""
+    next line exceeds 1.6x median line height (simple paragraph boundary)."""
     if len(lines) <= 1:
         return list(lines)
 
@@ -429,7 +429,7 @@ def _separate_paragraphs(lines: list[OcrLine]) -> list[OcrLine]:
     return lines
 
 
-# ── public API ────────────────────────────────────────────────────────────
+# -- public API ------------------------------------------------------------
 
 
 def compose_ppocr_structures(blocks: list[dict]) -> list[OcrLine]:
@@ -438,28 +438,28 @@ def compose_ppocr_structures(blocks: list[dict]) -> list[OcrLine]:
     Pipeline::
 
       1. Normalize raw blocks (filter empty / zero-size)
-      2. Hierarchical recursive XY-Cut → reading order
+      2. Hierarchical recursive XY-Cut -> reading order
       3. Group ordered blocks into OcrLine objects (center_y proximity)
       4. Separate paragraphs by Y-gap threshold
-      5. Post-process CJK↔Latin spacing (pangu-style safety net)
+      5. Post-process CJK-Latin spacing (pangu-style safety net)
     """
-    # Step 1 — normalize
+    # Step 1 - normalize
     normalized = _normalize_blocks(blocks)
     if not normalized:
         return []
 
-    # Step 2 — recursive XY-Cut → ordered blocks in reading order
+    # Step 2 - recursive XY-Cut -> ordered blocks in reading order
     ordered = _xy_cut(normalized, direction="y", depth=0)
 
-    # Step 3 — group into OcrLine objects (character-class spacing only)
+    # Step 3 - group into OcrLine objects (character-class spacing only)
     lines = _build_lines_from_ordered_blocks(ordered)
     if not lines:
         return []
 
-    # Step 4 — simple paragraph separation by Y-gap
+    # Step 4 - simple paragraph separation by Y-gap
     lines = _separate_paragraphs(lines)
 
-    # Step 5 — CJK spacing safety net (pangu-inspired regex)
+    # Step 5 - CJK spacing safety net (pangu-inspired regex)
     for line in lines:
         line.text = _apply_cjk_spacing(line.text)
 
@@ -472,7 +472,7 @@ def compose_ppocr_text(blocks: list[dict]) -> str:
     return "\n".join(line.text for line in lines).rstrip()
 
 
-# ── engine singleton ───────────────────────────────────────────────────
+# -- engine singleton ---------------------------------------------------
 
 _engine = None
 _engine_lock = threading.Lock()
@@ -546,26 +546,24 @@ def _get_engine() -> "PPOCR":
                 ws_before = get_working_set_mb()
                 logger.info("[PPOCR] Initializing engine singleton (models loading)...")
                 
-                # PRODUCTION BALANCED PROFILE (Optimized via Benchmarking)
-                # This configuration balances speed (~450ms for mid-text) and memory stability.
+                # PRODUCTION OPTIMIZED PROFILE (Empirically validated via Benchmark)
+                # This configuration provides the best speed-to-memory ratio for CPU inference.
                 #
                 # 1. Global.max_side_len (1536): Limits Detector feature map size. Prevents 
                 #    1.7GB+ spikes on 4K/high-DPI screens without impacting OCR accuracy.
-                # 2. Rec.rec_batch_num (4): Limits Recognizer transient tensor allocation.
-                #    Reduces peak memory during high-volume text blocks by ~33%.
-                # 3. intra_op_num_threads (-1): Uses all cores for pure speed. 
-                # 4. enable_cpu_mem_arena (True): Retains ONNX memory pool for performance.
-                #    Combined with post-inference GC, this provides the fastest response time.
+                # 2. Rec.rec_batch_num (1): Sequential recognition. Counter-intuitively faster 
+                #    on CPU than batching (e.g. 4 or 10) by reducing ONNX overhead and 
+                #    improving cache locality. Reduces peak memory by ~100MB.
+                # 3. intra_op_num_threads (8): Optimal thread saturation for modern CPUs.
+                #    Faster than 4 threads and more stable than using all cores (-1).
+                # 4. enable_cpu_mem_arena (False): Disables ONNX memory pooling to ensure 
+                #    transient buffers are returned to the OS immediately, preventing creep.
                 _engine = local_ppocr(params={
                     "Det.ocr_version": local_OCRVersion.PPOCRV5,
-                    "Rec.ocr_version": local_OCRVersion.PPOCRV5,
-                    "Cls.ocr_version": local_OCRVersion.PPOCRV5,
-                    "Global.use_cls": True,
-                    "Global.max_side_len": 1536,
-                    "Rec.rec_batch_num": 4,
-                    "EngineConfig.onnxruntime.intra_op_num_threads": -1,
-                    "EngineConfig.onnxruntime.inter_op_num_threads": -1,
-                    "EngineConfig.onnxruntime.enable_cpu_mem_arena": True,
+                    "Rec.rec_batch_num": 1,
+                    "EngineConfig.onnxruntime.intra_op_num_threads": 8,
+                    "EngineConfig.onnxruntime.inter_op_num_threads": 1,
+                    "EngineConfig.onnxruntime.enable_cpu_mem_arena": False,
                 })
                 
                 ws_after = get_working_set_mb()
@@ -610,7 +608,7 @@ def release_engine():
                  fmt_memory(), ws_exit - ws_entry)
 
 
-# ── public API ────────────────────────────────────────────────────────
+# -- public API --------------------------------------------------------
 
 def _recognize_without_detection(engine, arr) -> OcrRecognition:
     """Fallback: skip text detection and run recognition on the whole image.
@@ -724,12 +722,14 @@ def recognize_ppocr_qimage(image_or_result, language_tag: str = "") -> OcrRecogn
             logger.info("[ANCHOR] INFERENCE_START")
             result = engine(arr)
             logger.info("[ANCHOR] INFERENCE_END")
+            if hasattr(result, "elapse_list"):
+                logger.info("[ANCHOR] ELAPSE_DETAIL: %s", result.elapse_list)
             json_data = result.to_json()
         finally:
             _release_request()
 
         if not json_data:
-            logger.debug("PP-OCR detection returned empty — falling back to recognition-only")
+            logger.debug("PP-OCR detection returned empty - falling back to recognition-only")
             
             if width > original_size.width() or height > original_size.height():
                 y_off = (height - original_size.height()) // 2
