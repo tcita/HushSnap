@@ -126,7 +126,7 @@ class OcrController:
         self.start_request(captured_pixmap.copy())
 
     def on_ocr_finished(self, response):
-        self._trim_timer.start(30000)
+        self._trim_timer.start(5000)
         engine_name = response.recognition.engine_type if response.recognition else "unknown"
         error_part = f", Error: {response.error}" if response.error else ""
         logging.info(
