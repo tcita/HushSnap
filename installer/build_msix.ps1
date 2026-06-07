@@ -186,20 +186,27 @@ function Invoke-PreBuildValidation {
         Write-Pass "Git working tree is clean"
     }
 
-    # 1.6 ── Git tag exists for version ─────────────────────────────
-    $gitTag = & git -C $RootDir describe --tags --abbrev=0 2>$null
-    if (-not $gitTag) {
-        Write-Fail "No git tag found — MSIX version is unknown. Create one: git tag -a v0.3.0 -m 'release v0.3.0'"
+    # 1.6 ── HEAD must be exactly at a git tag for release ──────────
+    $exactTag = & git -C $RootDir describe --tags --exact-match 2>$null
+    if (-not $exactTag) {
+        $nearestTag = & git -C $RootDir describe --tags --abbrev=0 2>$null
+        if ($nearestTag) {
+            $aheadCount = & git -C $RootDir rev-list --count "${nearestTag}..HEAD" 2>$null
+            Write-Fail "HEAD is ${aheadCount} commit(s) ahead of tag ${nearestTag}. Tag the current HEAD before packaging: git tag -a vX.Y.Z -m 'release vX.Y.Z'"
+        } else {
+            Write-Fail "No git tag found. Create one: git tag -a v0.3.0 -m 'release v0.3.0'"
+        }
         $errors++
     } else {
-        Write-Pass "Git tag found: $gitTag"
+        Write-Pass "HEAD is exactly at git tag: $exactTag"
     }
 
     # 1.7 ── Default config template has debug = false ─────────────
     $configPyPath = Join-Path $pkgDir "config.py"
     $debugLine = Select-String -Path $configPyPath -Pattern '"debug"\s*:\s*False' | Select-Object -First 1
-    if ($debugLine) {
-        Write-Pass "Default config template: debug = false"
+    $debugNotFrozen = Select-String -Path $configPyPath -Pattern '"debug"\s*:\s*not\s+_is_frozen' | Select-Object -First 1
+    if ($debugLine -or $debugNotFrozen) {
+        Write-Pass "Default config template: debug = false (or via not _is_frozen)"
     } else {
         $debugTrue = Select-String -Path $configPyPath -Pattern '"debug"\s*:\s*True' | Select-Object -First 1
         if ($debugTrue) {
@@ -446,19 +453,34 @@ $stageDir = Join-Path $rootDir "build\msix_stage"
 # ══════════════════════════════════════════════════════════════════════
 
 if (-not $Version) {
-    $gitTag = & git -C $rootDir describe --tags --abbrev=0 2>$null
-    if ($gitTag) {
-        $rawVersion = $gitTag.TrimStart('v')
-        Write-Host "Extracted version '$rawVersion' from git tag '$gitTag'" -ForegroundColor Green
+    $exactTag = & git -C $rootDir describe --tags --exact-match 2>$null
+    if ($exactTag) {
+        $rawVersion = $exactTag.TrimStart('v')
+        Write-Host "Extracted version '$rawVersion' from exact git tag '$exactTag'" -ForegroundColor Green
     } else {
-        Write-Host ""
-        Write-Host "==========================================================" -ForegroundColor Red
-        Write-Host "  ERROR: No git tag found in repository!" -ForegroundColor Red
-        Write-Host "  Create one first: git tag -a v0.3.0 -m 'release v0.3.0'" -ForegroundColor Red
-        Write-Host "  Or override: build_msix.ps1 -Version '0.3.0'" -ForegroundColor Red
-        Write-Host "==========================================================" -ForegroundColor Red
-        Write-Host ""
-        throw "Version resolution failed: no git tag found."
+        $nearestTag = & git -C $rootDir describe --tags --abbrev=0 2>$null
+        if ($nearestTag) {
+            $aheadCount = & git -C $rootDir rev-list --count "${nearestTag}..HEAD" 2>$null
+            Write-Host ""
+            Write-Host "==========================================================" -ForegroundColor Red
+            Write-Host "  ERROR: HEAD is ${aheadCount} commit(s) ahead of tag" -ForegroundColor Red
+            Write-Host "  Nearest tag: ${nearestTag}" -ForegroundColor Red
+            Write-Host "  Tag the current HEAD first:" -ForegroundColor Red
+            Write-Host "    git tag -a vX.Y.Z -m 'release vX.Y.Z'" -ForegroundColor Red
+            Write-Host "  Or override: build_msix.ps1 -Version 'X.Y.Z'" -ForegroundColor Red
+            Write-Host "==========================================================" -ForegroundColor Red
+            Write-Host ""
+            throw "Version resolution failed: HEAD is not at a git tag."
+        } else {
+            Write-Host ""
+            Write-Host "==========================================================" -ForegroundColor Red
+            Write-Host "  ERROR: No git tag found in repository!" -ForegroundColor Red
+            Write-Host "  Create one first: git tag -a v0.3.0 -m 'release v0.3.0'" -ForegroundColor Red
+            Write-Host "  Or override: build_msix.ps1 -Version '0.3.0'" -ForegroundColor Red
+            Write-Host "==========================================================" -ForegroundColor Red
+            Write-Host ""
+            throw "Version resolution failed: no git tag found."
+        }
     }
 } else {
     $rawVersion = $Version
@@ -561,7 +583,7 @@ New-Item -ItemType Directory -Path $assetsStageDir -Force | Out-Null
 
 Write-Host "Generating PNG visual assets from ico.ico..." -ForegroundColor Cyan
 $icoPath = Join-Path $rootDir "ico.ico"
-$generatorScript = Join-Path $rootDir "tools\generate_msix_assets.py"
+$generatorScript = Join-Path $rootDir "installer\generate_msix_assets.py"
 & python.exe $generatorScript $icoPath $assetsStageDir
 
 # ══════════════════════════════════════════════════════════════════════
@@ -598,8 +620,18 @@ if (-not (Test-Path $outputDir)) {
 }
 $msixPath = Join-Path $outputDir $msixFilename
 
+# Remove stale .msix first — MakeAppx /o can silently fail if the file is
+# locked (e.g. Windows Explorer is viewing the folder).
+if (Test-Path $msixPath) {
+    Remove-Item -Path $msixPath -Force -ErrorAction Stop
+    Write-Host "Removed previous MSIX: $msixPath" -ForegroundColor Cyan
+}
+
 Write-Host "Packaging staging folder into MSIX..." -ForegroundColor Cyan
-& $makeappx pack /d $stageDir /p $msixPath /o
+& $makeappx pack /d $stageDir /p $msixPath
+if ($LASTEXITCODE -ne 0) {
+    throw "MakeAppx failed with exit code $LASTEXITCODE"
+}
 Write-Host "  [Success] MSIX package created: $msixPath" -ForegroundColor Green
 
 # ══════════════════════════════════════════════════════════════════════

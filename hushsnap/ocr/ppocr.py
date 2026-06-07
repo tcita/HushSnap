@@ -560,6 +560,8 @@ def _get_engine() -> "PPOCR":
                 #    transient buffers are returned to the OS immediately, preventing creep.
                 _engine = local_ppocr(params={
                     "Det.ocr_version": local_OCRVersion.PPOCRV5,
+                    "Rec.ocr_version": local_OCRVersion.PPOCRV5,
+                    "Cls.ocr_version": local_OCRVersion.PPOCRV5,
                     "Rec.rec_batch_num": 1,
                     "EngineConfig.onnxruntime.intra_op_num_threads": 8,
                     "EngineConfig.onnxruntime.inter_op_num_threads": 1,
