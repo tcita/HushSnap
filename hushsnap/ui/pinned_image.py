@@ -1,4 +1,5 @@
 import logging
+import os
 from PyQt6 import QtCore, QtGui, QtWidgets
 from PIL import Image
 import io
@@ -64,10 +65,9 @@ class PinnedImageWindow(QtWidgets.QWidget):
         # Drag and resize state
         self._is_resizing = False
         self._active_edge = None
-        self._drag_start_mouse_pos = None
         self._drag_start_geometry = None
         self._drag_offset = QtCore.QPoint(0, 0)
-        self._resize_threshold = 16 # Larger threshold for easier grabbing
+        self._resize_threshold = 16  # max corner hit-zone; scaled down for small windows
         
         # UI Elements
         self.close_btn = QtWidgets.QPushButton("×", self)
@@ -99,13 +99,11 @@ class PinnedImageWindow(QtWidgets.QWidget):
         )
 
     def _update_ui_positions(self):
-        # Close button — top-right corner of the *window*, in the transparent
-        # shadow margin outside the image. Always works regardless of image size.
+        """Reposition the close button; does NOT change visibility."""
         close_x = self.width() - 26
         close_y = 4
         self.close_btn.move(close_x, close_y)
-        self.close_btn.show()
-            
+
     def enterEvent(self, event):
         self._update_ui_positions()
         self.close_btn.show()
@@ -116,32 +114,40 @@ class PinnedImageWindow(QtWidgets.QWidget):
         super().leaveEvent(event)
 
     def _get_edge(self, pos):
-        hit = self._resize_threshold
         rect = self._get_content_rect()
-        
+
+        # Dynamic hit threshold: scales with window size so small windows
+        # still have a usable drag zone in the centre.
+        hit = min(self._resize_threshold, rect.width() // 4, rect.height() // 4)
+        if hit < 6:
+            hit = min(6, rect.width() // 2, rect.height() // 2)
+
         # Only detect edges within or near the content rect
         if not rect.adjusted(-hit, -hit, hit, hit).contains(pos):
             return QtCore.Qt.Edge(0)
-            
+
         edge = QtCore.Qt.Edge(0)
         is_left = pos.x() < rect.left() + hit
         is_right = pos.x() > rect.right() - hit
         is_top = pos.y() < rect.top() + hit
         is_bottom = pos.y() > rect.bottom() - hit
 
-        # Only trigger for corners (intersection of horizontal + vertical edge).
-        # If the window is so small that opposing edges both match, treat it
-        # as a drag rather than a broken resize.
+        # When the window is so small that opposing edges both match, treat
+        # the click as a drag rather than a broken resize.
         if is_left and is_right:
             is_left = is_right = False
         if is_top and is_bottom:
             is_top = is_bottom = False
 
         if (is_left or is_right) and (is_top or is_bottom):
-            if is_left: edge |= QtCore.Qt.Edge.LeftEdge
-            if is_right: edge |= QtCore.Qt.Edge.RightEdge
-            if is_top: edge |= QtCore.Qt.Edge.TopEdge
-            if is_bottom: edge |= QtCore.Qt.Edge.BottomEdge
+            if is_left:
+                edge |= QtCore.Qt.Edge.LeftEdge
+            if is_right:
+                edge |= QtCore.Qt.Edge.RightEdge
+            if is_top:
+                edge |= QtCore.Qt.Edge.TopEdge
+            if is_bottom:
+                edge |= QtCore.Qt.Edge.BottomEdge
 
         return edge
 
@@ -149,18 +155,18 @@ class PinnedImageWindow(QtWidgets.QWidget):
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
             pos = event.position().toPoint()
             self._active_edge = self._get_edge(pos)
-            self._drag_start_mouse_pos = event.globalPosition().toPoint()
             self._drag_start_geometry = self.geometry()
-            
+
             if self._active_edge:
                 self._is_resizing = True
             else:
-                # Manual dragging: store the offset
                 self._drag_offset = event.globalPosition().toPoint() - self.pos()
-                
+
             event.accept()
         elif event.button() == QtCore.Qt.MouseButton.RightButton:
             self._show_context_menu(event.globalPosition().toPoint())
+        else:
+            super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
         m_pos = event.globalPosition().toPoint()
@@ -361,7 +367,8 @@ class PinnedImageWindow(QtWidgets.QWidget):
         menu.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
         
         ocr_action = menu.addAction(ui_text(lang, "menu_ocr_recognize"))
-        copy_action = menu.addAction(ui_text(lang, "ocr_copy_btn"))
+        copy_action = menu.addAction(ui_text(lang, "pin_copy_image"))
+        desktop_action = menu.addAction(ui_text(lang, "thumbnail_save_to_desktop"))
         save_action = menu.addAction(ui_text(lang, "thumbnail_save_as"))
         action = menu.exec(pos)
 
@@ -371,6 +378,19 @@ class PinnedImageWindow(QtWidgets.QWidget):
             self.pil_image.save(buffer, format="PNG")
             qimg = QtGui.QImage.fromData(buffer.getvalue())
             cb.setImage(qimg)
+        elif action == desktop_action:
+            try:
+                desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+                timestamp = QtCore.QDateTime.currentDateTime().toString("MMdd_HH-mm-ss")
+                base = f"pin_{timestamp}"
+                file_path = os.path.join(desktop, f"{base}.png")
+                counter = 1
+                while os.path.exists(file_path):
+                    file_path = os.path.join(desktop, f"{base}({counter}).png")
+                    counter += 1
+                self.pil_image.save(file_path)
+            except Exception:
+                logger.exception("Failed to save pinned image to desktop")
         elif action == save_action:
             default_name = f"pin_{QtCore.QDateTime.currentDateTime().toString('MMdd_HHmmss')}.png"
             file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
