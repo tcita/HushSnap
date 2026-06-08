@@ -292,6 +292,11 @@ class OcrPopup(QtWidgets.QWidget):
             "#ocrPinBtn:hover { background: rgba(46, 125, 79, 64); color: #d4f5e2; }"
             "#ocrPinBtn[pin=\"true\"] { color: #5fc98a; background: rgba(30, 74, 48, 120); }"
 
+            "#ocrCloseBtn {"
+            " border: none;"
+            " border-radius: 6px;"
+            " background: transparent;"
+            "}"
             "#ocrCloseBtn:hover { background: #f44336; color: #FFF; }"
 
             "/* ── custom vertical scrollbar ── */"
