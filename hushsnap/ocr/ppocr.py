@@ -478,6 +478,24 @@ _engine = None
 _engine_lock = threading.Lock()
 _active_requests = 0
 _active_requests_cv = threading.Condition()
+_engine_params_override: dict | None = None
+
+
+def set_engine_params_override(params: dict | None):
+    """Override engine parameters for the next engine creation.
+
+    Forces release of the existing engine singleton so that the new
+    parameters take effect on the next OCR call.  Pass ``None`` to
+    revert to production defaults.
+
+    Intended for benchmarking / A/B testing — the production path never
+    calls this function.
+    """
+    global _engine_params_override, _engine
+    _engine_params_override = dict(params) if params else None
+    with _engine_lock:
+        _engine = None
+    logger.info("[PPOCR] Engine params override set: %s", _engine_params_override)
 
 
 def _trim_working_set():
@@ -549,24 +567,30 @@ def _get_engine() -> "PPOCR":
                 # PRODUCTION OPTIMIZED PROFILE (Empirically validated via Benchmark)
                 # This configuration provides the best speed-to-memory ratio for CPU inference.
                 #
-                # 1. Global.max_side_len (1536): Limits Detector feature map size. Prevents 
+                # 1. Global.max_side_len (1536): Limits Detector feature map size. Prevents
                 #    1.7GB+ spikes on 4K/high-DPI screens without impacting OCR accuracy.
-                # 2. Rec.rec_batch_num (1): Sequential recognition. Counter-intuitively faster 
-                #    on CPU than batching (e.g. 4 or 10) by reducing ONNX overhead and 
+                # 2. Rec.rec_batch_num (1): Sequential recognition. Counter-intuitively faster
+                #    on CPU than batching (e.g. 4 or 10) by reducing ONNX overhead and
                 #    improving cache locality. Reduces peak memory by ~100MB.
                 # 3. intra_op_num_threads (8): Optimal thread saturation for modern CPUs.
                 #    Faster than 4 threads and more stable than using all cores (-1).
-                # 4. enable_cpu_mem_arena (False): Disables ONNX memory pooling to ensure 
+                # 4. enable_cpu_mem_arena (False): Disables ONNX memory pooling to ensure
                 #    transient buffers are returned to the OS immediately, preventing creep.
-                _engine = local_ppocr(params={
+                params = {
                     "Det.ocr_version": local_OCRVersion.PPOCRV5,
                     "Rec.ocr_version": local_OCRVersion.PPOCRV5,
                     "Cls.ocr_version": local_OCRVersion.PPOCRV5,
+                    "Global.max_side_len": 1536,
                     "Rec.rec_batch_num": 1,
                     "EngineConfig.onnxruntime.intra_op_num_threads": 8,
                     "EngineConfig.onnxruntime.inter_op_num_threads": 1,
                     "EngineConfig.onnxruntime.enable_cpu_mem_arena": False,
-                })
+                }
+                if _engine_params_override:
+                    params.update(_engine_params_override)
+                    logger.info("[PPOCR] Applying engine params override: %s",
+                                {k: v for k, v in _engine_params_override.items()})
+                _engine = local_ppocr(params=params)
                 
                 ws_after = get_working_set_mb()
                 logger.debug(
