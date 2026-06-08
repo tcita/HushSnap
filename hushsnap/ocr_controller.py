@@ -103,6 +103,7 @@ class OcrController:
     def _on_toast_ocr_done(self, response, toast_window):
         """Main-thread handler: copy OCR text and show toast."""
         self._toast_bridge = None  # release the bridge
+        self._trim_timer.start(5000)  # schedule engine memory trim, same as normal OCR
         text = response.text.strip() if response.text else ""
         if text:
             clipboard = self.app.clipboard()
