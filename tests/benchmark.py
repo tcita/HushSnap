@@ -315,7 +315,8 @@ class BenchmarkRunner:
         print(f"          R ≪ 1.0 → spike  (memory released promptly)")
         print(f"{'='*70}")
 
-        results = []
+        self.results = []
+        results = self.results  # alias for local use
         texts = set()
         handles_before = get_handle_count()
 
@@ -529,6 +530,23 @@ if __name__ == "__main__":
         help="Enable high-frequency memory sampling on first iteration "
              "(rise/fall times, decay λ, AUC)"
     )
+    parser.add_argument(
+        "--rec-batch-num",
+        type=int, default=None,
+        help="Override Rec.rec_batch_num (default: use production setting)"
+    )
+    parser.add_argument(
+        "--intra-op-num-threads",
+        type=int, default=None,
+        help="Override EngineConfig.onnxruntime.intra_op_num_threads "
+             "(default: use production setting)"
+    )
+    parser.add_argument(
+        "--inter-op-num-threads",
+        type=int, default=None,
+        help="Override EngineConfig.onnxruntime.inter_op_num_threads "
+             "(default: use production setting)"
+    )
     args = parser.parse_args()
 
     # Resolve image path
@@ -538,6 +556,20 @@ if __name__ == "__main__":
     if not img_path.exists():
         print(f"Error: Could not find test sample {img_path}")
         sys.exit(1)
+
+    # ── Apply engine parameter overrides for A/B testing ──────────────
+    override_params = {}
+    if args.rec_batch_num is not None:
+        override_params["Rec.rec_batch_num"] = args.rec_batch_num
+    if args.intra_op_num_threads is not None:
+        override_params["EngineConfig.onnxruntime.intra_op_num_threads"] = args.intra_op_num_threads
+    if args.inter_op_num_threads is not None:
+        override_params["EngineConfig.onnxruntime.inter_op_num_threads"] = args.inter_op_num_threads
+
+    if override_params:
+        from hushsnap.ocr.ppocr import set_engine_params_override
+        set_engine_params_override(override_params)
+        print(f"[A/B TEST] Engine overrides applied: {override_params}")
 
     runner = BenchmarkRunner(str(img_path))
     runner.run_benchmark(
