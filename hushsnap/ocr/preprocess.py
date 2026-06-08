@@ -11,6 +11,10 @@ Steps (all format/coordinate; NOT recognition enhancement):
 from dataclasses import dataclass, field
 
 from PyQt6 import QtCore, QtGui
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
 
 DEFAULT_OCR_SCALE_FACTOR = 1.0
 
@@ -123,11 +127,27 @@ def _pad_if_small(image: QtGui.QImage, min_side: int = SAFE_PAD_MIN_SIDE) -> QtG
 
 
 def prepare_ocr_image(image_or_pixmap) -> QtGui.QImage:
-    """Unify pixel format to ARGB32 and reset DPR to 1.0."""
+    """Unify pixel format to ARGB32 and reset DPR to 1.0.
+    Supports QPixmap, QImage, and PIL Image.
+    """
     if isinstance(image_or_pixmap, QtGui.QPixmap):
         image = image_or_pixmap.toImage().convertToFormat(QtGui.QImage.Format.Format_ARGB32)
+    elif Image and isinstance(image_or_pixmap, Image.Image):
+        # Convert PIL Image to QImage
+        pil_img = image_or_pixmap
+        if pil_img.mode != "RGBA":
+            pil_img = pil_img.convert("RGBA")
+        data = pil_img.tobytes("raw", "RGBA")
+        image = QtGui.QImage(
+            data, 
+            pil_img.size[0], 
+            pil_img.size[1], 
+            QtGui.QImage.Format.Format_RGBA8888
+        ).copy().convertToFormat(QtGui.QImage.Format.Format_ARGB32)
     else:
+        # Assume it's a QImage
         image = image_or_pixmap.convertToFormat(QtGui.QImage.Format.Format_ARGB32)
+    
     if image.devicePixelRatio() != 1.0:
         image.setDevicePixelRatio(1.0)
     return image

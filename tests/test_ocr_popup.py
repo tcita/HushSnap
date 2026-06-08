@@ -24,95 +24,59 @@ def _translate(key, **kwargs):
         "ocr_pin_btn": "Pin",
         "ocr_unpin_btn": "Unpin",
         "close_btn": "Close",
-        "ocr_edit_btn": "Edit",
-        "ocr_update_btn": "Update",
-        "ocr_cancel_btn": "Cancel",
     }
     return table.get(key, key).format(**kwargs)
 
 
-def test_ocr_popup_text_edit_is_not_read_only(qapp):
-    """The text edit becomes editable after entering edit mode."""
+def test_ocr_popup_text_is_editable_by_default(qapp):
+    """The text edit is directly editable — no edit mode toggle needed."""
     popup = OcrPopup(_translate)
     popup.show_text("hello")
 
-    # Starts read-only (display mode)
-    assert popup.text_edit.isReadOnly()
-
-    # Becomes writable after entering edit mode
-    popup.edit_btn.click()
     assert not popup.text_edit.isReadOnly()
-
-
-def test_ocr_popup_starts_in_read_only_display_mode(qapp):
-    """After show_text the widget is in read-only display mode."""
-    popup = OcrPopup(_translate)
-    popup.show_text("hello")
-
-    assert popup.text_edit.isReadOnly()
-    assert not popup._editing
     assert popup.text_edit.toPlainText() == "hello"
 
 
-def test_ocr_popup_edit_btn_enters_edit_mode(qapp):
-    """Clicking the pencil button switches to editable mode."""
-    popup = OcrPopup(_translate)
-    popup.show_text("original")
-
-    popup.edit_btn.click()
-
-    assert popup._editing
-    assert not popup.text_edit.isReadOnly()
-    assert popup.text_edit.toPlainText() == "original"
-
-
-def test_ocr_popup_edit_btn_exits_edit_mode_and_saves(qapp):
-    """Update button saves edits and returns to read-only display."""
-    popup = OcrPopup(_translate)
-    popup.show_text("original")
-
-    # Enter edit mode
-    popup.edit_btn.click()
-    popup.text_edit.setPlainText("edited text")
-    # Exit edit mode via Update button
-    popup.update_btn.click()
-
-    assert not popup._editing
-    assert popup.text_edit.isReadOnly()
-    assert popup.get_plain_text() == "edited text"
-
-
-def test_ocr_popup_cancel_btn_discards_edits(qapp):
-    """Cancel button discards edits and exits edit mode."""
-    popup = OcrPopup(_translate)
-    popup.show_text("original")
-
-    popup.edit_btn.click()
-    popup.text_edit.setPlainText("discarded text")
-    popup.cancel_btn.click()
-
-    assert not popup._editing
-    assert popup.get_plain_text() == "original"
-
-
-def test_ocr_popup_edit_mode_swaps_button_groups(qapp):
-    """Read mode shows Copy+Edit; edit mode shows Update+Cancel."""
+def test_ocr_popup_starts_editable(qapp):
+    """After show_text the text is immediately editable."""
     popup = OcrPopup(_translate)
     popup.show_text("hello")
 
-    # Read mode
+    assert not popup.text_edit.isReadOnly()
+    assert popup.text_edit.toPlainText() == "hello"
+
+
+def test_ocr_popup_has_no_edit_button(qapp):
+    """The popup no longer has an edit button."""
+    popup = OcrPopup(_translate)
+    popup.show_text("original")
+
+    assert not hasattr(popup, "edit_btn")
+    assert not hasattr(popup, "update_btn")
+    assert not hasattr(popup, "cancel_btn")
+    assert not hasattr(popup, "_editing")
+
+
+def test_ocr_popup_text_is_directly_editable(qapp):
+    """User can edit text directly without entering any mode."""
+    popup = OcrPopup(_translate)
+    popup.show_text("original")
+
+    # Just type directly — no button needed
+    popup.text_edit.setPlainText("edited text")
+    assert popup.get_plain_text() == "edited text"
+    assert popup.text_edit.toPlainText() == "edited text"
+
+
+def test_ocr_popup_footer_has_only_copy_button(qapp):
+    """The footer should only contain the copy button (no edit/update/cancel)."""
+    popup = OcrPopup(_translate)
+    popup.show_text("hello")
+
     assert not popup.copy_btn.isHidden()
-    assert not popup.edit_btn.isHidden()
-    assert popup.update_btn.isHidden()
-    assert popup.cancel_btn.isHidden()
-
-    # Enter edit mode
-    popup.edit_btn.click()
-
-    assert popup.copy_btn.isHidden()
-    assert popup.edit_btn.isHidden()
-    assert not popup.update_btn.isHidden()
-    assert not popup.cancel_btn.isHidden()
+    assert not hasattr(popup, "edit_btn")
+    assert not hasattr(popup, "update_btn")
+    assert not hasattr(popup, "cancel_btn")
 
 
 from unittest.mock import patch, MagicMock
@@ -125,17 +89,15 @@ def test_ocr_popup_copy_button_copies_current_text(qapp):
         popup = OcrPopup(_translate)
         popup.show_text("original")
 
-        # Copy from read-only label
+        # Copy from editable text
         popup.copy_btn.click()
         mock_clipboard.setText.assert_called_with("original")
 
-        # Enter edit mode, modify, then copy
-        popup.edit_btn.click()
+        # Edit directly, then copy again
         popup.text_edit.setPlainText("edited text")
         popup.copy_btn.setEnabled(True)  # Animation disables it; re-enable for testing
         popup.copy_btn.click()
         mock_clipboard.setText.assert_called_with("edited text")
-
 
 
 def test_ocr_popup_updates_copy_button_text_on_show(qapp):
@@ -144,4 +106,3 @@ def test_ocr_popup_updates_copy_button_text_on_show(qapp):
     popup.show_text("hello")
 
     assert popup.copy_btn.toolTip() == "Copy"
-

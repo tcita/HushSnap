@@ -23,8 +23,8 @@ class OcrPopup(QtWidgets.QWidget):
         self._last_pixmap = None
         self._is_refreshing = False
         self._pinned = False
-        self._editing = False
         self._plain_text = ""
+        self._anchor_pos = None  # (x, y) screen coords for thumbnail transition
 
         self.setWindowFlags(
             QtCore.Qt.WindowType.Window
@@ -41,60 +41,55 @@ class OcrPopup(QtWidgets.QWidget):
 
         # ── outer shell ──────────────────────────────────────────────
         outer = QtWidgets.QVBoxLayout(self)
-        outer.setContentsMargins(12, 12, 12, 12)  # Margin space for drop shadow
+        outer.setContentsMargins(18, 18, 18, 18)  # shadow space + breathing room
 
-        panel = QtWidgets.QFrame()
-        panel.setObjectName("ocrPanel")
-
-        # Apply a premium soft drop shadow effect
-        shadow = QtWidgets.QGraphicsDropShadowEffect(panel)
-        shadow.setBlurRadius(15)
-        shadow.setColor(QtGui.QColor(0, 0, 0, 85))
-        shadow.setOffset(0, 4)
-        panel.setGraphicsEffect(shadow)
-        panel.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Expanding,
-            QtWidgets.QSizePolicy.Policy.Expanding,
-        )
-        outer.addWidget(panel, 1)
-
-        layout = QtWidgets.QVBoxLayout(panel)
-        layout.setContentsMargins(6, 6, 6, 6)
-        layout.setSpacing(6)
-
-        # ── header ───────────────────────────────────────────────────
-        self.header_container = QtWidgets.QFrame()
-        self.header_container.setObjectName("ocrHeader")
-        header_layout = QtWidgets.QHBoxLayout(self.header_container)
-        header_layout.setSpacing(8)
-        header_layout.setContentsMargins(10, 6, 10, 6)
-
-        self.pin_btn = QtWidgets.QPushButton()
+        # ── pin & close buttons (absolutely positioned, overlay on content) ──
+        self.pin_btn = QtWidgets.QPushButton(self)
         self.pin_btn.setObjectName("ocrPinBtn")
-        self.pin_btn.setFixedSize(28, 24)
+        self.pin_btn.setFixedSize(22, 22)
         self.pin_btn.setCheckable(True)
+        self.pin_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.pin_btn.clicked.connect(self._on_pin_toggled)
-        header_layout.addWidget(self.pin_btn)
 
-        header_layout.addStretch(1)
-
-        self.close_btn = QtWidgets.QPushButton()
+        self.close_btn = QtWidgets.QPushButton(self)
         self.close_btn.setObjectName("ocrCloseBtn")
-        self.close_btn.setFixedSize(24, 24)
+        self.close_btn.setFixedSize(22, 22)
+        self.close_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.close_btn.setIcon(self._make_close_icon())
         self.close_btn.setIconSize(QtCore.QSize(10, 10))
         self.close_btn.clicked.connect(self.hide)
-        header_layout.addWidget(self.close_btn)
-        layout.addWidget(self.header_container)
 
-        # ── text block (bubble container) ───────────────────────────
+        # Copy button — floating bottom-right
+        self.copy_btn = QtWidgets.QPushButton(self)
+        self.copy_btn.setObjectName("ocrCopyBtn")
+        self.copy_btn.setFixedSize(28, 24)
+        self.copy_btn.setIconSize(QtCore.QSize(14, 14))
+        self.copy_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self.copy_btn.clicked.connect(self._on_copy_clicked)
+
+        # ── unified card (the only container) ────────────────────────
         self.text_block = QtWidgets.QFrame()
         self.text_block.setObjectName("ocrTextBlock")
         self.text_block.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Expanding,
             QtWidgets.QSizePolicy.Policy.Expanding,
         )
-        # Main layout for the bubble: text on top, buttons on bottom
+
+        # Drop shadow directly on the card
+        shadow = QtWidgets.QGraphicsDropShadowEffect(self.text_block)
+        shadow.setBlurRadius(20)
+        shadow.setColor(QtGui.QColor(0, 0, 0, 60))
+        shadow.setOffset(0, 4)
+        self.text_block.setGraphicsEffect(shadow)
+
+        outer.addWidget(self.text_block, 1)
+
+        # Bring overlay buttons to front (text_block would otherwise cover them)
+        self.pin_btn.raise_()
+        self.close_btn.raise_()
+        self.copy_btn.raise_()
+
+        # Main layout for the card: text on top, copy button on bottom
         self.bubble_layout = QtWidgets.QVBoxLayout(self.text_block)
         self.bubble_layout.setContentsMargins(0, 0, 0, 0)
         self.bubble_layout.setSpacing(0)
@@ -102,9 +97,9 @@ class OcrPopup(QtWidgets.QWidget):
         # Single QPlainTextEdit for both read and edit modes.
         # This guarantees perfect whitespace preservation and native scrolling.
         self.text_edit = QtWidgets.QPlainTextEdit()
-        self.text_edit.setReadOnly(True)
         self.text_edit.setObjectName("ocrText")
-        self.text_edit.setCursor(QtCore.Qt.CursorShape.IBeamCursor)
+        # Don't force IBeamCursor — let the parent's edge-detection
+        # show resize cursors at window borders.
         self.text_edit.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Expanding,
             QtWidgets.QSizePolicy.Policy.Expanding,
@@ -114,58 +109,15 @@ class OcrPopup(QtWidgets.QWidget):
         self.text_edit.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.text_edit.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         
-        # Use viewport margins to simulate padding inside the bubble
-        self.text_edit.setViewportMargins(16, 12, 16, 4)
-        
+        # Use viewport margins to simulate padding inside the card.
+        # Bottom margin leaves room for the floating copy button.
+        self.text_edit.setViewportMargins(16, 12, 16, 30)
+
         self.bubble_layout.addWidget(self.text_edit, 1)
 
-        # ── sticky footer (buttons) ─────────────────────────────────
-        self.footer_container = QtWidgets.QFrame()
-        self.footer_container.setObjectName("ocrFooter")
-        footer_layout = QtWidgets.QHBoxLayout(self.footer_container)
-        footer_layout.setContentsMargins(16, 4, 16, 12)
-        footer_layout.setSpacing(4)
-        footer_layout.addStretch(1)
-
-        # ── read-mode buttons ─────────────────────────────────────
-        self.copy_btn = QtWidgets.QPushButton()
-        self.copy_btn.setObjectName("ocrCopyBtn")
-        self.copy_btn.setFixedSize(28, 24)
-        self.copy_btn.setIconSize(QtCore.QSize(14, 14))
-        self.copy_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-        self.copy_btn.clicked.connect(self._on_copy_clicked)
-        footer_layout.addWidget(self.copy_btn)
-
-        self.edit_btn = QtWidgets.QPushButton()
-        self.edit_btn.setObjectName("ocrEditBtn")
-        self.edit_btn.setFixedSize(28, 24)
-        self.edit_btn.setIconSize(QtCore.QSize(15, 15))
-        self.edit_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-        self.edit_btn.clicked.connect(self._on_edit_clicked)
-        footer_layout.addWidget(self.edit_btn)
-
-        # ── edit-mode buttons ───────
-        self.cancel_btn = QtWidgets.QPushButton()
-        self.cancel_btn.setObjectName("ocrCancelBtn")
-        self.cancel_btn.setFixedSize(28, 24)
-        self.cancel_btn.setIconSize(QtCore.QSize(14, 14))
-        self.cancel_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-        self.cancel_btn.clicked.connect(self._on_cancel_clicked)
-        self.cancel_btn.hide()
-        footer_layout.addWidget(self.cancel_btn)
-
-        self.update_btn = QtWidgets.QPushButton()
-        self.update_btn.setObjectName("ocrUpdateBtn")
-        self.update_btn.setFixedSize(28, 24)
-        self.update_btn.setIconSize(QtCore.QSize(14, 14))
-        self.update_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-        self.update_btn.clicked.connect(self._on_update_clicked)
-        self.update_btn.hide()
-        footer_layout.addWidget(self.update_btn)
-
-        self.bubble_layout.addWidget(self.footer_container)
-
-        layout.addWidget(self.text_block, 1)
+        # Install event filter on text_edit viewport so edge cursor
+        # detection works even when the mouse is over the child widget.
+        self.text_edit.viewport().installEventFilter(self)
 
         # ── caret colour ────────────────────────────────────────────
         pal = self.text_edit.palette()
@@ -183,119 +135,68 @@ class OcrPopup(QtWidgets.QWidget):
     # ── stylesheet ───────────────────────────────────────────────────
     def _apply_stylesheet(self):
         self.setStyleSheet(
-            "/* Midnight Forest v2 Theme - Terminal Style with Chat Bubble */"
+            "/* Neutral dark theme — matches thumbnail card */"
 
             "OcrPopup {"
             " background-color: transparent;"
             " border: none;"
             "}"
 
-            "#ocrPanel {"
-            " background-color: #0a1910;"
-            " border: 1px solid #1a3a22;"
-            " border-radius: 10px;"
-            "}"
-
-            "#ocrHeader {"
-            " background-color: #0d1f17;"
-            " border-bottom: 1px solid #1e4a30;"
-            " border-top-left-radius: 8px;"
-            " border-top-right-radius: 8px;"
-            "}"
-
-            "/* ── scroll area (text block list container) ── */"
-            "#ocrScrollArea {"
-            " background: transparent;"
-            " border: none;"
-            "}"
-
-            "/* ── chat-bubble text block ── */"
+            "/* ── unified card ── */"
             "#ocrTextBlock {"
-            " background-color: #12261b;"
-            " border: 1px solid #1e4a30;"
-            " border-radius: 10px;"
+            " background-color: rgba(30, 30, 30, 230);"
+            " border: 1px solid rgba(255, 255, 255, 25);"
+            " border-radius: 12px;"
             "}"
-            "/* subtle glow when editing */"
-            "#ocrTextBlock[editing=\"true\"] {"
-            " border-color: #2e7d4f;"
-            " background-color: #162e20;"
+            "#ocrTextBlock:hover {"
+            " border-color: rgba(95, 201, 138, 120);"
             "}"
 
             "#ocrText {"
             " background-color: transparent;"
-            " color: #d4f5e2;"
+            " color: #e0e0e0;"
             " border: none;"
             " border-radius: 0;"
             " padding: 0px;"
             " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
             " line-height: 1.8;"
-            " selection-background-color: rgba(255,255,255,0.12);"
+            " selection-background-color: rgba(95, 201, 138, 80);"
             " selection-color: #ffffff;"
             "}"
             "#ocrText:focus {"
-            " background-color: #162e20;"
+            " background-color: #2a2a2a;"
             "}"
 
-            "/* ── buttons in the bubble ── */"
+            "/* ── floating overlay buttons ── */"
             "#ocrCopyBtn {"
             " color: #5fc98a;"
-            " border: 1px solid #1e4a30;"
-            " border-radius: 6px;"
-            " background: #1e4a30;"
+            " border: none;"
+            " border-radius: 11px;"
+            " background: rgba(0, 0, 0, 160);"
             " padding: 0;"
             " font-size: 12px;"
             " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
             "}"
-            "#ocrCopyBtn:hover { background: #2e7d4f; border-color: #2e7d4f; }"
-
-            "#ocrEditBtn {"
-            " color: #5fc98a;"
-            " border: 1px solid #1e4a30;"
-            " border-radius: 6px;"
-            " background: #1e4a30;"
-            " padding: 0;"
-            " font-size: 12px;"
-            " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
-            "}"
-            "#ocrEditBtn:hover { background: #2e7d4f; border-color: #2e7d4f; }"
-
-            "#ocrUpdateBtn {"
-            " color: #d4f5e2;"
-            " border: 1px solid #2e7d4f;"
-            " border-radius: 6px;"
-            " background: #2e7d4f;"
-            " padding: 0;"
-            " font-size: 12px;"
-            " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
-            "}"
-            "#ocrUpdateBtn:hover { background: #3a9d62; border-color: #3a9d62; }"
-
-            "#ocrCancelBtn {"
-            " color: #5fc98a;"
-            " border: 1px solid #1e4a30;"
-            " border-radius: 6px;"
-            " background: transparent;"
-            " padding: 0;"
-            " font-size: 12px;"
-            " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
-            "}"
-            "#ocrCancelBtn:hover { background: rgba(46, 125, 79, 64); border-color: #2e7d4f; }"
+            "#ocrCopyBtn:hover { background: rgba(95, 201, 138, 40); }"
 
             "#ocrPinBtn {"
             " color: #5fc98a;"
             " border: none;"
-            " border-radius: 12px;"
-            " background: transparent;"
-            " font-size: 15px;"
+            " border-radius: 11px;"
+            " background: rgba(0, 0, 0, 160);"
+            " font-size: 13px;"
             " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
             "}"
-            "#ocrPinBtn:hover { background: rgba(46, 125, 79, 64); color: #d4f5e2; }"
-            "#ocrPinBtn[pin=\"true\"] { color: #5fc98a; background: rgba(30, 74, 48, 120); }"
+            "#ocrPinBtn:hover { background: rgba(95, 201, 138, 40); }"
+            "#ocrPinBtn[pin=\"true\"] { color: #5fc98a; background: rgba(95, 201, 138, 30); }"
 
             "#ocrCloseBtn {"
+            " color: #999999;"
             " border: none;"
-            " border-radius: 6px;"
-            " background: transparent;"
+            " border-radius: 11px;"
+            " background: rgba(0, 0, 0, 160);"
+            " font-size: 14px;"
+            " font-weight: bold;"
             "}"
             "#ocrCloseBtn:hover { background: #f44336; color: #FFF; }"
 
@@ -306,12 +207,12 @@ class OcrPopup(QtWidgets.QWidget):
             " margin: 0px;"
             "}"
             "QScrollBar::handle:vertical {"
-            " background: #1e4a30;"
+            " background: #444444;"
             " min-height: 20px;"
             " border-radius: 3px;"
             "}"
             "QScrollBar::handle:vertical:hover {"
-            " background: #2e7d4f;"
+            " background: #555555;"
             "}"
             "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {"
             " height: 0px;"
@@ -332,22 +233,12 @@ class OcrPopup(QtWidgets.QWidget):
     # ── label refresh ────────────────────────────────────────────────
     def _refresh_labels(self):
         self.copy_btn.setIcon(self._make_copy_icon())
-        self.edit_btn.setIcon(self._make_edit_icon())
-        self.update_btn.setIcon(self._make_check_icon())
-        self.cancel_btn.setIcon(self._make_x_icon())
         self.pin_btn.setIcon(self._make_pin_icon(self._pinned))
         self.pin_btn.setIconSize(QtCore.QSize(16, 16))
         self.close_btn.setIcon(self._make_close_icon())
         self.close_btn.setIconSize(QtCore.QSize(10, 10))
 
         self.copy_btn.setToolTip(self.translate("ocr_copy_btn"))
-        for btn, key, fallback in [
-            (self.edit_btn, "ocr_edit_btn", "Edit"),
-            (self.update_btn, "ocr_update_btn", "Update"),
-            (self.cancel_btn, "ocr_cancel_btn", "Cancel"),
-        ]:
-            tip = self.translate(key)
-            btn.setToolTip(tip if tip != key else fallback)
         self.pin_btn.setToolTip(self.translate("ocr_pin_btn"))
         self.close_btn.setToolTip(self.translate("close_btn"))
 
@@ -361,11 +252,6 @@ class OcrPopup(QtWidgets.QWidget):
         self.apply_font_size()
 
         self._plain_text = text
-        # Ensure weʼre in read-only display mode
-        self._exit_edit_mode(save=False)
-        
-        # Use setPlainText to guarantee original indentation is preserved.
-        # No more HTML conversion needed for Read mode.
         self.text_edit.setPlainText(text)
 
         self._is_refreshing = False
@@ -378,6 +264,7 @@ class OcrPopup(QtWidgets.QWidget):
 
         # Align to the bottom-right corner of the active screen
         self._place_on_screen()
+        self._update_button_positions()
 
         self.show()
         self.raise_()
@@ -396,69 +283,7 @@ class OcrPopup(QtWidgets.QWidget):
             clipboard.setText(text)
 
     def get_plain_text(self):
-        return self._plain_text
-
-    # ── edit mode ────────────────────────────────────────────────────
-    def _on_edit_clicked(self):
-        """Pencil button — enter edit mode."""
-        self._enter_edit_mode()
-
-    def _on_update_clicked(self):
-        """Update button — save edits and return to read-only."""
-        self._exit_edit_mode(save=True)
-
-    def _on_cancel_clicked(self):
-        """Cancel button — discard edits and return to read-only."""
-        self._exit_edit_mode(save=False)
-
-    def _enter_edit_mode(self):
-        """Switch from read-only label to editable text edit."""
-        self._editing = True
-        self.text_edit.setReadOnly(False)
-        self.text_edit.setFocus()
-        self.text_edit.selectAll()
-
-        # Swap button groups: hide Copy+Edit, show Update+Cancel
-        self.copy_btn.hide()
-        self.edit_btn.hide()
-        self.update_btn.show()
-        self.cancel_btn.show()
-
-        # Visual feedback on the bubble
-        self.text_block.setProperty("editing", True)
-        self.text_block.style().unpolish(self.text_block)
-        self.text_block.style().polish(self.text_block)
-
-        # Fit window to new content height after layout
-        QtCore.QTimer.singleShot(0, self._adjust_window_size)
-
-    def _exit_edit_mode(self, save=True):
-        """Switch from editable text edit back to read-only label."""
-        if not self._editing:
-            return  # nothing to do — avoids an unnecessary _adjust_window_size call
-        self._editing = False
-        if save:
-            self._plain_text = self.text_edit.toPlainText()
-            self.copy_text()
-        else:
-            # Restore original text if canceled
-            self.text_edit.setPlainText(self._plain_text)
-            
-        self.text_edit.setReadOnly(True)
-
-        # Swap button groups: hide Update+Cancel, show Copy+Edit
-        self.update_btn.hide()
-        self.cancel_btn.hide()
-        self.copy_btn.show()
-        self.edit_btn.show()
-
-        # Remove visual feedback
-        self.text_block.setProperty("editing", False)
-        self.text_block.style().unpolish(self.text_block)
-        self.text_block.style().polish(self.text_block)
-
-        # Fit window back to read-only label height
-        QtCore.QTimer.singleShot(0, self._adjust_window_size)
+        return self.text_edit.toPlainText()
 
     # ── height auto-fit (width stays user-controlled) ────────────────
     def _adjust_window_size(self, fit_width=False):
@@ -484,9 +309,9 @@ class OcrPopup(QtWidgets.QWidget):
 
             content_w = max_line_px
 
-            # Window chrome: outer margins + panel padding + borders +
+            # Window chrome: outer margins + borders +
             #                 viewport margins + scrollbar + safety buffer
-            chrome_w = 110
+            chrome_w = 100
             desired_w = int(content_w + chrome_w)
             desired_w = max(desired_w, WINDOW_MIN_WIDTH)
 
@@ -497,12 +322,18 @@ class OcrPopup(QtWidgets.QWidget):
                 max_w = int(screen.availableGeometry().width() * 0.75)
                 desired_w = min(desired_w, max_w)
 
-            self.resize(desired_w, self.height())
+            # Use immediate resize if not visible yet, otherwise it's handled by geometry animation
+            if not self.isVisible():
+                self.resize(desired_w, self.height())
+            
+            target_w = desired_w
+        else:
+            target_w = self.width()
 
         # ── height ─────────────────────────────────────────────────
         # Viewport width = window − outer_margins(24) − panel_padding(12)
         #                  − viewport_margins(32) − borders(4) ≈ 72
-        vp_w = self.width() - 72
+        vp_w = target_w - 72
 
         # padding (16+16)
         text_w = max(vp_w - 32, 200)
@@ -523,13 +354,11 @@ class OcrPopup(QtWidgets.QWidget):
         text_h = max(text_h, 40)
 
         # Accumulate: bubble internals + chrome
-        header_h = self.header_container.sizeHint().height()
+        # chrome_h: outer margins + text_block borders + safety
+        chrome_h = 48
 
-        # chrome_h: panel margins(6+6) + spacing(6) + inner margins + panel borders(1+1) + header
-        chrome_h = header_h + 70
-
-        # bubble_h: text + block padding(8+14) + spacing(6) + buttons(24) + text_block borders(1+1)
-        bubble_h = text_h + 22 + 34
+        # bubble_h: text + viewport padding already in text_edit
+        bubble_h = text_h + 22
 
         total_h = chrome_h + bubble_h
         total_h = max(total_h, WINDOW_MIN_HEIGHT)
@@ -544,21 +373,45 @@ class OcrPopup(QtWidgets.QWidget):
             max_w = area.width() - 40
             max_h = area.height() - 60
             total_h = min(total_h, max_h)
-            new_w = min(self.width(), max_w)
+            new_w = min(target_w, max_w)
         else:
-            new_w = self.width()
+            new_w = target_w
 
         self.text_block.setMinimumHeight(0)
         self.text_block.setMaximumHeight(16777215)
 
-        self.resize(new_w, int(total_h))
+        target_geom = self.geometry()
+        target_geom.setWidth(new_w)
+        target_geom.setHeight(int(total_h))
 
-        # Re-clamp position after resize — the window may now overflow
-        # a screen edge (e.g. after growing taller than available space).
+        # Re-clamp position — the window may now overflow a screen edge
         if screen:
-            x = max(area.left(), min(self.x(), area.right() - self.width()))
-            y = max(area.top(), min(self.y(), area.bottom() - self.height()))
-            self.move(x, y)
+            area = screen.availableGeometry()
+            tx = max(area.left(), min(target_geom.x(), area.right() - target_geom.width()))
+            ty = max(area.top(), min(target_geom.y(), area.bottom() - target_geom.height()))
+            target_geom.moveTo(tx, ty)
+
+        if self.isVisible():
+            # Already visible? Smoothly animate to the new size to prevent "jumping"
+            # when OCR results populate or user edits text.
+            if hasattr(self, "_size_anim") and self._size_anim:
+                self._size_anim.stop()
+            
+            # If we are already visible, we don't want the next showEvent to trigger
+            # another anchor animation.
+            self._anchor_pos = None
+            self._anchor_geom = None
+
+            self._size_anim = QtCore.QPropertyAnimation(self, b"geometry")
+            self._size_anim.setDuration(250)
+            self._size_anim.setStartValue(self.geometry())
+            self._size_anim.setEndValue(target_geom)
+            self._size_anim.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
+            self._size_anim.start()
+        else:
+            # Not yet visible? Just set the geometry directly so showEvent's 
+            # zoom animation has the correct target size.
+            self.setGeometry(target_geom)
 
     # ── pin setter ──────────────────────────────────────────────────
     def set_pinned(self, pinned):
@@ -626,59 +479,6 @@ class OcrPopup(QtWidgets.QWidget):
         icon = QtGui.QIcon()
         icon.addPixmap(draw_copy("#5fc98a"), QtGui.QIcon.Mode.Normal)
         icon.addPixmap(draw_copy("#a3f2c2"), QtGui.QIcon.Mode.Active)
-        return icon
-
-    @staticmethod
-    def _make_edit_icon():
-        """Pen-tool icon matching Lucide pen-tool style."""
-        def draw_edit(color_str):
-            pixmap = QtGui.QPixmap(24, 24)
-            pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-            p = QtGui.QPainter(pixmap)
-            p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-            pen = QtGui.QPen(
-                QtGui.QColor(color_str),
-                1.5,
-                QtCore.Qt.PenStyle.SolidLine,
-                QtCore.Qt.PenCapStyle.RoundCap,
-                QtCore.Qt.PenJoinStyle.RoundJoin,
-            )
-            p.setPen(pen)
-            p.setBrush(QtCore.Qt.BrushStyle.NoBrush)
-
-            # Pen nib — bottom-right diamond (path 1)
-            nib = QtGui.QPainterPath()
-            nib.moveTo(15.7, 21.3)
-            nib.lineTo(14.3, 21.3)
-            nib.lineTo(12.7, 19.7)
-            nib.lineTo(12.7, 18.3)
-            nib.lineTo(18.3, 12.7)
-            nib.lineTo(19.7, 12.7)
-            nib.lineTo(21.3, 14.3)
-            nib.lineTo(21.3, 15.7)
-            nib.closeSubpath()
-            p.drawPath(nib)
-
-            # Pen body — curved stroke from nib up-left (path 2)
-            body = QtGui.QPainterPath()
-            body.moveTo(18, 13)
-            body.cubicTo(17, 10, 16.6, 6.1, 15.9, 5.4)
-            body.cubicTo(10, 4, 3.2, 2.0, 2.0, 3.2)
-            body.cubicTo(3, 8, 5.4, 15.9, 6.1, 16.6)
-            body.cubicTo(8, 17, 13, 18, 13, 18)
-            p.drawPath(body)
-
-            # Rule line — diagonal (path 3)
-            p.drawLine(QtCore.QPointF(2.3, 2.3), QtCore.QPointF(9.6, 9.6))
-
-            # Pivot circle (path 4)
-            p.drawEllipse(QtCore.QPointF(11, 11), 2, 2)
-            p.end()
-            return pixmap
-
-        icon = QtGui.QIcon()
-        icon.addPixmap(draw_edit("#5fc98a"), QtGui.QIcon.Mode.Normal)
-        icon.addPixmap(draw_edit("#a3f2c2"), QtGui.QIcon.Mode.Active)
         return icon
 
     @staticmethod
@@ -767,6 +567,8 @@ class OcrPopup(QtWidgets.QWidget):
         icon.addPixmap(draw_x("#5fc98a"), QtGui.QIcon.Mode.Normal)
         icon.addPixmap(draw_x("#a3f2c2"), QtGui.QIcon.Mode.Active)
         return icon
+
+    @staticmethod
 
     def _make_pin_icon(self, checked=False):
         def draw_pin(color_str):
@@ -936,29 +738,45 @@ class OcrPopup(QtWidgets.QWidget):
             QtCore.Qt.Edge.LeftEdge | QtCore.Qt.Edge.TopEdge,
             QtCore.Qt.Edge.RightEdge | QtCore.Qt.Edge.BottomEdge,
         ):
-            self.setCursor(QtCore.Qt.CursorShape.SizeFDiagCursor)
+            cursor = QtCore.Qt.CursorShape.SizeFDiagCursor
         elif edge in (
             QtCore.Qt.Edge.RightEdge | QtCore.Qt.Edge.TopEdge,
             QtCore.Qt.Edge.LeftEdge | QtCore.Qt.Edge.BottomEdge,
         ):
-            self.setCursor(QtCore.Qt.CursorShape.SizeBDiagCursor)
+            cursor = QtCore.Qt.CursorShape.SizeBDiagCursor
         elif edge & (QtCore.Qt.Edge.LeftEdge | QtCore.Qt.Edge.RightEdge):
-            self.setCursor(QtCore.Qt.CursorShape.SizeHorCursor)
+            cursor = QtCore.Qt.CursorShape.SizeHorCursor
         elif edge & (QtCore.Qt.Edge.TopEdge | QtCore.Qt.Edge.BottomEdge):
-            self.setCursor(QtCore.Qt.CursorShape.SizeVerCursor)
+            cursor = QtCore.Qt.CursorShape.SizeVerCursor
         else:
-            self.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
+            cursor = None  # let child widgets decide
+        self.setCursor(cursor or QtCore.Qt.CursorShape.ArrowCursor)
+        # Also set on text_edit viewport so it shows through the child widget
+        vp = self.text_edit.viewport()
+        if vp:
+            vp.setCursor(cursor if cursor else QtCore.Qt.CursorShape.IBeamCursor)
+
+    def eventFilter(self, obj, event):
+        """Intercept HoverMove on text_edit viewport for edge cursor detection."""
+        if event.type() == QtCore.QEvent.Type.HoverMove:
+            # Map viewport-local coords to window coords
+            global_pos = obj.mapToGlobal(event.position().toPoint())
+            local_pos = self.mapFromGlobal(global_pos)
+            self._update_cursor(self._get_edge(local_pos))
+        return super().eventFilter(obj, event)
+
+    def enterEvent(self, event):
+        self._update_button_positions()
+        super().enterEvent(event)
 
     def leaveEvent(self, event):
         self.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
         super().leaveEvent(event)
 
     def event(self, event):
-        if (
-            event.type() == QtCore.QEvent.Type.HoverMove
-            and QtWidgets.QApplication.mouseButtons() == QtCore.Qt.MouseButton.NoButton
-        ):
-            self._update_cursor(self._get_edge(event.position().toPoint()))
+        if event.type() == QtCore.QEvent.Type.HoverMove:
+            pos = event.position().toPoint()
+            self._update_cursor(self._get_edge(pos))
         return super().event(event)
 
     def mousePressEvent(self, event):
@@ -985,17 +803,29 @@ class OcrPopup(QtWidgets.QWidget):
         self._drag_pos = None
         event.accept()
 
+    def set_anchor_pos(self, x, y):
+        """Set preferred screen position for the next show (used for smooth
+        thumbnail-to-popup transition). Cleared after use."""
+        self._anchor_pos = (x, y)
+
     def _place_on_screen(self):
-        """Position the popup at the bottom-right corner, clamped to screen bounds."""
+        """Position the popup, preferring the anchor point from a thumbnail click."""
         screen = QtWidgets.QApplication.screenAt(QtGui.QCursor.pos()) or QtWidgets.QApplication.primaryScreen()
         if not screen:
             return
         area = screen.availableGeometry()
         margin = 20
 
-        # Default: bottom-right corner (like the screenshot thumbnail)
-        x = area.right() - self.width() - margin
-        y = area.bottom() - self.height() - margin
+        if self._anchor_pos is not None:
+            ax, ay = self._anchor_pos
+            self._anchor_pos = None
+            # Place popup so its centre aligns with the anchor (the thumbnail centre)
+            x = int(ax - self.width() / 2)
+            y = int(ay - self.height() / 2)
+        else:
+            # Default: bottom-right corner
+            x = area.right() - self.width() - margin
+            y = area.bottom() - self.height() - margin
 
         # Clamp so the window never overflows any screen edge
         x = max(x, area.left())
@@ -1005,12 +835,40 @@ class OcrPopup(QtWidgets.QWidget):
 
         self.move(x, y)
 
+    def _update_button_positions(self):
+        """Position floating overlay buttons on the card."""
+        ox, oy = 18, 18  # outer margin
+        btn_margin = 6
+        # Pin — top-left
+        self.pin_btn.move(ox + btn_margin, oy + btn_margin)
+        # Close — top-right
+        close_x = self.width() - ox - self.close_btn.width() - btn_margin
+        self.close_btn.move(close_x, oy + btn_margin)
+        # Copy — bottom-right
+        copy_x = self.width() - ox - self.copy_btn.width() - btn_margin
+        copy_y = self.height() - oy - self.copy_btn.height() - btn_margin
+        self.copy_btn.move(copy_x, copy_y)
+        # Ensure overlay buttons stay on top of text_block
+        self.pin_btn.raise_()
+        self.close_btn.raise_()
+        self.copy_btn.raise_()
+
     # ── window events ────────────────────────────────────────────────
     def resizeEvent(self, event):
-        """Handle window resize; QScrollArea.setWidgetResizable(True) manages internal width."""
+        """Handle window resize and update overlay button positions."""
         super().resizeEvent(event)
+        self._update_button_positions()
 
     def showEvent(self, event):
+        # Simple fade-in — keep a reference so the animation isn't GC'd mid-flight
+        self.setWindowOpacity(0.0)
+        self._fade_in = QtCore.QPropertyAnimation(self, b"windowOpacity")
+        self._fade_in.setDuration(150)
+        self._fade_in.setStartValue(0.0)
+        self._fade_in.setEndValue(1.0)
+        self._fade_in.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
+        self._fade_in.start()
+
         super().showEvent(event)
         if self.windowHandle() and not self._app_icon.isNull():
             self.windowHandle().setIcon(self._app_icon)

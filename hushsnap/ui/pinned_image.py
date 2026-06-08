@@ -9,7 +9,7 @@ class PinnedImageWindow(QtWidgets.QWidget):
     """
     Floating, resizable, and draggable image window.
     """
-    ocr_requested = QtCore.pyqtSignal(object) # Emits QPixmap
+    ocr_requested = QtCore.pyqtSignal(object, object)  # pixmap, source_win
 
     def __init__(self, pil_image: Image.Image):
         super().__init__()
@@ -49,13 +49,15 @@ class PinnedImageWindow(QtWidgets.QWidget):
             ratio = min(max_w / img_w, max_h / img_h)
             img_w *= ratio
             img_h *= ratio
-            
+
         # The window size includes shadow padding
         self.resize(int(img_w + 2 * self.shadow_width), int(img_h + 2 * self.shadow_width))
         
-        # Center on screen initially
+        # Position on the right side, vertically centered — keeps the pinned
+        # image visible but out of the way of the main work area.
+        right_margin = 40
         self.move(
-            screen.x() + (screen.width() - self.width()) // 2,
+            screen.x() + screen.width() - self.width() - right_margin,
             screen.y() + (screen.height() - self.height()) // 2
         )
         
@@ -86,24 +88,24 @@ class PinnedImageWindow(QtWidgets.QWidget):
         )
         self.close_btn.clicked.connect(self.close)
         self.close_btn.hide()
+
         self._update_ui_positions()
 
     def _get_content_rect(self) -> QtCore.QRect:
         """Returns the rectangle for the actual image content, excluding shadow padding."""
         return self.rect().adjusted(
-            self.shadow_width, self.shadow_width, 
+            self.shadow_width, self.shadow_width,
             -self.shadow_width, -self.shadow_width
         )
 
     def _update_ui_positions(self):
-        content = self._get_content_rect()
-        btn_x = content.right() - 22 - 6
-        btn_y = content.top() + 6
-        if btn_x < content.left() or btn_y + 22 > content.bottom():
-            self.close_btn.hide()
-        else:
-            self.close_btn.move(btn_x, btn_y)
-
+        # Close button — top-right corner of the *window*, in the transparent
+        # shadow margin outside the image. Always works regardless of image size.
+        close_x = self.width() - 26
+        close_y = 4
+        self.close_btn.move(close_x, close_y)
+        self.close_btn.show()
+            
     def enterEvent(self, event):
         self._update_ui_positions()
         self.close_btn.show()
@@ -126,14 +128,21 @@ class PinnedImageWindow(QtWidgets.QWidget):
         is_right = pos.x() > rect.right() - hit
         is_top = pos.y() < rect.top() + hit
         is_bottom = pos.y() > rect.bottom() - hit
-        
-        # Only trigger for corners (intersection of two edges)
+
+        # Only trigger for corners (intersection of horizontal + vertical edge).
+        # If the window is so small that opposing edges both match, treat it
+        # as a drag rather than a broken resize.
+        if is_left and is_right:
+            is_left = is_right = False
+        if is_top and is_bottom:
+            is_top = is_bottom = False
+
         if (is_left or is_right) and (is_top or is_bottom):
             if is_left: edge |= QtCore.Qt.Edge.LeftEdge
             if is_right: edge |= QtCore.Qt.Edge.RightEdge
             if is_top: edge |= QtCore.Qt.Edge.TopEdge
             if is_bottom: edge |= QtCore.Qt.Edge.BottomEdge
-            
+
         return edge
 
     def mousePressEvent(self, event):
@@ -245,10 +254,6 @@ class PinnedImageWindow(QtWidgets.QWidget):
         ).copy()
         return QtGui.QPixmap.fromImage(qimage)
 
-    def mouseDoubleClickEvent(self, event):
-        if event.button() == QtCore.Qt.MouseButton.LeftButton:
-            self.close()
-
     def paintEvent(self, event):
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
@@ -294,6 +299,58 @@ class PinnedImageWindow(QtWidgets.QWidget):
             self.border_radius
         )
 
+    def show_toast(self, text, duration_ms=1500):
+        """Show a lightweight centred toast overlay that fades out after *duration_ms*."""
+        toast = QtWidgets.QLabel(text, self)
+        toast.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        toast.setStyleSheet(
+            "QLabel {"
+            " background-color: rgba(0, 0, 0, 200);"
+            " color: #5fc98a;"
+            " border-radius: 8px;"
+            " padding: 10px 20px;"
+            " font-size: 14px;"
+            " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
+            "}"
+        )
+        toast.adjustSize()
+        cx = (self.width() - toast.width()) // 2
+        cy = (self.height() - toast.height()) // 2
+        toast.move(cx, cy)
+        toast.show()
+
+        # Fade-out via manual timer — QPropertyAnimation on
+        # QGraphicsOpacityEffect.opacity is unreliable in PyQt6.
+        effect = QtWidgets.QGraphicsOpacityEffect(toast)
+        effect.setOpacity(1.0)
+        toast.setGraphicsEffect(effect)
+
+        fade_timer = QtCore.QTimer(toast)
+        fade_step_ms = 30
+        fade_total_ms = 400
+        fade_steps = fade_total_ms // fade_step_ms
+        # Pre-calculate the opacity delta per step (ease-in quadratic)
+        step_values = []
+        for i in range(fade_steps + 1):
+            t = i / fade_steps
+            eased = 1.0 - t * t  # quadratic ease-in: starts slow, ends fast
+            step_values.append(eased)
+        step_idx = [0]  # in list for closure mutability
+
+        def _fade_step():
+            idx = step_idx[0]
+            if idx >= len(step_values):
+                fade_timer.stop()
+                toast.deleteLater()
+                return
+            effect.setOpacity(step_values[idx])
+            step_idx[0] += 1
+
+        fade_timer.timeout.connect(_fade_step)
+        # Start fade after the display duration
+        QtCore.QTimer.singleShot(duration_ms, fade_timer.start)
+        fade_timer.setInterval(fade_step_ms)
+
     def _show_context_menu(self, pos):
         from ..config import resolve_ui_lang, ui_text, get_config_path
         lang = resolve_ui_lang(get_config_path())
@@ -303,14 +360,11 @@ class PinnedImageWindow(QtWidgets.QWidget):
         menu.setStyleSheet(MODERN_MENU_STYLE)
         menu.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
         
+        ocr_action = menu.addAction(ui_text(lang, "menu_ocr_recognize"))
         copy_action = menu.addAction(ui_text(lang, "ocr_copy_btn"))
         save_action = menu.addAction(ui_text(lang, "thumbnail_save_as"))
-        ocr_action = menu.addAction(ui_text(lang, "menu_ocr_recognize"))
-        menu.addSeparator()
-        close_action = menu.addAction(ui_text(lang, "close_btn"))
-        
         action = menu.exec(pos)
-        
+
         if action == copy_action:
             cb = QtWidgets.QApplication.clipboard()
             buffer = io.BytesIO()
@@ -325,13 +379,11 @@ class PinnedImageWindow(QtWidgets.QWidget):
             if file_path:
                 self.pil_image.save(file_path)
         elif action == ocr_action:
-            self.ocr_requested.emit(self.pixmap)
-        elif action == close_action:
-            self.close()
+            self.ocr_requested.emit(self.pixmap, self)
 
 class PinnedImageManager(QtCore.QObject):
     """Manages multiple pinned image windows."""
-    ocr_requested = QtCore.pyqtSignal(object)
+    ocr_requested = QtCore.pyqtSignal(object, object)  # pixmap, source_win
 
     def __init__(self):
         super().__init__()
@@ -341,6 +393,21 @@ class PinnedImageManager(QtCore.QObject):
         try:
             logger.info(f"Pinning image: {pil_image.size} mode={pil_image.mode}")
             win = PinnedImageWindow(pil_image)
+
+            # Cascade offset so multiple pins don't stack on top of each other.
+            screen = QtWidgets.QApplication.primaryScreen().availableGeometry()
+            cascade = 30  # px per existing window
+            n = len(self._windows)
+            x = win.x() + n * cascade
+            y = win.y() + n * cascade
+
+            # Clamp to keep the window fully on screen.
+            if x + win.width() > screen.right():
+                x = screen.right() - win.width()
+            if y + win.height() > screen.bottom():
+                y = screen.bottom() - win.height()
+
+            win.move(x, y)
             win.ocr_requested.connect(self.ocr_requested.emit)
             win.show()
             self._windows.append(win)

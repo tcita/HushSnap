@@ -179,7 +179,12 @@ def main(boot_start_time=None):
     from .ui.thumbnail import thumbnail_manager
 
     def handle_thumbnail_clicked(pil_img):
-        """Thumbnail left-click: trigger OCR."""
+        """Thumbnail left-click: trigger OCR with smooth position transition."""
+        # Capture thumbnail centre so the OCR popup appears near the same spot.
+        center = thumbnail_manager.current_window_center()
+        if center is not None:
+            ocr_controller.set_popup_anchor(*center)
+
         # Convert PIL Image to QPixmap for the OCR pipeline
         from PyQt6 import QtGui
         if pil_img.mode != "RGBA":
@@ -236,7 +241,12 @@ def main(boot_start_time=None):
 
     from .ui.pinned_image import pinned_image_manager
     thumbnail_manager.pin_requested.connect(pinned_image_manager.pin_image)
-    pinned_image_manager.ocr_requested.connect(ocr_controller.start_request)
+    
+    def handle_pinned_ocr_requested(pixmap, source_win):
+        """Pinned image OCR: copy recognized text to clipboard, show toast on the window."""
+        ocr_controller.copy_text_from_image(pixmap, source_win)
+
+    pinned_image_manager.ocr_requested.connect(handle_pinned_ocr_requested)
 
     def handle_taskbar_created():
         logger.info("Windows Explorer taskbar recreated. Restoring system tray icon.")

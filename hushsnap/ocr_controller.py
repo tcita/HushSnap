@@ -72,6 +72,51 @@ class OcrController:
         """Set callback used to request screenshot captures on demand."""
         self.capture_requester = capture_requester
 
+    def set_popup_anchor(self, x, y):
+        """Set preferred screen position for the next OCR popup appearance."""
+        self.popup.set_anchor_pos(x, y)
+
+    def copy_text_from_image(self, pixmap, toast_window):
+        """Run OCR on *pixmap* and copy recognized text to clipboard.
+        Shows a lightweight toast on *toast_window* when done.
+        Does NOT open the OCR popup."""
+        from PyQt6 import QtGui
+        image = pixmap.toImage() if isinstance(pixmap, QtGui.QPixmap) else pixmap
+        request = OcrRequest(pixmap=image, debug_dir=None)
+
+        # Temporary signal bridge — the OCR callback fires on a worker
+        # thread, so we must marshal clipboard + UI operations to the
+        # main thread via a queued signal connection.
+        class _ToastBridge(QtCore.QObject):
+            done = QtCore.pyqtSignal(object)
+
+        bridge = _ToastBridge()
+        bridge.done.connect(
+            lambda resp: self._on_toast_ocr_done(resp, toast_window),
+            QtCore.Qt.ConnectionType.QueuedConnection,
+        )
+        self.service.recognize_async(request, bridge.done.emit)
+        # Keep bridge alive until the signal fires (it gets cleaned up
+        # when the lambda releases the reference).
+        self._toast_bridge = bridge
+
+    def _on_toast_ocr_done(self, response, toast_window):
+        """Main-thread handler: copy OCR text and show toast."""
+        self._toast_bridge = None  # release the bridge
+        text = response.text.strip() if response.text else ""
+        if text:
+            clipboard = self.app.clipboard()
+            if clipboard:
+                clipboard.setText(text)
+        try:
+            if not toast_window.isVisible():
+                return
+        except RuntimeError:
+            return
+        toast_window.show_toast(
+            self.translate("ocr_copied") if text else self.translate("ocr_empty_body")
+        )
+
     def enable_ocr_next_capture(self):
         """Enable OCR for the next capture (used by OCR hotkey)."""
         self.next_capture_should_ocr = True

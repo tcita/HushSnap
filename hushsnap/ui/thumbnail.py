@@ -109,29 +109,6 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self.close_btn.clicked.connect(self.close)
         self.close_btn.hide()
 
-        # Pin button (small pin icon in top-left of card)
-        from ..config import resolve_ui_lang, ui_text, get_config_path
-        lang = resolve_ui_lang(get_config_path())
-        self.pin_btn = QtWidgets.QPushButton("📌", self)
-        self.pin_btn.setFixedSize(20, 20)
-        self.pin_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-        self.pin_btn.setToolTip(ui_text(lang, "thumbnail_pin"))
-        self.pin_btn.setStyleSheet(
-            "QPushButton {"
-            "  background-color: rgba(0, 0, 0, 160);"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 10px;"
-            "  font-size: 12px;"
-            "}"
-            "QPushButton:hover {"
-            "  background-color: rgba(95, 201, 138, 220);"
-            "}"
-        )
-        self.pin_btn.move(self.shadow_padding + 6, self.shadow_padding + 6)
-        self.pin_btn.clicked.connect(self._on_pin_clicked)
-        self.pin_btn.hide()
-        
         # 3. Position and Animation
         # Use cursor-based screen detection for multi-monitor awareness
         active_screen = (
@@ -169,12 +146,6 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self._menu_active = False
         self._hovered = False
 
-    def _on_pin_clicked(self):
-        logger.info(f"Pin button clicked on thumbnail. Image size: {self.pil_image.size}")
-        # Emit signal first, then close. In Qt, this is synchronous.
-        self.pin_requested_signal.emit()
-        self.close()
-
     def _get_display_ms(self) -> int:
         """Get the configured display duration from settings."""
         try:
@@ -211,10 +182,8 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self._hovered = True
         self.update()
         self.close_btn.show()
-        self.pin_btn.show()
-        # Ensure buttons are on top
+        # Ensure button is on top
         self.close_btn.raise_()
-        self.pin_btn.raise_()
 
     def leaveEvent(self, event):
         """Resume timer on leave, deactivate visual feedback, and hide buttons."""
@@ -223,7 +192,6 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self._hovered = False
         self.update()
         self.close_btn.hide()
-        self.pin_btn.hide()
 
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
@@ -252,8 +220,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
             # This is more intuitive than checking the exact movement distance.
             if self.card_rect.contains(release_pos):
                 # Check if we were clicking a button (though buttons should consume events)
-                if self.close_btn.geometry().contains(release_pos) or \
-                   self.pin_btn.geometry().contains(release_pos):
+                if self.close_btn.geometry().contains(release_pos):
                     return
 
                 logger.debug(f"Thumbnail click triggered at {release_pos}")
@@ -287,10 +254,10 @@ class ThumbnailWindow(QtWidgets.QWidget):
         shadow.setOffset(0, 3)
         menu.setGraphicsEffect(shadow)
 
+        pin_action = menu.addAction(ui_text(lang, "thumbnail_pin"))
         view_action = menu.addAction(ui_text(lang, "thumbnail_view_image"))
         desktop_action = menu.addAction(ui_text(lang, "thumbnail_save_to_desktop"))
         save_action = menu.addAction(ui_text(lang, "thumbnail_save_as"))
-        pin_action = menu.addAction(ui_text(lang, "thumbnail_pin"))
 
         action = menu.exec(pos)
 
@@ -498,6 +465,18 @@ class ThumbnailManager(QtCore.QObject):
         
         self._windows.append(win)
         win.show()
+
+    def current_window_center(self):
+        """Return the screen centre point of the most recent thumbnail window,
+        or None if no window is visible. Used for smooth transition to OCR popup."""
+        for w in self._windows:
+            try:
+                if w.isVisible():
+                    geo = w.geometry()
+                    return (geo.center().x(), geo.center().y())
+            except RuntimeError:
+                pass
+        return None
 
 # Global manager instance
 thumbnail_manager = ThumbnailManager()
