@@ -20,6 +20,8 @@ from ..config import (
     update_copy_image_to_clipboard,
     get_auto_copy_ocr_result,
     update_auto_copy_ocr_result,
+    get_thumbnail_display_time,
+    update_thumbnail_display_time,
 )
 from ..system import startup_manager
 from .styles import (
@@ -98,6 +100,37 @@ class SleekComboBox(QtWidgets.QComboBox):
             popup.setWindowFlags(QtCore.Qt.WindowType.Popup | QtCore.Qt.WindowType.FramelessWindowHint)
             popup.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
         super().showPopup()
+
+
+class CategoryList(QtWidgets.QListWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedWidth(110)
+        self.setStyleSheet(
+            "QListWidget {"
+            "  background: #F2F2F2;"
+            "  border: none;"
+            "  border-right: 0.5px solid #E5E5E5;"
+            "  outline: none;"
+            "  padding: 10px 0;"
+            "}"
+            "QListWidget::item {"
+            "  padding: 10px 16px;"
+            "  color: #777;"
+            "  font-size: 13px;"
+            "  font-weight: 500;"
+            "  border: none;"
+            "  font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
+            "}"
+            "QListWidget::item:selected {"
+            "  background: #FFFFFF;"
+            "  color: #333;"
+            "  border-left: 3px solid #5FC98A;"
+            "}"
+            "QListWidget::item:hover:!selected {"
+            "  background: #EBEBEB;"
+            "}"
+        )
 
 
 def create_system_icon():
@@ -832,7 +865,7 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
 
 
 class SettingsDialogController(QtCore.QObject):
-    """Settings panel with per-setting cards, per-key kbd pills, header bar."""
+    """Settings panel with categories (General, Capture, OCR)."""
     language_changed = QtCore.pyqtSignal()
 
     def __init__(self, translate, config_path, hotkey_manager, on_font_size_changed=None):
@@ -866,7 +899,11 @@ class SettingsDialogController(QtCore.QObject):
         dialog.setModal(False)
         dialog.setWindowModality(QtCore.Qt.WindowModality.NonModal)
         dialog.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, True)
-        dialog.setFixedWidth(SETTINGS_DIALOG_WIDTH)
+        
+        # Enable resizing and set constraints
+        dialog.setWindowFlags(dialog.windowFlags() | QtCore.Qt.WindowType.WindowMinMaxButtonsHint)
+        dialog.setMinimumSize(600, 400) 
+        dialog.resize(640, 460) # Balanced height, wide enough for content
         dialog.setStyleSheet(DIALOG_STYLE)
         self._dialog = dialog
 
@@ -877,33 +914,56 @@ class SettingsDialogController(QtCore.QObject):
 
         dialog.destroyed.connect(clear_settings_dialog)
 
-        outer_layout = QtWidgets.QVBoxLayout(dialog)
-        outer_layout.setContentsMargins(0, 0, 0, 0)
-        outer_layout.setSpacing(0)
+        main_layout = QtWidgets.QHBoxLayout(dialog)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
 
-        # --- Body ---
-        body = QtWidgets.QWidget()
-        body.setStyleSheet("background: transparent; border: none;")
-        body_layout = QtWidgets.QVBoxLayout(body)
-        body_layout.setContentsMargins(16, 16, 16, 8)
-        body_layout.setSpacing(8)
+        # --- Sidebar ---
+        sidebar = CategoryList()
+        main_layout.addWidget(sidebar)
 
-        # ── Section: General ──────────────────────────────────────────
-        general_header = QtWidgets.QLabel(self.translate("settings_section_general"))
-        general_header.setObjectName("sectionHeader")
-        general_header.setStyleSheet(SECTION_HEADER_STYLE)
-        body_layout.addWidget(general_header)
+        # --- Content Area ---
+        content_stack = QtWidgets.QStackedWidget()
+        content_stack.setStyleSheet("background: #FFFFFF;")
+        main_layout.addWidget(content_stack)
 
-        # --- Language card ---
+        # --- Helper for scrollable pages ---
+        def create_page():
+            page = QtWidgets.QWidget()
+            scroll = QtWidgets.QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+            scroll.setStyleSheet("background: transparent;")
+            
+            container = QtWidgets.QWidget()
+            container.setStyleSheet("background: transparent;")
+            layout = QtWidgets.QVBoxLayout(container)
+            layout.setContentsMargins(20, 20, 20, 20)
+            layout.setSpacing(12)
+            
+            scroll.setWidget(container)
+            
+            page_layout = QtWidgets.QVBoxLayout(page)
+            page_layout.setContentsMargins(0, 0, 0, 0)
+            page_layout.addWidget(scroll)
+            
+            return page, layout
+
+        # ── Page: General ──────────────────────────────────────────
+        general_page, general_layout = create_page()
+        
+        # Section: Interface
+        general_layout.addWidget(QtWidgets.QLabel(self.translate("settings_section_general").upper()))
+        
+        # Language
         def change_language(index):
-            selected_lang = combo3.itemData(index)
+            selected_lang = combo_lang.itemData(index)
             try:
                 update_ui_lang_in_config(self.config_path, selected_lang)
                 self.language_changed.emit()
                 dialog.close()
             except Exception as exc:
                 logger.exception(f"Failed to save language setting: {exc}")
-                _set_status(self.translate("error"), True)
 
         lang_options = [
             (self.translate("settings_language_auto"), "auto"),
@@ -911,204 +971,173 @@ class SettingsDialogController(QtCore.QObject):
             (self.translate("settings_language_zh"), "zh"),
             (self.translate("settings_language_zh_tw"), "zh-TW"),
         ]
-
-        current_lang = get_configured_ui_lang(self.config_path)
-
-        card3, combo3 = _make_language_card(
+        card_lang, combo_lang = _make_language_card(
             self.translate("settings_language_label"),
             self.translate("settings_language_subtitle"),
-            current_lang,
+            get_configured_ui_lang(self.config_path),
             lang_options,
         )
-        combo3.currentIndexChanged.connect(change_language)
-        body_layout.addWidget(card3)
+        combo_lang.currentIndexChanged.connect(change_language)
+        general_layout.addWidget(card_lang)
 
-        # --- Startup card ---
+        # Startup
         async def toggle_startup(checked):
-            success = await startup_manager.set_startup_state(checked)
-            if not success and checked:
-                real_state = await startup_manager.get_startup_state()
-                card4_switch.setChecked(real_state)
-
+            await startup_manager.set_startup_state(checked)
         def on_startup_toggled(checked):
-            try:
-                loop = asyncio.new_event_loop()
-                loop.run_until_complete(toggle_startup(checked))
-                loop.close()
-            except Exception as exc:
-                logger.exception(f"Failed to toggle startup state: {exc}")
+            loop = asyncio.new_event_loop()
+            loop.run_until_complete(toggle_startup(checked))
+            loop.close()
 
         loop = asyncio.get_event_loop()
         initial_startup = loop.run_until_complete(startup_manager.get_startup_state())
-
-        card4, card4_switch = _make_startup_card(
+        card_start, switch_start = _make_startup_card(
             self.translate("settings_startup_label"),
             self.translate("settings_startup_subtitle"),
             initial_startup,
         )
-        card4_switch.clicked.connect(on_startup_toggled)
-        body_layout.addWidget(card4)
+        switch_start.clicked.connect(on_startup_toggled)
+        general_layout.addWidget(card_start)
+        
+        general_layout.addStretch()
+        content_stack.addWidget(general_page)
 
-        # ── Section: Capture ──────────────────────────────────────────
-        capture_header = QtWidgets.QLabel(self.translate("settings_section_capture"))
-        capture_header.setObjectName("sectionHeader")
-        capture_header.setStyleSheet(SECTION_HEADER_STYLE)
-        body_layout.addWidget(capture_header)
+        # ── Page: Capture ──────────────────────────────────────────
+        capture_page, capture_layout = create_page()
+        
+        # Section: Shortcuts & Behavior
+        capture_layout.addWidget(QtWidgets.QLabel(self.translate("settings_section_capture").upper()))
 
-        # --- Screenshot card ---
+        # Hotkey
         def change_hotkey():
-            capture_dialog = HotkeyCaptureDialog(self.translate, parent=dialog)
-            capture_dialog.setWindowTitle(self.translate("settings_hotkey_capture_title"))
-            if capture_dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
-                return
-            canonical_hotkey = capture_dialog.captured_hotkey
-            if not canonical_hotkey:
-                return
-            try:
-                update_hotkey_in_config(self.config_path, canonical_hotkey)
-            except Exception as exc:
-                logger.exception(f"Failed to save hotkey '{canonical_hotkey}' to config: {exc}")
-                _set_status(self.translate("settings_hotkey_save_failed"), True)
-                return
-            self.hotkey_manager.apply_hotkey_reload()
-            self._refresh_pills()
-            if self.hotkey_manager.current_hotkey_name == canonical_hotkey:
-                _set_status("", False)
-            else:
-                _set_status(
-                    self.translate(
-                        "settings_hotkey_apply_failed",
-                        old_hotkey=self.hotkey_manager.current_hotkey_name,
-                        new_hotkey=canonical_hotkey,
-                    ),
-                    True,
-                )
+            cap = HotkeyCaptureDialog(self.translate, parent=dialog)
+            if cap.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+                hot = cap.captured_hotkey
+                update_hotkey_in_config(self.config_path, hot)
+                self.hotkey_manager.apply_hotkey_reload()
+                self._refresh_pills()
 
-        card1, self._screenshot_pills_container, self._screenshot_pills, btn1 = _make_setting_card(
+        card_hot, self._screenshot_pills_container, self._screenshot_pills, btn_hot = _make_setting_card(
             self.translate("settings_hotkey_label"),
             self.translate("settings_hotkey_subtitle"),
             self.hotkey_manager.current_hotkey_name,
             self.translate("settings_change_hotkey_btn"),
         )
-        btn1.clicked.connect(change_hotkey)
-        body_layout.addWidget(card1)
+        btn_hot.clicked.connect(change_hotkey)
+        capture_layout.addWidget(card_hot)
 
-        # --- Auto-copy image card ---
-        def on_copy_image_toggled(checked):
-            try:
-                update_copy_image_to_clipboard(checked, self.config_path)
-            except Exception as exc:
-                logger.exception(f"Failed to toggle copy_image_to_clipboard: {exc}")
-                _set_status(self.translate("error"), True)
+        # Thumbnail Time
+        def change_thumb_time(index):
+            val = combo_thumb.itemData(index)
+            update_thumbnail_display_time(val, self.config_path)
 
-        card_copy_image, switch_copy_image = _make_startup_card(
+        thumb_options = [
+            (self.translate("settings_thumbnail_time_5s"), 5000),
+            (self.translate("settings_thumbnail_time_10s"), 10000),
+            (self.translate("settings_thumbnail_time_30s"), 30000),
+            (self.translate("settings_thumbnail_time_never"), 0),
+        ]
+        card_thumb, combo_thumb = _make_language_card(
+            self.translate("settings_thumbnail_time_label"),
+            self.translate("settings_thumbnail_time_subtitle"),
+            get_thumbnail_display_time(self.config_path),
+            thumb_options,
+        )
+        combo_thumb.currentIndexChanged.connect(change_thumb_time)
+        capture_layout.addWidget(card_thumb)
+
+        # Auto-copy Image
+        def on_copy_img(checked):
+            update_copy_image_to_clipboard(checked, self.config_path)
+        card_copy, switch_copy = _make_startup_card(
             self.translate("settings_copy_image_label"),
             self.translate("settings_copy_image_subtitle"),
             get_copy_image_to_clipboard(self.config_path),
         )
-        switch_copy_image.clicked.connect(on_copy_image_toggled)
-        body_layout.addWidget(card_copy_image)
+        switch_copy.clicked.connect(on_copy_img)
+        capture_layout.addWidget(card_copy)
+        
+        capture_layout.addStretch()
+        content_stack.addWidget(capture_page)
 
-        # ── Section: OCR ──────────────────────────────────────────────
-        ocr_header = QtWidgets.QLabel(self.translate("settings_section_ocr"))
-        ocr_header.setObjectName("sectionHeader")
-        ocr_header.setStyleSheet(SECTION_HEADER_STYLE)
-        body_layout.addWidget(ocr_header)
+        # ── Page: OCR ──────────────────────────────────────────
+        ocr_page, ocr_layout = create_page()
+        
+        # Section: Recognition Engine
+        ocr_layout.addWidget(QtWidgets.QLabel(self.translate("settings_section_ocr").upper()))
 
-        # --- Font size card ---
-        def change_font_size(value):
-            try:
-                update_ocr_font_size(value)
-                if self._on_font_size_changed:
-                    self._on_font_size_changed()
-            except Exception as exc:
-                logger.exception(f"Failed to save OCR font size: {exc}")
-                _set_status(self.translate("error"), True)
+        # Font size
+        def on_font_val(v):
+            update_ocr_font_size(v)
+            if self._on_font_size_changed: self._on_font_size_changed()
+        
+        card_font = QtWidgets.QFrame()
+        card_font.setObjectName("settingCard")
+        card_font.setStyleSheet(SETTING_CARD_STYLE)
+        l_font = QtWidgets.QHBoxLayout(card_font)
+        l_font.setContentsMargins(14, 10, 14, 10)
+        v_font = QtWidgets.QVBoxLayout()
+        label_font = QtWidgets.QLabel(self.translate("settings_ocr_font_size_label"))
+        label_font.setObjectName("rowLabel")
+        label_font.setStyleSheet(ROW_LABEL_STYLE)
+        v_font.addWidget(label_font)
+        sub_font = QtWidgets.QLabel(self.translate("settings_ocr_font_size_subtitle"))
+        sub_font.setObjectName("subtitle")
+        sub_font.setStyleSheet(SUBTITLE_STYLE)
+        v_font.addWidget(sub_font)
+        l_font.addLayout(v_font)
+        l_font.addStretch()
+        step = FontSizeStepper(initial_value=get_ocr_font_size())
+        step.value_changed.connect(on_font_val)
+        l_font.addWidget(step, 0, QtCore.Qt.AlignmentFlag.AlignVCenter)
+        ocr_layout.addWidget(card_font)
 
-        card5 = QtWidgets.QFrame()
-        card5.setObjectName("settingCard")
-        card5.setStyleSheet(SETTING_CARD_STYLE)
-
-        card5_layout = QtWidgets.QVBoxLayout(card5)
-        card5_layout.setContentsMargins(14, 10, 14, 10)
-        card5_layout.setSpacing(2)
-
-        top_row5 = QtWidgets.QWidget()
-        top_row5.setStyleSheet("background: transparent; border: none;")
-        top_layout5 = QtWidgets.QHBoxLayout(top_row5)
-        top_layout5.setContentsMargins(0, 0, 0, 0)
-        top_layout5.setSpacing(8)
-
-        label5 = QtWidgets.QLabel(self.translate("settings_ocr_font_size_label"))
-        label5.setObjectName("rowLabel")
-        label5.setStyleSheet(ROW_LABEL_STYLE)
-        top_layout5.addWidget(label5, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
-
-        top_layout5.addStretch()
-
-        stepper = FontSizeStepper(initial_value=get_ocr_font_size())
-        stepper.value_changed.connect(change_font_size)
-        top_layout5.addWidget(stepper, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
-
-        card5_layout.addWidget(top_row5)
-
-        subtitle5 = QtWidgets.QLabel(self.translate("settings_ocr_font_size_subtitle"))
-        subtitle5.setObjectName("subtitle")
-        subtitle5.setStyleSheet(SUBTITLE_STYLE)
-        card5_layout.addWidget(subtitle5)
-
-        body_layout.addWidget(card5)
-
-        # --- Auto-copy OCR result card ---
-        def on_auto_copy_ocr_toggled(checked):
-            try:
-                update_auto_copy_ocr_result(checked, self.config_path)
-            except Exception as exc:
-                logger.exception(f"Failed to toggle auto_copy_ocr_result: {exc}")
-                _set_status(self.translate("error"), True)
-
-        card_copy_ocr, switch_copy_ocr = _make_startup_card(
+        # Auto-copy OCR
+        def on_copy_ocr(checked):
+            update_auto_copy_ocr_result(checked, self.config_path)
+        card_ocr_copy, switch_ocr_copy = _make_startup_card(
             self.translate("settings_auto_copy_ocr_label"),
             self.translate("settings_auto_copy_ocr_subtitle"),
             get_auto_copy_ocr_result(self.config_path),
         )
-        switch_copy_ocr.clicked.connect(on_auto_copy_ocr_toggled)
-        body_layout.addWidget(card_copy_ocr)
+        switch_ocr_copy.clicked.connect(on_copy_ocr)
+        ocr_layout.addWidget(card_ocr_copy)
+        
+        ocr_layout.addStretch()
+        content_stack.addWidget(ocr_page)
 
-        outer_layout.addWidget(body)
+        # --- Sidebar Actions ---
+        sidebar.addItem(self.translate("settings_section_general"))
+        sidebar.addItem(self.translate("settings_section_capture"))
+        sidebar.addItem(self.translate("settings_section_ocr"))
+        sidebar.currentRowChanged.connect(content_stack.setCurrentIndex)
+        sidebar.setCurrentRow(0)
 
-        # --- Status label ---
-        status_label = QtWidgets.QLabel("")
-        status_label.setObjectName("statusLabel")
-        status_label.setStyleSheet(STATUS_LABEL_STYLE)
-        status_label.setWordWrap(True)
-        status_container = QtWidgets.QWidget()
-        status_container.setStyleSheet("background: transparent; border: none;")
-        sc_layout = QtWidgets.QHBoxLayout(status_container)
-        sc_layout.setContentsMargins(20, 0, 20, 0)
-        sc_layout.addWidget(status_label)
-        outer_layout.addWidget(status_container)
-
-        # --- Version label ---
-        version_label = QtWidgets.QLabel(
-            f"HushSnap v{__version__}  ·  TCITA Studio"
-        )
+        # --- Footer (Version) ---
+        footer_layout = QtWidgets.QVBoxLayout()
+        footer_layout.setContentsMargins(0, 0, 0, 8)
+        version_label = QtWidgets.QLabel(f"HushSnap v{__version__}  ·  TCITA Studio")
         version_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        version_label.setStyleSheet(
-            "font-size: 10px; color: #666; padding: 6px 0 10px 0;"
-            "border: none; background: transparent;"
-            " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
-        )
-        outer_layout.addWidget(version_label)
-
-        def _set_status(message, is_error=False):
-            status_label.setText(message)
-            status_label.setStyleSheet(
-                f"font-size: 12px; padding: 0 4px; border: none; background: transparent; color: {SETTINGS_ERROR_COLOR};"
-                " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
-                if is_error
-                else STATUS_LABEL_STYLE
-            )
+        version_label.setStyleSheet("font-size: 10px; color: #BBB; border: none; background: transparent; font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;")
+        footer_layout.addWidget(version_label)
+        
+        # Add footer to content side
+        content_layout = QtWidgets.QVBoxLayout()
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
+        content_layout.addWidget(content_stack)
+        content_layout.addLayout(footer_layout)
+        
+        # We need to wrap the sidebar and the new content_layout in a QHBoxLayout
+        # The main_layout already contains sidebar and content_stack. 
+        # Let's fix that.
+        while main_layout.count():
+            item = main_layout.takeAt(0)
+            if item.widget(): item.widget().setParent(None)
+        
+        main_layout.addWidget(sidebar)
+        container_right = QtWidgets.QWidget()
+        container_right.setLayout(content_layout)
+        main_layout.addWidget(container_right)
 
         dialog.show()
         dialog.raise_()

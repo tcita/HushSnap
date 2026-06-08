@@ -74,6 +74,7 @@ _CONFIG_DEFAULTS = {
     "debug": not _is_frozen,   # True for source runs, False for packaged builds
     "copy_image_to_clipboard": True,
     "auto_copy_ocr_result": True,
+    "thumbnail_display_time": 10000,
 }
 
 
@@ -529,6 +530,26 @@ def update_auto_copy_ocr_result(enabled, config_path=None):
         _write_config_data(config_path, config_data)
     except Exception as e:
         logger.error(f"Failed to update auto_copy_ocr_result: {e}")
+
+
+def get_thumbnail_display_time(config_path=None):
+    """Read 'thumbnail_display_time' from config (default 10000)."""
+    if config_path is None:
+        config_path = get_config_path()
+    config_data = _load_config_data(config_path)
+    return int(config_data.get("thumbnail_display_time", 10000))
+
+
+def update_thumbnail_display_time(ms, config_path=None):
+    """Update and persist 'thumbnail_display_time' in config."""
+    if config_path is None:
+        config_path = get_config_path()
+    config_data = _load_config_data(config_path)
+    config_data["thumbnail_display_time"] = int(ms)
+    try:
+        _write_config_data(config_path, config_data)
+    except Exception as e:
+        logger.error(f"Failed to update thumbnail_display_time: {e}")
 
 
 def get_ocr_engine(state_path=None, config_path=None):

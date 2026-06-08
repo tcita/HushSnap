@@ -234,6 +234,10 @@ def main(boot_start_time=None):
     thumbnail_manager.save_to_desktop.connect(handle_save_to_desktop)
     thumbnail_manager.save_requested.connect(handle_thumbnail_save)
 
+    from .ui.pinned_image import pinned_image_manager
+    thumbnail_manager.pin_requested.connect(pinned_image_manager.pin_image)
+    pinned_image_manager.ocr_requested.connect(ocr_controller.start_request)
+
     def handle_taskbar_created():
         logger.info("Windows Explorer taskbar recreated. Restoring system tray icon.")
         try:

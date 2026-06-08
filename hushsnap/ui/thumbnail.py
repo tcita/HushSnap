@@ -32,6 +32,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
     open_viewer_signal = QtCore.pyqtSignal()
     save_to_desktop_signal = QtCore.pyqtSignal()
     save_requested_signal = QtCore.pyqtSignal()
+    pin_requested_signal = QtCore.pyqtSignal()
 
     def __init__(self, pil_image: Image.Image):
         super().__init__()
@@ -107,6 +108,29 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self.close_btn.move(self.shadow_padding + self.card_width - 26, self.shadow_padding + 6)
         self.close_btn.clicked.connect(self.close)
         self.close_btn.hide()
+
+        # Pin button (small pin icon in top-left of card)
+        from ..config import resolve_ui_lang, ui_text, get_config_path
+        lang = resolve_ui_lang(get_config_path())
+        self.pin_btn = QtWidgets.QPushButton("📌", self)
+        self.pin_btn.setFixedSize(20, 20)
+        self.pin_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self.pin_btn.setToolTip(ui_text(lang, "thumbnail_pin"))
+        self.pin_btn.setStyleSheet(
+            "QPushButton {"
+            "  background-color: rgba(0, 0, 0, 160);"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 10px;"
+            "  font-size: 12px;"
+            "}"
+            "QPushButton:hover {"
+            "  background-color: rgba(95, 201, 138, 220);"
+            "}"
+        )
+        self.pin_btn.move(self.shadow_padding + 6, self.shadow_padding + 6)
+        self.pin_btn.clicked.connect(self._on_pin_clicked)
+        self.pin_btn.hide()
         
         # 3. Position and Animation
         # Use cursor-based screen detection for multi-monitor awareness
@@ -145,6 +169,20 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self._menu_active = False
         self._hovered = False
 
+    def _on_pin_clicked(self):
+        logger.info(f"Pin button clicked on thumbnail. Image size: {self.pil_image.size}")
+        # Emit signal first, then close. In Qt, this is synchronous.
+        self.pin_requested_signal.emit()
+        self.close()
+
+    def _get_display_ms(self) -> int:
+        """Get the configured display duration from settings."""
+        try:
+            from ..config import get_thumbnail_display_time, get_config_path
+            return get_thumbnail_display_time(get_config_path())
+        except Exception:
+            return 10000 # Fallback to 10s
+
     def _pil_to_qpixmap(self, pil_img: Image.Image) -> QtGui.QPixmap:
         """Convert PIL Image to QPixmap efficiently."""
         if pil_img.mode != "RGBA":
@@ -163,28 +201,35 @@ class ThumbnailWindow(QtWidgets.QWidget):
     def showEvent(self, event):
         super().showEvent(event)
         self.pos_anim.start()
-        self.timer.start(THUMBNAIL_DISPLAY_MS)
+        self.timer.start(self._get_display_ms())
 
     def enterEvent(self, event):
-        """Pause timer on hover, activate visual feedback, and show close button."""
+        """Pause timer on hover, activate visual feedback, and show buttons."""
         self.timer.stop()
         self.fade_anim.stop()
         self.setWindowOpacity(1.0)
         self._hovered = True
         self.update()
         self.close_btn.show()
+        self.pin_btn.show()
+        # Ensure buttons are on top
+        self.close_btn.raise_()
+        self.pin_btn.raise_()
 
     def leaveEvent(self, event):
-        """Resume timer on leave, deactivate visual feedback, and hide close button."""
+        """Resume timer on leave, deactivate visual feedback, and hide buttons."""
         if not self._is_dragging and not self._menu_active:
-            self.timer.start(THUMBNAIL_DISPLAY_MS)
+            self.timer.start(self._get_display_ms())
         self._hovered = False
         self.update()
         self.close_btn.hide()
+        self.pin_btn.hide()
 
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
             pos = event.position().toPoint()
+            # If a child (like pin_btn) handles it, this won't be called.
+            # But we check anyway.
             if self.card_rect.contains(pos):
                 self._drag_start_pos = pos
 
@@ -206,6 +251,11 @@ class ThumbnailWindow(QtWidgets.QWidget):
             # If the mouse is released inside the thumbnail card, it's a click.
             # This is more intuitive than checking the exact movement distance.
             if self.card_rect.contains(release_pos):
+                # Check if we were clicking a button (though buttons should consume events)
+                if self.close_btn.geometry().contains(release_pos) or \
+                   self.pin_btn.geometry().contains(release_pos):
+                    return
+
                 logger.debug(f"Thumbnail click triggered at {release_pos}")
                 self.clicked_signal.emit()
                 self.close()
@@ -240,6 +290,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
         view_action = menu.addAction(ui_text(lang, "thumbnail_view_image"))
         desktop_action = menu.addAction(ui_text(lang, "thumbnail_save_to_desktop"))
         save_action = menu.addAction(ui_text(lang, "thumbnail_save_as"))
+        pin_action = menu.addAction(ui_text(lang, "thumbnail_pin"))
 
         action = menu.exec(pos)
 
@@ -254,11 +305,14 @@ class ThumbnailWindow(QtWidgets.QWidget):
         elif action == save_action:
             self.save_requested_signal.emit()
             self.close()
+        elif action == pin_action:
+            self.pin_requested_signal.emit()
+            self.close()
         else:
             # Menu dismissed without selection — resume auto-hide timer
             self._hovered = False
             self.update()
-            self.timer.start(THUMBNAIL_DISPLAY_MS)
+            self.timer.start(self._get_display_ms())
 
     def _start_drag(self):
         self._is_dragging = True
@@ -336,7 +390,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
                 self._is_dragging = False
                 self._hovered = False
                 self.close_btn.hide()
-                self.timer.start(THUMBNAIL_DISPLAY_MS)
+                self.timer.start(self._get_display_ms())
                 self.update()
         else:
             # Successful drag to external target (CopyAction)
@@ -415,6 +469,7 @@ class ThumbnailManager(QtCore.QObject):
     open_viewer = QtCore.pyqtSignal(object)    # Emits pil_image
     save_to_desktop = QtCore.pyqtSignal(object) # Emits pil_image
     save_requested = QtCore.pyqtSignal(object) # Emits pil_image
+    pin_requested = QtCore.pyqtSignal(object) # Emits pil_image
 
     def __init__(self):
         super().__init__()
@@ -436,6 +491,10 @@ class ThumbnailManager(QtCore.QObject):
         win.open_viewer_signal.connect(lambda: self.open_viewer.emit(pil_image))
         win.save_to_desktop_signal.connect(lambda: self.save_to_desktop.emit(pil_image))
         win.save_requested_signal.connect(lambda: self.save_requested.emit(pil_image))
+        win.pin_requested_signal.connect(lambda: self.pin_requested.emit(pil_image))
+        
+        # Auto-remove from list when destroyed
+        win.destroyed.connect(lambda: self._windows.remove(win) if win in self._windows else None)
         
         self._windows.append(win)
         win.show()
