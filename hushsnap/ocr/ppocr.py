@@ -499,7 +499,12 @@ def set_engine_params_override(params: dict | None):
 
 
 def _trim_working_set():
-    """Aggressively collect garbage and trim the process working set once on release."""
+    """Trim the process working set once OCR is done.
+
+    gc.collect() before the OS call was benchmarked and provides no
+    additional benefit: SetProcessWorkingSetSize(-1, -1) already
+    swaps out every page regardless of Python GC state.
+    """
     # Guard against trimming while a recognition request is actively running
     # in another thread. Trimming during active inference causes heavy paging
     # lag (thrashing) as the OS swaps model data back into RAM immediately.
@@ -508,24 +513,15 @@ def _trim_working_set():
             logger.debug("[PPOCR] Skipping _trim_working_set: %d active requests", _active_requests)
             return
 
-    import gc
-
     before_mb = get_working_set_mb()
-    logger.debug("[PPOCR] _trim_working_set: before GC  %s", fmt_memory())
+    logger.debug("[PPOCR] _trim_working_set: before trim  %s", fmt_memory())
 
-    gc.collect()
-
-    after_gc_mb = get_working_set_mb()
-    logger.debug("[PPOCR] _trim_working_set: after  GC  %s (delta=%.1f MB)",
-                 fmt_memory(), after_gc_mb - before_mb)
-
-    logger.debug("[PPOCR] Calling trim_working_set()...")
     res = trim_working_set()
 
     after_mb = get_working_set_mb()
     if res:
-        logger.debug("[PPOCR] _trim_working_set: after  trim %s (delta=%.1f MB)",
-                     fmt_memory(), after_mb - after_gc_mb)
+        logger.debug("[PPOCR] _trim_working_set: after  trim  %s (delta=%.1f MB)",
+                     fmt_memory(), after_mb - before_mb)
     else:
         logger.warning("[PPOCR] trim_working_set failed. %s", fmt_memory())
 
