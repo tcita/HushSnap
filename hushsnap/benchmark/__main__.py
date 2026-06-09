@@ -80,13 +80,22 @@ def main():
         help="Override Global.max_side_len (default: production 1536, "
              "RapidOCR default 2000). Limits detector feature map size."
     )
+    parser.add_argument(
+        "--arena",
+        action="store_true",
+        help="Enable ONNX Runtime CPU memory arena (production: False). "
+             "Arena=True pools allocations for ~7%% speedup but retains "
+             "~700 MB after OCR unless trimmed."
+    )
     args = parser.parse_args()
 
     # Resolve image path
     img_path = Path(args.image)
     if not img_path.is_absolute():
         project_root = Path(__file__).resolve().parent.parent.parent
-        img_path = project_root / "scratch" / img_path
+        # Try relative to CWD first, then fall back to scratch/ for backward compat
+        if not img_path.exists():
+            img_path = project_root / "scratch" / args.image
     if not img_path.exists():
         print(f"Error: Could not find test sample {img_path}")
         sys.exit(1)
@@ -101,6 +110,8 @@ def main():
         override_params["EngineConfig.onnxruntime.inter_op_num_threads"] = args.inter_op_num_threads
     if args.max_side_len is not None:
         override_params["Global.max_side_len"] = args.max_side_len
+    if args.arena:
+        override_params["EngineConfig.onnxruntime.enable_cpu_mem_arena"] = True
 
     if override_params:
         from hushsnap.ocr.ppocr import set_engine_params_override

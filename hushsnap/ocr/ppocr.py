@@ -4,6 +4,18 @@ import statistics
 import threading
 import time
 
+"""
+PP-OCR Engine Implementation.
+
+Performance Profile (Empirically Validated):
+- Global.max_side_len = 1536: Balance of accuracy and memory. 3072+ degrades precision.
+- Rec.rec_batch_num = 1: ~50% faster and 50% less RAM on CPU vs default (6).
+- intra_op_num_threads = 8: Sweet spot for modern multi-core CPUs.
+- inter_op_num_threads = 1: Sequential Det->Cls->Rec pipeline has no inter-op gain.
+- enable_cpu_mem_arena = False: Essential for tray apps. Prevents ~700MB permanent 
+  memory plateau, allowing the working set to drop to baseline after idle trim.
+"""
+
 # Defer ppocr library import to optimize application startup time
 from PyQt6 import QtCore, QtGui
 PPOCR = None
@@ -560,45 +572,7 @@ def _get_engine() -> "PPOCR":
                 ws_before = get_working_set_mb()
                 logger.info("[PPOCR] Initializing engine singleton (models loading)...")
                 
-                # PRODUCTION OPTIMIZED PROFILE (empirically validated via benchmark)
-                #
-                # Benchmarked on a Chinese-English mixed full-content screenshot
-                # (2560×1314 px, 3.4 Mpx, no UI chrome, ~4100 OCR chars) via
-                # python -m hushsnap.benchmark, 10 warm iterations per config.
-                # Key findings:
-                #
-                # 1. Global.max_side_len = 1536
-                #    vs RapidOCR default 2000: saves ~26% working set (~405 vs ~550 MB),
-                #    latency equivalent (warm mean ~1860 vs ~1900 ms). Text output
-                #    ~99.9% identical to ground truth across all resolutions. At 3072,
-                #    accuracy *drops* (~96.6%) — the detector becomes oversensitive to
-                #    anti-aliasing artifacts and compression noise.
-                #
-                # 2. Rec.rec_batch_num = 1
-                #    vs RapidOCR default 6: 47% faster (1725 vs 3254 ms warm mean) and
-                #    50% less working set (405 vs 809 MB). Sequential recognition avoids
-                #    ONNX batching overhead and improves cache locality on CPU.
-                #    Won 9/9 warm iterations, often by >1800 ms.
-                #
-                # 3. intra_op_num_threads = 8
-                #    vs 4 threads: 58% faster (1360 vs 2145 ms) and eliminates bimodal
-                #    instability (stdev 27 vs 585 ms). 4 threads alternates between fast
-                #    and slow states due to undersaturation.
-                #    vs unbounded (-1): 60% faster (1360 vs 2184 ms). Too many threads
-                #    cause contention and context-switching overhead.
-                #    Won 9/9 warm iterations against both alternatives.
-                #
-                # 4. enable_cpu_mem_arena = False
-                #    vs ONNX default True: arena=True is 7% faster (1288 vs 1383 ms
-                #    warm mean) and won 9/9 iterations, but at a prohibitive memory
-                #    cost for a long-running desktop app:
-                #      - WS peak nearly doubles (404 vs 791 MB, +95%)
-                #      - Pvt peak +57% (1138 vs 1792 MB)
-                #      - WS after last OCR: 139 vs 685 MB (5×) — the arena never
-                #        releases pooled memory, producing a PLATEAU shape (retention
-                #        0.88, λ=0.16) vs the clean SPIKE of arena=False.
-                #    For an app that sits idle in the system tray, holding ~700 MB
-                #    permanently is unacceptable for the sake of ~95 ms.
+                # Optimized for desktop CPU inference (see module header for details)
                 params = {
                     "Det.ocr_version": local_OCRVersion.PPOCRV5,
                     "Rec.ocr_version": local_OCRVersion.PPOCRV5,
