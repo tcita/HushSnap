@@ -383,26 +383,39 @@ def main(boot_start_time=None):
             self.idle_timer = QtCore.QTimer()
             self.idle_timer.setSingleShot(True)
             self.idle_timer.timeout.connect(self._do_trim)
-            
+
+            self._already_trimmed = False  # don't re-trim until next activity
+
             # Check idle state every 5 seconds
             self.check_timer = QtCore.QTimer()
             self.check_timer.timeout.connect(self._check_and_start)
             self.check_timer.start(5000)
 
+        def _is_truly_idle(self):
+            """App is truly idle only when every visible UI element is gone
+            and no background work is in progress."""
+            return (
+                not self.tm._windows
+                and not self.pm._windows
+                and not self.oc.is_busy()
+                and not self.oc.popup.isVisible()
+            )
+
         def _check_and_start(self):
-            # If no thumbnails, no pins, and OCR is not busy, start idle countdown
-            if not self.tm._windows and not self.pm._windows and not self.oc.is_busy():
-                if not self.idle_timer.isActive():
+            if self._is_truly_idle():
+                if not self.idle_timer.isActive() and not self._already_trimmed:
                     # 20 seconds of total silence before we trim
                     self.idle_timer.start(20000)
             else:
                 self.idle_timer.stop()
+                self._already_trimmed = False  # activity detected, allow trim again later
 
         def _do_trim(self):
             # Final sanity check before the heavy lift
-            if not self.tm._windows and not self.pm._windows and not self.oc.is_busy():
-                logging.debug("[IdleMemoryManager] App is truly idle. Trimming working set...")
+            if self._is_truly_idle():
+                logging.info("[IdleMemoryManager] App is truly idle. Trimming working set...")
                 trim_working_set()
+                self._already_trimmed = True  # don't trim again until next activity
 
     idle_manager = IdleMemoryManager(thumbnail_manager, pinned_image_manager, ocr_controller)
 
