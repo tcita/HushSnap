@@ -84,15 +84,17 @@ class BenchmarkRunner:
             translate=translate,
             config_path=config_path,
             user_data_dir=user_data_dir,
+            popup=_NullPopup(),          # suppress popup rendering overhead
         )
 
-        # ── Suppress UI side effects ──────────────────────────────
-        # Replace the real popup so show_loading / show_text are no-ops
-        self.controller.popup = _NullPopup()
+        # ── Suppress remaining UI side effects ──────────────────────
         # Disconnect the production on_ocr_finished handler so that
-        # popup rendering, clipboard writes, tray notifications, and
-        # the 5 s idle-trim timer don't fire during benchmarking.
-        self.controller.bridge.signal.disconnect()
+        # clipboard writes, tray notifications, and the 5 s idle-trim
+        # timer don't fire during benchmarking.
+        try:
+            self.controller.bridge.signal.disconnect()
+        except TypeError:
+            pass  # no slots were connected (shouldn't happen, but safe)
         self.controller.bridge.signal.connect(self._on_ocr_finished)
 
         # ── Internal state ────────────────────────────────────────
@@ -415,13 +417,17 @@ class BenchmarkRunner:
 
     # ── Internal ──────────────────────────────────────────────────
 
-    @staticmethod
-    def _trim_current_engine():
+    def _trim_current_engine(self):
         """Trim the current OCR engine's working set.
 
-        Mirrors ``OcrController._trim_current_engine`` but without the
-        guard flags (which are disconnected during benchmarking).
+        Mirrors ``OcrController._trim_current_engine``.  Only called
+        between iterations when ``_finished`` is True, so there is no
+        risk of trimming during an active OCR request.
         """
+        if not self._finished:
+            logger.debug("Skipping trim: OCR still in progress")
+            return
+
         from hushsnap.ocr.engine import trim_engine
         from hushsnap.constants import OCR_ENGINE_PPOCR
         try:
