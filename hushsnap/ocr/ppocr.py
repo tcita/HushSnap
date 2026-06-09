@@ -560,33 +560,45 @@ def _get_engine() -> "PPOCR":
                 ws_before = get_working_set_mb()
                 logger.info("[PPOCR] Initializing engine singleton (models loading)...")
                 
-                # PRODUCTION OPTIMIZED PROFILE (Empirically validated via Benchmark)
-                # This configuration provides the best speed-to-memory ratio for CPU inference.
+                # PRODUCTION OPTIMIZED PROFILE (empirically validated via benchmark)
                 #
-                # 1. Global.max_side_len (1536): Limits Detector input resolution.
-                #    Benchmarked on full-screen screenshot (2560×1600 px, 4.1 Mpx,
-                #    1707×1067 logical @ 1.5 DPR) via python -m hushsnap.benchmark
-                #    -n 3 -p (warm-iteration data, UI overhead suppressed):
+                # Benchmarked on a Chinese-English mixed full-content screenshot
+                # (2560×1314 px, 3.4 Mpx, no UI chrome, ~4100 OCR chars) via
+                # python -m hushsnap.benchmark, 10 warm iterations per config.
+                # Key findings:
                 #
-                #       max_side_len | WS peak  | Pvt peak | Latency  | AUC (norm)
-                #       -------------|---------|----------|---------|-----------
-                #       1536 (prod)  | 508 MB  | 1186 MB  | 2018 ms  | 70.5 MB
-                #       2000 (Rapi-  | 705 MB  | 1372 MB  | 2131 ms  | 89.8 MB
-                #          dOCR def) |  (+39%) |  (+16%)  |  (+6%)   |  (+27%)
-                #       3072 (no     | 977 MB  | 1643 MB  | 3913 ms  | 150.6 MB
-                #          limit)    |  (+92%) |  (+39%)  |  (+94%)  |  (+114%)
+                # 1. Global.max_side_len = 1536
+                #    vs RapidOCR default 2000: saves ~26% working set (~405 vs ~550 MB),
+                #    latency equivalent (warm mean ~1860 vs ~1900 ms). Text output
+                #    ~99.9% identical to ground truth across all resolutions. At 3072,
+                #    accuracy *drops* (~96.6%) — the detector becomes oversensitive to
+                #    anti-aliasing artifacts and compression noise.
                 #
-                #    1536 vs RapidOCR default 2000: saves ~197 MB WS (-28%),
-                #    ~113 ms latency (-5%). Text output differed by ≤10 chars
-                #    (~0.16% of 6300+ total), limited to toolbar micro-text;
-                #    body text identical across all three settings.
-                # 2. Rec.rec_batch_num (1): Sequential recognition. Counter-intuitively faster
-                #    on CPU than batching (e.g. 4 or 10) by reducing ONNX overhead and
-                #    improving cache locality. Reduces peak memory by ~100MB.
-                # 3. intra_op_num_threads (8): Optimal thread saturation for modern CPUs.
-                #    Faster than 4 threads and more stable than using all cores (-1).
-                # 4. enable_cpu_mem_arena (False): Disables ONNX memory pooling to ensure
-                #    transient buffers are returned to the OS immediately, preventing creep.
+                # 2. Rec.rec_batch_num = 1
+                #    vs RapidOCR default 6: 47% faster (1725 vs 3254 ms warm mean) and
+                #    50% less working set (405 vs 809 MB). Sequential recognition avoids
+                #    ONNX batching overhead and improves cache locality on CPU.
+                #    Won 9/9 warm iterations, often by >1800 ms.
+                #
+                # 3. intra_op_num_threads = 8
+                #    vs 4 threads: 58% faster (1360 vs 2145 ms) and eliminates bimodal
+                #    instability (stdev 27 vs 585 ms). 4 threads alternates between fast
+                #    and slow states due to undersaturation.
+                #    vs unbounded (-1): 60% faster (1360 vs 2184 ms). Too many threads
+                #    cause contention and context-switching overhead.
+                #    Won 9/9 warm iterations against both alternatives.
+                #
+                # 4. enable_cpu_mem_arena = False
+                #    vs ONNX default True: arena=True is 7% faster (1288 vs 1383 ms
+                #    warm mean) and won 9/9 iterations, but at a prohibitive memory
+                #    cost for a long-running desktop app:
+                #      - WS peak nearly doubles (404 vs 791 MB, +95%)
+                #      - Pvt peak +57% (1138 vs 1792 MB)
+                #      - WS after last OCR: 139 vs 685 MB (5×) — the arena never
+                #        releases pooled memory, producing a PLATEAU shape (retention
+                #        0.88, λ=0.16) vs the clean SPIKE of arena=False.
+                #    For an app that sits idle in the system tray, holding ~700 MB
+                #    permanently is unacceptable for the sake of ~95 ms.
                 params = {
                     "Det.ocr_version": local_OCRVersion.PPOCRV5,
                     "Rec.ocr_version": local_OCRVersion.PPOCRV5,
