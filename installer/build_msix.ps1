@@ -132,9 +132,15 @@ function Invoke-PreBuildValidation {
 
         $sourcePkgs = $sourcePkgs | Sort-Object -Unique
 
+        # Extract excluded packages from the spec
+        $excludesMatches = [regex]::Matches($specContent, "(?s)excludes\s*=\s*\[(.*?)\]")
+        $excludesContent = if ($excludesMatches.Count -gt 0) { $excludesMatches[0].Groups[1].Value } else { "" }
+
         foreach ($pkg in $sourcePkgs) {
-            if ($specContent -notmatch [regex]::Escape($pkg)) {
-                Write-Fail "Package '$pkg' exists in source but is NOT in .spec hiddenimports"
+            $inHiddenimports = $specContent -match [regex]::Escape($pkg)
+            $inExcludes = $excludesContent -match [regex]::Escape($pkg)
+            if (-not $inHiddenimports -and -not $inExcludes) {
+                Write-Fail "Package '$pkg' exists in source but is NOT in .spec hiddenimports (or excludes)"
                 $errors++
             }
         }

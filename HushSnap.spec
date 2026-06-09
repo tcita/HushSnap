@@ -49,6 +49,7 @@ a = Analysis(
         'PyQt6.QtHelp', 'PyQt6.QtTest', 'PyQt6.QtXml', 'PyQt6.QtSvg',
         'openvino', 'openvino_telemetry',
         'cv2.videoio', 'cv2.samples', 'PIL._avif',
+        'hushsnap.benchmark',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
