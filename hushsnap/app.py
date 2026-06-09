@@ -369,6 +369,47 @@ def main(boot_start_time=None):
     # Unregister hotkey and release system resources before app exit.
     app.aboutToQuit.connect(hotkey_manager.release_resources)
 
+    # ── Memory Management (Idle Trim Patch) ──────────────────────────
+    from .system.memory_utils import trim_working_set
+
+    class IdleMemoryManager(QtCore.QObject):
+        """Monitors global app state and trims memory when truly idle."""
+        def __init__(self, tm, pm, oc):
+            super().__init__()
+            self.tm = tm # thumbnail_manager
+            self.pm = pm # pinned_image_manager
+            self.oc = oc # ocr_controller
+            
+            self.idle_timer = QtCore.QTimer()
+            self.idle_timer.setSingleShot(True)
+            self.idle_timer.timeout.connect(self._do_trim)
+            
+            # Check idle state every 5 seconds
+            self.check_timer = QtCore.QTimer()
+            self.check_timer.timeout.connect(self._check_and_start)
+            self.check_timer.start(5000)
+
+        def _check_and_start(self):
+            # If no thumbnails, no pins, and OCR is not busy, start idle countdown
+            if not self.tm._windows and not self.pm._windows and not self.oc.is_busy():
+                if not self.idle_timer.isActive():
+                    # 20 seconds of total silence before we trim
+                    self.idle_timer.start(20000)
+            else:
+                self.idle_timer.stop()
+
+        def _do_trim(self):
+            # Final sanity check before the heavy lift
+            if not self.tm._windows and not self.pm._windows and not self.oc.is_busy():
+                logging.debug("[IdleMemoryManager] App is truly idle. Trimming working set...")
+                trim_working_set()
+
+    idle_manager = IdleMemoryManager(thumbnail_manager, pinned_image_manager, ocr_controller)
+
+    # ── Startup Clean ────────────────────────────────────────────────
+    # Run a quick startup trim to clean up import-time overhead
+    QtCore.QTimer.singleShot(5000, trim_working_set)
+
     startup_profiler.log_summary()
 
     sys.exit(app.exec())

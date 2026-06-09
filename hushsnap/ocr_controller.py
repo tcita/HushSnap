@@ -72,6 +72,11 @@ class OcrController:
         """Set callback used to request screenshot captures on demand."""
         self.capture_requester = capture_requester
 
+    def is_busy(self):
+        """Return True if an OCR request is currently in progress."""
+        # Check both the popup OCR and the pinned image background OCR
+        return self._expecting_ocr_result or (hasattr(self, "_toast_bridge") and self._toast_bridge is not None)
+
     def set_popup_anchor(self, x, y, width=None, height=None):
         """Set preferred screen position for the next OCR popup appearance."""
         self.popup.set_anchor_pos(x, y, width, height)

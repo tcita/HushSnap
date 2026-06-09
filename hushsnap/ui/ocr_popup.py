@@ -137,6 +137,8 @@ class OcrPopup(QtWidgets.QWidget):
         self.resize(420, 200)
 
         self._morph_anim = None
+        self._anchor_pos = None
+        self._anchor_geom = None
 
     # ── stylesheet ───────────────────────────────────────────────────
     def _apply_stylesheet(self):
