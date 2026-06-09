@@ -1,15 +1,17 @@
 # HushSnap
 
-HushSnap is a lightweight screenshot && OCR tool that lives in your system tray and wakes up the moment you press a hotkey — no UI, no delay, just an instant crosshair overlay. Select a region or click for the full screen, and the shot lands on your clipboard immediately.
+HushSnap is a lightweight screenshot & OCR tool that lives in your system tray. Press a hotkey and a crosshair overlay appears instantly — select a region or click for the full screen, and the shot lands on your clipboard immediately. No pre-launching menus or windows; the UI surfaces only when you need it.
 
 After capture, a thumbnail slides in at the bottom-right corner of your screen. This thumbnail is the heart of HushSnap's post-capture flow:
 
 - **Hover** to pause auto-hide and reveal a close button.
 - **Drag and drop** the thumbnail anywhere to save the image — into a chat, an email, a folder, or another app.
-- **Left-click** the thumbnail to run **offline OCR** and extract text from the screenshot. No internet connection needed.
-- **Right-click** for more options: open in your default image viewer, save to Desktop, or Save As… anywhere you choose.
+- **Left-click** the thumbnail to run **offline OCR**. Recognized text opens in a floating popup where you can edit, copy, resize, or pin the window to keep it visible. By default text is also auto-copied to your clipboard.
+- **Right-click** for more options: open in your default image viewer, **pin** as a floating always-on-top window (with its own OCR), save to Desktop, or Save As… anywhere you choose.
 
-The global hotkey is fully customizable (default `Alt+Q`), and because HushSnap works at the Windows level, it responds from any app, anywhere. Everything runs locally — your screenshots and OCR results never leave your device.
+HushSnap is controlled from the **system tray**: single-click the tray icon to start a capture, or right-click to access Screenshot, Settings, the config folder, and Quit. The **Settings** dialog (with General, Capture, and OCR pages) lets you rebind the global hotkey (default `Alt+Q`), switch UI language, change how long the thumbnail stays visible, toggle auto-copy behavior, adjust OCR font size, and more.
+
+Because HushSnap works at the Windows level, the hotkey responds from any app, anywhere. Everything runs locally — your screenshots and OCR results never leave your device.
 
 As the project continues to evolve, some parts of this README may occasionally lag behind the latest behavior or features.
 
