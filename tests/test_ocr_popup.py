@@ -106,3 +106,22 @@ def test_ocr_popup_updates_copy_button_text_on_show(qapp):
     popup.show_text("hello")
 
     assert popup.copy_btn.toolTip() == "Copy"
+
+
+def test_ocr_popup_edge_detection(qapp):
+    """Test that the popup correctly identifies resize edges."""
+    popup = OcrPopup(_translate)
+    popup.resize(400, 400)
+    
+    # RESIZE_HIT is 24
+    
+    # Top-left corner
+    assert popup._get_edge(QtCore.QPoint(5, 5)) == (QtCore.Qt.Edge.TopEdge | QtCore.Qt.Edge.LeftEdge)
+    # Right edge
+    assert popup._get_edge(QtCore.QPoint(390, 200)) == QtCore.Qt.Edge.RightEdge
+    # Bottom-right corner
+    assert popup._get_edge(QtCore.QPoint(390, 390)) == (QtCore.Qt.Edge.BottomEdge | QtCore.Qt.Edge.RightEdge)
+    # Center (no edge)
+    assert popup._get_edge(QtCore.QPoint(200, 200)) == QtCore.Qt.Edge(0)
+    # Visible card corner (at 18, 18) - should be detected with hit=24
+    assert popup._get_edge(QtCore.QPoint(18, 18)) == (QtCore.Qt.Edge.TopEdge | QtCore.Qt.Edge.LeftEdge)

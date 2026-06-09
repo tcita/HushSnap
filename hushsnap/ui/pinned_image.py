@@ -90,6 +90,38 @@ class PinnedImageWindow(QtWidgets.QWidget):
         self.close_btn.hide()
 
         self._update_ui_positions()
+        self._morph_source = None
+
+    def set_morph_source(self, pos, size):
+        """Set the screen rect to morph from when showing."""
+        if pos and size:
+            self._morph_source = QtCore.QRect(pos, size)
+
+    def showEvent(self, event):
+        if self._morph_source:
+            start_geom = self._morph_source
+            target_geom = self.geometry()
+            self._morph_source = None
+            
+            self.setWindowOpacity(0.0)
+            self._show_anim = QtCore.QParallelAnimationGroup(self)
+            
+            fade = QtCore.QPropertyAnimation(self, b"windowOpacity")
+            fade.setDuration(250)
+            fade.setStartValue(0.0)
+            fade.setEndValue(1.0)
+            fade.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
+            
+            morph = QtCore.QPropertyAnimation(self, b"geometry")
+            morph.setDuration(300)
+            morph.setStartValue(start_geom)
+            morph.setEndValue(target_geom)
+            morph.setEasingCurve(QtCore.QEasingCurve.Type.OutBack)
+            
+            self._show_anim.addAnimation(fade)
+            self._show_anim.addAnimation(morph)
+            self._show_anim.start()
+        super().showEvent(event)
 
     def _get_content_rect(self) -> QtCore.QRect:
         """Returns the rectangle for the actual image content, excluding shadow padding."""
@@ -366,10 +398,19 @@ class PinnedImageWindow(QtWidgets.QWidget):
         menu.setStyleSheet(MODERN_MENU_STYLE)
         menu.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
         
+        # Shadow for menu
+        shadow = QtWidgets.QGraphicsDropShadowEffect(menu)
+        shadow.setBlurRadius(15)
+        shadow.setColor(QtGui.QColor(0, 0, 0, 80))
+        shadow.setOffset(0, 4)
+        menu.setGraphicsEffect(shadow)
+        
         ocr_action = menu.addAction(ui_text(lang, "menu_ocr_recognize"))
         copy_action = menu.addAction(ui_text(lang, "pin_copy_image"))
+        menu.addSeparator()
         desktop_action = menu.addAction(ui_text(lang, "thumbnail_save_to_desktop"))
         save_action = menu.addAction(ui_text(lang, "thumbnail_save_as"))
+        
         action = menu.exec(pos)
 
         if action == copy_action:
@@ -378,6 +419,7 @@ class PinnedImageWindow(QtWidgets.QWidget):
             self.pil_image.save(buffer, format="PNG")
             qimg = QtGui.QImage.fromData(buffer.getvalue())
             cb.setImage(qimg)
+            self.show_toast(ui_text(lang, "pin_image_copied"))
         elif action == desktop_action:
             try:
                 desktop = os.path.join(os.path.expanduser("~"), "Desktop")
@@ -409,7 +451,7 @@ class PinnedImageManager(QtCore.QObject):
         super().__init__()
         self._windows = []
         
-    def pin_image(self, pil_image: Image.Image):
+    def pin_image(self, pil_image: Image.Image, morph_pos=None, morph_size=None):
         try:
             logger.info(f"Pinning image: {pil_image.size} mode={pil_image.mode}")
             win = PinnedImageWindow(pil_image)
@@ -428,6 +470,7 @@ class PinnedImageManager(QtCore.QObject):
                 y = screen.bottom() - win.height()
 
             win.move(x, y)
+            win.set_morph_source(morph_pos, morph_size)
             win.ocr_requested.connect(self.ocr_requested.emit)
             win.show()
             self._windows.append(win)

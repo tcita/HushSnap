@@ -319,30 +319,33 @@ QMessageBox QPushButton:hover {{
 }}
 """
 
-# Modern Context Menu Style (used by Thumbnail and Tray)
-MODERN_MENU_STYLE = f"""
-QMenu {{
-    background-color: #FFFFFF;
-    border: 1px solid #E0E0E0;
-    border-radius: 8px;
+# Modern Dark Context Menu Style
+MODERN_MENU_STYLE = """
+QMenu {
+    background-color: #252525;
+    border: 1px solid rgba(255, 255, 255, 30);
+    border-radius: 10px;
     padding: 6px 0px;
-}}
-QMenu::item {{
-    padding: 8px 24px;
+}
+QMenu::item {
+    padding: 8px 32px 8px 16px;
     font-size: 13px;
-    color: #333333;
+    color: #e0e0e0;
     background-color: transparent;
-    border-radius: 4px;
-    margin: 2px 6px;
+    border-radius: 6px;
+    margin: 2px 8px;
     font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
-}}
-QMenu::item:selected {{
-    background-color: #F0F0F0;
-    color: #000000;
-}}
-QMenu::separator {{
+}
+QMenu::item:selected {
+    background-color: rgba(95, 201, 138, 50);
+    color: #ffffff;
+}
+QMenu::item:disabled {
+    color: #666666;
+}
+QMenu::separator {
     height: 1px;
-    background: #EEEEEE;
-    margin: 4px 0px;
-}}
+    background: rgba(255, 255, 255, 15);
+    margin: 4px 8px;
+}
 """

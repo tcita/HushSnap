@@ -181,9 +181,19 @@ def main(boot_start_time=None):
     def handle_thumbnail_clicked(pil_img):
         """Thumbnail left-click: trigger OCR with smooth position transition."""
         # Capture thumbnail centre so the OCR popup appears near the same spot.
-        center = thumbnail_manager.current_window_center()
-        if center is not None:
-            ocr_controller.set_popup_anchor(*center)
+        # Use rect for morph animation if available.
+        pos, size = thumbnail_manager.current_window_rect()
+        if pos and size:
+            ocr_controller.set_popup_anchor(
+                pos.x() + size.width() / 2,
+                pos.y() + size.height() / 2,
+                width=size.width(),
+                height=size.height()
+            )
+        else:
+            center = thumbnail_manager.current_window_center()
+            if center is not None:
+                ocr_controller.set_popup_anchor(*center)
 
         # Convert PIL Image to QPixmap for the OCR pipeline
         from PyQt6 import QtGui
@@ -240,7 +250,12 @@ def main(boot_start_time=None):
     thumbnail_manager.save_requested.connect(handle_thumbnail_save)
 
     from .ui.pinned_image import pinned_image_manager
-    thumbnail_manager.pin_requested.connect(pinned_image_manager.pin_image)
+    
+    def handle_pin_requested(pil_img, pos, size):
+        """Thumbnail 'Pin' action: animate from thumbnail to pinned window."""
+        pinned_image_manager.pin_image(pil_img, morph_pos=pos, morph_size=size)
+
+    thumbnail_manager.pin_requested.connect(handle_pin_requested)
     
     def handle_pinned_ocr_requested(pixmap, source_win):
         """Pinned image OCR: copy recognized text to clipboard, show toast on the window."""

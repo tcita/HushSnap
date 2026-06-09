@@ -245,17 +245,19 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self.setWindowOpacity(1.0)
 
         menu = QtWidgets.QMenu(self)
-        menu.setStyleSheet(MODERN_MENU_STYLE + "\nQMenu { margin: 10px; }")
+        from .styles import MODERN_MENU_STYLE
+        menu.setStyleSheet(MODERN_MENU_STYLE)
         menu.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
         
         shadow = QtWidgets.QGraphicsDropShadowEffect(menu)
         shadow.setBlurRadius(15)
-        shadow.setColor(QtGui.QColor(0, 0, 0, 45))
-        shadow.setOffset(0, 3)
+        shadow.setColor(QtGui.QColor(0, 0, 0, 80))
+        shadow.setOffset(0, 4)
         menu.setGraphicsEffect(shadow)
 
         pin_action = menu.addAction(ui_text(lang, "thumbnail_pin"))
         view_action = menu.addAction(ui_text(lang, "thumbnail_view_image"))
+        menu.addSeparator()
         desktop_action = menu.addAction(ui_text(lang, "thumbnail_save_to_desktop"))
         save_action = menu.addAction(ui_text(lang, "thumbnail_save_as"))
 
@@ -436,7 +438,7 @@ class ThumbnailManager(QtCore.QObject):
     open_viewer = QtCore.pyqtSignal(object)    # Emits pil_image
     save_to_desktop = QtCore.pyqtSignal(object) # Emits pil_image
     save_requested = QtCore.pyqtSignal(object) # Emits pil_image
-    pin_requested = QtCore.pyqtSignal(object) # Emits pil_image
+    pin_requested = QtCore.pyqtSignal(object, object, object) # pil_image, pos, size
 
     def __init__(self):
         super().__init__()
@@ -458,7 +460,13 @@ class ThumbnailManager(QtCore.QObject):
         win.open_viewer_signal.connect(lambda: self.open_viewer.emit(pil_image))
         win.save_to_desktop_signal.connect(lambda: self.save_to_desktop.emit(pil_image))
         win.save_requested_signal.connect(lambda: self.save_requested.emit(pil_image))
-        win.pin_requested_signal.connect(lambda: self.pin_requested.emit(pil_image))
+        win.pin_requested_signal.connect(
+            lambda: self.pin_requested.emit(
+                pil_image, 
+                win.mapToGlobal(win.card_rect.topLeft()), 
+                win.card_rect.size()
+            )
+        )
         
         # Auto-remove from list when destroyed
         win.destroyed.connect(lambda: self._windows.remove(win) if win in self._windows else None)
@@ -477,6 +485,17 @@ class ThumbnailManager(QtCore.QObject):
             except RuntimeError:
                 pass
         return None
+
+    def current_window_rect(self):
+        """Return the screen rect of the most recent thumbnail window's visible card."""
+        for w in self._windows:
+            try:
+                if w.isVisible():
+                    # Return the card_rect in global coordinates
+                    return w.mapToGlobal(w.card_rect.topLeft()), w.card_rect.size()
+            except RuntimeError:
+                pass
+        return None, None
 
 # Global manager instance
 thumbnail_manager = ThumbnailManager()

@@ -72,9 +72,9 @@ class OcrController:
         """Set callback used to request screenshot captures on demand."""
         self.capture_requester = capture_requester
 
-    def set_popup_anchor(self, x, y):
+    def set_popup_anchor(self, x, y, width=None, height=None):
         """Set preferred screen position for the next OCR popup appearance."""
-        self.popup.set_anchor_pos(x, y)
+        self.popup.set_anchor_pos(x, y, width, height)
 
     def copy_text_from_image(self, pixmap, toast_window):
         """Run OCR on *pixmap* and copy recognized text to clipboard.

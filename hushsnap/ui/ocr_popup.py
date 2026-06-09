@@ -10,6 +10,7 @@ from ..constants import APP_ICON_FILENAME
 # Minimum window size to prevent collapsing to zero
 WINDOW_MIN_WIDTH = 280
 WINDOW_MIN_HEIGHT = 180
+RESIZE_HIT = 24
 
 
 class OcrPopup(QtWidgets.QWidget):
@@ -118,10 +119,13 @@ class OcrPopup(QtWidgets.QWidget):
         # Install event filter on text_edit viewport so edge cursor
         # detection works even when the mouse is over the child widget.
         self.text_edit.viewport().installEventFilter(self)
+        self.text_block.installEventFilter(self)
 
         # ── caret colour ────────────────────────────────────────────
         pal = self.text_edit.palette()
         pal.setColor(QtGui.QPalette.ColorRole.Text, QtGui.QColor("#5fc98a"))
+        # Ensure viewport is transparent
+        pal.setColor(QtGui.QPalette.ColorRole.Base, QtCore.Qt.GlobalColor.transparent)
         self.text_edit.setPalette(pal)
 
         self._apply_stylesheet()
@@ -131,6 +135,8 @@ class OcrPopup(QtWidgets.QWidget):
         # Compact default; height auto-fits content on show_text.
         # User resizes freely — scroll area handles overflow.
         self.resize(420, 200)
+
+        self._morph_anim = None
 
     # ── stylesheet ───────────────────────────────────────────────────
     def _apply_stylesheet(self):
@@ -144,8 +150,8 @@ class OcrPopup(QtWidgets.QWidget):
 
             "/* ── unified card ── */"
             "#ocrTextBlock {"
-            " background-color: rgba(30, 30, 30, 230);"
-            " border: 1px solid rgba(255, 255, 255, 25);"
+            " background-color: #1e1e1e;"
+            " border: 1px solid rgba(255, 255, 255, 35);"
             " border-radius: 12px;"
             "}"
             "#ocrTextBlock:hover {"
@@ -159,42 +165,42 @@ class OcrPopup(QtWidgets.QWidget):
             " border-radius: 0;"
             " padding: 0px;"
             " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
-            " line-height: 1.8;"
+            " line-height: 1.6;"
             " selection-background-color: rgba(95, 201, 138, 80);"
             " selection-color: #ffffff;"
             "}"
             "#ocrText:focus {"
-            " background-color: #2a2a2a;"
+            " background-color: transparent;"
             "}"
 
             "/* ── floating overlay buttons ── */"
             "#ocrCopyBtn {"
             " color: #5fc98a;"
-            " border: none;"
-            " border-radius: 11px;"
-            " background: rgba(0, 0, 0, 160);"
+            " border: 1px solid rgba(255, 255, 255, 20);"
+            " border-radius: 6px;"
+            " background: #2a2a2a;"
             " padding: 0;"
             " font-size: 12px;"
             " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
             "}"
-            "#ocrCopyBtn:hover { background: rgba(95, 201, 138, 40); }"
+            "#ocrCopyBtn:hover { background: #333333; border-color: #5fc98a; }"
 
             "#ocrPinBtn {"
-            " color: #5fc98a;"
+            " color: #999999;"
             " border: none;"
             " border-radius: 11px;"
-            " background: rgba(0, 0, 0, 160);"
+            " background: rgba(0, 0, 0, 100);"
             " font-size: 13px;"
             " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
             "}"
-            "#ocrPinBtn:hover { background: rgba(95, 201, 138, 40); }"
+            "#ocrPinBtn:hover { background: rgba(95, 201, 138, 40); color: #5fc98a; }"
             "#ocrPinBtn[pin=\"true\"] { color: #5fc98a; background: rgba(95, 201, 138, 30); }"
 
             "#ocrCloseBtn {"
             " color: #999999;"
             " border: none;"
             " border-radius: 11px;"
-            " background: rgba(0, 0, 0, 160);"
+            " background: rgba(0, 0, 0, 100);"
             " font-size: 14px;"
             " font-weight: bold;"
             "}"
@@ -203,16 +209,16 @@ class OcrPopup(QtWidgets.QWidget):
             "/* ── custom vertical scrollbar ── */"
             "QScrollBar:vertical {"
             " background: transparent;"
-            " width: 6px;"
-            " margin: 0px;"
+            " width: 4px;"
+            " margin: 4px 0px 4px 0px;"
             "}"
             "QScrollBar::handle:vertical {"
             " background: #444444;"
             " min-height: 20px;"
-            " border-radius: 3px;"
+            " border-radius: 2px;"
             "}"
             "QScrollBar::handle:vertical:hover {"
-            " background: #555555;"
+            " background: #5fc98a;"
             "}"
             "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {"
             " height: 0px;"
@@ -569,8 +575,7 @@ class OcrPopup(QtWidgets.QWidget):
         return icon
 
     @staticmethod
-
-    def _make_pin_icon(self, checked=False):
+    def _make_pin_icon(checked=False):
         def draw_pin(color_str):
             pixmap = QtGui.QPixmap(24, 24)
             pixmap.fill(QtCore.Qt.GlobalColor.transparent)
@@ -721,7 +726,7 @@ class OcrPopup(QtWidgets.QWidget):
     # ── window resize / drag ─────────────────────────────────────────
     def _get_edge(self, pos):
         edge = QtCore.Qt.Edge(0)
-        hit = 14
+        hit = RESIZE_HIT
         w, h = self.width(), self.height()
         if pos.x() <= hit:
             edge |= QtCore.Qt.Edge.LeftEdge
@@ -733,7 +738,7 @@ class OcrPopup(QtWidgets.QWidget):
             edge |= QtCore.Qt.Edge.BottomEdge
         return edge
 
-    def _update_cursor(self, edge):
+    def _update_cursor(self, edge, target=None):
         if edge in (
             QtCore.Qt.Edge.LeftEdge | QtCore.Qt.Edge.TopEdge,
             QtCore.Qt.Edge.RightEdge | QtCore.Qt.Edge.BottomEdge,
@@ -749,20 +754,42 @@ class OcrPopup(QtWidgets.QWidget):
         elif edge & (QtCore.Qt.Edge.TopEdge | QtCore.Qt.Edge.BottomEdge):
             cursor = QtCore.Qt.CursorShape.SizeVerCursor
         else:
-            cursor = None  # let child widgets decide
-        self.setCursor(cursor or QtCore.Qt.CursorShape.ArrowCursor)
-        # Also set on text_edit viewport so it shows through the child widget
-        vp = self.text_edit.viewport()
-        if vp:
-            vp.setCursor(cursor if cursor else QtCore.Qt.CursorShape.IBeamCursor)
+            cursor = None
+
+        res_cursor = cursor or QtCore.Qt.CursorShape.ArrowCursor
+        self.setCursor(res_cursor)
+        
+        if target:
+            if cursor:
+                target.setCursor(cursor)
+            else:
+                # Restore default: IBeam for text viewport, Arrow for others
+                if target == self.text_edit.viewport():
+                    target.setCursor(QtCore.Qt.CursorShape.IBeamCursor)
+                else:
+                    target.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
 
     def eventFilter(self, obj, event):
-        """Intercept HoverMove on text_edit viewport for edge cursor detection."""
-        if event.type() == QtCore.QEvent.Type.HoverMove:
-            # Map viewport-local coords to window coords
-            global_pos = obj.mapToGlobal(event.position().toPoint())
+        """Intercept HoverMove and MousePress on child widgets for edge resizing."""
+        if event.type() in (QtCore.QEvent.Type.HoverMove, QtCore.QEvent.Type.MouseButtonPress):
+            # Map child coords to window coords
+            if hasattr(event, "position"):
+                pos = event.position()
+            else:
+                # Fallback for older event types if any
+                pos = event.pos() if hasattr(event, "pos") else QtCore.QPointF(0, 0)
+            
+            global_pos = obj.mapToGlobal(pos.toPoint() if hasattr(pos, "toPoint") else pos)
             local_pos = self.mapFromGlobal(global_pos)
-            self._update_cursor(self._get_edge(local_pos))
+            edge = self._get_edge(local_pos)
+            
+            if event.type() == QtCore.QEvent.Type.HoverMove:
+                self._update_cursor(edge, obj)
+            elif event.type() == QtCore.QEvent.Type.MouseButtonPress:
+                if edge and event.button() == QtCore.Qt.MouseButton.LeftButton:
+                    if self.windowHandle():
+                        self.windowHandle().startSystemResize(edge)
+                        return True # Eat the event so child doesn't start selection
         return super().eventFilter(obj, event)
 
     def enterEvent(self, event):
@@ -776,7 +803,7 @@ class OcrPopup(QtWidgets.QWidget):
     def event(self, event):
         if event.type() == QtCore.QEvent.Type.HoverMove:
             pos = event.position().toPoint()
-            self._update_cursor(self._get_edge(pos))
+            self._update_cursor(self._get_edge(pos), self)
         return super().event(event)
 
     def mousePressEvent(self, event):
@@ -803,10 +830,14 @@ class OcrPopup(QtWidgets.QWidget):
         self._drag_pos = None
         event.accept()
 
-    def set_anchor_pos(self, x, y):
-        """Set preferred screen position for the next show (used for smooth
-        thumbnail-to-popup transition). Cleared after use."""
-        self._anchor_pos = (x, y)
+    def set_anchor_pos(self, x, y, width=None, height=None):
+        """Set preferred screen position for the next show.
+        If width/height are provided, a morph animation will be triggered."""
+        if width and height:
+            self._anchor_geom = QtCore.QRect(int(x - width/2), int(y - height/2), width, height)
+        else:
+            self._anchor_pos = (x, y)
+            self._anchor_geom = None
 
     def _place_on_screen(self):
         """Position the popup, preferring the anchor point from a thumbnail click."""
@@ -816,7 +847,15 @@ class OcrPopup(QtWidgets.QWidget):
         area = screen.availableGeometry()
         margin = 20
 
-        if self._anchor_pos is not None:
+        if self._anchor_geom is not None:
+            # Use morph logic: we need the target size first
+            target_w, target_h = self.width(), self.height()
+            
+            # Align centre of target with centre of anchor
+            ax, ay = self._anchor_geom.center().x(), self._anchor_geom.center().y()
+            x = int(ax - target_w / 2)
+            y = int(ay - target_h / 2)
+        elif self._anchor_pos is not None:
             ax, ay = self._anchor_pos
             self._anchor_pos = None
             # Place popup so its centre aligns with the anchor (the thumbnail centre)
@@ -860,14 +899,42 @@ class OcrPopup(QtWidgets.QWidget):
         self._update_button_positions()
 
     def showEvent(self, event):
-        # Simple fade-in — keep a reference so the animation isn't GC'd mid-flight
+        # Fade-in and optional Morph from thumbnail
         self.setWindowOpacity(0.0)
-        self._fade_in = QtCore.QPropertyAnimation(self, b"windowOpacity")
-        self._fade_in.setDuration(150)
-        self._fade_in.setStartValue(0.0)
-        self._fade_in.setEndValue(1.0)
-        self._fade_in.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
-        self._fade_in.start()
+        
+        target_geom = self.geometry()
+        
+        if hasattr(self, "_anchor_geom") and self._anchor_geom:
+            start_geom = self._anchor_geom
+            self._anchor_geom = None
+            
+            # Combine Opacity and Geometry into a ParallelAnimationGroup
+            self._show_anim = QtCore.QParallelAnimationGroup(self)
+            
+            # 1. Opacity
+            fade = QtCore.QPropertyAnimation(self, b"windowOpacity")
+            fade.setDuration(250)
+            fade.setStartValue(0.0)
+            fade.setEndValue(1.0)
+            fade.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
+            
+            # 2. Geometry (Morph)
+            morph = QtCore.QPropertyAnimation(self, b"geometry")
+            morph.setDuration(300)
+            morph.setStartValue(start_geom)
+            morph.setEndValue(target_geom)
+            morph.setEasingCurve(QtCore.QEasingCurve.Type.OutBack) # subtle bounce
+            
+            self._show_anim.addAnimation(fade)
+            self._show_anim.addAnimation(morph)
+            self._show_anim.start()
+        else:
+            self._fade_in = QtCore.QPropertyAnimation(self, b"windowOpacity")
+            self._fade_in.setDuration(150)
+            self._fade_in.setStartValue(0.0)
+            self._fade_in.setEndValue(1.0)
+            self._fade_in.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
+            self._fade_in.start()
 
         super().showEvent(event)
         if self.windowHandle() and not self._app_icon.isNull():
