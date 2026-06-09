@@ -563,8 +563,23 @@ def _get_engine() -> "PPOCR":
                 # PRODUCTION OPTIMIZED PROFILE (Empirically validated via Benchmark)
                 # This configuration provides the best speed-to-memory ratio for CPU inference.
                 #
-                # 1. Global.max_side_len (1536): Limits Detector feature map size. Prevents
-                #    1.7GB+ spikes on 4K/high-DPI screens without impacting OCR accuracy.
+                # 1. Global.max_side_len (1536): Limits Detector input resolution.
+                #    Benchmarked on full-screen screenshot (2560×1600 px, 4.1 Mpx,
+                #    1707×1067 logical @ 1.5 DPR) via python -m hushsnap.benchmark
+                #    -n 3 -p (warm-iteration data, UI overhead suppressed):
+                #
+                #       max_side_len | WS peak  | Pvt peak | Latency  | AUC (norm)
+                #       -------------|---------|----------|---------|-----------
+                #       1536 (prod)  | 508 MB  | 1186 MB  | 2018 ms  | 70.5 MB
+                #       2000 (Rapi-  | 705 MB  | 1372 MB  | 2131 ms  | 89.8 MB
+                #          dOCR def) |  (+39%) |  (+16%)  |  (+6%)   |  (+27%)
+                #       3072 (no     | 977 MB  | 1643 MB  | 3913 ms  | 150.6 MB
+                #          limit)    |  (+92%) |  (+39%)  |  (+94%)  |  (+114%)
+                #
+                #    1536 vs RapidOCR default 2000: saves ~197 MB WS (-28%),
+                #    ~113 ms latency (-5%). Text output differed by ≤10 chars
+                #    (~0.16% of 6300+ total), limited to toolbar micro-text;
+                #    body text identical across all three settings.
                 # 2. Rec.rec_batch_num (1): Sequential recognition. Counter-intuitively faster
                 #    on CPU than batching (e.g. 4 or 10) by reducing ONNX overhead and
                 #    improving cache locality. Reduces peak memory by ~100MB.
