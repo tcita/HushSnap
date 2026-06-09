@@ -118,6 +118,13 @@ UI_TEXT = {
         "hotkey_error_title": "HushSnap Hotkey Error",
         "hotkey_recover_failed": "New hotkey is unavailable, and old hotkey recovery failed.",
         "hotkey_kept_old": "{new_hotkey} is in use. Kept {old_hotkey}.",
+
+        "crash_title": "HushSnap - Critical Error",
+        "crash_body": "An unexpected error occurred and the application must close.\n\n"
+                      "Log file location:\n{log_path}",
+        "crash_save_log": "Save to Desktop",
+        "crash_copy_log": "Copy Log",
+        "crash_close": "Close",
     },
     UI_LANG_ZH: {
         "error": "错误",
@@ -223,6 +230,12 @@ UI_TEXT = {
         "hotkey_error_title": "HushSnap 热键错误",
         "hotkey_recover_failed": "新热键不可用，且旧热键恢复失败。",
         "hotkey_kept_old": "{new_hotkey} 被占用，已保持 {old_hotkey}",
+
+        "crash_title": "HushSnap - 严重错误",
+        "crash_body": "程序发生意外错误，即将关闭。\n\n日志文件位置：\n{log_path}",
+        "crash_save_log": "保存日志到桌面",
+        "crash_copy_log": "复制日志",
+        "crash_close": "关闭",
     },
     UI_LANG_ZH_TW: {
         "error": "錯誤",
@@ -328,6 +341,12 @@ UI_TEXT = {
         "hotkey_error_title": "HushSnap 熱鍵錯誤",
         "hotkey_recover_failed": "新熱鍵無法使用，且舊熱鍵復原失敗。",
         "hotkey_kept_old": "{new_hotkey} 被佔用，已保持 {old_hotkey}",
+
+        "crash_title": "HushSnap - 嚴重錯誤",
+        "crash_body": "程式發生意外錯誤，即將關閉。\n\n記錄檔位置：\n{log_path}",
+        "crash_save_log": "儲存記錄檔至桌面",
+        "crash_copy_log": "複製記錄檔",
+        "crash_close": "關閉",
     },
 }
 

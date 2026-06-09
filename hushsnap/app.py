@@ -1,10 +1,12 @@
 import gc
 import os
+import shutil
 import sys
 import logging
 import time
 import tempfile
 import subprocess
+from pathlib import Path
 
 from PyQt6 import QtWidgets, QtCore
 
@@ -31,28 +33,93 @@ from .constants import CAPTURE_DEBUG_LOG_FILENAME
 from .logging_config import setup_logging
 from .startup_profiler import StartupProfiler
 
+# Module-level state set during main() so exception_hook can access them.
+_log_file_path = None
+_translate = None
+
 
 def exception_hook(exctype, value, tb):
     """
     Global unhandled exception handler.
-    Logs the error with stack trace and shows a message box to the user.
+    Logs the error with stack trace and shows a message box to the user
+    with options to save or copy the log file.
     """
     logger = logging.getLogger("HushSnap")
     # 1. Log the full traceback to the log file.
     logger.critical("Unhandled exception occurred:", exc_info=(exctype, value, tb))
-    
+
     # 2. If a QApplication instance exists, show a graphical error dialog.
     if QtWidgets.QApplication.instance():
-        # Use a simple dialog as a last resort.
-        QtWidgets.QMessageBox.critical(
-            None,
-            "HushSnap - Critical Error",
-            "An unexpected error occurred and the application must close.\n\n"
-            "The full error details have been saved to the log file.",
+        t = _translate or (lambda key, **kw: ui_text("en", key, **kw))
+        log_path_str = str(_log_file_path) if _log_file_path else ""
+
+        msg_box = QtWidgets.QMessageBox()
+        msg_box.setIcon(QtWidgets.QMessageBox.Icon.Critical)
+        msg_box.setWindowTitle(t("crash_title"))
+        msg_box.setText(t("crash_body", log_path=log_path_str))
+
+        save_btn = msg_box.addButton(
+            t("crash_save_log"), QtWidgets.QMessageBox.ButtonRole.AcceptRole
         )
-    
+        copy_btn = msg_box.addButton(
+            t("crash_copy_log"), QtWidgets.QMessageBox.ButtonRole.ActionRole
+        )
+        close_btn = msg_box.addButton(
+            t("crash_close"), QtWidgets.QMessageBox.ButtonRole.RejectRole
+        )
+        msg_box.setDefaultButton(save_btn)
+
+        msg_box.exec()
+
+        clicked = msg_box.clickedButton()
+        if clicked == save_btn and _log_file_path:
+            try:
+                _save_log_to_desktop(_log_file_path)
+            except Exception:
+                logger.exception("Failed to save log to desktop")
+        elif clicked == copy_btn and _log_file_path:
+            try:
+                _copy_log_tail(_log_file_path)
+            except Exception:
+                logger.exception("Failed to copy log to clipboard")
+
     # 3. Fallback to default Python exception behavior.
     sys.__excepthook__(exctype, value, tb)
+
+
+def _save_log_to_desktop(log_path):
+    """Copy the full log file to the user's desktop."""
+    desktop = Path.home() / "Desktop"
+    dest = desktop / "HushSnap_crash.log"
+    shutil.copy2(log_path, dest)
+
+
+# String that marks the start of a new HushSnap session in the log.
+# Must match the first log message emitted in logging_config.setup_logging().
+_SESSION_START_MARKER = "Logging initialized. Level:"
+
+def _copy_log_tail(log_path):
+    """Copy the current-session portion of the log to the system clipboard.
+
+    Finds the last occurrence of the startup marker and copies everything
+    from there to end-of-file — that way the user only shares this session's
+    log, not previous runs that may still be in the rotated file.
+    """
+    app = QtWidgets.QApplication.instance()
+    if not app:
+        return
+    clipboard = app.clipboard()
+    if not clipboard:
+        return
+    try:
+        text = log_path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        text = ""
+    # Slice from the LAST session start to end-of-file.
+    idx = text.rfind(_SESSION_START_MARKER)
+    if idx != -1:
+        text = text[idx:]
+    clipboard.setText(text)
 
 
 def main(boot_start_time=None):
@@ -80,8 +147,10 @@ def main(boot_start_time=None):
     save_ocr_debug_image = force_debug
 
     # 2. Initialize logging
+    global _log_file_path
+    _log_file_path = user_data_dir / CAPTURE_DEBUG_LOG_FILENAME
     setup_logging(
-        user_data_dir / CAPTURE_DEBUG_LOG_FILENAME,
+        _log_file_path,
         force_level=logging.DEBUG if force_debug else None
     )
     logger = logging.getLogger(__name__)
@@ -145,6 +214,9 @@ def main(boot_start_time=None):
 
         def translate(key, **kwargs):
             return ui_text(ui_language, key, **kwargs)
+
+        global _translate
+        _translate = translate
 
     ocr_controller = OcrController(
             app=app,
