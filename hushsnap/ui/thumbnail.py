@@ -1,8 +1,5 @@
 import os
-import time
-import tempfile
 import logging
-from typing import Optional
 from pathlib import Path
 
 from PyQt6 import QtCore, QtGui, QtWidgets
@@ -280,23 +277,23 @@ class ThumbnailWindow(QtWidgets.QWidget):
         scaled_w = int(self.card_width * THUMBNAIL_DRAG_SCALE)
         scaled_h = int(self.card_height * THUMBNAIL_DRAG_SCALE)
 
-        # Cache directory
+        # Single rotating cache file — each drag overwrites the last.
+        # No cleanup needed: one 100 KB PNG is harmless, and the file
+        # is reused on the next drag so it never grows beyond that.
         from ..config import get_user_data_dir, resolve_physical_path
         raw_cache_dir = os.path.join(get_user_data_dir(), "drag_cache")
         cache_path_obj = resolve_physical_path(Path(raw_cache_dir))
         cache_dir = str(cache_path_obj)
         cache_path_obj.mkdir(parents=True, exist_ok=True)
 
-        timestamp = time.strftime("%H%M%S")
-        temp_path = os.path.join(cache_dir, f"hushsnap_{timestamp}.png")
-        
+        temp_path = os.path.join(cache_dir, "drag.png")
+
         try:
             with open(temp_path, "wb") as f:
                 self.pil_image.save(f, "PNG")
                 f.flush()
                 os.fsync(f.fileno())
             logger.debug(f"Temporary file saved and fsync'd: {temp_path}")
-            thumbnail_manager.register_drag_file(temp_path)
         except Exception as e:
             logger.error(f"Failed to save temp file for drag: {e}")
             self._is_dragging = False
@@ -410,37 +407,6 @@ class ThumbnailManager(QtCore.QObject):
         super().__init__()
         self.show_signal.connect(self._do_show)
         self._windows = []
-        self._drag_files = []
-        QtCore.QTimer.singleShot(1000, self._cleanup_old_cache)
-
-    def _get_cache_dir(self):
-        from ..config import get_user_data_dir, resolve_physical_path
-        raw_dir = os.path.join(get_user_data_dir(), "drag_cache")
-        path_obj = resolve_physical_path(Path(raw_dir))
-        path_obj.mkdir(parents=True, exist_ok=True)
-        return str(path_obj)
-
-    def _cleanup_old_cache(self):
-        try:
-            cache_dir = self._get_cache_dir()
-            for f in os.listdir(cache_dir):
-                try:
-                    os.remove(os.path.join(cache_dir, f))
-                except Exception:
-                    pass
-            self._drag_files = []
-        except Exception:
-            pass
-
-    def register_drag_file(self, path):
-        self._drag_files.append(path)
-        if len(self._drag_files) > 100:
-            old_file = self._drag_files.pop(0)
-            try:
-                if os.path.exists(old_file):
-                    os.remove(old_file)
-            except Exception:
-                pass
 
     def _do_show(self, pil_image: Image.Image):
         for w in self._windows:
