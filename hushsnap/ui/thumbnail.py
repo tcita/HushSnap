@@ -299,12 +299,17 @@ class ThumbnailWindow(QtWidgets.QWidget):
             self._is_dragging = False
             return
 
-        # Notify Shell
+        # Tell Explorer the temp file exists before QDrag references it.
         if os.name == 'nt':
             try:
                 import ctypes
                 shell32 = ctypes.windll.shell32
-                shell32.SHChangeNotify(0x00000002, 0x00000005, temp_path, None)
+                SHCNE_CREATE = 0x00000002
+                SHCNF_PATH = 0x00000001
+                SHCNF_FLUSHNOWAIT = 0x00000004
+                shell32.SHChangeNotify(SHCNE_CREATE,
+                                       SHCNF_PATH | SHCNF_FLUSHNOWAIT,
+                                       temp_path, None)
             except Exception:
                 pass
 
@@ -326,8 +331,17 @@ class ThumbnailWindow(QtWidgets.QWidget):
         logger.debug(f"Drag finished. Result: {result}")
         
         if result != QtCore.Qt.DropAction.IgnoreAction and os.name == 'nt':
+            # The shell handled the copy/move, but some Explorer views
+            # (especially cloud-backed folders) may not refresh on their
+            # own.  SHCNE_UPDATEDIR asks the shell to re-enumerate folder
+            # contents so the file appears immediately without a manual F5.
             try:
-                shell32.SHChangeNotify(0x08000000, 0x0000, None, None)
+                SHCNE_UPDATEDIR = 0x00001000
+                SHCNF_IDLIST = 0x00000000
+                SHCNF_FLUSH = 0x00001000
+                shell32.SHChangeNotify(SHCNE_UPDATEDIR,
+                                       SHCNF_IDLIST | SHCNF_FLUSH,
+                                       None, None)
             except Exception:
                 pass
 
