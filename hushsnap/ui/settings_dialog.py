@@ -888,10 +888,20 @@ class SettingsDialogController(QtCore.QObject):
         except RuntimeError:
             self._screenshot_pills_container = None
 
-    def show(self):
+    def show(self, section=None):
+        """Open the settings dialog, optionally jumping to *section*.
+
+        *section* may be ``"general"``, ``"capture"``, or ``"ocr"``.
+        Defaults to the General page.
+        """
+        _SECTION_INDEX = {"general": 0, "capture": 1, "ocr": 2}
+        target_row = _SECTION_INDEX.get(section, 0)
+
         if self._dialog is not None and self._dialog.isVisible():
             self._dialog.raise_()
             self._dialog.activateWindow()
+            if target_row != 0 and hasattr(self, "_sidebar"):
+                self._sidebar.setCurrentRow(target_row)
             return
 
         dialog = QtWidgets.QDialog()
@@ -909,6 +919,7 @@ class SettingsDialogController(QtCore.QObject):
 
         def clear_settings_dialog(_obj=None):
             self._dialog = None
+            self._sidebar = None
             self._screenshot_pills_container = None
             self._screenshot_pills = None
 
@@ -920,6 +931,7 @@ class SettingsDialogController(QtCore.QObject):
 
         # --- Sidebar ---
         sidebar = CategoryList()
+        self._sidebar = sidebar
         main_layout.addWidget(sidebar)
 
         # --- Content Area ---
@@ -1110,7 +1122,7 @@ class SettingsDialogController(QtCore.QObject):
         sidebar.addItem(self.translate("settings_section_capture"))
         sidebar.addItem(self.translate("settings_section_ocr"))
         sidebar.currentRowChanged.connect(content_stack.setCurrentIndex)
-        sidebar.setCurrentRow(0)
+        sidebar.setCurrentRow(target_row)
 
         # --- Footer (Version) ---
         footer_layout = QtWidgets.QVBoxLayout()

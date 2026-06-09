@@ -110,6 +110,10 @@ class OcrController:
         self._toast_bridge = None  # release the bridge
         self._trim_timer.start(5000)  # schedule engine memory trim, same as normal OCR
         text = response.text.strip() if response.text else ""
+        # The recognition-only fallback path may return a lone dash
+        # or other placeholder when no text was actually detected.
+        if len(text) <= 1 and not text.isalnum():
+            text = ""
         if text:
             clipboard = self.app.clipboard()
             if clipboard:
@@ -119,9 +123,10 @@ class OcrController:
                 return
         except RuntimeError:
             return
-        toast_window.show_toast(
-            self.translate("ocr_copied") if text else self.translate("ocr_empty_body")
-        )
+        if text:
+            toast_window.show_toast(self.translate("pin_ocr_copied"))
+        else:
+            toast_window.show_toast(self.translate("pin_ocr_empty"))
 
     def enable_ocr_next_capture(self):
         """Enable OCR for the next capture (used by OCR hotkey)."""
@@ -236,12 +241,9 @@ class OcrController:
 
         logging.info("[start_request] engine=%s. %s", OCR_ENGINE_PPOCR, fmt_memory())
 
-        # Show "Recognizing…" immediately so the user knows a new OCR pass
-        # is in progress — replaces any stale text from a previous result.
-        self.popup.show_text(
-            self.translate("ocr_recognizing"),
-            pixmap=pixmap,
-        )
+        # Show initial loading state (thumbnail-sized image with progress bar)
+        # to provide a smooth transition instead of jumping to a text bubble.
+        self.popup.show_loading(pixmap=pixmap)
 
         # Convert QPixmap to QImage on the main GUI thread to prevent thread-safety issues
         from PyQt6 import QtGui

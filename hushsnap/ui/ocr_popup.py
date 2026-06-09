@@ -22,7 +22,6 @@ class OcrPopup(QtWidgets.QWidget):
         self.translate = translate
         self._drag_pos = None
         self._last_pixmap = None
-        self._is_refreshing = False
         self._pinned = False
         self._plain_text = ""
         self._anchor_pos = None  # (x, y) screen coords for thumbnail transition
@@ -95,6 +94,30 @@ class OcrPopup(QtWidgets.QWidget):
         self.bubble_layout.setContentsMargins(0, 0, 0, 0)
         self.bubble_layout.setSpacing(0)
 
+        # ── loading state ──
+        self.loading_container = QtWidgets.QWidget()
+        self.loading_layout = QtWidgets.QVBoxLayout(self.loading_container)
+        self.loading_layout.setContentsMargins(0, 0, 0, 0)
+        self.loading_layout.setSpacing(0)
+
+        self.loading_bar = QtWidgets.QProgressBar()
+        self.loading_bar.setFixedHeight(2)
+        self.loading_bar.setTextVisible(False)
+        self.loading_bar.setRange(0, 0)
+        self.loading_bar.setStyleSheet(
+            "QProgressBar { background: transparent; border: none; }"
+            "QProgressBar::chunk { background-color: #5fc98a; }"
+        )
+        
+        self.loading_img_label = QtWidgets.QLabel()
+        self.loading_img_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.loading_img_label.setStyleSheet("background: transparent; border-radius: 12px;")
+        
+        self.loading_layout.addWidget(self.loading_bar)
+        self.loading_layout.addWidget(self.loading_img_label, 1)
+        self.loading_container.hide()
+        self.bubble_layout.addWidget(self.loading_container, 1)
+
         # Single QPlainTextEdit for both read and edit modes.
         # This guarantees perfect whitespace preservation and native scrolling.
         self.text_edit = QtWidgets.QPlainTextEdit()
@@ -139,6 +162,7 @@ class OcrPopup(QtWidgets.QWidget):
         self._morph_anim = None
         self._anchor_pos = None
         self._anchor_geom = None
+        self._is_loading = False
 
     # ── stylesheet ───────────────────────────────────────────────────
     def _apply_stylesheet(self):
@@ -251,10 +275,84 @@ class OcrPopup(QtWidgets.QWidget):
         self.close_btn.setToolTip(self.translate("close_btn"))
 
     # ── show / hide text ─────────────────────────────────────────────
+    def show_loading(self, pixmap=None):
+        """Show the popup in a loading state at the thumbnail's position."""
+        self._is_loading = True
+        self._last_pixmap = pixmap
+
+        self.text_edit.hide()
+        self.copy_btn.hide()
+        self.loading_container.show()
+
+        # ── determine the actual content size ──────────────────────────
+        # Keep the image preview moderate so the loading card stays
+        # close in width to the eventual text card — avoids a
+        # jarring "expand then shrink" when OCR finishes.
+        if pixmap:
+            img_w, img_h = pixmap.width(), pixmap.height()
+            scale = min(480.0 / img_w, 360.0 / img_h, 1.0)
+            content_w = int(img_w * scale)
+            content_h = int(img_h * scale)
+            self.loading_img_label.setPixmap(pixmap.scaled(
+                content_w, content_h,
+                QtCore.Qt.AspectRatioMode.KeepAspectRatio,
+                QtCore.Qt.TransformationMode.SmoothTransformation,
+            ))
+        else:
+            content_w, content_h = 280, 180  # fallback
+
+        if self._anchor_geom:
+            m = 18  # outer margin for shadow / breathing room
+            bar_h = 2  # progress bar
+
+            # Loading card width: bounded to a narrow band so the
+            # transition to the text card is a 1D height change.
+            card_w = max(content_w, 280)
+            card_w = min(card_w, 480)
+            card_h = min(content_h + bar_h, 400)
+
+            # Ensure it fits on screen
+            screen = (
+                QtWidgets.QApplication.screenAt(QtGui.QCursor.pos())
+                or QtWidgets.QApplication.primaryScreen()
+            )
+            if screen:
+                area = screen.availableGeometry()
+                card_w = min(card_w, int(area.width() * 0.55))
+                card_h = min(card_h, int(area.height() * 0.55))
+
+            target_w = card_w + 2 * m
+            target_h = card_h + 2 * m
+
+            # Centre on the thumbnail anchor …
+            cx = self._anchor_geom.center().x()
+            cy = self._anchor_geom.center().y()
+            x = int(cx - target_w / 2)
+            y = int(cy - target_h / 2)
+
+            # … then clamp so the *full* target sits inside the screen
+            if screen:
+                x = max(area.left(), min(x, area.right() - target_w))
+                y = max(area.top(), min(y, area.bottom() - target_h))
+
+            self.setGeometry(x, y, target_w, target_h)
+        else:
+            self.resize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
+            self._place_on_screen()
+
+        self._refresh_labels()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
     def show_text(self, text, pixmap=None, lines=None):
-        self._is_refreshing = True
+        self._is_loading = False
         if pixmap is not None:
             self._last_pixmap = pixmap
+
+        self.loading_container.hide()
+        self.text_edit.show()
+        self.copy_btn.show()
 
         self._refresh_labels()
         self.apply_font_size()
@@ -262,18 +360,16 @@ class OcrPopup(QtWidgets.QWidget):
         self._plain_text = text
         self.text_edit.setPlainText(text)
 
-        self._is_refreshing = False
-
-        # First adjust layout size synchronously (fit width to content)
+        was_visible = self.isVisible()
         self._adjust_window_size(fit_width=True)
-
-        # Ensure the bubble is always shown from the top
         self.text_edit.verticalScrollBar().setValue(0)
 
-        # Align to the bottom-right corner of the active screen
-        self._place_on_screen()
-        self._update_button_positions()
+        # Only position on first appearance; _adjust_window_size already
+        # clamps to the screen for the target size.
+        if not was_visible:
+            self._place_on_screen()
 
+        self._update_button_positions()
         self.show()
         self.raise_()
         self.activateWindow()
@@ -302,6 +398,10 @@ class OcrPopup(QtWidgets.QWidget):
         (*fit_width*=True); subsequent resize events honour the user's
         chosen width.
         """
+        if self._is_loading:
+            # During loading, we don't adjust size based on text
+            return
+
         font = self.text_edit.font()
         fm = QtGui.QFontMetrics(font)
         text = self.text_edit.toPlainText() or " "
@@ -321,6 +421,9 @@ class OcrPopup(QtWidgets.QWidget):
             #                 viewport margins + scrollbar + safety buffer
             chrome_w = 100
             desired_w = int(content_w + chrome_w)
+            
+            # During the transition from loading, we might want to be smaller than WINDOW_MIN_WIDTH
+            # if the text is very sparse, but usually text popups should have a baseline.
             desired_w = max(desired_w, WINDOW_MIN_WIDTH)
 
             screen = QtWidgets.QApplication.screenAt(self.pos())
@@ -389,12 +492,25 @@ class OcrPopup(QtWidgets.QWidget):
         self.text_block.setMaximumHeight(16777215)
 
         target_geom = self.geometry()
+        old_right = target_geom.right()
+        old_bottom = target_geom.bottom()
+
         target_geom.setWidth(new_w)
         target_geom.setHeight(int(total_h))
 
-        # Re-clamp position — the window may now overflow a screen edge
         if screen:
             area = screen.availableGeometry()
+
+            # Anchor edges that already sit close to a screen border so
+            # the popup feels "attached" — it grows inward instead of
+            # pushing off-screen every time the text changes.
+            EDGE_THRESHOLD = 80
+            if old_right >= area.right() - EDGE_THRESHOLD:
+                target_geom.moveRight(old_right)
+            if old_bottom >= area.bottom() - EDGE_THRESHOLD:
+                target_geom.moveBottom(old_bottom)
+
+            # Safety clamp — keeps the window on screen
             tx = max(area.left(), min(target_geom.x(), area.right() - target_geom.width()))
             ty = max(area.top(), min(target_geom.y(), area.bottom() - target_geom.height()))
             target_geom.moveTo(tx, ty)
@@ -863,6 +979,9 @@ class OcrPopup(QtWidgets.QWidget):
             # Place popup so its centre aligns with the anchor (the thumbnail centre)
             x = int(ax - self.width() / 2)
             y = int(ay - self.height() / 2)
+        elif self.isVisible():
+            # If already visible, just preserve current position but ensure it's on screen
+            x, y = self.x(), self.y()
         else:
             # Default: bottom-right corner
             x = area.right() - self.width() - margin
@@ -925,7 +1044,7 @@ class OcrPopup(QtWidgets.QWidget):
             morph.setDuration(300)
             morph.setStartValue(start_geom)
             morph.setEndValue(target_geom)
-            morph.setEasingCurve(QtCore.QEasingCurve.Type.OutBack) # subtle bounce
+            morph.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)  # smooth landing, no bounce
             
             self._show_anim.addAnimation(fade)
             self._show_anim.addAnimation(morph)

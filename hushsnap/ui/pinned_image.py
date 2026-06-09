@@ -39,17 +39,34 @@ class PinnedImageWindow(QtWidgets.QWidget):
         # Initial size (Convert physical pixels to logical pixels)
         img_w = self.pixmap.width() / dpr
         img_h = self.pixmap.height() / dpr
-        
+
         screen = QtWidgets.QApplication.primaryScreen().availableGeometry()
-        
+
+        # Enforce a minimum content size so tiny screenshots still
+        # produce usable pinned windows.
+        MIN_DIM = 80
+        if img_w < MIN_DIM or img_h < MIN_DIM:
+            scale = max(MIN_DIM / img_w, MIN_DIM / img_h)
+            img_w *= scale
+            img_h *= scale
+
         # Limit initial size to 80% of screen
         max_w = screen.width() * 0.8
         max_h = screen.height() * 0.8
-        
+
         if img_w > max_w or img_h > max_h:
             ratio = min(max_w / img_w, max_h / img_h)
             img_w *= ratio
             img_h *= ratio
+
+        # Dynamic shadow: narrower for small content so the shadow
+        # doesn't visually dominate the image.
+        content_min = min(img_w, img_h)
+        if content_min < 80:
+            self.shadow_width = 3
+        elif content_min < 160:
+            self.shadow_width = 5
+        # else keep the default 8 (set above)
 
         # The window size includes shadow padding
         self.resize(int(img_w + 2 * self.shadow_width), int(img_h + 2 * self.shadow_width))
@@ -116,7 +133,7 @@ class PinnedImageWindow(QtWidgets.QWidget):
             morph.setDuration(300)
             morph.setStartValue(start_geom)
             morph.setEndValue(target_geom)
-            morph.setEasingCurve(QtCore.QEasingCurve.Type.OutBack)
+            morph.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)  # smooth landing, no bounce
             
             self._show_anim.addAnimation(fade)
             self._show_anim.addAnimation(morph)
@@ -338,36 +355,55 @@ class PinnedImageWindow(QtWidgets.QWidget):
         )
 
     def show_toast(self, text, duration_ms=1500):
-        """Show a lightweight centred toast overlay that fades out after *duration_ms*."""
-        toast = QtWidgets.QLabel(text, self)
+        """Show a lightweight centred toast that fades out after *duration_ms*.
+
+        The toast is an independent top-level window so it is never clipped
+        by a small pinned-image window.
+        """
+        toast = QtWidgets.QLabel(text, None)
         toast.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        toast.setWindowFlags(
+            QtCore.Qt.WindowType.FramelessWindowHint
+            | QtCore.Qt.WindowType.WindowStaysOnTopHint
+            | QtCore.Qt.WindowType.Tool
+        )
+        toast.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
+        toast.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
         toast.setStyleSheet(
             "QLabel {"
-            " background-color: rgba(0, 0, 0, 200);"
-            " color: #5fc98a;"
-            " border-radius: 8px;"
-            " padding: 10px 20px;"
-            " font-size: 14px;"
+            " background-color: rgba(36, 36, 36, 0.94);"
+            " color: #f0f0f0;"
+            " border-radius: 10px;"
+            " padding: 9px 20px;"
+            " font-size: 13px;"
             " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
             "}"
         )
         toast.adjustSize()
-        cx = (self.width() - toast.width()) // 2
-        cy = (self.height() - toast.height()) // 2
-        toast.move(cx, cy)
+
+        # Position centred over the pinned image (global screen coordinates)
+        global_center = self.mapToGlobal(
+            QtCore.QPoint(self.width() // 2, self.height() // 2)
+        )
+        toast.move(
+            global_center.x() - toast.width() // 2,
+            global_center.y() - toast.height() // 2,
+        )
+
+        # Subtle drop shadow for depth
+        shadow = QtWidgets.QGraphicsDropShadowEffect(toast)
+        shadow.setBlurRadius(16)
+        shadow.setColor(QtGui.QColor(0, 0, 0, 90))
+        shadow.setOffset(0, 4)
+        toast.setGraphicsEffect(shadow)
+
         toast.show()
 
-        # Fade-out via manual timer — QPropertyAnimation on
-        # QGraphicsOpacityEffect.opacity is unreliable in PyQt6.
-        effect = QtWidgets.QGraphicsOpacityEffect(toast)
-        effect.setOpacity(1.0)
-        toast.setGraphicsEffect(effect)
-
+        # ── fade-out timer (uses windowOpacity — toast is a top-level window) ──
         fade_timer = QtCore.QTimer(toast)
         fade_step_ms = 30
         fade_total_ms = 400
         fade_steps = fade_total_ms // fade_step_ms
-        # Pre-calculate the opacity delta per step (ease-in quadratic)
         step_values = []
         for i in range(fade_steps + 1):
             t = i / fade_steps
@@ -381,7 +417,7 @@ class PinnedImageWindow(QtWidgets.QWidget):
                 fade_timer.stop()
                 toast.deleteLater()
                 return
-            effect.setOpacity(step_values[idx])
+            toast.setWindowOpacity(step_values[idx])
             step_idx[0] += 1
 
         fade_timer.timeout.connect(_fade_step)

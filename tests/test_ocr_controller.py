@@ -39,7 +39,6 @@ def _translate(key, **kwargs):
         "ocr_copied": "✓ Copied!",
         "ocr_char_count": "{count} chars",
         "ocr_editable_hint": "Text is editable",
-        "ocr_recognizing": "Recognizing…",
         "ocr_status_done": "Recognition complete",
         "ocr_status_paste_hint": "Ctrl+V to paste",
         "ocr_pin_btn": "Pin",
@@ -301,6 +300,21 @@ def test_ocr_request_cancels_pending_trim(monkeypatch, qapp, tmp_path, sample_pi
     controller.start_request(sample_pixmap)
 
     assert not controller._trim_timer.isActive()
+
+
+def test_start_request_shows_loading(monkeypatch, qapp, tmp_path, sample_pixmap):
+    """start_request should call show_loading on the popup."""
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+    
+    loading_pixmap = []
+    def _show_loading(pixmap=None):
+        loading_pixmap.append(pixmap)
+        
+    controller.popup.show_loading = _show_loading
+    controller.start_request(sample_pixmap)
+    
+    assert len(loading_pixmap) == 1
+    assert loading_pixmap[0] is sample_pixmap
 
 
 def test_warmup_finished_signal_triggers_trim(monkeypatch, qapp, tmp_path):

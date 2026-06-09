@@ -364,7 +364,7 @@ def main(boot_start_time=None):
 
         # Show conflict resolution dialog if any hotkey failed at startup.
         # This must happen after settings_controller is wired so "Open Settings" works.
-        hotkey_manager.resolve_startup_conflicts(lambda: settings_controller.show())
+        hotkey_manager.resolve_startup_conflicts(lambda: settings_controller.show(section="capture"))
 
     # Unregister hotkey and release system resources before app exit.
     app.aboutToQuit.connect(hotkey_manager.release_resources)
