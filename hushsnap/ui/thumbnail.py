@@ -342,24 +342,42 @@ class ThumbnailWindow(QtWidgets.QWidget):
         scaled_w = int(self.card_width * THUMBNAIL_DRAG_SCALE)
         scaled_h = int(self.card_height * THUMBNAIL_DRAG_SCALE)
 
-        # Single rotating cache file with a unique name per drag so that
-        # consecutive drops into the same folder don't collide.  Delete
-        # any previous cache entry to keep exactly one file on disk.
+        # Rotating cache: keep the last 5 files to prevent race conditions 
+        # where an ongoing slow upload might fail if we delete its source 
+        # file too aggressively.
         from ..config import get_user_data_dir, resolve_physical_path
-        raw_cache_dir = os.path.join(get_user_data_dir(), "drag_cache")
-        cache_path_obj = resolve_physical_path(Path(raw_cache_dir))
-        cache_dir = str(cache_path_obj)
-        cache_path_obj.mkdir(parents=True, exist_ok=True)
+        cache_dir_path = resolve_physical_path(get_user_data_dir() / "drag_cache")
+        cache_dir_path.mkdir(parents=True, exist_ok=True)
 
-        for old_name in os.listdir(cache_dir):
-            if old_name.startswith("drag_") and old_name.endswith(".png"):
-                try:
-                    os.remove(os.path.join(cache_dir, old_name))
-                except OSError:
-                    pass
+        # Use filename sorting: drag_YYYYMMDD_HHMMSS_mmm.png sorts perfectly alphabetically
+        try:
+            existing_files = sorted(
+                [f for f in cache_dir_path.glob("drag_*.png") if f.is_file()],
+                key=lambda x: x.name
+            )
+            
+            file_count = len(existing_files)
+            if file_count > 4:
+                # Keep the 4 most recent, delete everything else
+                to_delete = existing_files[:-4]
+                logger.debug(f"Cache rotation: found {file_count} files, deleting {len(to_delete)} oldest.")
+                for f in to_delete:
+                    try:
+                        f.unlink()
+                    except OSError as e:
+                        # On Windows, this usually means the file is still locked by a browser/explorer
+                        logger.debug(f"Rotation skip: could not delete {f.name} (likely locked): {e}")
+            else:
+                logger.debug(f"Cache rotation: {file_count} files present, no cleanup needed.")
+        except Exception as e:
+            logger.warning(f"Error during cache rotation: {e}")
 
         ts = time.strftime("%Y%m%d_%H%M%S")
-        temp_path = os.path.join(cache_dir, f"drag_{ts}.png")
+        ms = int(time.time() * 1000) % 1000
+        temp_path_obj = cache_dir_path / f"drag_{ts}_{ms:03d}.png"
+        temp_path = str(temp_path_obj)
+
+        logger.debug(f"Saving drag cache to: {temp_path}")
 
         try:
             with open(temp_path, "wb") as f:
@@ -400,7 +418,11 @@ class ThumbnailWindow(QtWidgets.QWidget):
         drag.setHotSpot(QtCore.QPoint(scaled_w // 2, scaled_h // 2))
 
         logger.debug("Executing drag.exec()...")
-        result = drag.exec(QtCore.Qt.DropAction.CopyAction | QtCore.Qt.DropAction.MoveAction)
+        # Force CopyAction only. This ensures the file stays in our drag_cache 
+        # so our 5-file rotation logic can safely manage its lifecycle. 
+        # Otherwise, Windows may 'Move' the file to the browser/folder, 
+        # deleting it from our cache immediately and bypassing our safety buffer.
+        result = drag.exec(QtCore.Qt.DropAction.CopyAction)
         logger.debug(f"Drag finished. Result: {result}")
         
         if result != QtCore.Qt.DropAction.IgnoreAction and os.name == 'nt':
