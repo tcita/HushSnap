@@ -24,7 +24,7 @@ APP_STATE_FILENAME = "hushsnap_state.toml"
 # Debug log filename
 CAPTURE_DEBUG_LOG_FILENAME = "hushsnap.log"
 # Tray icon filename
-APP_ICON_FILENAME = "ico.ico"
+APP_ICON_FILENAME = "hushsnap.ico"
 
 # --- 3. Logic thresholds and timing (ms/px) ---
 # Hotkey re-registration debounce delay

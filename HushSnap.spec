@@ -7,7 +7,7 @@ project_root = Path(spec_file).resolve().parent if spec_file else Path.cwd()
 
 from PyInstaller.utils.hooks import collect_data_files
 
-bundle_datas = [('ico.ico', '.')] + collect_data_files('rapidocr')
+bundle_datas = [('hushsnap.ico', '.')] + collect_data_files('rapidocr')
 
 a = Analysis(
     ['HushSnap.py'],
@@ -109,7 +109,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['ico.ico'],
+    icon=['hushsnap.ico'],
     manifest='installer/HushSnap.exe.manifest',
 )
 coll = COLLECT(

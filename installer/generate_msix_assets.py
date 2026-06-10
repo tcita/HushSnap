@@ -3,7 +3,7 @@
 
 """
 HushSnap MSIX Asset Generator.
-Uses PyQt6 to render high-quality PNG visual assets from the project's ico.ico file.
+Uses PyQt6 to render high-quality PNG visual assets from the project's hushsnap.ico file.
 """
 
 import os

@@ -588,7 +588,7 @@ $assetsStageDir = Join-Path $stageDir "Assets"
 New-Item -ItemType Directory -Path $assetsStageDir -Force | Out-Null
 
 Write-Host "Generating PNG visual assets from ico.ico..." -ForegroundColor Cyan
-$icoPath = Join-Path $rootDir "ico.ico"
+$icoPath = Join-Path $rootDir "hushsnap.ico"
 $generatorScript = Join-Path $rootDir "installer\generate_msix_assets.py"
 & python.exe $generatorScript $icoPath $assetsStageDir
 
