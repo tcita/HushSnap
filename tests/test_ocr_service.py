@@ -119,19 +119,6 @@ def test_compose_text_from_result_keeps_chinese_tokens_intact():
     assert text == "沪 A 测试"
 
 
-def test_compose_text_from_result_no_longer_applies_letter_number_fix():
-    # Heuristic maps are now empty, so text should remain as is.
-    result = ocr.OcrRecognition(
-        lines=[
-            ocr.OcrLine(text="he11o wor1d"),
-        ]
-    )
-
-    text = ocr.compose_text_from_result(result, language_tag="en-US")
-
-    assert text == "he11o wor1d"
-
-
 def test_select_text_adapter_falls_back_to_default():
     adapter = ocr.select_text_adapter("fr-FR")
 

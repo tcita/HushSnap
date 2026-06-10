@@ -1,22 +1,11 @@
-import ctypes
-import logging
-from ctypes import wintypes
-
-# Win32 Constants
-GWL_STYLE = -16
-GWL_EXSTYLE = -20
-WM_CANCELMODE = 0x001F
-HWND_TOPMOST = -1
-SWP_NOSIZE = 0x0001
-SWP_NOMOVE = 0x0002
-SWP_FRAMECHANGED = 0x0020
-SWP_SHOWWINDOW = 0x0040
-SW_SHOW = 5
-
 """
 Win32 window utility module.
 Provides low-level Windows helper functions, including HWND handling and window-state auditing.
 """
+
+import ctypes
+import logging
+from ctypes import wintypes
 
 logger = logging.getLogger(__name__)
 

@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 from hushsnap.config import (
     _ensure_default_config_exists,
+    _normalize_ui_language_code,
     get_user_data_dir,
     parse_hotkey,
     resolve_ui_lang,
@@ -141,3 +142,76 @@ def test_update_ui_lang_in_config(tmp_path):
     data = tomllib.loads(config_path.read_text(encoding="utf-8"))
     assert data["language"] == "en"
 
+
+# ── _normalize_ui_language_code ─────────────────────────────────────
+
+def test_normalize_ui_lang_auto():
+    assert _normalize_ui_language_code("auto", allow_auto=True) == "auto"
+    # "auto" is not a real language code — without allow_auto it's rejected
+    assert _normalize_ui_language_code("auto", allow_auto=False) is None
+
+
+def test_normalize_ui_lang_en_variants():
+    assert _normalize_ui_language_code("en") == "en"
+    assert _normalize_ui_language_code("en-US") == "en"
+    assert _normalize_ui_language_code("en_GB") == "en"
+    assert _normalize_ui_language_code("EN") == "en"
+
+
+def test_normalize_ui_lang_zh_variants():
+    assert _normalize_ui_language_code("zh") == "zh"
+    assert _normalize_ui_language_code("zh-CN") == "zh"
+    assert _normalize_ui_language_code("zh-SG") == "zh"
+
+
+def test_normalize_ui_lang_zh_tw_variants():
+    assert _normalize_ui_language_code("zh-TW") == "zh-TW"
+    assert _normalize_ui_language_code("zh-HK") == "zh-TW"
+    assert _normalize_ui_language_code("zh-MO") == "zh-TW"
+    assert _normalize_ui_language_code("zh-Hant") == "zh-TW"
+
+
+def test_normalize_ui_lang_unknown():
+    assert _normalize_ui_language_code("fr") is None
+    assert _normalize_ui_language_code("ja") is None
+
+
+def test_normalize_ui_lang_invalid_input():
+    assert _normalize_ui_language_code(None) is None
+    assert _normalize_ui_language_code("") is None
+    assert _normalize_ui_language_code(123) is None
+
+
+# ── _ensure_default_config_exists (migration) ───────────────────────
+
+def test_config_migration_adds_missing_keys(tmp_path):
+    """When _CONFIG_DEFAULTS gains a new key, existing config files get it
+    without overwriting user-changed values."""
+    config_path = tmp_path / "hushsnap_config.toml"
+    config_path.write_text(
+        'hotkey = "Ctrl+Shift+K"\nlanguage = "zh"\n', encoding="utf-8"
+    )
+
+    _ensure_default_config_exists(config_path)
+
+    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    # User values preserved
+    assert data["hotkey"] == "Ctrl+Shift+K"
+    assert data["language"] == "zh"
+    # Default keys injected
+    assert data["debug"] is True  # dev-mode default
+    assert data["copy_image_to_clipboard"] is True
+    assert data["thumbnail_display_time"] == 10000
+
+
+def test_config_migration_does_not_overwrite_existing_keys(tmp_path):
+    """Keys already present in config must not be overwritten by defaults."""
+    config_path = tmp_path / "hushsnap_config.toml"
+    config_path.write_text(
+        'hotkey = "Alt+X"\ncopy_image_to_clipboard = false\n', encoding="utf-8"
+    )
+
+    _ensure_default_config_exists(config_path)
+
+    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    assert data["copy_image_to_clipboard"] is False  # user's choice

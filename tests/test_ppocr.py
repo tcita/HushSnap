@@ -7,7 +7,12 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 
 from hushsnap.constants import OCR_ENGINE_PPOCR
 from hushsnap.ocr.ppocr import (
+    _apply_cjk_spacing,
     _get_engine,
+    _normalize_blocks,
+    _region_metrics,
+    _separate_paragraphs,
+    compose_ppocr_structures,
     compose_ppocr_text,
     is_cjk_or_fullwidth,
     ppocr_box_to_bbox,
@@ -15,6 +20,7 @@ from hushsnap.ocr.ppocr import (
     recognize_ppocr_result_from_pixmap,
     word_separator,
 )
+from hushsnap.ocr.models import OcrLine, OcrBox
 
 
 @pytest.fixture
@@ -390,3 +396,139 @@ def test_recognize_ppocr_result_from_pixmap_with_text(monkeypatch, qapp):
     result = recognize_ppocr_result_from_pixmap(image)
     assert "hello world" in result.text
     assert result.engine_type == OCR_ENGINE_PPOCR
+
+
+# ── _normalize_blocks ───────────────────────────────────────────────
+
+def test_normalize_blocks_filters_empty_and_whitespace():
+    blocks = [
+        {"text": "", "box": [[0, 0], [10, 0], [10, 10], [0, 10]]},
+        {"text": "   ", "box": [[10, 0], [20, 0], [20, 10], [10, 10]]},
+        {"text": "hello", "box": [[20, 0], [50, 0], [50, 10], [20, 10]]},
+    ]
+    result = _normalize_blocks(blocks)
+    assert len(result) == 1
+    assert result[0]["text"] == "hello"
+
+
+def test_normalize_blocks_none():
+    assert _normalize_blocks(None) == []
+
+
+def test_normalize_blocks_missing_box_gives_minimal_placement():
+    blocks = [{"text": "text-no-box"}]
+    result = _normalize_blocks(blocks)
+    assert len(result) == 1
+    assert result[0]["width"] == 1.0
+    assert result[0]["height"] == 1.0
+
+
+# ── _region_metrics ─────────────────────────────────────────────────
+
+def test_region_metrics_median():
+    blocks = [
+        {"height": 20, "width": 50, "text": "a"},
+        {"height": 30, "width": 60, "text": "b"},
+        {"height": 10, "width": 40, "text": "c"},
+    ]
+    m = _region_metrics(blocks)
+    assert m["med_h"] == 20.0
+    assert m["med_w"] == 50.0
+
+
+def test_region_metrics_empty():
+    m = _region_metrics([])
+    assert m["med_h"] == 15.0
+    assert m["med_w"] == 15.0
+
+
+# ── _apply_cjk_spacing ──────────────────────────────────────────────
+
+def test_cjk_spacing_inserts_space_between_cjk_and_latin():
+    assert _apply_cjk_spacing("中文hello") == "中文 hello"
+    assert _apply_cjk_spacing("hello中文") == "hello 中文"
+
+
+def test_cjk_spacing_preserves_existing_spaces():
+    assert _apply_cjk_spacing("中文 hello") == "中文 hello"
+    assert _apply_cjk_spacing("中文  hello") == "中文  hello"  # won't dedupe
+
+
+def test_cjk_spacing_with_numbers_and_symbols():
+    assert _apply_cjk_spacing("测试123abc") == "测试 123abc"
+    assert _apply_cjk_spacing("第1个") == "第 1 个"
+
+
+def test_cjk_spacing_empty():
+    assert _apply_cjk_spacing("") == ""
+    assert _apply_cjk_spacing(None) is None
+
+
+def test_cjk_spacing_pure_cjk():
+    assert _apply_cjk_spacing("纯中文文本") == "纯中文文本"
+
+
+def test_cjk_spacing_pure_latin():
+    assert _apply_cjk_spacing("hello world") == "hello world"
+
+
+# ── _separate_paragraphs ────────────────────────────────────────────
+
+def _make_line(text, y, h=20, w=100):
+    return OcrLine(text=text, bounding_box=OcrBox(x=0, y=y, width=w, height=h))
+
+
+def test_separate_paragraphs_adds_blank_line_on_large_gap():
+    lines = [
+        _make_line("line1", y=0),
+        _make_line("line2", y=100),   # gap=80 ≫ 1.6×20 → paragraph break
+    ]
+    result = _separate_paragraphs(lines)
+    assert result[0].text == "line1\n"
+
+
+def test_separate_paragraphs_no_break_on_small_gap():
+    lines = [
+        _make_line("line1", y=0),
+        _make_line("line2", y=30),
+    ]
+    result = _separate_paragraphs(lines)
+    assert result[0].text == "line1"
+
+
+def test_separate_paragraphs_single_line():
+    lines = [_make_line("only", y=0)]
+    result = _separate_paragraphs(lines)
+    assert result[0].text == "only"
+
+
+def test_separate_paragraphs_empty():
+    assert _separate_paragraphs([]) == []
+
+
+# ── compose_ppocr_structures (public API integration) ───────────────
+
+def _block(text, box):
+    return {"text": text, "box": box}
+
+
+def test_compose_ppocr_structures_returns_lines():
+    blocks = [_block("hello", [[0, 0], [50, 0], [50, 20], [0, 20]])]
+    lines = compose_ppocr_structures(blocks)
+    assert len(lines) == 1
+    assert lines[0].text == "hello"
+    assert len(lines[0].words) == 1
+    assert lines[0].words[0].text == "hello"
+
+
+def test_compose_ppocr_structures_empty():
+    assert compose_ppocr_structures([]) == []
+    assert compose_ppocr_structures(None) == []
+
+
+def test_compose_ppocr_structures_cjk_spacing_applied():
+    blocks = [
+        _block("中文hello", [[0, 0], [70, 0], [70, 20], [0, 20]]),
+    ]
+    lines = compose_ppocr_structures(blocks)
+    assert lines[0].text == "中文 hello"

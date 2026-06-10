@@ -28,15 +28,6 @@ def _translate(key, **kwargs):
     return table.get(key, key).format(**kwargs)
 
 
-def test_ocr_popup_text_is_editable_by_default(qapp):
-    """The text edit is directly editable — no edit mode toggle needed."""
-    popup = OcrPopup(_translate)
-    popup.show_text("hello")
-
-    assert not popup.text_edit.isReadOnly()
-    assert popup.text_edit.toPlainText() == "hello"
-
-
 def test_ocr_popup_starts_editable(qapp):
     """After show_text the text is immediately editable."""
     popup = OcrPopup(_translate)
@@ -44,17 +35,6 @@ def test_ocr_popup_starts_editable(qapp):
 
     assert not popup.text_edit.isReadOnly()
     assert popup.text_edit.toPlainText() == "hello"
-
-
-def test_ocr_popup_has_no_edit_button(qapp):
-    """The popup no longer has an edit button."""
-    popup = OcrPopup(_translate)
-    popup.show_text("original")
-
-    assert not hasattr(popup, "edit_btn")
-    assert not hasattr(popup, "update_btn")
-    assert not hasattr(popup, "cancel_btn")
-    assert not hasattr(popup, "_editing")
 
 
 def test_ocr_popup_text_is_directly_editable(qapp):
@@ -69,7 +49,7 @@ def test_ocr_popup_text_is_directly_editable(qapp):
 
 
 def test_ocr_popup_footer_has_only_copy_button(qapp):
-    """The footer should only contain the copy button (no edit/update/cancel)."""
+    """The footer should only contain the copy button (no edit/update/cancel buttons or mode)."""
     popup = OcrPopup(_translate)
     popup.show_text("hello")
 
@@ -77,6 +57,7 @@ def test_ocr_popup_footer_has_only_copy_button(qapp):
     assert not hasattr(popup, "edit_btn")
     assert not hasattr(popup, "update_btn")
     assert not hasattr(popup, "cancel_btn")
+    assert not hasattr(popup, "_editing")
 
 
 from unittest.mock import patch, MagicMock

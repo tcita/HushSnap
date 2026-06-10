@@ -64,10 +64,6 @@ def get_startup_reg_name() -> str:
 # When a new config key is added, append it here.  _ensure_default_config_exists
 # will automatically fill it into existing config files without overwriting
 # values the user has already customised.
-# ── Config defaults (single source of truth for new-key migration) ────
-# When a new config key is added, append it here.  _ensure_default_config_exists
-# will automatically fill it into existing config files without overwriting
-# values the user has already customised.
 _CONFIG_DEFAULTS = {
     "hotkey": DEFAULT_HOTKEY,
     "language": UI_LANG_AUTO,
@@ -122,7 +118,6 @@ def resolve_physical_path(path: Path) -> Path:
 
 
 # --- Path constants ---
-_is_frozen = getattr(sys, "frozen", False)
 # Application install directory (contains read-only assets like icon files).
 APP_DIR = Path(sys.executable).resolve().parent if _is_frozen else Path(__file__).resolve().parent.parent
 

@@ -7,15 +7,6 @@ from .models import OcrLine, OcrRecognition
 
 NO_SPACE_SCRIPT_CHAR_CLASS = r"\u3040-\u30ff\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff"
 
-NUMBERS_TO_LETTERS = {
-    # Heuristic correction table for OCR errors (digit -> letter).
-    # Intentionally empty: keeping interface but removing heuristics for now.
-}
-LETTERS_TO_NUMBERS = {
-    # Heuristic correction table for OCR errors (letter -> digit).
-    # Intentionally empty: keeping interface but removing heuristics for now.
-}
-
 
 @dataclass(frozen=True)
 class OcrTextAdapter:
@@ -101,31 +92,6 @@ def normalize_ocr_text(text: str) -> str:
     return "\n".join(cleaned_lines).strip()
 
 
-def replace_with_map(text: str, mapping: dict[str, str]) -> str:
-    return "".join(mapping.get(char, char) for char in text)
-
-
-def try_fix_number_letter_errors(token: str) -> str:
-    if len(token) < 5:
-        return token
-
-    total_numbers = sum(1 for char in token if char.isdigit())
-    total_letters = sum(1 for char in token if char.isalpha())
-    if total_numbers / max(1, len(token)) >= 0.6:
-        return replace_with_map(token, LETTERS_TO_NUMBERS)
-    if total_letters / max(1, len(token)) >= 0.6:
-        return replace_with_map(token, NUMBERS_TO_LETTERS)
-    return token
-
-
-def try_fix_every_word_letter_number_errors(text: str) -> str:
-    words = text.split(" ")
-    fixed_words = [try_fix_number_letter_errors(word) for word in words]
-    joined = " ".join(fixed_words)
-    joined = joined.replace("\t ", "\t").replace("\r ", "\r").replace("\n ", "\n")
-    return joined.strip()
-
-
 def matches_chinese(language_tag: str) -> bool:
     return (language_tag or "").lower().startswith("zh")
 
@@ -139,7 +105,7 @@ def finalize_default_text(text: str) -> str:
 
 
 def finalize_english_text(text: str) -> str:
-    return try_fix_every_word_letter_number_errors(normalize_ocr_text(text))
+    return normalize_ocr_text(text)
 
 
 LANGUAGE_TEXT_ADAPTERS = (
