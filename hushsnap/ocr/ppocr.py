@@ -5,15 +5,33 @@ import threading
 import time
 
 """
-PP-OCR Engine Implementation.
+PP-OCR Engine Implementation — parameter choices vs RapidOCR defaults.
 
-Performance Profile (Empirically Validated):
-- Global.max_side_len = 1536: Balance of accuracy and memory. 3072+ degrades precision.
-- Rec.rec_batch_num = 1: ~50% faster and 50% less RAM on CPU vs default (6).
-- intra_op_num_threads = 8: Sweet spot for modern multi-core CPUs.
-- inter_op_num_threads = 1: Sequential Det->Cls->Rec pipeline has no inter-op gain.
-- enable_cpu_mem_arena = False: Essential for tray apps. Prevents ~700MB permanent 
-  memory plateau, allowing the working set to drop to baseline after idle trim.
+- Global.max_side_len = 1280 (default 2000): Empirically determined from an
+  informal sweep across a handful of CN/EN screenshots (640–3584).  This is
+  roughly the knee of the accuracy curve — smaller values visibly degrade,
+  while larger values cost more memory and latency for diminishing returns.
+  2304+ begins to hurt from detector feature-map aliasing.
+
+- Rec.rec_batch_num = 1 (default 6): Recognition runs sequentially on CPU, so
+  batching only adds threading overhead and allocates extra inference buffers
+  that are never used.  Single-batch avoids both costs.
+
+- intra_op_num_threads = 8 (default -1, i.e. all cores): A sweep from 1–32
+  on a 32-core machine puts the minimum at 8 — a clean U-curve.  The three
+  mobile models (det/cls/rec) have small enough inner loops that intra-op
+  parallelism saturates near 8; beyond that, thread-scheduling overhead and
+  cache contention overtake any remaining compute throughput.
+
+- inter_op_num_threads = 1 (default -1): The Det → Cls → Rec pipeline is
+  strictly sequential — only one model runs at a time — so inter-op
+  parallelism has nothing to schedule.
+
+- enable_cpu_mem_arena = False (ONNX default is True; RapidOCR ships with
+  this set to False in their config.yaml — made explicit here for clarity).
+  ONNX's arena allocator pools large blocks and never releases them, causing
+  the working set to stay at peak after OCR completes.  Disabling it lets the
+  OS reclaim pages immediately, which matters for a long-running tray app.
 """
 
 # Defer ppocr library import to optimize application startup time
@@ -577,7 +595,7 @@ def _get_engine() -> "PPOCR":
                     "Det.ocr_version": local_OCRVersion.PPOCRV5,
                     "Rec.ocr_version": local_OCRVersion.PPOCRV5,
                     "Cls.ocr_version": local_OCRVersion.PPOCRV5,
-                    "Global.max_side_len": 1536,
+                    "Global.max_side_len": 1280,
                     "Rec.rec_batch_num": 1,
                     "EngineConfig.onnxruntime.intra_op_num_threads": 8,
                     "EngineConfig.onnxruntime.inter_op_num_threads": 1,

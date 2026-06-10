@@ -77,7 +77,7 @@ def main():
     parser.add_argument(
         "--max-side-len",
         type=int, default=None,
-        help="Override Global.max_side_len (default: production 1536, "
+        help="Override Global.max_side_len (default: production 1280, "
              "RapidOCR default 2000). Limits detector feature map size."
     )
     parser.add_argument(

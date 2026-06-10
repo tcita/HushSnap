@@ -36,6 +36,7 @@ class _NullPopup(QtCore.QObject):
     def show_text(self, text="", **kwargs): pass
     def set_pinned(self, pinned): pass
     def set_anchor_pos(self, x, y, width=None, height=None): pass
+    def clear_anchor(self): pass
 
 
 class BenchmarkRunner:

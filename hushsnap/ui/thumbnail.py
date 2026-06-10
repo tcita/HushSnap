@@ -1,6 +1,7 @@
 import io
 import math
 import os
+import time
 import logging
 from pathlib import Path
 
@@ -341,16 +342,24 @@ class ThumbnailWindow(QtWidgets.QWidget):
         scaled_w = int(self.card_width * THUMBNAIL_DRAG_SCALE)
         scaled_h = int(self.card_height * THUMBNAIL_DRAG_SCALE)
 
-        # Single rotating cache file — each drag overwrites the last.
-        # No cleanup needed: one 100 KB PNG is harmless, and the file
-        # is reused on the next drag so it never grows beyond that.
+        # Single rotating cache file with a unique name per drag so that
+        # consecutive drops into the same folder don't collide.  Delete
+        # any previous cache entry to keep exactly one file on disk.
         from ..config import get_user_data_dir, resolve_physical_path
         raw_cache_dir = os.path.join(get_user_data_dir(), "drag_cache")
         cache_path_obj = resolve_physical_path(Path(raw_cache_dir))
         cache_dir = str(cache_path_obj)
         cache_path_obj.mkdir(parents=True, exist_ok=True)
 
-        temp_path = os.path.join(cache_dir, "drag.png")
+        for old_name in os.listdir(cache_dir):
+            if old_name.startswith("drag_") and old_name.endswith(".png"):
+                try:
+                    os.remove(os.path.join(cache_dir, old_name))
+                except OSError:
+                    pass
+
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        temp_path = os.path.join(cache_dir, f"drag_{ts}.png")
 
         try:
             with open(temp_path, "wb") as f:
