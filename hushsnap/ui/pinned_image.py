@@ -467,6 +467,7 @@ class PinnedImageWindow(QtWidgets.QWidget):
                     file_path = os.path.join(desktop, f"{base}({counter}).png")
                     counter += 1
                 self.pil_image.save(file_path)
+                self.show_toast(ui_text(lang, "pin_saved_to_desktop"))
             except Exception:
                 logger.exception("Failed to save pinned image to desktop")
         elif action == save_action:
