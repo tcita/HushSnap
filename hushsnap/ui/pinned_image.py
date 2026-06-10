@@ -120,12 +120,12 @@ class PinnedImageWindow(QtWidgets.QWidget):
             target_geom = self.geometry()
             self._morph_source = None
             
-            self.setWindowOpacity(0.0)
+            self.setWindowOpacity(0.2)
             self._show_anim = QtCore.QParallelAnimationGroup(self)
             
             fade = QtCore.QPropertyAnimation(self, b"windowOpacity")
             fade.setDuration(250)
-            fade.setStartValue(0.0)
+            fade.setStartValue(0.2)
             fade.setEndValue(1.0)
             fade.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
             
@@ -509,6 +509,9 @@ class PinnedImageManager(QtCore.QObject):
             win.set_morph_source(morph_pos, morph_size)
             win.ocr_requested.connect(self.ocr_requested.emit)
             win.show()
+            # Dismiss the thumbnail now that the pinned window is taking over
+            from .thumbnail import thumbnail_manager
+            thumbnail_manager.dismiss_current()
             self._windows.append(win)
             win.destroyed.connect(lambda: self._remove_window(win))
             logger.info(f"Pinned image window shown. Total windows: {len(self._windows)}")

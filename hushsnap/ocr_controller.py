@@ -18,6 +18,7 @@ from .ocr import OcrRequest, OcrService
 from .signal_bridge import SignalBridge
 from .system.memory_utils import get_working_set_mb, fmt_memory
 from .ui.ocr_popup import OcrPopup
+from .ui.thumbnail import thumbnail_manager
 
 
 class OcrController:
@@ -179,6 +180,9 @@ class OcrController:
 
         # Consume the intent flag once capture is done
         self.next_capture_should_ocr = False
+        # OCR-hotkey path: no thumbnail → clear any stale morph anchor
+        self.popup.clear_anchor()
+        self.popup.show_loading(pixmap=captured_pixmap)
         self.start_request(captured_pixmap.copy())
 
     def on_ocr_finished(self, response):
@@ -194,6 +198,10 @@ class OcrController:
             return
 
         self._expecting_ocr_result = False
+
+        # Dismiss the thumbnail loading indicator so the popup morph
+        # starts from a clean state (no-op when there is no thumbnail).
+        thumbnail_manager.dismiss_current()
 
         text = response.text
         error = response.error
@@ -240,10 +248,6 @@ class OcrController:
         debug_dir = self.user_data_dir if self.save_debug_image else None
 
         logging.info("[start_request] engine=%s. %s", OCR_ENGINE_PPOCR, fmt_memory())
-
-        # Show initial loading state (thumbnail-sized image with progress bar)
-        # to provide a smooth transition instead of jumping to a text bubble.
-        self.popup.show_loading(pixmap=pixmap)
 
         # Convert QPixmap to QImage on the main GUI thread to prevent thread-safety issues
         from PyQt6 import QtGui

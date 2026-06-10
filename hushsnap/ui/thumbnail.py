@@ -1,10 +1,11 @@
+import io
+import math
 import os
 import logging
 from pathlib import Path
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 from PIL import Image
-import io
 
 from .styles import MODERN_MENU_STYLE
 from ..constants import (
@@ -84,6 +85,9 @@ class ThumbnailWindow(QtWidgets.QWidget):
         px = self.shadow_padding + (self.card_width - pw) // 2
         py = self.shadow_padding + (self.card_height - ph) // 2
         self.pixmap_rect = QtCore.QRect(px, py, pw, ph)
+
+        # 3. Blurred background: crop-to-fill → Gaussian blur → QPixmap
+        self.blurred_bg = self._create_blurred_background(pil_image)
         
         # Close button (small 'x' in top-right of card)
         self.close_btn = QtWidgets.QPushButton("×", self)
@@ -143,6 +147,9 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self._drag_start_pos = None
         self._menu_active = False
         self._hovered = False
+        self._loading = False
+        self._loading_progress = 0.0
+        self._loading_anim = None  # QVariantAnimation for pulsing bar
 
     def _get_display_ms(self) -> int:
         """Get the configured display duration from settings."""
@@ -164,6 +171,61 @@ class ThumbnailWindow(QtWidgets.QWidget):
             QtGui.QImage.Format.Format_RGBA8888
         ).copy()
         return QtGui.QPixmap.fromImage(qimage)
+
+    def _create_blurred_background(self, pil_img: Image.Image) -> QtGui.QPixmap:
+        """Crop-to-fill the card aspect ratio, scale down, apply Gaussian blur,
+        and return a QPixmap to use as the card's decorative background."""
+        from PIL import ImageFilter
+
+        card_w, card_h = self.card_width, self.card_height
+        img_w, img_h = pil_img.size
+        card_aspect = card_w / card_h
+        img_aspect = img_w / img_h
+
+        fill = pil_img.copy()
+        # Center-crop to match the card's 16:10 aspect ratio
+        if img_aspect > card_aspect:
+            new_w = int(img_h * card_aspect)
+            offset = (img_w - new_w) // 2
+            fill = fill.crop((offset, 0, offset + new_w, img_h))
+        else:
+            new_h = int(img_w / card_aspect)
+            offset = (img_h - new_h) // 2
+            fill = fill.crop((0, offset, img_w, offset + new_h))
+
+        fill = fill.resize((card_w, card_h), Image.LANCZOS)
+        blurred = fill.filter(ImageFilter.GaussianBlur(radius=20))
+        return self._pil_to_qpixmap(blurred)
+
+    def start_loading(self):
+        """Switch to loading state: stop timer, show a pulsing progress bar."""
+        self._loading = True
+        self.timer.stop()
+        self.fade_anim.stop()
+        self.setWindowOpacity(1.0)
+        self.close_btn.hide()
+
+        self._loading_anim = QtCore.QVariantAnimation(self)
+        self._loading_anim.setDuration(1200)
+        self._loading_anim.setStartValue(0.0)
+        self._loading_anim.setEndValue(1.0)
+        self._loading_anim.setLoopCount(-1)
+        self._loading_anim.setEasingCurve(QtCore.QEasingCurve.Type.InOutSine)
+        self._loading_anim.valueChanged.connect(self._on_loading_tick)
+        self._loading_anim.start()
+        self.update()
+
+    def _on_loading_tick(self, value: float):
+        self._loading_progress = value
+        self.update()
+
+    def dismiss(self):
+        """Stop loading and close the thumbnail (called when OCR popup is ready)."""
+        self._loading = False
+        if self._loading_anim is not None:
+            self._loading_anim.stop()
+            self._loading_anim = None
+        self.close()
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -211,7 +273,8 @@ class ThumbnailWindow(QtWidgets.QWidget):
                     return
                 logger.debug(f"Thumbnail click triggered at {release_pos}")
                 self.clicked_signal.emit()
-                self.close()
+                if not self._loading:
+                    self.close()
             else:
                 logger.debug(f"Thumbnail release outside card at {release_pos}, click ignored.")
         elif event.button() == QtCore.Qt.MouseButton.RightButton:
@@ -260,7 +323,8 @@ class ThumbnailWindow(QtWidgets.QWidget):
             self.close()
         elif action == pin_action:
             self.pin_requested_signal.emit()
-            self.close()
+            # Don't close yet — the pinned window will dismiss us
+            # after it appears, keeping the transition seamless.
         else:
             self._hovered = False
             self.update()
@@ -395,9 +459,67 @@ class ThumbnailWindow(QtWidgets.QWidget):
 
         path = QtGui.QPainterPath()
         path.addRoundedRect(QtCore.QRectF(self.card_rect), THUMBNAIL_CORNER_RADIUS, THUMBNAIL_CORNER_RADIUS)
-        painter.fillPath(path, QtGui.QColor(30, 30, 30, 220))
         painter.setClipPath(path)
+
+        # Blurred background fills the card
+        painter.drawPixmap(self.card_rect, self.blurred_bg)
+
+        # Subtle dark overlay so the sharp thumbnail pops against the blurred bg
+        painter.fillPath(path, QtGui.QColor(0, 0, 0, 50))
+
+        # Soft elevation shadow underneath the thumbnail — multi-pass blur
+        # so the sharp content "floats" above the blurred background rather
+        # than sitting flat against it.
+        shadow_rect = QtCore.QRectF(self.pixmap_rect)
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        for i in range(1, 6):
+            alpha = int(45 * (1.0 - i / 6.0))
+            spread = i * 2.0
+            painter.setBrush(QtGui.QColor(0, 0, 0, alpha))
+            painter.drawRoundedRect(
+                shadow_rect.adjusted(spread, spread + 1.5, spread, spread + 1.5),
+                8 + i, 8 + i,
+            )
+
+        # Sharp thumbnail centered on top
         painter.drawPixmap(self.pixmap_rect, self.scaled_pixmap)
+
+        # Thin separator border around the sharp thumbnail
+        painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+        thumb_path = QtGui.QPainterPath()
+        thumb_rect = QtCore.QRectF(self.pixmap_rect).adjusted(-0.5, -0.5, 0.5, 0.5)
+        thumb_path.addRoundedRect(thumb_rect, 6, 6)
+        painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 45), 1))
+        painter.drawPath(thumb_path)
+
+        # Loading indicator — thin animated bar at the bottom of the card
+        if self._loading:
+            bar_h = 2
+            margin = 10
+            bar_y = self.card_rect.bottom() - bar_h - 3
+            track_w = self.card_rect.width() - margin * 2
+
+            # Background track
+            painter.setPen(QtCore.Qt.PenStyle.NoPen)
+            painter.setBrush(QtGui.QColor(255, 255, 255, 18))
+            painter.drawRoundedRect(
+                QtCore.QRectF(self.card_rect.left() + margin, bar_y, track_w, bar_h),
+                1, 1,
+            )
+
+            # Animated segment — oscillates left↔right with InOutSine easing
+            seg_w = min(50, track_w)
+            travel = track_w - seg_w
+            t = self._loading_progress
+            offset = (math.sin(t * math.pi * 2 - math.pi / 2) + 1) / 2 * travel
+            painter.setBrush(QtGui.QColor("#5fc98a"))
+            painter.drawRoundedRect(
+                QtCore.QRectF(self.card_rect.left() + margin + offset, bar_y, seg_w, bar_h),
+                1, 1,
+            )
+            # Reset brush so it doesn't leak into the card border fill below
+            painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+
         painter.setClipping(False)
         painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 40), 1))
         painter.drawRoundedRect(QtCore.QRectF(self.card_rect).adjusted(0.5, 0.5, -0.5, -0.5), THUMBNAIL_CORNER_RADIUS, THUMBNAIL_CORNER_RADIUS)
@@ -445,6 +567,25 @@ class ThumbnailManager(QtCore.QObject):
         win.destroyed.connect(lambda: self._windows.remove(win) if win in self._windows else None)
         self._windows.append(win)
         win.show()
+
+    def current_window(self):
+        """Return the current visible ThumbnailWindow, or None."""
+        for w in self._windows:
+            try:
+                if w.isVisible():
+                    return w
+            except RuntimeError:
+                pass
+        return None
+
+    def dismiss_current(self):
+        """Close the current thumbnail immediately (called when OCR result is ready)."""
+        for w in self._windows:
+            try:
+                w.dismiss()
+            except Exception:
+                pass
+        self._windows.clear()
 
     def current_window_center(self):
         for w in self._windows:

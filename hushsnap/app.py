@@ -252,8 +252,12 @@ def main(boot_start_time=None):
 
     def handle_thumbnail_clicked(pil_img):
         """Thumbnail left-click: trigger OCR with smooth position transition."""
-        # Capture thumbnail centre so the OCR popup appears near the same spot.
-        # Use rect for morph animation if available.
+        # Switch thumbnail to loading state — it stays visible during OCR
+        thumb_win = thumbnail_manager.current_window()
+        if thumb_win:
+            thumb_win.start_loading()
+
+        # Capture thumbnail geometry so the OCR popup can morph from it
         pos, size = thumbnail_manager.current_window_rect()
         if pos and size:
             ocr_controller.set_popup_anchor(

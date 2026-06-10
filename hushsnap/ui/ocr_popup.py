@@ -957,6 +957,11 @@ class OcrPopup(QtWidgets.QWidget):
             self._anchor_pos = (x, y)
             self._anchor_geom = None
 
+    def clear_anchor(self):
+        """Clear any stored morph anchor so the next show does not animate."""
+        self._anchor_geom = None
+        self._anchor_pos = None
+
     def _place_on_screen(self):
         """Position the popup, preferring the anchor point from a thumbnail click."""
         screen = QtWidgets.QApplication.screenAt(QtGui.QCursor.pos()) or QtWidgets.QApplication.primaryScreen()

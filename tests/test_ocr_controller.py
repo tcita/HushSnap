@@ -302,17 +302,35 @@ def test_ocr_request_cancels_pending_trim(monkeypatch, qapp, tmp_path, sample_pi
     assert not controller._trim_timer.isActive()
 
 
-def test_start_request_shows_loading(monkeypatch, qapp, tmp_path, sample_pixmap):
-    """start_request should call show_loading on the popup."""
+def test_start_request_does_not_show_loading(monkeypatch, qapp, tmp_path, sample_pixmap):
+    """start_request should NOT call show_loading — loading is now shown
+    on the thumbnail (for the thumbnail-click path) or by handle_capture_completed
+    (for the OCR-hotkey path)."""
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    
+
+    loading_called = []
+    def _show_loading(pixmap=None):
+        loading_called.append(pixmap)
+
+    controller.popup.show_loading = _show_loading
+    controller.start_request(sample_pixmap)
+
+    assert len(loading_called) == 0, "start_request must not call show_loading"
+
+
+def test_handle_capture_completed_shows_loading(monkeypatch, qapp, tmp_path, sample_pixmap):
+    """handle_capture_completed (OCR-hotkey path) should call show_loading
+    since there is no thumbnail to show loading on."""
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+
     loading_pixmap = []
     def _show_loading(pixmap=None):
         loading_pixmap.append(pixmap)
-        
+
     controller.popup.show_loading = _show_loading
-    controller.start_request(sample_pixmap)
-    
+    controller.next_capture_should_ocr = True
+    controller.handle_capture_completed(sample_pixmap)
+
     assert len(loading_pixmap) == 1
     assert loading_pixmap[0] is sample_pixmap
 
