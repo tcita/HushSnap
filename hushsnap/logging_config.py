@@ -9,6 +9,8 @@ import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
+from .constants import SESSION_START_MARKER
+
 # Default logging level
 DEFAULT_LEVEL = logging.INFO
 
@@ -61,7 +63,7 @@ def setup_logging(log_file_path: Path, force_level=None):
             force=True
         )
         
-        logging.info(f"Logging initialized. Level: {logging.getLevelName(level)}, Path: {log_file_path}")
+        logging.info(f"{SESSION_START_MARKER} {logging.getLevelName(level)}, Path: {log_file_path}")
     
     # Fallback: if logging initialization fails, write to a fallback file.
     except Exception as e:

@@ -53,6 +53,8 @@ CAPTURE_SELECTION_MIN_PX = 10
 CAPTURE_OVERLAY_RGBA = (0, 0, 0, 80)
 # Log timestamp format
 CAPTURE_LOG_TS_FMT = "%Y-%m-%d %H:%M:%S"
+# Marker string used to identify the start of a new session in the log file.
+SESSION_START_MARKER = "Logging initialized. Level:"
 
 # --- 4. Floating Thumbnail constants ---
 THUMBNAIL_WIDTH = 240

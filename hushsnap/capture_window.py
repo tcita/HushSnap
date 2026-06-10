@@ -381,6 +381,7 @@ class CaptureWindow(QtWidgets.QWidget):
             self.curr_pos = event.position().toPoint()
             rect = QtCore.QRect(self.start_pos, self.curr_pos).normalized()
             captured = None
+            logical_size = None
 
             # If movement is too small, treat it as click -> fullscreen capture.
             copy_to_clipboard = get_copy_image_to_clipboard()
@@ -390,6 +391,7 @@ class CaptureWindow(QtWidgets.QWidget):
                 if copy_to_clipboard:
                     self._set_clipboard_pixmap(full, "fullscreen")
                 captured = full
+                logical_size = self.rect().size()
             else:
                 # Region capture: convert logical coordinates to physical pixels by screen scale.
                 ratio = self.pixmap.devicePixelRatio()
@@ -398,13 +400,16 @@ class CaptureWindow(QtWidgets.QWidget):
                     int(rect.width() * ratio), int(rect.height() * ratio)
                 )
                 final = self.pixmap.copy(physical)
+                # Ensure the pixmap knows its scaling ratio for correct clipboard/UI rendering
                 final.setDevicePixelRatio(ratio)
+                
                 if copy_to_clipboard:
                     self._set_clipboard_pixmap(final, "region")
                 captured = final
+                logical_size = rect.size()
 
             if captured is not None:
-                self._notify_captured(captured)
+                self._notify_captured(captured, logical_size)
                 if copy_to_clipboard:
                     self._show_copied_toast(event.globalPosition().toPoint())
 
@@ -427,12 +432,13 @@ class CaptureWindow(QtWidgets.QWidget):
         except Exception:
             logger.error(f"copied_toast_err | trace={traceback.format_exc().strip()}")
 
-    def _notify_captured(self, pixmap):
-        """Notify app layer with the captured image for optional OCR flow."""
+    def _notify_captured(self, pixmap, logical_size):
+        """Notify app layer with the captured image and its logical selection size."""
         if self.on_captured is None:
             return
         try:
-            self.on_captured(pixmap)
+            # signature: on_captured(pixmap, logical_size)
+            self.on_captured(pixmap, logical_size)
         except Exception:
             logger.error(f"capture_notify_err | trace={traceback.format_exc().strip()}")
 

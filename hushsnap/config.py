@@ -22,6 +22,7 @@ from .constants import (
     MOD_SHIFT,
     MOD_WIN,
     OCR_ENGINE_PPOCR,
+    THUMBNAIL_DISPLAY_MS,
 )
 from .translations import (
     UI_LANG_AUTO,
@@ -61,16 +62,13 @@ def get_startup_reg_name() -> str:
     return "HushSnap" if _is_frozen else "HushSnap_Dev"
 
 # ── Config defaults (single source of truth for new-key migration) ────
-# When a new config key is added, append it here.  _ensure_default_config_exists
-# will automatically fill it into existing config files without overwriting
-# values the user has already customised.
 _CONFIG_DEFAULTS = {
     "hotkey": DEFAULT_HOTKEY,
     "language": UI_LANG_AUTO,
-    "debug": not _is_frozen,   # True for source runs, False for packaged builds
+    "debug": not _is_frozen,
     "copy_image_to_clipboard": True,
     "auto_copy_ocr_result": True,
-    "thumbnail_display_time": 10000,
+    "thumbnail_display_time": THUMBNAIL_DISPLAY_MS,
 }
 
 

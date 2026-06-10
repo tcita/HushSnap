@@ -19,24 +19,27 @@ from ..constants import (
 logger = logging.getLogger(__name__)
 
 
-class HotkeyManager:
+class HotkeyManager(QtCore.QObject):
     """
     Manager for Windows global hotkeys.
     Supports registration, unregistration, dynamic updates, and auto-reload on config changes.
     """
-    def __init__(self, tray_icon, translate, config_path, modifier, virtual_key, name):
+    # Signal to notify the app about hotkey status updates (e.g., success, conflict)
+    # Payload: (title_key, body_key, is_error, **kwargs)
+    status_requested = QtCore.pyqtSignal(str, str, bool, dict)
+
+    def __init__(self, translate, config_path, modifier, virtual_key, name):
         """
         Initialize hotkey manager.
 
         Args:
-            tray_icon (QSystemTrayIcon): Tray icon instance for notifications.
             translate (callable): Translation function for i18n text.
             config_path (Path): Config file path.
             modifier (int): Initial modifier mask.
             virtual_key (int): Initial virtual key code.
             name (str): Initial human-readable hotkey name.
         """
-        self.tray_icon = tray_icon
+        super().__init__()
         self.translate = translate
         self.config_path = config_path
         self.hotkey_registered = False
@@ -111,13 +114,9 @@ class HotkeyManager:
         if reply == QtWidgets.QMessageBox.StandardButton.Yes:
             open_settings_callback()
 
-    def _show_tray_message(self, title, body, icon, timeout):
-        """Show a tray notification. Only informational messages respect the global toggle."""
-        if self.tray_icon is None:
-            return
-        if not TRAY_NOTIFICATIONS_ENABLED and icon == QtWidgets.QSystemTrayIcon.MessageIcon.Information:
-            return
-        self.tray_icon.showMessage(title, body, icon, timeout)
+    def _request_status_msg(self, title_key, body_key, is_error=False, **kwargs):
+        """Request a status toast from the main application."""
+        self.status_requested.emit(title_key, body_key, is_error, kwargs)
 
     def unregister_current_hotkey(self):
         """
@@ -186,11 +185,11 @@ class HotkeyManager:
             )
         except Exception as exc:
             logger.exception(f"Failed to reload hotkey from config {self.config_path}: {exc}")
-            self._show_tray_message(
-                self.translate("hotkey_not_updated_title"),
-                self.translate("hotkey_invalid_config", hotkey=self.current_hotkey_name),
-                QtWidgets.QSystemTrayIcon.MessageIcon.Warning,
-                TRAY_MSG_MEDIUM_MS,
+            self._request_status_msg(
+                "hotkey_not_updated_title",
+                "hotkey_invalid_config",
+                is_error=True,
+                hotkey=self.current_hotkey_name,
             )
             return
 
@@ -203,18 +202,18 @@ class HotkeyManager:
                 return
             # If previously inactive (e.g., conflict), try to reactivate.
             if self.register_hotkey(new_modifier, new_virtual_key, new_name):
-                self._show_tray_message(
-                    self.translate("hotkey_enabled_title"),
-                    self.translate("hotkey_enabled", hotkey=new_name),
-                    QtWidgets.QSystemTrayIcon.MessageIcon.Information,
-                    TRAY_MSG_SHORT_MS,
+                self._request_status_msg(
+                    "hotkey_enabled_title",
+                    "hotkey_enabled",
+                    is_error=False,
+                    hotkey=new_name,
                 )
             else:
-                self._show_tray_message(
-                    self.translate("hotkey_not_updated_title"),
-                    self.translate("hotkey_still_occupied", hotkey=new_name),
-                    QtWidgets.QSystemTrayIcon.MessageIcon.Warning,
-                    TRAY_MSG_MEDIUM_MS,
+                self._request_status_msg(
+                    "hotkey_not_updated_title",
+                    "hotkey_still_occupied",
+                    is_error=True,
+                    hotkey=new_name,
                 )
             return
 
@@ -226,30 +225,31 @@ class HotkeyManager:
         )
         self.unregister_current_hotkey()
         if self.register_hotkey(new_modifier, new_virtual_key, new_name):
-            self._show_tray_message(
-                self.translate("hotkey_updated_title"),
-                self.translate("hotkey_updated", old_hotkey=old_name, new_hotkey=new_name),
-                QtWidgets.QSystemTrayIcon.MessageIcon.Information,
-                TRAY_MSG_SHORT_MS,
+            self._request_status_msg(
+                "hotkey_updated_title",
+                "hotkey_updated",
+                is_error=False,
+                old_hotkey=old_name,
+                new_hotkey=new_name,
             )
             return
 
         # New hotkey registration failed, try restoring previous hotkey.
         if not self.register_hotkey(old_modifier, old_virtual_key, old_name):
-            self._show_tray_message(
-                self.translate("hotkey_error_title"),
-                self.translate("hotkey_recover_failed"),
-                QtWidgets.QSystemTrayIcon.MessageIcon.Critical,
-                TRAY_MSG_LONG_MS,
+            self._request_status_msg(
+                "hotkey_error_title",
+                "hotkey_recover_failed",
+                is_error=True,
             )
             return
 
         # Restoration succeeded; notify user that new hotkey is occupied.
-        self._show_tray_message(
-            self.translate("hotkey_not_updated_title"),
-            self.translate("hotkey_kept_old", new_hotkey=new_name, old_hotkey=old_name),
-            QtWidgets.QSystemTrayIcon.MessageIcon.Warning,
-            TRAY_MSG_MEDIUM_MS,
+        self._request_status_msg(
+            "hotkey_not_updated_title",
+            "hotkey_kept_old",
+            is_error=True,
+            new_hotkey=new_name,
+            old_hotkey=old_name,
         )
 
     def schedule_hotkey_reload(self, _path):

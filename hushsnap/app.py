@@ -23,17 +23,19 @@ from .config import (
     resolve_ui_lang,
     ui_text,
 )
-from .hotkey import HotkeyFilter
 from .ocr_controller import OcrController
 from .system.hotkey_manager import HotkeyManager
 from .ui.settings_dialog import SettingsDialogController
+from .ui.thumbnail import thumbnail_manager, show_thumbnail, qpixmap_to_pil
+from .ui.pinned_image import pinned_image_manager
 from .ui.tray import create_tray
-from .ui.thumbnail import show_thumbnail, qpixmap_to_pil
-from .constants import CAPTURE_DEBUG_LOG_FILENAME
+from .ui.toast import show_toast
+from .hotkey import HotkeyFilter
+from .constants import CAPTURE_DEBUG_LOG_FILENAME, SESSION_START_MARKER
 from .logging_config import setup_logging
 from .startup_profiler import StartupProfiler
 
-# Module-level state set during main() so exception_hook can access them.
+# Module-level state set during Application.run() so exception_hook can access them.
 _log_file_path = None
 _translate = None
 
@@ -94,10 +96,6 @@ def _save_log_to_desktop(log_path):
     shutil.copy2(log_path, dest)
 
 
-# String that marks the start of a new HushSnap session in the log.
-# Must match the first log message emitted in logging_config.setup_logging().
-_SESSION_START_MARKER = "Logging initialized. Level:"
-
 def _copy_log_tail(log_path):
     """Copy the current-session portion of the log to the system clipboard.
 
@@ -116,164 +114,235 @@ def _copy_log_tail(log_path):
     except Exception:
         text = ""
     # Slice from the LAST session start to end-of-file.
-    idx = text.rfind(_SESSION_START_MARKER)
+    idx = text.rfind(SESSION_START_MARKER)
     if idx != -1:
         text = text[idx:]
     clipboard.setText(text)
 
 
-def main(boot_start_time=None):
+class Application(QtCore.QObject):
     """
-    Main application entry point.
-    Flow:
-    1. Resolve data & config paths, read debug flag from config.
-    2. Initialize logging and data directory.
-    3. Install global exception hook.
-    4. Check single-instance state.
-    5. Load user config and i18n resources.
-    6. Wire hotkey listener and capture window launch logic.
-    7. Build system tray icon and settings dialog.
-    8. Start Qt event loop.
+    Central controller for the HushSnap application.
+    Orchestrates startup, signal connections, and component lifecycles.
     """
-    overall_start = time.perf_counter()
-
-    # 1. Resolve paths and read debug flag from config.
-    #    The old --debug CLI flag has been removed because MSIX packages
-    #    cannot receive command-line arguments. Set ``debug = true`` in
-    #    hushsnap_config.toml instead.
-    user_data_dir = get_user_data_dir()
-    config_path = get_config_path()
-    force_debug = get_debug_enabled(config_path)
-    save_ocr_debug_image = force_debug
-
-    # 2. Initialize logging
-    global _log_file_path
-    _log_file_path = user_data_dir / CAPTURE_DEBUG_LOG_FILENAME
-    setup_logging(
-        _log_file_path,
-        force_level=logging.DEBUG if force_debug else None
-    )
-    logger = logging.getLogger(__name__)
-
-    # ── Startup Cache Cleanup ────────────────────────────────────────
-    # Clear any leftover drag cache files from previous sessions.
-    # We do this at startup because exit-time cleanup is notoriously 
-    # unreliable (e.g., app crashes, Task Manager kills, Ctrl+C).
-    try:
-        cache_dir = user_data_dir / "drag_cache"
-        if cache_dir.exists() and cache_dir.is_dir():
-            shutil.rmtree(cache_dir, ignore_errors=True)
-            logger.debug(f"Previous drag cache purged at startup: {cache_dir}")
-    except Exception:
-        pass
-
-    startup_profiler = StartupProfiler(
-        logger,
-        overall_start,
-        boot_start_time,
-        detailed_enabled=force_debug,
-    )
-    startup_profiler.log_header()
-    startup_profiler.log_elapsed("Config loaded and logging setup")
-
-    # 3. Install global exception hook as early as possible after logging is ready.
-    sys.excepthook = exception_hook
-
-    with startup_profiler.step("Startup config loaded"):
-        hotkey_modifier, hotkey_virtual_key, hotkey_name, _ = load_hotkey_setting()
-
-    if force_debug:
-        logger.info("DEBUG MODE ENABLED (via config).")
-        print("\n" + "="*80)
-        print(f"Config directory: {config_path.parent}")
-        print("="*80 + "\n")
-
-
-    # Enforce single instance via lock/mutex.
-    with startup_profiler.step("Process bootstrap ready"):
-        instance_lock = is_already_running()
-    
-    if not instance_lock:
-        message = "HushSnap is already running. Exiting this launch."
-        logger.warning(message)
-        print(message)
-        return
-
-    with startup_profiler.step("UI services initialized"):
-        # Create the Qt application instance with argv0 and any remaining CLI arguments.
-        # (currently usually none unless Qt args are provided).
-        app = QtWidgets.QApplication(sys.argv)
+    def __init__(self, boot_start_time=None):
+        super().__init__()
+        self.boot_start_time = boot_start_time
+        self.overall_start = time.perf_counter()
         
-        # Set internal Qt application identity
-        app_id = get_app_id()
-        app.setApplicationName(app_id)
-        app.setOrganizationName("HushSnap")
+        # 1. Environment & Paths
+        self.user_data_dir = get_user_data_dir()
+        self.config_path = get_config_path()
+        self.force_debug = get_debug_enabled(self.config_path)
+        
+        # 2. Logging Setup
+        global _log_file_path
+        _log_file_path = self.user_data_dir / CAPTURE_DEBUG_LOG_FILENAME
+        setup_logging(
+            _log_file_path,
+            force_level=logging.DEBUG if self.force_debug else None
+        )
+        self.logger = logging.getLogger(__name__)
+        
+        # 3. Profiling & Diagnostics
+        self.startup_profiler = StartupProfiler(
+            self.logger,
+            self.overall_start,
+            self.boot_start_time,
+            detailed_enabled=self.force_debug,
+        )
+        sys.excepthook = exception_hook
 
-        # Give the process a distinct AppUserModelID so Windows shows the
-        # application icon in the taskbar instead of the python.exe icon.
-        if sys.platform == "win32":
-            try:
-                import ctypes
-                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
-                logger.debug(f"AppUserModelID set to {app_id}")
-            except Exception:
-                pass
+        # 4. State
+        self.instance_lock = None
+        self.qt_app = None
+        self.ui_language = "en"
+        self.tray_icon = None
+        self.native_hotkey_filter = None
+        
+        # Components
+        self.ocr_controller = None
+        self.capture_session = None
+        self.hotkey_manager = None
+        self.settings_controller = None
+        self.idle_manager = None
 
-        # Keep the process alive after all windows are closed.
-        app.setQuitOnLastWindowClosed(False)
+    def run(self):
+        """Execute the full application lifecycle."""
+        self.startup_profiler.log_header()
+        self.startup_profiler.log_elapsed("Config loaded and logging setup")
 
-        # Load config: current hotkey binding and language preference.
-        ui_language = resolve_ui_lang(config_path)
+        # --- Prerequisite checks ---
+        self._purge_drag_cache()
+        
+        with self.startup_profiler.step("Process bootstrap ready"):
+            self.instance_lock = is_already_running()
+        
+        if not self.instance_lock:
+            self.logger.warning("HushSnap is already running. Exiting launch.")
+            return
 
-        def translate(key, **kwargs):
-            return ui_text(ui_language, key, **kwargs)
+        # --- Component Initialization ---
+        self._init_qt_app()
+        self._init_logic_controllers()
+        self._init_ui_shell()
+        
+        # --- Final Polish ---
+        self.startup_profiler.log_summary()
+        QtCore.QTimer.singleShot(5000, self._initial_memory_trim)
+        
+        return self.qt_app.exec()
 
-        global _translate
-        _translate = translate
+    def translate(self, key, **kwargs):
+        """App-wide translation helper."""
+        return ui_text(self.ui_language, key, **kwargs)
 
-    ocr_controller = OcrController(
-            app=app,
-            translate=translate,
-            config_path=config_path,
-            user_data_dir=user_data_dir,
-            save_debug_image=save_ocr_debug_image,
+    def _purge_drag_cache(self):
+        try:
+            cache_dir = self.user_data_dir / "drag_cache"
+            if cache_dir.exists() and cache_dir.is_dir():
+                shutil.rmtree(cache_dir, ignore_errors=True)
+                self.logger.debug(f"Previous drag cache purged at startup: {cache_dir}")
+        except Exception:
+            pass
+
+    def _init_qt_app(self):
+        with self.startup_profiler.step("UI services initialized"):
+            self.qt_app = QtWidgets.QApplication(sys.argv)
+            app_id = get_app_id()
+            self.qt_app.setApplicationName(app_id)
+            self.qt_app.setOrganizationName("HushSnap")
+            self.qt_app.setQuitOnLastWindowClosed(False)
+
+            if sys.platform == "win32":
+                try:
+                    import ctypes
+                    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+                except Exception:
+                    pass
+
+            self.ui_language = resolve_ui_lang(self.config_path)
+            global _translate
+            _translate = self.translate
+
+    def _init_logic_controllers(self):
+        # 1. OCR Controller
+        self.ocr_controller = OcrController(
+            app=self.qt_app,
+            translate=self.translate,
+            config_path=self.config_path,
+            user_data_dir=self.user_data_dir,
+            save_debug_image=self.force_debug,
         )
 
-    def on_capture_completed(captured_pixmap):
+        # 2. Capture Session
+        self.capture_session = CaptureSession(self._on_capture_completed)
+        self.ocr_controller.set_capture_requester(self.capture_session.request_capture)
+
+        # 3. Hotkey Manager
+        with self.startup_profiler.step("Startup config loaded"):
+            modifier, vk, name, _ = load_hotkey_setting()
+            
+        self.hotkey_manager = HotkeyManager(
+            self.translate,
+            self.config_path,
+            modifier,
+            vk,
+            name,
+        )
+        self.hotkey_manager.status_requested.connect(self._handle_status_toast)
+        self.hotkey_manager.register_initial()
+        self.hotkey_manager.start_watch(self.qt_app)
+        self.qt_app.aboutToQuit.connect(self.hotkey_manager.release_resources)
+
+        # 4. Native Event Filter (Hotkey hook)
+        from .hotkey import HotkeyFilter
+        self.native_hotkey_filter = HotkeyFilter(
+            on_trigger=self.capture_session.request_capture,
+            on_taskbar_created=self._handle_taskbar_created,
+        )
+        self.native_hotkey_filter.hotkey_id = self.hotkey_manager.hotkey_id
+        self.qt_app.installNativeEventFilter(self.native_hotkey_filter)
+
+        # 5. UI Wiring (Thumbnail & Pinned Image)
+        thumbnail_manager.clicked.connect(self._handle_thumbnail_clicked)
+        thumbnail_manager.open_viewer.connect(self._handle_open_viewer)
+        thumbnail_manager.save_to_desktop.connect(self._handle_save_to_desktop)
+        thumbnail_manager.save_requested.connect(self._handle_thumbnail_save)
+        thumbnail_manager.pin_requested.connect(
+            lambda pil, pos, size: pinned_image_manager.pin_image(
+                pil, 
+                morph_pos=pos, 
+                morph_size=size,
+                logical_size=pil.info.get("logical_size")
+            )
+        )
+        
+        pinned_image_manager.ocr_requested.connect(
+            lambda pix, win: self.ocr_controller.copy_text_from_image(pix, win)
+        )
+
+        # 6. Idle Memory Manager
+        self.idle_manager = self._init_idle_manager(thumbnail_manager, pinned_image_manager)
+
+    def _init_ui_shell(self):
+        with self.startup_profiler.step("Shell integration initialized"):
+            from .ui.tray import create_tray
+            self.tray_icon, settings_action = create_tray(
+                self.qt_app,
+                self.translate,
+                self.capture_session.request_capture,
+                None,
+                self._open_config_dir,
+                self.qt_app.quit,
+                initial_hotkey=self.hotkey_manager.current_hotkey_name,
+            )
+
+            self.ocr_controller.tray_icon = self.tray_icon
+            self.ocr_controller.bridge.warmup_finished.connect(self.tray_icon.show)
+            self.hotkey_manager.tray_icon = self.tray_icon
+
+            # Settings Dialog
+            try:
+                self.settings_controller = SettingsDialogController(
+                    self.translate,
+                    self.config_path,
+                    self.hotkey_manager,
+                    on_font_size_changed=self.ocr_controller.popup.apply_font_size,
+                )
+                settings_action.triggered.connect(self.settings_controller.show)
+                self.settings_controller.language_changed.connect(self._handle_restart_requested)
+                
+                # Deferred conflict resolution
+                self.hotkey_manager.resolve_startup_conflicts(
+                    lambda: self.settings_controller.show(section="capture")
+                )
+            except Exception:
+                self.logger.exception("Failed to initialize settings dialog")
+                settings_action.setEnabled(False)
+
+    def _on_capture_completed(self, captured_pixmap, logical_size):
         """Callback after screenshot is copied to clipboard."""
-        # Only show thumbnail if this is NOT an OCR capture to avoid distraction.
-        # Defer via singleShot so CaptureWindow has fully closed before the
-        # thumbnail appears — avoids a DWM focus-race in the MSIX container
-        # that causes the thumbnail to flash and immediately dismiss.
-        if not ocr_controller.next_capture_should_ocr:
+        if not self.ocr_controller.next_capture_should_ocr:
             try:
                 pil_img = qpixmap_to_pil(captured_pixmap)
-                QtCore.QTimer.singleShot(50, lambda img=pil_img: _show_thumbnail_safe(img))
+                # Store selection-based logical size as source of truth
+                pil_img.info["logical_size"] = logical_size
+                QtCore.QTimer.singleShot(50, lambda img=pil_img: show_thumbnail(img))
             except Exception:
-                logging.getLogger(__name__).exception("Failed to show thumbnail")
+                self.logger.exception("Failed to show thumbnail")
 
-        ocr_controller.handle_capture_completed(captured_pixmap)
+        self.ocr_controller.handle_capture_completed(captured_pixmap)
 
-    def _show_thumbnail_safe(pil_img):
-        try:
-            show_thumbnail(pil_img)
-        except Exception:
-            logging.getLogger(__name__).exception("Failed to show thumbnail (deferred)")
-
-    # --- Thumbnail Interaction Handlers ---
-    from .ui.thumbnail import thumbnail_manager
-
-    def handle_thumbnail_clicked(pil_img):
-        """Thumbnail left-click: trigger OCR with smooth position transition."""
-        # Switch thumbnail to loading state — it stays visible during OCR
+    def _handle_thumbnail_clicked(self, pil_img):
+        from .ui.thumbnail import thumbnail_manager
         thumb_win = thumbnail_manager.current_window()
         if thumb_win:
             thumb_win.start_loading()
 
-        # Capture thumbnail geometry so the OCR popup can morph from it
         pos, size = thumbnail_manager.current_window_rect()
         if pos and size:
-            ocr_controller.set_popup_anchor(
+            self.ocr_controller.set_popup_anchor(
                 pos.x() + size.width() / 2,
                 pos.y() + size.height() / 2,
                 width=size.width(),
@@ -282,9 +351,8 @@ def main(boot_start_time=None):
         else:
             center = thumbnail_manager.current_window_center()
             if center is not None:
-                ocr_controller.set_popup_anchor(*center)
+                self.ocr_controller.set_popup_anchor(*center)
 
-        # Convert PIL Image to QPixmap for the OCR pipeline
         from PyQt6 import QtGui
         if pil_img.mode != "RGBA":
             pil_img = pil_img.convert("RGBA")
@@ -293,245 +361,129 @@ def main(boot_start_time=None):
             data, pil_img.size[0], pil_img.size[1],
             QtGui.QImage.Format.Format_RGBA8888,
         ).copy()
-        qpixmap = QtGui.QPixmap.fromImage(qimage)
-        ocr_controller.start_request(qpixmap)
+        self.ocr_controller.start_request(QtGui.QPixmap.fromImage(qimage))
 
-    def handle_open_viewer(pil_img):
-        """Thumbnail context menu: Open with default image viewer."""
+    def _handle_open_viewer(self, pil_img):
         try:
-            temp_path = os.path.join(tempfile.gettempdir(), f"view_{int(time.time())}.png")
+            temp_path = Path(tempfile.gettempdir()) / f"view_{int(time.time())}.png"
             pil_img.save(temp_path)
             os.startfile(temp_path)
         except Exception:
-            logging.getLogger(__name__).exception("Failed to open image in viewer")
+            self.logger.exception("Failed to open image in viewer")
 
-    def handle_save_to_desktop(pil_img):
-        """Thumbnail context menu: Save to Desktop."""
+    def _handle_save_to_desktop(self, pil_img):
         try:
-            desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+            desktop = Path.home() / "Desktop"
             timestamp = time.strftime("%m%d_%H-%M-%S")
             base = f"_{timestamp}"
-            file_path = os.path.join(desktop, f"{base}.png")
+            file_path = desktop / f"{base}.png"
             counter = 1
-            while os.path.exists(file_path):
-                file_path = os.path.join(desktop, f"{base}({counter}).png")
+            while file_path.exists():
+                file_path = desktop / f"{base}({counter}).png"
                 counter += 1
             pil_img.save(file_path)
         except Exception:
-            logging.getLogger(__name__).exception("Failed to save image to desktop")
+            self.logger.exception("Failed to save image to desktop")
 
-    def handle_thumbnail_save(pil_img):
-        """Thumbnail context menu: Save As..."""
+    def _handle_thumbnail_save(self, pil_img):
         try:
             default_name = f"_{time.strftime('%m%d_%H-%M-%S')}.png"
-            file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
-                None, translate("thumbnail_save_as"), default_name, "Images (*.png *.jpg *.bmp)"
+            file_path_str, _ = QtWidgets.QFileDialog.getSaveFileName(
+                None, self.translate("thumbnail_save_as"), default_name, "Images (*.png *.jpg *.bmp)"
             )
-            if file_path:
+            if file_path_str:
+                file_path = Path(file_path_str)
                 pil_img.save(file_path)
-                os.startfile(os.path.dirname(file_path))
+                os.startfile(file_path.parent)
         except Exception:
-            logging.getLogger(__name__).exception("Failed to save image")
+            self.logger.exception("Failed to save image")
 
-    thumbnail_manager.clicked.connect(handle_thumbnail_clicked)
-    thumbnail_manager.open_viewer.connect(handle_open_viewer)
-    thumbnail_manager.save_to_desktop.connect(handle_save_to_desktop)
-    thumbnail_manager.save_requested.connect(handle_thumbnail_save)
+    def _handle_status_toast(self, title_key, body_key, is_error, kwargs):
+        from .ui.toast import show_toast
+        self.logger.debug(f"[handle_status_toast] title={title_key}, body={body_key}, is_error={is_error}")
+        msg = self.translate(body_key, **kwargs)
+        show_toast(msg, duration_ms=3000 if is_error else 2000, is_error=is_error)
 
-    from .ui.pinned_image import pinned_image_manager
-    
-    def handle_pin_requested(pil_img, pos, size):
-        """Thumbnail 'Pin' action: animate from thumbnail to pinned window."""
-        pinned_image_manager.pin_image(pil_img, morph_pos=pos, morph_size=size)
+    def _handle_taskbar_created(self):
+        self.logger.debug("Windows Explorer taskbar recreated. Restoring system tray icon.")
+        if self.tray_icon:
+            try:
+                self.tray_icon.hide()
+                self.tray_icon.show()
+            except Exception:
+                self.logger.exception("Failed to restore system tray icon")
 
-    thumbnail_manager.pin_requested.connect(handle_pin_requested)
-    
-    def handle_pinned_ocr_requested(pixmap, source_win):
-        """Pinned image OCR: copy recognized text to clipboard, show toast on the window."""
-        ocr_controller.copy_text_from_image(pixmap, source_win)
+    def _handle_restart_requested(self):
+        self.logger.info("Restart requested. Cleaning up...")
+        if self.hotkey_manager:
+            self.hotkey_manager.release_resources()
+        QtCore.QTimer.singleShot(0, lambda: _restart_app(self.qt_app, self.instance_lock))
 
-    pinned_image_manager.ocr_requested.connect(handle_pinned_ocr_requested)
-
-    def handle_taskbar_created():
-        logger.info("Windows Explorer taskbar recreated. Restoring system tray icon.")
+    def _open_config_dir(self):
         try:
-            # Reference tray_icon, which is bound in the outer scope of main()
-            if tray_icon is not None:
-                tray_icon.hide()
-                tray_icon.show()
-        except NameError:
-            # tray_icon might not be defined yet during very early startup if a message is received
-            pass
-        except Exception as exc:
-            logger.exception(f"Failed to restore system tray icon: {exc}")
-
-    capture_session = CaptureSession(on_capture_completed)
-    ocr_controller.set_capture_requester(capture_session.request_capture)
-
-    # Install HotkeyFilter to intercept WM_HOTKEY before Qt window event delivery.
-    native_hotkey_filter = HotkeyFilter(
-        on_trigger=capture_session.request_capture,
-        on_taskbar_created=handle_taskbar_created,
-    )
-    app.installNativeEventFilter(native_hotkey_filter)
-
-    def open_config_dir():
-        """Open the local folder that contains the config file."""
-        try:
-            resolved = resolve_physical_path(config_path.parent)
-            logging.getLogger(__name__).info(f"Opening config folder. Raw: {config_path.parent}, Resolved: {resolved}")
+            resolved = resolve_physical_path(self.config_path.parent)
             os.startfile(resolved)
-        except Exception as exc:
-            logging.getLogger(__name__).exception(f"Failed to open config dir: {exc}")
+        except Exception:
+            self.logger.exception("Failed to open config dir")
             QtWidgets.QMessageBox.warning(
-                None,
-                translate("open_dir_failed"),
-                translate("open_dir_failed_body"),
+                None, self.translate("open_dir_failed"), self.translate("open_dir_failed_body")
             )
 
-    with startup_profiler.step("Shell integration initialized"):
-        # Create system tray icon and right-click menu entry points.
-        tray_icon, settings_action = create_tray(
-            app,
-            translate,
-            capture_session.request_capture,  # Allow screenshot trigger from tray menu.
-            None,
-            open_config_dir,
-            app.quit,
-            initial_hotkey=hotkey_name,
-        )
+    def _init_idle_manager(self, tm, pm):
+        class IdleMemoryManager(QtCore.QObject):
+            def __init__(self, tm, pm, oc):
+                super().__init__()
+                self.tm, self.pm, self.oc = tm, pm, oc
+                self.idle_timer = QtCore.QTimer()
+                self.idle_timer.setSingleShot(True)
+                self.idle_timer.timeout.connect(self._do_trim)
+                self._already_trimmed = False
+                self.check_timer = QtCore.QTimer()
+                self.check_timer.timeout.connect(self._check_and_start)
+                self.check_timer.start(5000)
 
-        ocr_controller.tray_icon = tray_icon
+            def _is_truly_idle(self):
+                return (not self.tm._windows and not self.pm._windows 
+                        and not self.oc.is_busy() and not self.oc.popup.isVisible())
 
-        # Show tray icon once OCR engine warmup completes.
-        # The icon is created hidden; this connection makes it appear
-        # when the app is truly ready — no extra notification needed.
-        ocr_controller.bridge.warmup_finished.connect(tray_icon.show)
+            def _check_and_start(self):
+                if self._is_truly_idle():
+                    if not self.idle_timer.isActive() and not self._already_trimmed:
+                        self.idle_timer.start(20000)
+                else:
+                    self.idle_timer.stop()
+                    self._already_trimmed = False
 
-        # Hotkey manager handles registration/unregistration with Windows.
-        hotkey_manager = HotkeyManager(
-            tray_icon,
-            translate,
-            config_path,
-            hotkey_modifier,
-            hotkey_virtual_key,
-            hotkey_name,
-        )
-        hotkey_manager.register_initial()
-        hotkey_manager.start_watch(app) # Start config-change watcher.
+            def _do_trim(self):
+                if self._is_truly_idle():
+                    from .system.memory_utils import trim_working_set
+                    trim_working_set()
+                    self._already_trimmed = True
 
-        # Set hotkey IDs on the native event filter so it can route WM_HOTKEY events.
-        native_hotkey_filter.hotkey_id = hotkey_manager.hotkey_id
+        return IdleMemoryManager(tm, pm, self.ocr_controller)
 
-        # Initialize settings dialog controller.
-        try:
-            settings_controller = SettingsDialogController(
-                translate,
-                config_path,
-                hotkey_manager,
-                on_font_size_changed=ocr_controller.popup.apply_font_size,
-            )
-        except Exception as exc:
-            logging.getLogger(__name__).exception(f"Failed to initialize settings dialog: {exc}")
-            QtWidgets.QMessageBox.warning(
-                None,
-                translate("error"),
-                translate("settings_init_failed"),
-            )
-            settings_action.setEnabled(False)
-        else:
-            # Connect tray "Settings" action to controller show method.
-            settings_action.triggered.connect(settings_controller.show)
+    def _initial_memory_trim(self):
+        from .system.memory_utils import trim_working_set
+        trim_working_set()
 
-            def handle_restart():
-                logger.info("Language changed. Restarting application...")
-                hotkey_manager.release_resources()
-                # Use QTimer to ensure the event loop processes the close before restart
-                QtCore.QTimer.singleShot(0, lambda: _restart_app(app, instance_lock))
 
-            settings_controller.language_changed.connect(handle_restart)
-
-        # Show conflict resolution dialog if any hotkey failed at startup.
-        # This must happen after settings_controller is wired so "Open Settings" works.
-        hotkey_manager.resolve_startup_conflicts(lambda: settings_controller.show(section="capture"))
-
-    # Unregister hotkey and release system resources before app exit.
-    app.aboutToQuit.connect(hotkey_manager.release_resources)
-
-    # ── Memory Management (Idle Trim Patch) ──────────────────────────
-    from .system.memory_utils import trim_working_set
-
-    class IdleMemoryManager(QtCore.QObject):
-        """Monitors global app state and trims memory when truly idle."""
-        def __init__(self, tm, pm, oc):
-            super().__init__()
-            self.tm = tm # thumbnail_manager
-            self.pm = pm # pinned_image_manager
-            self.oc = oc # ocr_controller
-            
-            self.idle_timer = QtCore.QTimer()
-            self.idle_timer.setSingleShot(True)
-            self.idle_timer.timeout.connect(self._do_trim)
-
-            self._already_trimmed = False  # don't re-trim until next activity
-
-            # Check idle state every 5 seconds
-            self.check_timer = QtCore.QTimer()
-            self.check_timer.timeout.connect(self._check_and_start)
-            self.check_timer.start(5000)
-
-        def _is_truly_idle(self):
-            """App is truly idle only when every visible UI element is gone
-            and no background work is in progress."""
-            return (
-                not self.tm._windows
-                and not self.pm._windows
-                and not self.oc.is_busy()
-                and not self.oc.popup.isVisible()
-            )
-
-        def _check_and_start(self):
-            if self._is_truly_idle():
-                if not self.idle_timer.isActive() and not self._already_trimmed:
-                    # 20 seconds of total silence before we trim
-                    self.idle_timer.start(20000)
-            else:
-                self.idle_timer.stop()
-                self._already_trimmed = False  # activity detected, allow trim again later
-
-        def _do_trim(self):
-            # Final sanity check before the heavy lift
-            if self._is_truly_idle():
-                logging.info("[IdleMemoryManager] App is truly idle. Trimming working set...")
-                trim_working_set()
-                self._already_trimmed = True  # don't trim again until next activity
-
-    idle_manager = IdleMemoryManager(thumbnail_manager, pinned_image_manager, ocr_controller)
-
-    # ── Startup Clean ────────────────────────────────────────────────
-    # Run a quick startup trim to clean up import-time overhead
-    QtCore.QTimer.singleShot(5000, trim_working_set)
-
-    startup_profiler.log_summary()
-
-    sys.exit(app.exec())
+def main(boot_start_time=None):
+    """Application entry point."""
+    application = Application(boot_start_time=boot_start_time)
+    sys.exit(application.run())
 
 
 def _restart_app(app, instance_lock):
     """Restart the current application process."""
     logger = logging.getLogger(__name__)
-    logger.info("Application is restarting due to language change.")
+    logger.info("Application is restarting.")
 
     executable = sys.executable
     args = sys.argv[:]
     
-    # CRITICAL: Release the single-instance lock so the NEW process can start.
     from .config import release_instance_lock
     release_instance_lock(instance_lock)
     
     app.quit()
-    
-    # On Windows, subprocess.Popen is more reliable for restarts as it ensures
-    # the new process starts independently while this one finishes exiting.
     subprocess.Popen([executable] + args)
     sys.exit(0)
