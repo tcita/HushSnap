@@ -154,6 +154,19 @@ def main(boot_start_time=None):
         force_level=logging.DEBUG if force_debug else None
     )
     logger = logging.getLogger(__name__)
+
+    # ── Startup Cache Cleanup ────────────────────────────────────────
+    # Clear any leftover drag cache files from previous sessions.
+    # We do this at startup because exit-time cleanup is notoriously 
+    # unreliable (e.g., app crashes, Task Manager kills, Ctrl+C).
+    try:
+        cache_dir = user_data_dir / "drag_cache"
+        if cache_dir.exists() and cache_dir.is_dir():
+            shutil.rmtree(cache_dir, ignore_errors=True)
+            logger.debug(f"Previous drag cache purged at startup: {cache_dir}")
+    except Exception:
+        pass
+
     startup_profiler = StartupProfiler(
         logger,
         overall_start,
@@ -444,19 +457,6 @@ def main(boot_start_time=None):
 
     # Unregister hotkey and release system resources before app exit.
     app.aboutToQuit.connect(hotkey_manager.release_resources)
-
-    # Clean up transient drag cache files on exit (best-effort).
-    def _cleanup_drag_cache():
-        try:
-            import shutil
-            cache_dir = user_data_dir / "drag_cache"
-            if cache_dir.exists() and cache_dir.is_dir():
-                # Use rmtree for a complete sweep of the cache directory
-                shutil.rmtree(cache_dir, ignore_errors=True)
-                logger.debug(f"Drag cache cleaned up: {cache_dir}")
-        except Exception:
-            pass
-    app.aboutToQuit.connect(_cleanup_drag_cache)
 
     # ── Memory Management (Idle Trim Patch) ──────────────────────────
     from .system.memory_utils import trim_working_set
