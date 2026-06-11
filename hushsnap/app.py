@@ -388,13 +388,18 @@ class Application(QtCore.QObject):
 
     def _handle_thumbnail_save(self, pil_img):
         try:
+            from .config import get_last_save_directory, update_last_save_directory, get_config_path
+            default_dir = get_last_save_directory(get_config_path())
             default_name = f"_{time.strftime('%m%d_%H-%M-%S')}.png"
             file_path_str, _ = QtWidgets.QFileDialog.getSaveFileName(
-                None, self.translate("thumbnail_save_as"), default_name, "Images (*.png *.jpg *.bmp)"
+                None, self.translate("thumbnail_save_as"),
+                str(Path(default_dir) / default_name),
+                "Images (*.png *.jpg *.bmp)"
             )
             if file_path_str:
                 file_path = Path(file_path_str)
                 pil_img.save(file_path)
+                update_last_save_directory(file_path.parent, get_config_path())
                 show_toast(self.translate("save_as_done"))
                 os.startfile(file_path.parent)
         except Exception:

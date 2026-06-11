@@ -526,6 +526,35 @@ def update_auto_copy_ocr_result(enabled, config_path=None):
         logger.error(f"Failed to update auto_copy_ocr_result: {e}")
 
 
+def get_last_save_directory(config_path=None):
+    """Read 'last_save_directory' from config (default user's Desktop)."""
+    if config_path is None:
+        config_path = get_config_path()
+    config_data = _load_config_data(config_path)
+    raw = config_data.get("last_save_directory")
+    if isinstance(raw, str) and raw.strip():
+        path = Path(raw.strip())
+        if path.is_dir():
+            return str(path)
+    # Fallback: Desktop
+    desktop = Path.home() / "Desktop"
+    if desktop.is_dir():
+        return str(desktop)
+    return str(Path.home())
+
+
+def update_last_save_directory(directory, config_path=None):
+    """Persist the last-used save directory to config."""
+    if config_path is None:
+        config_path = get_config_path()
+    config_data = _load_config_data(config_path)
+    config_data["last_save_directory"] = str(Path(directory))
+    try:
+        _write_config_data(config_path, config_data)
+    except Exception as e:
+        logger.error(f"Failed to update last_save_directory: {e}")
+
+
 def get_thumbnail_display_time(config_path=None):
     """Read 'thumbnail_display_time' from config (default 10000)."""
     if config_path is None:
