@@ -235,10 +235,11 @@
         <div class="ocr-content">
           // <span class="ocr-highlight">HushSnap</span> (Efficiency Mode):<br>
           <div style="margin-top:10px;">
-            <strong style="font-size:16px;" id="el-ocr-workflow">截图转文字工作流</strong><br>
+            <div style="color:#e0e0e0;font-size:15px;font-weight:600;">Screen-to-Text Workflow</div>
             <div style="color:#888;margin-top:3px;font-size:12px;">极简高效的截图识字助手</div>
             <div style="color:#5fc98a;margin-top:3px;font-size:12px;">サクッと使える画面文字認識</div>
           </div>
+          <div style="margin-top:12px;font-size:10px;color:#555;line-height:1.5;" id="el-ocr-note">* Optimized for ZH, EN, and JA.<br>Other scripts may have limited or no support.</div>
         </div>
       </div>
 
@@ -302,7 +303,6 @@ const dictionary = {
     headline: "Snap.<br><span>Recognize.</span><br>Done.",
     tagline: "A local screenshot & OCR tool for Windows. Smooth, private, and fully offline.",
     ocrTitle: "OCR Recognition",
-    ocrWorkflow: "Screen-to-Text Workflow",
     dragText: "Drag to Apps",
     lblCapture: "1. Capture",
     lblHub: "2. Thumbnail",
@@ -314,7 +314,6 @@ const dictionary = {
     headline: "截图.<br><span>识字.</span><br>搞定.",
     tagline: "Windows 离线截图与文字识别工具。流畅、私密、全本地。",
     ocrTitle: "OCR 文字识别",
-    ocrWorkflow: "截图转文字工作流",
     dragText: "拖拽至应用",
     lblCapture: "1. 截图",
     lblHub: "2. 缩略图",
@@ -326,7 +325,6 @@ const dictionary = {
     headline: "截圖.<br><span>識字.</span><br>搞定.",
     tagline: "Windows 本機截圖與文字識別工具。流暢、私密、全本機。",
     ocrTitle: "OCR 文字識別",
-    ocrWorkflow: "截圖轉文字工作流",
     dragText: "拖曳至應用",
     lblCapture: "1. 截圖",
     lblHub: "2. 縮圖",
@@ -338,7 +336,6 @@ const dictionary = {
     headline: "キャプチャ.<br><span>認識.</span><br>完了.",
     tagline: "Windows 向けのローカル OCR ツール。軽快、プライベート、完全オフライン。",
     ocrTitle: "OCR テキスト認識",
-    ocrWorkflow: "スクリーン→テキスト ワークフロー",
     dragText: "アプリにドラッグ",
     lblCapture: "1. キャプチャ",
     lblHub: "2. サムネイル",
@@ -439,10 +436,8 @@ function switchLang(lang) {
   if (taglineEl)  taglineEl.innerText  = dict.tagline;
 
   const ocrTitleEl    = document.getElementById('el-ocr-title');
-  const ocrWorkflowEl = document.getElementById('el-ocr-workflow');
   const dragTextEl    = document.getElementById('el-drag-text');
   if (ocrTitleEl)    ocrTitleEl.innerText    = dict.ocrTitle;
-  if (ocrWorkflowEl) ocrWorkflowEl.innerText = dict.ocrWorkflow;
   if (dragTextEl)    dragTextEl.innerText    = dict.dragText;
 
   const storeTextEl = document.getElementById('el-store-text');
