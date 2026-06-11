@@ -1,0 +1,443 @@
+<!--
+  HushSnap Landing Page — https://tcita.github.io/HushSnap/
+  ==========================================================
+  GitHub Pages site for HushSnap, a Windows screenshot & offline OCR tool.
+  Serves as the public homepage and points visitors to the Microsoft Store.
+  Built on the same design used for the Store listing screenshots.
+-->
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HushSnap — Windows 离线截图 & OCR 工具</title>
+<meta name="description" content="HushSnap 是一款 Windows 离线截图与文字识别工具。流畅、私密、全本地，无需联网。支持简体中文、繁体中文、英文、日文。">
+<meta name="keywords" content="OCR, screenshot, Windows, offline, 截图, 文字识别, 离线, 隐私">
+<meta name="author" content="HushSnap">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://tcita.github.io/HushSnap/">
+
+<!-- Open Graph / social preview -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="HushSnap — Windows 离线截图 & OCR 工具">
+<meta property="og:description" content="极简高效的截图识字助手。流畅、私密、全本地。">
+<meta property="og:image" content="https://tcita.github.io/HushSnap/assets/logo.png">
+<meta property="og:url" content="https://tcita.github.io/HushSnap/">
+<meta name="twitter:card" content="summary_large_image">
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #060608;
+    color: #e0e0e0;
+    font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans JP", sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  /* ── Language switcher ── */
+  .lang-switcher {
+    position: fixed; top: 12px; left: 12px; z-index: 2000;
+    display: flex; gap: 4px; background: rgba(26, 26, 28, 0.6);
+    backdrop-filter: blur(8px);
+    padding: 3px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.06);
+  }
+  .lang-btn {
+    background: transparent; border: none; color: #555;
+    padding: 4px 8px; font-size: 10px; cursor: pointer;
+    border-radius: 3px; font-weight: normal; transition: all 0.2s;
+  }
+  .lang-btn:hover { color: #aaa; }
+  .lang-btn.active { background: rgba(95, 201, 138, 0.15); color: #5fc98a; font-weight: bold; }
+
+  /* ── Scene (desktop showcase) ── */
+  .scene-wrapper {
+    display: flex; align-items: center; justify-content: center;
+    padding: 40px 20px 0;
+    width: 100%;
+  }
+  .scene {
+    width: 1000px; height: 600px; background: #0a0a0c; border-radius: 32px;
+    position: relative; overflow: hidden;
+    display: flex; align-items: center; justify-content: center; padding: 0 60px;
+    border: 1px solid rgba(255,255,255,0.03); box-shadow: 0 50px 120px rgba(0,0,0,0.8);
+    flex-shrink: 0;
+  }
+  .bg-glow {
+    position: absolute; width: 800px; height: 800px;
+    background: radial-gradient(circle at center, rgba(95,201,138,0.05) 0%, transparent 70%);
+    top: -200px; right: -200px; pointer-events: none;
+  }
+  .left-panel { position: relative; z-index: 10; width: 220px; flex-shrink: 0; }
+  .headline { font-size: 44px; font-weight: 800; color: #fff; line-height: 1.05; margin-bottom: 16px; letter-spacing: -2px; }
+  .headline span { color: #5fc98a; }
+  .app-tag {
+    display: inline-block; padding: 4px 12px;
+    background: rgba(95,201,138,0.1); border: 1px solid rgba(95,201,138,0.2);
+    color: #5fc98a; border-radius: 100px; font-size: 11px;
+    font-weight: bold; margin-bottom: 16px; letter-spacing: 1px;
+  }
+  .right-panel { position: relative; flex: 1; height: 520px; margin-left: 30px; }
+  #lines-svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 50; overflow: visible; }
+
+  .ocr-window {
+    position: absolute; top: 30px; left: 50px; width: 300px;
+    background: #1a1a1c; border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.15); z-index: 150; overflow: hidden;
+  }
+  .ocr-header {
+    height: 30px; background: #000;
+    display: flex; align-items: center; padding: 0 14px; justify-content: space-between;
+  }
+  .ocr-title { color: #5fc98a; font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
+  .ocr-content { padding: 18px 20px; font-size: 13px; line-height: 1.7; color: #e0e0e0; }
+  .ocr-highlight { color: #5fc98a; font-weight: bold; }
+
+  .side-output {
+    position: absolute; top: 240px; right: 10px; width: 130px;
+    z-index: 160; background: #1e1e22; border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.1);
+    padding: 9px 12px; font-size: 12px; color: #bbb;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  .hub-thumbnail {
+    position: absolute; bottom: 60px; right: 10px; width: 130px; height: 88px;
+    background: #1e1e22; border-radius: 12px; border: 2px solid #5fc98a;
+    z-index: 100; display: flex; align-items: center; justify-content: center; overflow: hidden;
+  }
+  .thumb-inner {
+    width: 85%; height: 75%; background: linear-gradient(135deg, #252529, #111);
+    border-radius: 4px; border: 1px solid rgba(255,255,255,0.05); position: relative;
+  }
+  .loading-bar { position: absolute; bottom: 4px; left: 8px; right: 8px; height: 2px; background: rgba(255,255,255,0.1); }
+  .loading-fill { width: 70%; height: 100%; background: #5fc98a; }
+  .action-pill {
+    position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
+    width: 46px; height: 18px; background: rgba(0,0,0,0.7);
+    border-radius: 100px; border: 1px solid rgba(255,255,255,0.1);
+    display: flex; align-items: center; justify-content: center; gap: 5px; z-index: 110;
+  }
+
+  .capture-frame {
+    position: absolute; bottom: 60px; left: 20px; width: 155px; height: 100px;
+    border: 2px dashed #5fc98a; background: rgba(95,201,138,0.05);
+    border-radius: 4px; z-index: 40;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .hotkey-tag {
+    position: absolute; top: -14px; left: 50%; transform: translateX(-50%);
+    background: #252529; border: 1px solid rgba(255,255,255,0.1);
+    color: #fff; font-family: "Consolas", "Cascadia Code", monospace;
+    font-size: 10px; padding: 3px 9px; border-radius: 6px; white-space: nowrap;
+  }
+  .crosshair { width: 18px; height: 18px; color: #5fc98a; opacity: 0.5; position: relative; }
+  .crosshair::before { content: ""; position: absolute; top: 9px; left: 0; width: 18px; height: 1px; background: currentColor; }
+  .crosshair::after  { content: ""; position: absolute; left: 9px; top: 0; width: 1px; height: 18px; background: currentColor; }
+
+  .label-tag {
+    position: absolute; visibility: hidden;
+    font-size: 10px; font-weight: 800; padding: 3px 10px; border-radius: 100px;
+    text-transform: uppercase; z-index: 300; white-space: nowrap;
+  }
+  .mouse-ptr { position: absolute; z-index: 1000; }
+
+  /* ── Store button ── */
+  .store-btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: #fff; color: #111; text-decoration: none;
+    padding: 10px 20px; border-radius: 10px; font-weight: 600;
+    font-size: 13px; margin-top: 18px;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .store-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(95,201,138,0.25); }
+  .store-btn svg { width: 18px; height: 18px; flex-shrink: 0; }
+
+  /* ── Footer ── */
+  .site-footer {
+    text-align: center; padding: 32px 20px 40px;
+    color: #555; font-size: 11px;
+    display: flex; gap: 18px; flex-wrap: wrap; justify-content: center;
+  }
+  .site-footer a {
+    color: #5fc98a; text-decoration: none; transition: color 0.2s;
+  }
+  .site-footer a:hover { color: #a0f0c0; }
+
+  /* ── Responsive ── */
+  @media (max-width: 1060px) {
+    .scene {
+      width: 100%; height: auto; min-height: 560px;
+      flex-direction: column; padding: 32px 24px; border-radius: 20px;
+    }
+    .left-panel { width: 100%; text-align: center; margin-bottom: 28px; }
+    .headline { font-size: 32px; letter-spacing: -1px; }
+    .app-tag { font-size: 10px; }
+    .right-panel { width: 100%; height: 340px; margin-left: 0; }
+    .ocr-window { top: 10px; left: 10px; width: 240px; }
+    .ocr-content { padding: 12px 14px; font-size: 11px; }
+    .capture-frame { bottom: 30px; left: 10px; width: 120px; height: 80px; }
+    .hub-thumbnail { bottom: 30px; right: 4px; width: 100px; height: 68px; }
+    .side-output { top: 180px; right: 4px; width: 100px; font-size: 10px; }
+    .store-btn { padding: 8px 16px; font-size: 12px; }
+  }
+  @media (max-width: 500px) {
+    .scene { padding: 20px 12px; border-radius: 14px; }
+    .headline { font-size: 26px; }
+    .right-panel { height: 260px; }
+    .ocr-window { top: 4px; left: 2px; width: 170px; }
+    .ocr-content { padding: 8px 10px; font-size: 10px; }
+    .capture-frame { bottom: 16px; left: 2px; width: 90px; height: 60px; }
+    .hub-thumbnail { bottom: 16px; right: 2px; width: 70px; height: 50px; }
+    .side-output { top: 130px; right: 2px; width: 80px; font-size: 9px; }
+    .lang-btn { font-size: 9px; padding: 3px 6px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="lang-switcher">
+  <button class="lang-btn" onclick="switchLang('en')">English</button>
+  <button class="lang-btn active" onclick="switchLang('zh')">简体中文</button>
+  <button class="lang-btn" onclick="switchLang('tw')">繁體中文</button>
+  <button class="lang-btn" onclick="switchLang('ja')">日本語</button>
+</div>
+
+<div class="scene-wrapper">
+  <div class="scene">
+    <div class="bg-glow"></div>
+    <div class="left-panel">
+      <div class="app-tag">HUSHSNAP</div>
+      <div class="headline" id="el-headline">截图.<br><span>识字.</span><br>搞定.</div>
+      <p style="color:#94a3b8; font-size:13px; line-height:1.6; margin-top:14px;" id="el-tagline">
+        Windows 离线截图与文字识别工具。流畅、私密、全本地。
+      </p>
+      <a class="store-btn"
+         href="https://apps.microsoft.com/detail/9p0qzv5z8njz"
+         id="el-store-btn">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z"/></svg>
+        <span id="el-store-text">Download from Microsoft Store</span>
+      </a>
+    </div>
+
+    <div class="right-panel" id="rp">
+      <svg id="lines-svg"></svg>
+
+      <div class="ocr-window" id="el-ocr">
+        <div class="ocr-header" id="el-ocr-header">
+          <div class="ocr-title" id="el-ocr-title">OCR 文字识别</div>
+          <div style="display: flex; gap: 8px; color: #555; font-size: 9px; align-items: center; padding-right: 2px;">
+            <span>─</span>
+            <span style="font-size: 8px; transform: translateY(1px);">❑</span>
+            <span style="font-size: 10px;">✕</span>
+          </div>
+        </div>
+        <div class="ocr-content">
+          // <span class="ocr-highlight">HushSnap</span> (Efficiency Mode):<br>
+          <div style="margin-top:10px;">
+            <strong style="font-size:16px;" id="el-ocr-workflow">截图转文字工作流</strong><br>
+            <div style="color:#888;margin-top:3px;font-size:12px;">极简高效的截图识字助手</div>
+            <div style="color:#5fc98a;margin-top:3px;font-size:12px;">サクッと使える画面文字認識</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="side-output" id="el-drag">
+        <div style="width:14px;height:14px;background:rgba(255,255,255,0.1);border-radius:3px;flex-shrink:0;"></div>
+        <span id="el-drag-text">拖拽至应用</span>
+      </div>
+
+      <div class="hub-thumbnail" id="el-hub">
+        <div class="action-pill">
+          <div style="font-size:8px;color:#5fc98a;">📌</div>
+          <div style="width:1px;height:7px;background:rgba(255,255,255,0.2);"></div>
+          <div style="font-size:8px;color:#fff;">×</div>
+        </div>
+        <div class="thumb-inner">
+          <div class="loading-bar"><div class="loading-fill"></div></div>
+        </div>
+      </div>
+
+      <div class="capture-frame" id="el-capture">
+        <div class="hotkey-tag">ALT + Q</div>
+        <div class="crosshair"></div>
+      </div>
+
+      <div class="label-tag" id="lbl-capture" style="background:#5fc98a;color:#000;">1. 截图</div>
+      <div class="label-tag" id="lbl-hub"     style="background:#fff;color:#000;">2. 缩略图</div>
+      <div class="label-tag" id="lbl-result"  style="background:#5fc98a;color:#000;">3. 结果</div>
+      <div class="label-tag" id="lbl-click"   style="background:#fff;color:#000;">左键单击</div>
+
+      <svg class="mouse-ptr" style="bottom:50px;right:4px;width:20px;" viewBox="0 0 24 24" fill="white">
+        <path d="M5.628 2l15.372 10.5-6.107 1.513 3.107 7.987-3 1.5-3.107-7.987-6.265 5.487z" stroke="black" stroke-width="1"/>
+      </svg>
+    </div>
+  </div>
+</div>
+
+<footer class="site-footer">
+  <span>&copy; 2025 HushSnap</span>
+  <a href="https://github.com/tcita/HushSnap">GitHub</a>
+  <a href="https://tcita.github.io/HushSnap/PRIVACY">Privacy</a>
+</footer>
+
+<script>
+const dictionary = {
+  en: {
+    headline: "Snap.<br><span>Recognize.</span><br>Done.",
+    tagline: "A local screenshot & OCR tool for Windows. Smooth, private, and fully offline.",
+    ocrTitle: "OCR Recognition",
+    ocrWorkflow: "Screen-to-Text Workflow",
+    dragText: "Drag to Apps",
+    lblCapture: "1. Capture",
+    lblHub: "2. Thumbnail",
+    lblResult: "3. Result",
+    lblClick: "Left-click",
+    storeText: "Download from Microsoft Store"
+  },
+  zh: {
+    headline: "截图.<br><span>识字.</span><br>搞定.",
+    tagline: "Windows 离线截图与文字识别工具。流畅、私密、全本地。",
+    ocrTitle: "OCR 文字识别",
+    ocrWorkflow: "截图转文字工作流",
+    dragText: "拖拽至应用",
+    lblCapture: "1. 截图",
+    lblHub: "2. 缩略图",
+    lblResult: "3. 结果",
+    lblClick: "左键单击",
+    storeText: "从 Microsoft Store 下载"
+  },
+  tw: {
+    headline: "截圖.<br><span>識字.</span><br>搞定.",
+    tagline: "Windows 本機截圖與文字識別工具。流暢、私密、全本機。",
+    ocrTitle: "OCR 文字識別",
+    ocrWorkflow: "截圖轉文字工作流",
+    dragText: "拖曳至應用",
+    lblCapture: "1. 截圖",
+    lblHub: "2. 縮圖",
+    lblResult: "3. 結果",
+    lblClick: "左鍵單擊",
+    storeText: "從 Microsoft Store 下載"
+  },
+  ja: {
+    headline: "キャプチャ.<br><span>認識.</span><br>完了.",
+    tagline: "Windows 向けのローカル OCR ツール。軽快、プライベート、完全オフライン。",
+    ocrTitle: "OCR テキスト認識",
+    ocrWorkflow: "スクリーン→テキスト ワークフロー",
+    dragText: "アプリにドラッグ",
+    lblCapture: "1. キャプチャ",
+    lblHub: "2. サムネイル",
+    lblResult: "3. 結果",
+    lblClick: "左クリック",
+    storeText: "Microsoft Store からダウンロード"
+  }
+};
+
+let currentLang = 'zh';
+
+function renderLayout() {
+  const rp  = document.getElementById('rp');
+  const svg = document.getElementById('lines-svg');
+  const rpR = rp.getBoundingClientRect();
+
+  function r(el) {
+    const b = el.getBoundingClientRect();
+    return {
+      top:    b.top    - rpR.top,
+      left:   b.left   - rpR.left,
+      right:  b.right  - rpR.left,
+      bottom: b.bottom - rpR.top,
+      cx: b.left - rpR.left + b.width  / 2,
+      cy: b.top  - rpR.top  + b.height / 2,
+      w: b.width, h: b.height
+    };
+  }
+
+  const cap  = r(document.getElementById('el-capture'));
+  const hub  = r(document.getElementById('el-hub'));
+  const ocr  = r(document.getElementById('el-ocr'));
+  const drag = r(document.getElementById('el-drag'));
+
+  svg.setAttribute('viewBox', `0 0 ${rpR.width} ${rpR.height}`);
+
+  const c1 = { x: cap.right, y: cap.cy    };
+  const h1 = { x: hub.left,  y: hub.cy    };
+  const h2 = { x: hub.cx,    y: hub.top   };
+  const o1 = { x: ocr.cx,    y: ocr.bottom};
+  const d1 = { x: drag.cx,   y: drag.bottom};
+
+  const cp2x = ocr.right + 20;
+  const cp2y = (h2.y + o1.y) / 2;
+  const cpDragX = h2.x + 20;
+  const cpDragY = (h2.y + d1.y) / 2;
+
+  svg.innerHTML = `
+    <defs>
+      <marker id="dot" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="5" markerHeight="5">
+        <circle cx="4" cy="4" r="3.5" fill="#5fc98a"/>
+      </marker>
+      <marker id="dot-dim" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="5" markerHeight="5">
+        <circle cx="4" cy="4" r="3.5" fill="rgba(95,201,138,0.35)"/>
+      </marker>
+    </defs>
+    <line x1="${c1.x}" y1="${c1.y}" x2="${h1.x}" y2="${h1.y}"
+          stroke="#5fc98a" stroke-width="2.5" opacity="0.9" marker-end="url(#dot)"/>
+    <path d="M ${h2.x} ${h2.y} Q ${cp2x} ${cp2y} ${o1.x} ${o1.y}"
+          fill="none" stroke="#5fc98a" stroke-width="2.5" opacity="0.9" marker-end="url(#dot)"/>
+    <path d="M ${h2.x} ${h2.y} Q ${cpDragX} ${cpDragY} ${d1.x} ${d1.y}"
+          fill="none" stroke="rgba(95,201,138,0.35)" stroke-width="2" stroke-dasharray="4 3" marker-end="url(#dot-dim)"/>
+  `;
+
+  function place(id, cx, cy) {
+    const el = document.getElementById(id);
+    el.style.visibility = 'visible';
+    el.style.opacity = '0';
+    const lw = el.offsetWidth, lh = el.offsetHeight;
+    el.style.left = (cx - lw / 2) + 'px';
+    el.style.top  = (cy - lh / 2) + 'px';
+    el.style.opacity = '1';
+  }
+
+  place('lbl-capture', cap.cx, cap.bottom + 12);
+  place('lbl-hub',     hub.cx, hub.bottom + 12);
+
+  const hdr = r(document.getElementById('el-ocr-header'));
+  place('lbl-result', ocr.right - 40, hdr.cy);
+
+  place('lbl-click', cp2x + 38, cp2y);
+}
+
+function switchLang(lang) {
+  currentLang = lang;
+
+  const buttons = document.querySelectorAll('.lang-btn');
+  buttons.forEach(btn => btn.classList.remove('active'));
+  event.target.classList.add('active');
+
+  const dict = dictionary[lang];
+  document.getElementById('el-headline').innerHTML = dict.headline;
+  document.getElementById('el-tagline').innerText = dict.tagline;
+  document.getElementById('el-ocr-title').innerText = dict.ocrTitle;
+  document.getElementById('el-ocr-workflow').innerText = dict.ocrWorkflow;
+  document.getElementById('el-drag-text').innerText = dict.dragText;
+  document.getElementById('lbl-capture').innerText = dict.lblCapture;
+  document.getElementById('lbl-hub').innerText = dict.lblHub;
+  document.getElementById('lbl-result').innerText = dict.lblResult;
+  document.getElementById('lbl-click').innerText = dict.lblClick;
+  document.getElementById('el-store-text').innerText = dict.storeText;
+
+  renderLayout();
+}
+
+window.addEventListener('load', function() {
+  renderLayout();
+});
+window.addEventListener('resize', function() {
+  renderLayout();
+});
+</script>
+</body>
+</html>
