@@ -90,29 +90,55 @@ class ThumbnailWindow(QtWidgets.QWidget):
         # 3. Blurred background: crop-to-fill → Gaussian blur → QPixmap
         self.blurred_bg = self._create_blurred_background(pil_image)
         
-        # Close button (small 'x' in top-right of card)
-        self.close_btn = QtWidgets.QPushButton("×", self)
-        self.close_btn.setFixedSize(20, 20)
-        self.close_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-        self.close_btn.setStyleSheet(
-            "QPushButton {"
+        # 3. Action Pill (Pin + Close)
+        self.action_pill = QtWidgets.QFrame(self)
+        self.action_pill.setObjectName("actionPill")
+        self.action_pill.setFixedSize(60, 24)
+        self.action_pill.setStyleSheet(
+            "QFrame#actionPill {"
             "  background-color: rgba(0, 0, 0, 160);"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 10px;"
-            "  font-size: 14px;"
-            "  font-weight: bold;"
-            "  line-height: 18px;"
-            "}"
-            "QPushButton:hover {"
-            "  background-color: rgba(255, 60, 60, 220);"
+            "  border-radius: 12px;"
+            "  border: 1px solid rgba(255, 255, 255, 30);"
             "}"
         )
-        self.close_btn.move(self.shadow_padding + self.card_width - 26, self.shadow_padding + 6)
+        
+        pill_layout = QtWidgets.QHBoxLayout(self.action_pill)
+        pill_layout.setContentsMargins(8, 0, 8, 0)
+        pill_layout.setSpacing(6)
+        
+        self.pin_btn = QtWidgets.QPushButton(self.action_pill)
+        self.pin_btn.setFixedSize(20, 20)
+        self.pin_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self.pin_btn.setToolTip("Pin to Screen")
+        self.pin_btn.setIcon(self._make_pin_icon())
+        self.pin_btn.setIconSize(QtCore.QSize(14, 14))
+        self.pin_btn.setStyleSheet("QPushButton { background: transparent; border: none; }")
+        self.pin_btn.clicked.connect(self.pin_requested_signal.emit)
+        
+        # Vertical separator
+        sep = QtWidgets.QFrame(self.action_pill)
+        sep.setFixedSize(1, 12)
+        sep.setStyleSheet("background-color: rgba(255, 255, 255, 40);")
+        
+        self.close_btn = QtWidgets.QPushButton(self.action_pill)
+        self.close_btn.setFixedSize(20, 20)
+        self.close_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self.close_btn.setToolTip("Close")
+        self.close_btn.setIcon(self._make_close_icon())
+        self.close_btn.setIconSize(QtCore.QSize(10, 10))
+        self.close_btn.setStyleSheet("QPushButton { background: transparent; border: none; }")
         self.close_btn.clicked.connect(self.close)
-        self.close_btn.hide()
+        
+        pill_layout.addWidget(self.pin_btn)
+        pill_layout.addWidget(sep)
+        pill_layout.addWidget(self.close_btn)
+        
+        # Center the pill at the top of the card
+        pill_x = self.shadow_padding + (self.card_width - self.action_pill.width()) // 2
+        self.action_pill.move(pill_x, self.shadow_padding + 6)
+        self.action_pill.hide()
 
-        # 3. Position and Animation
+        # 4. Position and Animation
         # Use cursor-based screen detection for multi-monitor awareness
         active_screen = (
             QtWidgets.QApplication.screenAt(QtGui.QCursor.pos())
@@ -151,6 +177,52 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self._loading = False
         self._loading_progress = 0.0
         self._loading_anim = None  # QVariantAnimation for pulsing bar
+
+    @staticmethod
+    def _make_pin_icon():
+        """Creates a vector pin icon matching OcrPopup style."""
+        def draw_pin(color_str):
+            pixmap = QtGui.QPixmap(24, 24)
+            pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+            p = QtGui.QPainter(pixmap)
+            p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+            p.setPen(QtGui.QPen(QtGui.QColor(color_str), 2, QtCore.Qt.PenStyle.SolidLine, QtCore.Qt.PenCapStyle.RoundCap, QtCore.Qt.PenJoinStyle.RoundJoin))
+            # Tilted look
+            p.translate(12, 12)
+            p.rotate(-45)
+            p.translate(-12, -12)
+            path = QtGui.QPainterPath()
+            path.moveTo(12, 17); path.lineTo(12, 22)
+            path.moveTo(9, 11); path.lineTo(6, 14); path.lineTo(6, 16); path.lineTo(18, 16); path.lineTo(18, 14); path.lineTo(15, 11); path.lineTo(15, 6); path.lineTo(9, 6)
+            path.closeSubpath()
+            path.addEllipse(QtCore.QRectF(8, 2, 8, 4))
+            p.drawPath(path)
+            p.end()
+            return pixmap
+
+        icon = QtGui.QIcon()
+        icon.addPixmap(draw_pin("#5fc98a"), QtGui.QIcon.Mode.Normal)
+        icon.addPixmap(draw_pin("#8ef0b6"), QtGui.QIcon.Mode.Active)
+        return icon
+
+    @staticmethod
+    def _make_close_icon():
+        """Creates a vector X icon matching OcrPopup style."""
+        def draw_close(color_str):
+            pixmap = QtGui.QPixmap(24, 24)
+            pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+            p = QtGui.QPainter(pixmap)
+            p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+            p.setPen(QtGui.QPen(QtGui.QColor(color_str), 2.2, QtCore.Qt.PenStyle.SolidLine, QtCore.Qt.PenCapStyle.RoundCap, QtCore.Qt.PenJoinStyle.RoundJoin))
+            p.drawLine(QtCore.QPointF(8, 8), QtCore.QPointF(16, 16))
+            p.drawLine(QtCore.QPointF(16, 8), QtCore.QPointF(8, 16))
+            p.end()
+            return pixmap
+
+        icon = QtGui.QIcon()
+        icon.addPixmap(draw_close("#ffffff"), QtGui.QIcon.Mode.Normal)
+        icon.addPixmap(draw_close("#ff5c5c"), QtGui.QIcon.Mode.Active)
+        return icon
 
     def _get_display_ms(self) -> int:
         """Get the configured display duration from settings."""
@@ -204,7 +276,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self.timer.stop()
         self.fade_anim.stop()
         self.setWindowOpacity(1.0)
-        self.close_btn.hide()
+        self.action_pill.hide()
 
         self._loading_anim = QtCore.QVariantAnimation(self)
         self._loading_anim.setDuration(1200)
@@ -240,8 +312,8 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self.setWindowOpacity(1.0)
         self._hovered = True
         self.update()
-        self.close_btn.show()
-        self.close_btn.raise_()
+        self.action_pill.show()
+        self.action_pill.raise_()
 
     def leaveEvent(self, event):
         """Resume timer on leave, deactivate visual feedback, and hide buttons."""
@@ -249,7 +321,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
             self.timer.start(self._get_display_ms())
         self._hovered = False
         self.update()
-        self.close_btn.hide()
+        self.action_pill.hide()
 
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
@@ -270,7 +342,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
             release_pos = event.position().toPoint()
             if self.card_rect.contains(release_pos):
-                if self.close_btn.geometry().contains(release_pos):
+                if self.action_pill.geometry().contains(release_pos):
                     return
                 logger.debug(f"Thumbnail click triggered at {release_pos}")
                 self.clicked_signal.emit()
@@ -456,7 +528,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
             else:
                 self.setWindowOpacity(1.0)
                 self._hovered = False
-                self.close_btn.hide()
+                self.action_pill.hide()
                 self.timer.start(self._get_display_ms())
                 self.update()
         else:

@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #060608; display: flex; align-items: center; justify-content: center; min-height: 100vh; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; overflow: hidden; }
+  
+  /* 优化2：语言切换器极致收缩，半透明灰暗色，低调贴近左上角 */
+  .lang-switcher {
+    position: fixed; top: 12px; left: 12px; z-index: 2000;
+    display: flex; gap: 4px; background: rgba(26, 26, 28, 0.5);
+    padding: 3px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.06);
+  }
+  .lang-btn {
+    background: transparent; border: none; color: #555;
+    padding: 4px 8px; font-size: 9px; cursor: pointer;
+    border-radius: 3px; font-weight: normal; transition: all 0.2s;
+  }
+  .lang-btn:hover { color: #aaa; }
+  /* 激活态改为低调的淡绿色淡光，不刺眼且易于识别 */
+  .lang-btn.active { background: rgba(95, 201, 138, 0.15); color: #5fc98a; font-weight: bold; }
+
+  .scene {
+    width: 1000px; height: 600px; background: #0a0a0c; border-radius: 32px;
+    position: relative; overflow: hidden;
+    display: flex; align-items: center; justify-content: center; padding: 0 60px;
+    border: 1px solid rgba(255,255,255,0.03); box-shadow: 0 50px 120px rgba(0,0,0,0.8);
+  }
+  .bg-glow {
+    position: absolute; width: 800px; height: 800px;
+    background: radial-gradient(circle at center, rgba(95,201,138,0.05) 0%, transparent 70%);
+    top: -200px; right: -200px; pointer-events: none;
+  }
+  .left-panel { position: relative; z-index: 10; width: 220px; flex-shrink: 0; }
+  .headline { font-size: 44px; font-weight: 800; color: #fff; line-height: 1.05; margin-bottom: 16px; letter-spacing: -2px; }
+  .headline span { color: #5fc98a; }
+  .app-tag {
+    display: inline-block; padding: 4px 12px;
+    background: rgba(95,201,138,0.1); border: 1px solid rgba(95,201,138,0.2);
+    color: #5fc98a; border-radius: 100px; font-size: 11px;
+    font-weight: bold; margin-bottom: 16px; letter-spacing: 1px;
+  }
+  .right-panel { position: relative; flex: 1; height: 520px; margin-left: 30px; }
+  #lines-svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 50; overflow: visible; }
+
+  /* 优化1：将 left 坐标从 10px 调整为 50px，给布局带去更佳的对称和留白空间 */
+  .ocr-window {
+    position: absolute; top: 30px; left: 50px; width: 300px;
+    background: #1a1a1c; border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.15); z-index: 150; overflow: hidden;
+  }
+  .ocr-header {
+    height: 30px; background: #000;
+    display: flex; align-items: center; padding: 0 14px; justify-content: space-between;
+  }
+  .ocr-title { color: #5fc98a; font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
+  .ocr-content { padding: 18px 20px; font-size: 13px; line-height: 1.7; color: #e0e0e0; }
+  .ocr-highlight { color: #5fc98a; font-weight: bold; }
+
+  .side-output {
+    position: absolute; top: 240px; right: 10px; width: 130px;
+    z-index: 160; background: #1e1e22; border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.1);
+    padding: 9px 12px; font-size: 12px; color: #bbb;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  .hub-thumbnail {
+    position: absolute; bottom: 60px; right: 10px; width: 130px; height: 88px;
+    background: #1e1e22; border-radius: 12px; border: 2px solid #5fc98a;
+    z-index: 100; display: flex; align-items: center; justify-content: center; overflow: hidden;
+  }
+  .thumb-inner {
+    width: 85%; height: 75%; background: linear-gradient(135deg, #252529, #111);
+    border-radius: 4px; border: 1px solid rgba(255,255,255,0.05); position: relative;
+  }
+  .loading-bar { position: absolute; bottom: 4px; left: 8px; right: 8px; height: 2px; background: rgba(255,255,255,0.1); }
+  .loading-fill { width: 70%; height: 100%; background: #5fc98a; }
+  .action-pill {
+    position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
+    width: 46px; height: 18px; background: rgba(0,0,0,0.7);
+    border-radius: 100px; border: 1px solid rgba(255,255,255,0.1);
+    display: flex; align-items: center; justify-content: center; gap: 5px; z-index: 110;
+  }
+
+  .capture-frame {
+    position: absolute; bottom: 60px; left: 20px; width: 155px; height: 100px;
+    border: 2px dashed #5fc98a; background: rgba(95,201,138,0.05);
+    border-radius: 4px; z-index: 40;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .hotkey-tag {
+    position: absolute; top: -14px; left: 50%; transform: translateX(-50%);
+    background: #252529; border: 1px solid rgba(255,255,255,0.1);
+    color: #fff; font-family: "Consolas", monospace;
+    font-size: 10px; padding: 3px 9px; border-radius: 6px; white-space: nowrap;
+  }
+  .crosshair { width: 18px; height: 18px; color: #5fc98a; opacity: 0.5; position: relative; }
+  .crosshair::before { content: ""; position: absolute; top: 9px; left: 0; width: 18px; height: 1px; background: currentColor; }
+  .crosshair::after  { content: ""; position: absolute; left: 9px; top: 0; width: 1px; height: 18px; background: currentColor; }
+
+  .label-tag {
+    position: absolute; visibility: hidden;
+    font-size: 10px; font-weight: 800; padding: 3px 10px; border-radius: 100px;
+    text-transform: uppercase; z-index: 300; white-space: nowrap;
+  }
+  .mouse-ptr { position: absolute; z-index: 1000; }
+</style>
+</head>
+<body>
+
+<div class="lang-switcher">
+  <button class="lang-btn" onclick="switchLang('en')">English</button>
+  <button class="lang-btn active" onclick="switchLang('zh')">简体中文</button>
+  <button class="lang-btn" onclick="switchLang('tw')">繁體中文</button>
+</div>
+
+<div class="scene">
+  <div class="bg-glow"></div>
+  <div class="left-panel">
+    <div class="app-tag">HUSHSNAP V1.0</div>
+    <div class="headline" id="el-headline">截图.<br><span>识字.</span><br>搞定.</div>
+    <p style="color:#94a3b8; font-size:13px; line-height:1.6; margin-top:14px;" id="el-tagline">
+      Windows 离线截图与文字识别工具。流畅、私密、全本地。
+    </p>
+    <p style="color:#57687d; font-size:10px; line-height:1.4; margin-top:18px;" id="el-disclaimer">
+      * 优化支持简/繁/英/日。其他语言字符支持有限。
+    </p>
+  </div>
+
+  <div class="right-panel" id="rp">
+    <svg id="lines-svg"></svg>
+
+    <div class="ocr-window" id="el-ocr">
+      <div class="ocr-header" id="el-ocr-header">
+        <div class="ocr-title" id="el-ocr-title">OCR 文字识别</div>
+        <div style="display: flex; gap: 8px; color: #555; font-size: 9px; align-items: center; padding-right: 2px;">
+          <span>─</span>
+          <span style="font-size: 8px; transform: translateY(1px);">❑</span>
+          <span style="font-size: 10px;">✕</span>
+        </div>
+      </div>
+      <div class="ocr-content">
+        // <span class="ocr-highlight">HushSnap</span> (Efficiency Mode):<br>
+        <div style="margin-top:10px;">
+          <strong style="font-size:16px;" id="el-ocr-workflow">截图转文字工作流</strong><br>
+          <div style="color:#888;margin-top:3px;font-size:12px;">极简高效的截图识字助手</div>
+          <div style="color:#5fc98a;margin-top:3px;font-size:12px;">手軽に使える画面文字認識</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="side-output" id="el-drag">
+      <div style="width:14px;height:14px;background:rgba(255,255,255,0.1);border-radius:3px;flex-shrink:0;"></div>
+      <span id="el-drag-text">拖拽至应用</span>
+    </div>
+
+    <div class="hub-thumbnail" id="el-hub">
+      <div class="action-pill">
+        <div style="font-size:8px;color:#5fc98a;">📌</div>
+        <div style="width:1px;height:7px;background:rgba(255,255,255,0.2);"></div>
+        <div style="font-size:8px;color:#fff;">×</div>
+      </div>
+      <div class="thumb-inner">
+        <div class="loading-bar"><div class="loading-fill"></div></div>
+      </div>
+    </div>
+
+    <div class="capture-frame" id="el-capture">
+      <div class="hotkey-tag">ALT + Q</div>
+      <div class="crosshair"></div>
+    </div>
+
+    <div class="label-tag" id="lbl-capture" style="background:#5fc98a;color:#000;">1. 截图</div>
+    <div class="label-tag" id="lbl-hub"     style="background:#fff;color:#000;">2. 中转</div>
+    <div class="label-tag" id="lbl-result"  style="background:#5fc98a;color:#000;">3. 结果</div>
+    <div class="label-tag" id="lbl-click"   style="background:#fff;color:#000;">左键单击</div>
+
+    <svg class="mouse-ptr" style="bottom:50px;right:4px;width:20px;" viewBox="0 0 24 24" fill="white">
+      <path d="M5.628 2l15.372 10.5-6.107 1.513 3.107 7.987-3 1.5-3.107-7.987-6.265 5.487z" stroke="black" stroke-width="1"/>
+    </svg>
+  </div>
+</div>
+
+<script>
+const dictionary = {
+  en: {
+    headline: "Snap.<br><span>Recognize.</span><br>Done.",
+    tagline: "A local screenshot & OCR tool for Windows. Smooth, private, and fully offline.",
+    disclaimer: "* Optimized for ZH, EN, and JA. Other scripts may have limited or no support.",
+    ocrTitle: "OCR Recognition",
+    ocrWorkflow: "Screen-to-Text Workflow",
+    dragText: "Drag to Apps",
+    lblCapture: "1. Capture",
+    lblHub: "2. Hub",
+    lblResult: "3. Result",
+    lblClick: "Left-click"
+  },
+  zh: {
+    headline: "截图.<br><span>识字.</span><br>搞定.",
+    tagline: "专为 Windows 打造的本地离线 OCR 工具。流畅、私密、快速。",
+    disclaimer: "* 优化支持简/繁/英/日。其他语言字符支持有限。",
+    ocrTitle: "OCR 文字识别",
+    ocrWorkflow: "截图转文字工作流",
+    dragText: "拖拽至应用",
+    lblCapture: "1. 截图",
+    lblHub: "2. 中转",
+    lblResult: "3. 结果",
+    lblClick: "左键单击"
+  },
+  tw: {
+    headline: "截圖.<br><span>識字.</span><br>搞定.",
+    tagline: "Windows 本機截圖與文字識別工具。流暢、私密、全本機。",
+    disclaimer: "* 優化支援簡/繁/英/日。其他語言字元支援有限。",
+    ocrTitle: "OCR 文字識別",
+    ocrWorkflow: "截圖轉文字工作流",
+    dragText: "拖曳至應用",
+    lblCapture: "1. 截圖",
+    lblHub: "2. 中轉",
+    lblResult: "3. 結果",
+    lblClick: "左鍵單擊"
+  }
+};
+
+let currentLang = 'zh'; // 默认简体
+
+function renderLayout() {
+  const rp  = document.getElementById('rp');
+  const svg = document.getElementById('lines-svg');
+  const rpR = rp.getBoundingClientRect();
+
+  function r(el) {
+    const b = el.getBoundingClientRect();
+    return {
+      top:    b.top    - rpR.top,
+      left:   b.left   - rpR.left,
+      right:  b.right  - rpR.left,
+      bottom: b.bottom - rpR.top,
+      cx: b.left - rpR.left + b.width  / 2,
+      cy: b.top  - rpR.top  + b.height / 2,
+      w: b.width, h: b.height
+    };
+  }
+
+  const cap  = r(document.getElementById('el-capture'));
+  const hub  = r(document.getElementById('el-hub'));
+  const ocr  = r(document.getElementById('el-ocr'));
+  const drag = r(document.getElementById('el-drag'));
+
+  svg.setAttribute('viewBox', `0 0 ${rpR.width} ${rpR.height}`);
+
+  const c1 = { x: cap.right, y: cap.cy    };
+  const h1 = { x: hub.left,  y: hub.cy    };
+  const h2 = { x: hub.cx,    y: hub.top   };
+  const o1 = { x: ocr.cx,    y: ocr.bottom};
+  const d1 = { x: drag.cx,   y: drag.bottom};
+
+  const cp2x = ocr.right + 20;
+  const cp2y = (h2.y + o1.y) / 2;
+
+  const cpDragX = h2.x + 20;
+  const cpDragY = (h2.y + d1.y) / 2;
+
+  svg.innerHTML = `
+    <defs>
+      <marker id="dot" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="5" markerHeight="5">
+        <circle cx="4" cy="4" r="3.5" fill="#5fc98a"/>
+      </marker>
+      <marker id="dot-dim" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="5" markerHeight="5">
+        <circle cx="4" cy="4" r="3.5" fill="rgba(95,201,138,0.35)"/>
+      </marker>
+    </defs>
+    
+    <line x1="${c1.x}" y1="${c1.y}" x2="${h1.x}" y2="${h1.y}"
+          stroke="#5fc98a" stroke-width="2.5" opacity="0.9" marker-end="url(#dot)"/>
+    <path d="M ${h2.x} ${h2.y} Q ${cp2x} ${cp2y} ${o1.x} ${o1.y}"
+          fill="none" stroke="#5fc98a" stroke-width="2.5" opacity="0.9" marker-end="url(#dot)"/>
+          
+    <path d="M ${h2.x} ${h2.y} Q ${cpDragX} ${cpDragY} ${d1.x} ${d1.y}"
+          fill="none" stroke="rgba(95,201,138,0.35)" stroke-width="2" stroke-dasharray="4 3" marker-end="url(#dot-dim)"/>
+  `;
+
+  function place(id, cx, cy) {
+    const el = document.getElementById(id);
+    el.style.visibility = 'visible';
+    el.style.opacity = '0';
+    const lw = el.offsetWidth, lh = el.offsetHeight;
+    el.style.left = (cx - lw / 2) + 'px';
+    el.style.top  = (cy - lh / 2) + 'px';
+    el.style.opacity = '1';
+  }
+
+  place('lbl-capture', cap.cx, cap.bottom + 12);
+  place('lbl-hub',     hub.cx, hub.bottom + 12);
+
+  const hdr = r(document.getElementById('el-ocr-header'));
+  place('lbl-result', ocr.right - 40, hdr.cy);
+
+  place('lbl-click', cp2x + 38, cp2y);
+}
+
+function switchLang(lang) {
+  currentLang = lang;
+  
+  const buttons = document.querySelectorAll('.lang-btn');
+  buttons.forEach(btn => btn.classList.remove('active'));
+  event.target.classList.add('active');
+
+  const dict = dictionary[lang];
+  document.getElementById('el-headline').innerHTML = dict.headline;
+  document.getElementById('el-tagline').innerText = dict.tagline;
+  document.getElementById('el-disclaimer').innerText = dict.disclaimer;
+  document.getElementById('el-ocr-title').innerText = dict.ocrTitle;
+  document.getElementById('el-ocr-workflow').innerText = dict.ocrWorkflow;
+  document.getElementById('el-drag-text').innerText = dict.dragText;
+  
+  document.getElementById('lbl-capture').innerText = dict.lblCapture;
+  document.getElementById('lbl-hub').innerText = dict.lblHub;
+  document.getElementById('lbl-result').innerText = dict.lblResult;
+  document.getElementById('lbl-click').innerText = dict.lblClick;
+
+  renderLayout();
+}
+
+window.addEventListener('load', function() {
+  renderLayout();
+});
+</script>
+</body>
+</html>

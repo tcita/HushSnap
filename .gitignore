@@ -21,12 +21,10 @@ dist-installer-test/
 
 # Tool output / profiling data
 scratch/
-/ocr_preprocess_test
-DEV.lnk
-RELEASE.lnk
-sign.lnk
 
+# Test cache
+.pytest_cache/
 
-/for-test
-/scratch
-/RapidOCR
+# Orphaned build links
+*.lnk
+
