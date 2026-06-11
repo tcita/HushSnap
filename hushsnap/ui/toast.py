@@ -1,6 +1,8 @@
 import logging
 from PyQt6 import QtCore, QtGui, QtWidgets
 
+from .styles import BRAND_GREEN
+
 logger = logging.getLogger(__name__)
 
 # Global list to keep Toast instances alive (prevent GC) until they close themselves
@@ -42,7 +44,7 @@ class Toast(QtWidgets.QFrame):
 
         # Left accent bar
         accent_bar = QtWidgets.QFrame()
-        accent_color = "#FF5252" if is_error else "#5FC98A"
+        accent_color = "#FF5252" if is_error else BRAND_GREEN
         accent_bar.setStyleSheet(
             f"background-color: {accent_color}; border-top-left-radius: 8px; border-bottom-left-radius: 8px;"
         )

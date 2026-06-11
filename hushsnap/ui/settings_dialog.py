@@ -25,6 +25,7 @@ from ..config import (
 )
 from ..system import startup_manager
 from .styles import (
+    BRAND_GREEN,
     CAPTURE_CANCEL_BUTTON_STYLE,
     CAPTURE_DIALOG_STYLE,
     CAPTURE_FEEDBACK_STYLE,
@@ -125,7 +126,7 @@ class CategoryList(QtWidgets.QListWidget):
             "QListWidget::item:selected {"
             "  background: #FFFFFF;"
             "  color: #333;"
-            "  border-left: 3px solid #5FC98A;"
+            "  border-left: 3px solid " + BRAND_GREEN + ";"
             "}"
             "QListWidget::item:hover:!selected {"
             "  background: #EBEBEB;"
@@ -284,7 +285,7 @@ class SleekSwitch(QtWidgets.QAbstractButton):
         self._base_offset = self._margin
         self._offset = self._base_offset
         self._color_off = QtGui.QColor("#D5D5D5")
-        self._color_on = QtGui.QColor("#5FC98A")
+        self._color_on = QtGui.QColor(BRAND_GREEN)
         self._thumb_color = QtGui.QColor("#FFFFFF")
         self._animation = QtCore.QVariantAnimation(
             self,
@@ -627,7 +628,7 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
         
         self.status_title = QtWidgets.QLabel(self.translate("settings_hotkey_capture_waiting"))
         self.status_title.setStyleSheet(
-            "font-size: 13px; font-weight: bold; color: #5FC98A; "
+            f"font-size: 13px; font-weight: bold; color: {BRAND_GREEN}; "
             "font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", \"Segoe UI\", sans-serif; "
             "background: transparent; border: none;"
         )
@@ -678,9 +679,9 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
             self.translate("settings_save_hotkey_btn")
         )
         self.save_button.setObjectName("saveButton")
-        self.save_button.setStyleSheet(CAPTURE_SAVE_BUTTON_STYLE + """
+        self.save_button.setStyleSheet((CAPTURE_SAVE_BUTTON_STYLE + """
             QPushButton#saveButton:enabled {
-                background-color: #5FC98A;
+                background-color: __BRAND__;
             }
             QPushButton#saveButton:enabled:hover {
                 background-color: #4eb579;
@@ -688,7 +689,7 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
             QPushButton#saveButton:enabled:pressed {
                 background-color: #3f9b65;
             }
-        """)
+        """).replace("__BRAND__", BRAND_GREEN))
         self.save_button.setEnabled(False)
         self.save_button.clicked.connect(self.accept)
         button_row.addWidget(self.save_button)
@@ -738,9 +739,9 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
             pill = _make_kbd_pill(part)
             # Make the pill look gorgeous with brand green accent inside the capture dialog
             pill.setStyleSheet(
-                "border: 1px solid #5FC98A; border-radius: 5px; background: #FFFFFF; "
+                f"border: 1px solid {BRAND_GREEN}; border-radius: 5px; background: #FFFFFF; "
                 "padding: 4px 10px; font-family: 'Consolas', 'Segoe UI', monospace; "
-                "font-size: 13px; font-weight: bold; color: #5FC98A;"
+                f"font-size: 13px; font-weight: bold; color: {BRAND_GREEN};"
             )
             self.pills_layout.addWidget(pill, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
 
@@ -853,14 +854,14 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
         self.save_button.setEnabled(True)
         
         # Set container border stylesheet to valid green success style
-        self.pills_container.setStyleSheet(
+        self.pills_container.setStyleSheet((
             "QFrame#pillsContainer {"
-            "  border: 1.5px solid #5FC98A;"
+            f"  border: 1.5px solid {BRAND_GREEN};"
             "  border-radius: 8px;"
             "  background-color: #F2FDF6;"
             "  min-height: 50px;"
             "}"
-        )
+        ))
         event.accept()
 
 

@@ -8,7 +8,7 @@ from pathlib import Path
 from PyQt6 import QtCore, QtGui, QtWidgets
 from PIL import Image
 
-from .styles import MODERN_MENU_STYLE
+from .styles import BRAND_GREEN, MODERN_MENU_STYLE
 from ..constants import (
     THUMBNAIL_WIDTH,
     THUMBNAIL_HEIGHT,
@@ -211,7 +211,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
             return pixmap
 
         icon = QtGui.QIcon()
-        icon.addPixmap(draw_pin("#5fc98a"), QtGui.QIcon.Mode.Normal)
+        icon.addPixmap(draw_pin(BRAND_GREEN), QtGui.QIcon.Mode.Normal)
         icon.addPixmap(draw_pin("#8ef0b6"), QtGui.QIcon.Mode.Active)
         return icon
 
@@ -652,7 +652,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
             travel = track_w - seg_w
             t = self._loading_progress
             offset = (math.sin(t * math.pi * 2 - math.pi / 2) + 1) / 2 * travel
-            painter.setBrush(QtGui.QColor("#5fc98a"))
+            painter.setBrush(QtGui.QColor(BRAND_GREEN))
             painter.drawRoundedRect(
                 QtCore.QRectF(self.card_rect.left() + margin + offset, bar_y, seg_w, bar_h),
                 1, 1,
@@ -665,7 +665,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
         painter.drawRoundedRect(QtCore.QRectF(self.card_rect).adjusted(0.5, 0.5, -0.5, -0.5), THUMBNAIL_CORNER_RADIUS, THUMBNAIL_CORNER_RADIUS)
 
         if self._hovered:
-            painter.setPen(QtGui.QPen(QtGui.QColor("#5fc98a"), 1.5))
+            painter.setPen(QtGui.QPen(QtGui.QColor(BRAND_GREEN), 1.5))
             painter.drawRoundedRect(QtCore.QRectF(self.card_rect).adjusted(1, 1, -1, -1), THUMBNAIL_CORNER_RADIUS, THUMBNAIL_CORNER_RADIUS)
 
         # ── Pill background ────────────────────────────────────────────────

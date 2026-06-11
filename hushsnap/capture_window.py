@@ -23,6 +23,7 @@ from .system.win32_window_utils import (
     get_hwnd_value,
     get_window_snapshot,
 )
+from .ui.styles import BRAND_GREEN, BRAND_GREEN_RGB
 
 logger = get_logger(__name__)
 
@@ -64,7 +65,7 @@ class CopiedToast(QtWidgets.QWidget):
         accent = QtWidgets.QFrame()
         accent.setFixedWidth(3)
         accent.setStyleSheet(
-            "background-color: #5FC98A;"
+            f"background-color: {BRAND_GREEN};"
             "border-top-left-radius: 6px;"
             "border-bottom-left-radius: 6px;"
         )
@@ -335,18 +336,18 @@ class CaptureWindow(QtWidgets.QWidget):
 
                 # --- New Advanced Selection UI ---
                 # 1. Draw Glow/Shadow Effect
-                glow_pen = QtGui.QPen(QtGui.QColor(95, 201, 138, 100), 4)
+                glow_pen = QtGui.QPen(QtGui.QColor(*BRAND_GREEN_RGB, 100), 4)
                 painter.setPen(glow_pen)
                 painter.drawRect(rect)
 
                 # 2. Draw Main Vibrant Border
-                main_pen = QtGui.QPen(QtGui.QColor("#5FC98A"), 1.5)
+                main_pen = QtGui.QPen(QtGui.QColor(BRAND_GREEN), 1.5)
                 painter.setPen(main_pen)
                 painter.drawRect(rect)
 
                 # 3. Draw Corner Handles (professional look)
                 handle_size = 10
-                painter.setBrush(QtGui.QColor("#5FC98A"))
+                painter.setBrush(QtGui.QColor(BRAND_GREEN))
                 painter.setPen(QtGui.QPen(QtCore.Qt.GlobalColor.white, 1))
                 
                 # Corners: Top-Left, Top-Right, Bottom-Left, Bottom-Right

@@ -8,6 +8,7 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 
 from ..config import get_resource_dir
 from ..constants import APP_ICON_FILENAME
+from .styles import BRAND_GREEN
 
 
 def load_tinted_pixmap(icon_path, color_hex):
@@ -250,7 +251,7 @@ def create_tray(
     screenshot_action = StyledMenuAction(
         text=translate("menu_screenshot"),
         icon_path=screenshot_icon_path,
-        color_hex="#5fc98a",
+        color_hex=BRAND_GREEN,
         shortcut=initial_hotkey,
         is_danger=False,
         on_triggered=on_screenshot_triggered,

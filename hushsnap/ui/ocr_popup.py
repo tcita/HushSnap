@@ -6,6 +6,7 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 
 from ..config import get_ocr_font_size, get_resource_dir
 from ..constants import APP_ICON_FILENAME
+from .styles import BRAND_GREEN
 
 # Minimum window size to prevent collapsing to zero
 WINDOW_MIN_WIDTH = 280
@@ -105,8 +106,8 @@ class OcrPopup(QtWidgets.QWidget):
         self.loading_bar.setTextVisible(False)
         self.loading_bar.setRange(0, 0)
         self.loading_bar.setStyleSheet(
-            "QProgressBar { background: transparent; border: none; }"
-            "QProgressBar::chunk { background-color: #5fc98a; }"
+            f"QProgressBar {{ background: transparent; border: none; }}"
+            f"QProgressBar::chunk {{ background-color: {BRAND_GREEN}; }}"
         )
         
         self.loading_img_label = QtWidgets.QLabel()
@@ -146,7 +147,7 @@ class OcrPopup(QtWidgets.QWidget):
 
         # ── caret colour ────────────────────────────────────────────
         pal = self.text_edit.palette()
-        pal.setColor(QtGui.QPalette.ColorRole.Text, QtGui.QColor("#5fc98a"))
+        pal.setColor(QtGui.QPalette.ColorRole.Text, QtGui.QColor(BRAND_GREEN))
         # Ensure viewport is transparent
         pal.setColor(QtGui.QPalette.ColorRole.Base, QtCore.Qt.GlobalColor.transparent)
         self.text_edit.setPalette(pal)
@@ -166,7 +167,7 @@ class OcrPopup(QtWidgets.QWidget):
 
     # ── stylesheet ───────────────────────────────────────────────────
     def _apply_stylesheet(self):
-        self.setStyleSheet(
+        self.setStyleSheet((
             "/* Neutral dark theme — matches thumbnail card */"
 
             "OcrPopup {"
@@ -252,7 +253,7 @@ class OcrPopup(QtWidgets.QWidget):
             "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {"
             " background: transparent;"
             "}"
-        )
+        ).replace("#5fc98a", BRAND_GREEN))
 
     # ── paint / window chrome ────────────────────────────────────────
     def paintEvent(self, event):
@@ -601,7 +602,7 @@ class OcrPopup(QtWidgets.QWidget):
             return pixmap
 
         icon = QtGui.QIcon()
-        icon.addPixmap(draw_copy("#5fc98a"), QtGui.QIcon.Mode.Normal)
+        icon.addPixmap(draw_copy(BRAND_GREEN), QtGui.QIcon.Mode.Normal)
         icon.addPixmap(draw_copy("#a3f2c2"), QtGui.QIcon.Mode.Active)
         return icon
 
@@ -661,7 +662,7 @@ class OcrPopup(QtWidgets.QWidget):
             return pixmap
 
         icon = QtGui.QIcon()
-        icon.addPixmap(draw_success("#5fc98a"), QtGui.QIcon.Mode.Normal)
+        icon.addPixmap(draw_success(BRAND_GREEN), QtGui.QIcon.Mode.Normal)
         icon.addPixmap(draw_success("#a3f2c2"), QtGui.QIcon.Mode.Active)
         return icon
 
@@ -688,7 +689,7 @@ class OcrPopup(QtWidgets.QWidget):
             return pixmap
 
         icon = QtGui.QIcon()
-        icon.addPixmap(draw_x("#5fc98a"), QtGui.QIcon.Mode.Normal)
+        icon.addPixmap(draw_x(BRAND_GREEN), QtGui.QIcon.Mode.Normal)
         icon.addPixmap(draw_x("#a3f2c2"), QtGui.QIcon.Mode.Active)
         return icon
 
@@ -730,7 +731,7 @@ class OcrPopup(QtWidgets.QWidget):
             return pixmap
 
         icon = QtGui.QIcon()
-        icon.addPixmap(draw_pin("#5fc98a"), QtGui.QIcon.Mode.Normal)
+        icon.addPixmap(draw_pin(BRAND_GREEN), QtGui.QIcon.Mode.Normal)
         icon.addPixmap(draw_pin("#a3f2c2"), QtGui.QIcon.Mode.Active)
         return icon
 
@@ -764,7 +765,7 @@ class OcrPopup(QtWidgets.QWidget):
         bg_normal = QtGui.QColor("#1e4a30")
         bg_success = QtGui.QColor("#2a5a3a")
         border_normal = QtGui.QColor("#1e4a30")
-        border_success = QtGui.QColor("#5fc98a")
+        border_success = QtGui.QColor(BRAND_GREEN)
 
         def _interp(a, b, t):
             return QtGui.QColor(
@@ -804,7 +805,7 @@ class OcrPopup(QtWidgets.QWidget):
 
         bg_success = QtGui.QColor("#2a5a3a")
         bg_normal = QtGui.QColor("#1e4a30")
-        border_success = QtGui.QColor("#5fc98a")
+        border_success = QtGui.QColor(BRAND_GREEN)
         border_normal = QtGui.QColor("#1e4a30")
 
         def _interp(a, b, t):

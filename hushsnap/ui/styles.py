@@ -8,6 +8,14 @@ SETTINGS_DIALOG_WIDTH = 460
 SETTINGS_CAPTURE_DIALOG_MIN_WIDTH = 340
 
 # Color definitions
+
+# ── Brand identity colour ──────────────────────────────────────────
+# Single source of truth for HushSnap green.
+# Used across capture selection, toggle switches, button accents,
+# progress bars, icon drawing, and web landing pages.
+BRAND_GREEN = "#5FC98A"
+BRAND_GREEN_RGB = (95, 201, 138)  # for QColor(*BRAND_GREEN_RGB, alpha)
+
 SETTINGS_ERROR_COLOR = "#B00020"
 SETTINGS_BG_COLOR = "#F2F2F2"
 SETTINGS_CARD_BG = "#F9F9F9"
