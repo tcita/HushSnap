@@ -53,7 +53,7 @@
   .lang-btn:hover { color: #aaa; }
   .lang-btn.active { background: rgba(95, 201, 138, 0.15); color: #5fc98a; font-weight: bold; }
 
-  /* ── Scene (desktop showcase) ── */
+  /* ── Desktop scene (mockup showcase) ── */
   .scene-wrapper {
     display: flex; align-items: center; justify-content: center;
     padding: 40px 20px 0;
@@ -167,33 +167,29 @@
   }
   .site-footer a:hover { color: #a0f0c0; }
 
+  /* ── Mobile hero (hidden on desktop) ── */
+  .mobile-hero { display: none; }
+
   /* ── Responsive ── */
   @media (max-width: 1060px) {
-    .scene {
-      width: 100%; height: auto; min-height: 560px;
-      flex-direction: column; padding: 32px 24px; border-radius: 20px;
-    }
-    .left-panel { width: 100%; text-align: center; margin-bottom: 28px; }
-    .headline { font-size: 32px; letter-spacing: -1px; }
-    .app-tag { font-size: 10px; }
-    .right-panel { width: 100%; height: 340px; margin-left: 0; }
-    .ocr-window { top: 10px; left: 10px; width: 240px; }
-    .ocr-content { padding: 12px 14px; font-size: 11px; }
-    .capture-frame { bottom: 30px; left: 10px; width: 120px; height: 80px; }
-    .hub-thumbnail { bottom: 30px; right: 4px; width: 100px; height: 68px; }
-    .side-output { top: 180px; right: 4px; width: 100px; font-size: 10px; }
-    .store-btn { padding: 8px 16px; font-size: 12px; }
+    /* Narrow desktop: keep the scene but let it breathe */
+    .scene-wrapper { padding: 20px 10px 0; }
   }
-  @media (max-width: 500px) {
-    .scene { padding: 20px 12px; border-radius: 14px; }
-    .headline { font-size: 26px; }
-    .right-panel { height: 260px; }
-    .ocr-window { top: 4px; left: 2px; width: 170px; }
-    .ocr-content { padding: 8px 10px; font-size: 10px; }
-    .capture-frame { bottom: 16px; left: 2px; width: 90px; height: 60px; }
-    .hub-thumbnail { bottom: 16px; right: 2px; width: 70px; height: 50px; }
-    .side-output { top: 130px; right: 2px; width: 80px; font-size: 9px; }
-    .lang-btn { font-size: 9px; padding: 3px 6px; }
+  @media (max-width: 768px) {
+    .scene-wrapper { display: none; }
+    .mobile-hero {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; text-align: center;
+      min-height: 80vh; padding: 80px 24px 40px;
+    }
+    .mobile-hero .headline { font-size: 38px; letter-spacing: -1px; }
+    .mobile-hero .app-tag { font-size: 10px; }
+    .mobile-hero .tagline-text { max-width: 320px; margin: 0 auto; }
+    .store-btn { padding: 10px 20px; font-size: 13px; }
+    .lang-btn { font-size: 11px; padding: 4px 10px; }
+  }
+  @media (max-width: 400px) {
+    .mobile-hero .headline { font-size: 30px; }
   }
 </style>
 </head>
@@ -206,6 +202,7 @@
   <button class="lang-btn" onclick="switchLang('ja')">日本語</button>
 </div>
 
+<!-- ── Desktop scene ── -->
 <div class="scene-wrapper">
   <div class="scene">
     <div class="bg-glow"></div>
@@ -219,7 +216,7 @@
          href="https://apps.microsoft.com/detail/9p0qzv5z8njz"
          id="el-store-btn">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z"/></svg>
-        <span id="el-store-text">Download from Microsoft Store</span>
+        <span id="el-store-text">从 Microsoft Store 下载</span>
       </a>
     </div>
 
@@ -276,6 +273,21 @@
       </svg>
     </div>
   </div>
+</div>
+
+<!-- ── Mobile hero (visible <768px) ── -->
+<div class="mobile-hero">
+  <div class="app-tag">HUSHSNAP</div>
+  <div class="headline" id="el-headline-m">截图.<br><span>识字.</span><br>搞定.</div>
+  <p style="color:#94a3b8; font-size:14px; line-height:1.6; margin-top:14px;" class="tagline-text" id="el-tagline-m">
+    Windows 离线截图与文字识别工具。流畅、私密、全本地。
+  </p>
+  <a class="store-btn"
+     href="https://apps.microsoft.com/detail/9p0qzv5z8njz"
+     id="el-store-btn-m">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z"/></svg>
+    <span id="el-store-text-m">从 Microsoft Store 下载</span>
+  </a>
 </div>
 
 <footer class="site-footer">
@@ -340,6 +352,7 @@ let currentLang = 'zh';
 
 function renderLayout() {
   const rp  = document.getElementById('rp');
+  if (!rp) return; // mobile — scene is hidden, nothing to render
   const svg = document.getElementById('lines-svg');
   const rpR = rp.getBoundingClientRect();
 
@@ -418,16 +431,39 @@ function switchLang(lang) {
   event.target.classList.add('active');
 
   const dict = dictionary[lang];
-  document.getElementById('el-headline').innerHTML = dict.headline;
-  document.getElementById('el-tagline').innerText = dict.tagline;
-  document.getElementById('el-ocr-title').innerText = dict.ocrTitle;
-  document.getElementById('el-ocr-workflow').innerText = dict.ocrWorkflow;
-  document.getElementById('el-drag-text').innerText = dict.dragText;
-  document.getElementById('lbl-capture').innerText = dict.lblCapture;
-  document.getElementById('lbl-hub').innerText = dict.lblHub;
-  document.getElementById('lbl-result').innerText = dict.lblResult;
-  document.getElementById('lbl-click').innerText = dict.lblClick;
-  document.getElementById('el-store-text').innerText = dict.storeText;
+
+  // Update desktop scene
+  const headlineEl = document.getElementById('el-headline');
+  const taglineEl  = document.getElementById('el-tagline');
+  if (headlineEl) headlineEl.innerHTML = dict.headline;
+  if (taglineEl)  taglineEl.innerText  = dict.tagline;
+
+  const ocrTitleEl    = document.getElementById('el-ocr-title');
+  const ocrWorkflowEl = document.getElementById('el-ocr-workflow');
+  const dragTextEl    = document.getElementById('el-drag-text');
+  if (ocrTitleEl)    ocrTitleEl.innerText    = dict.ocrTitle;
+  if (ocrWorkflowEl) ocrWorkflowEl.innerText = dict.ocrWorkflow;
+  if (dragTextEl)    dragTextEl.innerText    = dict.dragText;
+
+  const storeTextEl = document.getElementById('el-store-text');
+  if (storeTextEl) storeTextEl.innerText = dict.storeText;
+
+  const lblCaptureEl = document.getElementById('lbl-capture');
+  const lblHubEl     = document.getElementById('lbl-hub');
+  const lblResultEl  = document.getElementById('lbl-result');
+  const lblClickEl   = document.getElementById('lbl-click');
+  if (lblCaptureEl) lblCaptureEl.innerText = dict.lblCapture;
+  if (lblHubEl)     lblHubEl.innerText     = dict.lblHub;
+  if (lblResultEl)  lblResultEl.innerText  = dict.lblResult;
+  if (lblClickEl)   lblClickEl.innerText   = dict.lblClick;
+
+  // Update mobile hero
+  const headlineM = document.getElementById('el-headline-m');
+  const taglineM  = document.getElementById('el-tagline-m');
+  const storeTextM = document.getElementById('el-store-text-m');
+  if (headlineM)  headlineM.innerHTML  = dict.headline;
+  if (taglineM)   taglineM.innerText   = dict.tagline;
+  if (storeTextM) storeTextM.innerText = dict.storeText;
 
   renderLayout();
 }
