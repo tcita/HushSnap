@@ -140,7 +140,6 @@ class OcrController:
         update_ocr_pinned(pinned)
 
     def handle_capture_completed(self, captured_pixmap):
-        logging.debug(f"Capture completed. next_capture_should_ocr: {self.next_capture_should_ocr}")
         if not self.next_capture_should_ocr:
             return
 
