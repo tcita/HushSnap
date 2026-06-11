@@ -44,8 +44,19 @@ class CopiedToast(QtWidgets.QWidget):
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_ShowWithoutActivating)
 
-        # Layout for content
-        layout = QtWidgets.QHBoxLayout(self)
+        # Main layout for the top-level CopiedToast widget (transparent wrapper)
+        outer_layout = QtWidgets.QVBoxLayout(self)
+        # Margin around container for shadow to draw inside window bounds (blur radius 10, offset 2)
+        outer_layout.setContentsMargins(12, 12, 12, 14)
+        outer_layout.setSpacing(0)
+
+        # Container widget for actual content
+        self.container = QtWidgets.QFrame()
+        self.container.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
+        outer_layout.addWidget(self.container)
+
+        # Horizontal layout for content inside container
+        layout = QtWidgets.QHBoxLayout(self.container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
@@ -75,13 +86,14 @@ class CopiedToast(QtWidgets.QWidget):
         )
         layout.addWidget(label)
         
-        # Adjust size and add shadow
         self.adjustSize()
-        shadow = QtWidgets.QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(15)
+
+        # Drop shadow on the container widget to render inside the top-level window
+        shadow = QtWidgets.QGraphicsDropShadowEffect(self.container)
+        shadow.setBlurRadius(10)
         shadow.setColor(QtGui.QColor(0, 0, 0, 100))
-        shadow.setOffset(0, 4)
-        self.setGraphicsEffect(shadow)
+        shadow.setOffset(0, 2)
+        self.container.setGraphicsEffect(shadow)
 
         # Center on cursor (accounting for its own width)
         target_pos = global_pos + QtCore.QPoint(-self.width() // 2, -self.height() // 2)

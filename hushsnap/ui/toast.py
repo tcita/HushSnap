@@ -25,8 +25,18 @@ class Toast(QtWidgets.QFrame):
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
 
-        # Main container layout
-        layout = QtWidgets.QHBoxLayout(self)
+        # Main layout for the top-level Toast widget (transparent wrapper)
+        outer_layout = QtWidgets.QVBoxLayout(self)
+        outer_layout.setContentsMargins(28, 28, 28, 34)
+        outer_layout.setSpacing(0)
+
+        # Container widget for actual content
+        self.container = QtWidgets.QFrame()
+        self.container.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
+        outer_layout.addWidget(self.container)
+
+        # Main container layout inside container
+        layout = QtWidgets.QHBoxLayout(self.container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
@@ -89,12 +99,12 @@ class Toast(QtWidgets.QFrame):
         self.group.addAnimation(fade_in)
         self.group.addAnimation(slide_in)
 
-        # Drop shadow
-        shadow = QtWidgets.QGraphicsDropShadowEffect(self)
+        # Drop shadow on the container widget to render inside the top-level window
+        shadow = QtWidgets.QGraphicsDropShadowEffect(self.container)
         shadow.setBlurRadius(25)
         shadow.setColor(QtGui.QColor(0, 0, 0, 120))
         shadow.setOffset(0, 6)
-        self.setGraphicsEffect(shadow)
+        self.container.setGraphicsEffect(shadow)
 
         self.show()
         self.group.start()

@@ -326,6 +326,7 @@ QMenu {
     border: 1px solid rgba(255, 255, 255, 30);
     border-radius: 10px;
     padding: 6px 0px;
+    margin: 12px;
 }
 QMenu::item {
     padding: 8px 32px 8px 16px;
