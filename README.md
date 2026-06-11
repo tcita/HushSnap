@@ -19,9 +19,9 @@ As the project continues to evolve, some parts of this README may occasionally l
 
 HushSnap uses [**PP-OCR**](https://github.com/PaddlePaddle/PaddleOCR) as its sole OCR engine:
 
-- **PP-OCR (via RapidOCR):** Runs PP-OCRv5 ONNX models in-process via the [`rapidocr`](https://github.com/RapidAI/RapidOCR) Python package (Apache 2.0). No external dependencies or language packs needed. Works offline. Uses a unified CJK+Latin model. Ships with a Chinese-centric embedded model but can recognize text in other languages as well.
+- **PP-OCR (via RapidOCR):** Runs PP-OCRv5 ONNX models in-process via the [`rapidocr`](https://github.com/RapidAI/RapidOCR) Python package (Apache 2.0). No external dependencies or language packs needed. Works offline. Uses a unified multilingual model covering CJK, Latin, and more. Ships with a compact embedded model that balances quality and performance across supported scripts.
 
-The engine has been tested on standard screen captures (web, apps, UIs) within HushSnap's own capture→preprocess→OCR pipeline. **Simplified Chinese, Traditional Chinese, and English** are verified to work well. The underlying model may recognize additional languages (e.g., Japanese, German, Spanish), but their accuracy is unverified — use at your own discretion.
+The engine has been tested on standard screen captures (web, apps, UIs) within HushSnap's own capture→preprocess→OCR pipeline. **Simplified Chinese, Traditional Chinese, and English** are verified to work well. PP-OCRv5 also officially supports **Japanese** with reported good accuracy, though we haven't been able to verify this independently — Japanese-speaking users are welcome to share their experience. The model may recognize additional scripts (e.g., German, Spanish), but accuracy for those is uncharacterized.
 
 ## Third-Party Acknowledgment
 

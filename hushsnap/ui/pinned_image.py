@@ -318,7 +318,9 @@ class PinnedImageWindow(QtWidgets.QWidget):
             except Exception: logger.exception("Failed to save pinned image to desktop")
         elif action == save_action:
             file_path, _ = QtWidgets.QFileDialog.getSaveFileName(self, ui_text(lang, "thumbnail_save_as"), f"pin_{QtCore.QDateTime.currentDateTime().toString('MMdd_HHmmss')}.png", "Images (*.png *.jpg *.bmp)")
-            if file_path: self.pil_image.save(file_path)
+            if file_path:
+                self.pil_image.save(file_path)
+                show_toast(ui_text(lang, "save_as_done"))
         elif action == ocr_action:
             self.ocr_requested.emit(self.pixmap, self)
 

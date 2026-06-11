@@ -382,6 +382,7 @@ class Application(QtCore.QObject):
                 file_path = desktop / f"{base}({counter}).png"
                 counter += 1
             pil_img.save(file_path)
+            show_toast(self.translate("pin_saved_to_desktop"))
         except Exception:
             self.logger.exception("Failed to save image to desktop")
 
@@ -394,6 +395,7 @@ class Application(QtCore.QObject):
             if file_path_str:
                 file_path = Path(file_path_str)
                 pil_img.save(file_path)
+                show_toast(self.translate("save_as_done"))
                 os.startfile(file_path.parent)
         except Exception:
             self.logger.exception("Failed to save image")
