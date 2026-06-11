@@ -31,7 +31,7 @@ FLOAT_DURATION_MS = 600
 
 
 class CopiedToast(QtWidgets.QWidget):
-    """A tiny semi-transparent label that floats up and fades out at the cursor position."""
+    """A tiny, sleek floating notification that appears at the cursor position."""
 
     def __init__(self, text: str, global_pos: QtCore.QPoint):
         super().__init__()
@@ -44,26 +44,54 @@ class CopiedToast(QtWidgets.QWidget):
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_ShowWithoutActivating)
 
-        label = QtWidgets.QLabel(text, self)
+        # Layout for content
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Left accent bar (HushSnap Green)
+        accent = QtWidgets.QFrame()
+        accent.setFixedWidth(3)
+        accent.setStyleSheet(
+            "background-color: #5FC98A;"
+            "border-top-left-radius: 6px;"
+            "border-bottom-left-radius: 6px;"
+        )
+        layout.addWidget(accent)
+
+        # Label content
+        label = QtWidgets.QLabel(text)
         label.setStyleSheet(
             "QLabel {"
-            "  color: rgba(255, 255, 255, 220);"
-            "  background: rgba(0, 0, 0, 140);"
-            "  padding: 2px 6px;"
-            "  border-radius: 4px;"
-            "  font-size: 11px;"
-            "  font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
+            "  color: #FFFFFF;"
+            "  background: rgba(26, 26, 26, 0.98);"
+            "  padding: 6px 14px;"
+            "  border-top-right-radius: 6px;"
+            "  border-bottom-right-radius: 6px;"
+            "  font-size: 12px;"
+            "  font-weight: 500;"
+            "  font-family: \"Microsoft YaHei\", \"Segoe UI\", sans-serif;"
             "}"
         )
-        label.adjustSize()
-        self.setFixedSize(label.size())
-        self.move(global_pos)
+        layout.addWidget(label)
+        
+        # Adjust size and add shadow
+        self.adjustSize()
+        shadow = QtWidgets.QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(15)
+        shadow.setColor(QtGui.QColor(0, 0, 0, 100))
+        shadow.setOffset(0, 4)
+        self.setGraphicsEffect(shadow)
+
+        # Center on cursor (accounting for its own width)
+        target_pos = global_pos + QtCore.QPoint(-self.width() // 2, -self.height() // 2)
+        self.move(target_pos)
 
         # Float upward animation
         self._float_anim = QtCore.QPropertyAnimation(self, b"pos")
         self._float_anim.setDuration(FLOAT_DURATION_MS)
-        self._float_anim.setStartValue(global_pos)
-        self._float_anim.setEndValue(global_pos + QtCore.QPoint(0, -FLOAT_UP_PX))
+        self._float_anim.setStartValue(target_pos)
+        self._float_anim.setEndValue(target_pos + QtCore.QPoint(0, -FLOAT_UP_PX))
         self._float_anim.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
 
         # Fade out animation
