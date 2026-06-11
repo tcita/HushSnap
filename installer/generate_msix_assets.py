@@ -8,6 +8,12 @@ Uses PyQt6 to render high-quality PNG visual assets from the project's hushsnap.
 
 import os
 import sys
+
+# Disable High DPI scaling to prevent QIcon from returning device-pixel scaled pixmaps
+# which would cause clipping and off-center alignment on high-DPI screens.
+os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "0"
+os.environ["QT_SCALE_FACTOR"] = "1"
+
 from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtGui import QGuiApplication, QIcon, QPixmap, QPainter, QColor
 
