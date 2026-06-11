@@ -305,7 +305,7 @@ class CaptureWindow(QtWidgets.QWidget):
                 painter.drawRect(rect)
 
                 # 3. Draw Corner Handles (professional look)
-                handle_size = 6
+                handle_size = 10
                 painter.setBrush(QtGui.QColor("#5FC98A"))
                 painter.setPen(QtGui.QPen(QtCore.Qt.GlobalColor.white, 1))
                 

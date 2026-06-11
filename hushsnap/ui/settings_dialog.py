@@ -274,7 +274,7 @@ def _make_ghost_button(text, callback=None):
 
 
 class SleekSwitch(QtWidgets.QAbstractButton):
-    def __init__(self, parent=None, track_radius=12, thumb_radius=9):
+    def __init__(self, parent=None, track_radius=12, thumb_radius=10):
         super().__init__(parent)
         self.setCheckable(True)
         self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)

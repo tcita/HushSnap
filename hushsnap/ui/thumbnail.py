@@ -93,41 +93,50 @@ class ThumbnailWindow(QtWidgets.QWidget):
         # 3. Action Pill (Pin + Close)
         self.action_pill = QtWidgets.QFrame(self)
         self.action_pill.setObjectName("actionPill")
-        self.action_pill.setFixedSize(60, 24)
-        self.action_pill.setStyleSheet(
-            "QFrame#actionPill {"
-            "  background-color: rgba(0, 0, 0, 160);"
-            "  border-radius: 12px;"
-            "  border: 1px solid rgba(255, 255, 255, 30);"
-            "}"
-        )
-        
+        # WA_TranslucentBackground makes the QFrame a transparent hit-test
+        # container only — its background is drawn by the parent paintEvent
+        # so Qt never gets a chance to pre-fill the bounding rect with white.
+        self.action_pill.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.action_pill.setFixedSize(76, 28)
+
         pill_layout = QtWidgets.QHBoxLayout(self.action_pill)
         pill_layout.setContentsMargins(8, 0, 8, 0)
-        pill_layout.setSpacing(6)
-        
+        pill_layout.setSpacing(5)
+
         self.pin_btn = QtWidgets.QPushButton(self.action_pill)
-        self.pin_btn.setFixedSize(20, 20)
+        self.pin_btn.setFixedSize(24, 24)
         self.pin_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.pin_btn.setToolTip("Pin to Screen")
         self.pin_btn.setIcon(self._make_pin_icon())
         self.pin_btn.setIconSize(QtCore.QSize(14, 14))
-        self.pin_btn.setStyleSheet("QPushButton { background: transparent; border: none; }")
+        self.pin_btn.setStyleSheet(
+            "QPushButton { background: transparent; border: none; }"
+        )
         self.pin_btn.clicked.connect(self.pin_requested_signal.emit)
-        
+
         # Vertical separator
         sep = QtWidgets.QFrame(self.action_pill)
-        sep.setFixedSize(1, 12)
+        sep.setFixedSize(1, 14)
+        sep.setAutoFillBackground(False)
         sep.setStyleSheet("background-color: rgba(255, 255, 255, 40);")
-        
+
         self.close_btn = QtWidgets.QPushButton(self.action_pill)
-        self.close_btn.setFixedSize(20, 20)
+        self.close_btn.setFixedSize(24, 24)
         self.close_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.close_btn.setToolTip("Close")
         self.close_btn.setIcon(self._make_close_icon())
-        self.close_btn.setIconSize(QtCore.QSize(10, 10))
-        self.close_btn.setStyleSheet("QPushButton { background: transparent; border: none; }")
+        self.close_btn.setIconSize(QtCore.QSize(14, 14))
+        self.close_btn.setStyleSheet(
+            "QPushButton { background: transparent; border: none; }"
+        )
         self.close_btn.clicked.connect(self.close)
+
+        # Event filters for half-pill hover effect
+        self.pin_btn.installEventFilter(self)
+        self.close_btn.installEventFilter(self)
+        self._pill_hover_timer = QtCore.QTimer(self)
+        self._pill_hover_timer.setSingleShot(True)
+        self._pill_hover_timer.timeout.connect(self._restore_pill_style)
         
         pill_layout.addWidget(self.pin_btn)
         pill_layout.addWidget(sep)
@@ -177,6 +186,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self._loading = False
         self._loading_progress = 0.0
         self._loading_anim = None  # QVariantAnimation for pulsing bar
+        self._pill_state = 'none'  # 'none' | 'pin' | 'close' — drives paintEvent
 
     @staticmethod
     def _make_pin_icon():
@@ -321,7 +331,34 @@ class ThumbnailWindow(QtWidgets.QWidget):
             self.timer.start(self._get_display_ms())
         self._hovered = False
         self.update()
+        self._restore_pill_style()
         self.action_pill.hide()
+
+    # ── Pill hover ─────────────────────────────────────────────────
+    # Hover state is tracked via self._pill_state and rendered in paintEvent.
+    # No stylesheet gradients — parent QPainter handles it artifact-free.
+
+    def _restore_pill_style(self):
+        self._pill_hover_timer.stop()
+        self._pill_state = 'none'
+        self.update()
+
+    def eventFilter(self, obj, event):
+        if obj == self.pin_btn:
+            if event.type() == QtCore.QEvent.Type.Enter:
+                self._pill_hover_timer.stop()
+                self._pill_state = 'pin'
+                self.update()
+            elif event.type() == QtCore.QEvent.Type.Leave:
+                self._pill_hover_timer.start(60)
+        elif obj == self.close_btn:
+            if event.type() == QtCore.QEvent.Type.Enter:
+                self._pill_hover_timer.stop()
+                self._pill_state = 'close'
+                self.update()
+            elif event.type() == QtCore.QEvent.Type.Leave:
+                self._pill_hover_timer.start(60)
+        return super().eventFilter(obj, event)
 
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
@@ -630,6 +667,42 @@ class ThumbnailWindow(QtWidgets.QWidget):
         if self._hovered:
             painter.setPen(QtGui.QPen(QtGui.QColor("#5fc98a"), 1.5))
             painter.drawRoundedRect(QtCore.QRectF(self.card_rect).adjusted(1, 1, -1, -1), THUMBNAIL_CORNER_RADIUS, THUMBNAIL_CORNER_RADIUS)
+
+        # ── Pill background ────────────────────────────────────────────────
+        # Drawn by the parent painter so Qt never pre-fills a child-widget
+        # bounding rect with white before border-radius is applied.
+        if self.action_pill.isVisible():
+            pill_geom = QtCore.QRectF(self.action_pill.geometry())
+            pill_path = QtGui.QPainterPath()
+            pill_path.addRoundedRect(pill_geom, 14.0, 14.0)
+
+            # Base dark fill
+            painter.setPen(QtCore.Qt.PenStyle.NoPen)
+            painter.setBrush(QtGui.QColor(18, 18, 18, 185))
+            painter.drawPath(pill_path)
+
+            # Soft colour wash on the hovered half — layered over base
+            if self._pill_state == 'pin':
+                grad = QtGui.QLinearGradient(pill_geom.left(), 0, pill_geom.right(), 0)
+                grad.setColorAt(0.00, QtGui.QColor(95, 201, 138, 58))
+                grad.setColorAt(0.36, QtGui.QColor(95, 201, 138, 16))
+                grad.setColorAt(0.52, QtGui.QColor(0, 0, 0, 0))
+                grad.setColorAt(1.00, QtGui.QColor(0, 0, 0, 0))
+                painter.setBrush(QtGui.QBrush(grad))
+                painter.drawPath(pill_path)
+            elif self._pill_state == 'close':
+                grad = QtGui.QLinearGradient(pill_geom.left(), 0, pill_geom.right(), 0)
+                grad.setColorAt(0.00, QtGui.QColor(0, 0, 0, 0))
+                grad.setColorAt(0.48, QtGui.QColor(0, 0, 0, 0))
+                grad.setColorAt(0.62, QtGui.QColor(210, 50, 50, 36))
+                grad.setColorAt(1.00, QtGui.QColor(210, 50, 50, 78))
+                painter.setBrush(QtGui.QBrush(grad))
+                painter.drawPath(pill_path)
+
+            # 1px hairline border
+            painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+            painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 30), 1.0))
+            painter.drawPath(pill_path)
 
 class ThumbnailManager(QtCore.QObject):
     """

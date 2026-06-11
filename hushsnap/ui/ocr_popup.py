@@ -46,17 +46,17 @@ class OcrPopup(QtWidgets.QWidget):
         # ── pin & close buttons (absolutely positioned, overlay on content) ──
         self.pin_btn = QtWidgets.QPushButton(self)
         self.pin_btn.setObjectName("ocrPinBtn")
-        self.pin_btn.setFixedSize(22, 22)
+        self.pin_btn.setFixedSize(24, 24)
         self.pin_btn.setCheckable(True)
         self.pin_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.pin_btn.clicked.connect(self._on_pin_toggled)
 
         self.close_btn = QtWidgets.QPushButton(self)
         self.close_btn.setObjectName("ocrCloseBtn")
-        self.close_btn.setFixedSize(22, 22)
+        self.close_btn.setFixedSize(24, 24)
         self.close_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.close_btn.setIcon(self._make_close_icon())
-        self.close_btn.setIconSize(QtCore.QSize(10, 10))
+        self.close_btn.setIconSize(QtCore.QSize(14, 14))
         self.close_btn.clicked.connect(self.hide)
 
         # Copy button — floating bottom-right
@@ -214,7 +214,7 @@ class OcrPopup(QtWidgets.QWidget):
             "#ocrPinBtn {"
             " color: #999999;"
             " border: none;"
-            " border-radius: 11px;"
+            " border-radius: 12px;"
             " background: rgba(0, 0, 0, 100);"
             " font-size: 13px;"
             " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
@@ -225,7 +225,7 @@ class OcrPopup(QtWidgets.QWidget):
             "#ocrCloseBtn {"
             " color: #999999;"
             " border: none;"
-            " border-radius: 11px;"
+            " border-radius: 12px;"
             " background: rgba(0, 0, 0, 100);"
             " font-size: 14px;"
             " font-weight: bold;"
@@ -268,7 +268,7 @@ class OcrPopup(QtWidgets.QWidget):
         self.pin_btn.setIcon(self._make_pin_icon(self._pinned))
         self.pin_btn.setIconSize(QtCore.QSize(16, 16))
         self.close_btn.setIcon(self._make_close_icon())
-        self.close_btn.setIconSize(QtCore.QSize(10, 10))
+        self.close_btn.setIconSize(QtCore.QSize(14, 14))
 
         self.copy_btn.setToolTip(self.translate("ocr_copy_btn"))
         self.pin_btn.setToolTip(self.translate("ocr_pin_btn"))

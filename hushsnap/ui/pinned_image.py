@@ -91,14 +91,14 @@ class PinnedImageWindow(QtWidgets.QWidget):
         
         # UI Elements
         self.close_btn = QtWidgets.QPushButton("×", self)
-        self.close_btn.setFixedSize(22, 22)
+        self.close_btn.setFixedSize(24, 24)
         self.close_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.close_btn.setStyleSheet(
             "QPushButton {"
             "  background-color: rgba(0, 0, 0, 120);"
             "  color: white;"
             "  border: none;"
-            "  border-radius: 11px;"
+            "  border-radius: 12px;"
             "  font-size: 16px;"
             "  font-weight: bold;"
             "}"
@@ -152,7 +152,7 @@ class PinnedImageWindow(QtWidgets.QWidget):
 
     def _update_ui_positions(self):
         """Reposition the close button."""
-        close_x = self.width() - 26
+        close_x = self.width() - 28
         close_y = 4
         self.close_btn.move(close_x, close_y)
 
