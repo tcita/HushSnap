@@ -982,6 +982,7 @@ class SettingsDialogController(QtCore.QObject):
             (self.translate("settings_language_en"), "en"),
             (self.translate("settings_language_zh"), "zh"),
             (self.translate("settings_language_zh_tw"), "zh-TW"),
+            (self.translate("settings_language_ja"), "ja"),
         ]
         card_lang, combo_lang = _make_language_card(
             self.translate("settings_language_label"),

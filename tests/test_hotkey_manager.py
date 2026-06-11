@@ -44,12 +44,11 @@ def dummy_config_path(tmp_path):
 
 @patch("ctypes.windll.kernel32.GlobalAddAtomW")
 @patch("ctypes.windll.user32.RegisterHotKey")
-def test_hotkey_manager_initialization(mock_register, mock_add_atom, mock_tray, mock_translate, dummy_config_path):
+def test_hotkey_manager_initialization(mock_register, mock_add_atom, mock_translate, dummy_config_path):
     """Test hotkey manager atom creation and value assignments."""
     mock_add_atom.return_value = 100
 
     mgr = HotkeyManager(
-        tray_icon=mock_tray,
         translate=mock_translate,
         config_path=dummy_config_path,
         modifier=1,
@@ -65,13 +64,12 @@ def test_hotkey_manager_initialization(mock_register, mock_add_atom, mock_tray, 
 
 @patch("ctypes.windll.kernel32.GlobalAddAtomW")
 @patch("ctypes.windll.user32.RegisterHotKey")
-def test_register_initial_success(mock_register, mock_add_atom, mock_tray, mock_translate, dummy_config_path):
+def test_register_initial_success(mock_register, mock_add_atom, mock_translate, dummy_config_path):
     """Verify that register_initial registers the hotkey with user32 successfully."""
     mock_add_atom.return_value = 100
     mock_register.return_value = True
 
     mgr = HotkeyManager(
-        tray_icon=mock_tray,
         translate=mock_translate,
         config_path=dummy_config_path,
         modifier=1,
@@ -87,13 +85,12 @@ def test_register_initial_success(mock_register, mock_add_atom, mock_tray, mock_
 
 @patch("ctypes.windll.kernel32.GlobalAddAtomW")
 @patch("ctypes.windll.user32.RegisterHotKey")
-def test_register_initial_failure(mock_register, mock_add_atom, mock_tray, mock_translate, dummy_config_path):
+def test_register_initial_failure(mock_register, mock_add_atom, mock_translate, dummy_config_path):
     """Verify that register_initial records conflict without showing a dialog."""
     mock_add_atom.return_value = 100
     mock_register.return_value = False  # Simulate conflict
 
     mgr = HotkeyManager(
-        tray_icon=mock_tray,
         translate=mock_translate,
         config_path=dummy_config_path,
         modifier=1,
@@ -108,13 +105,12 @@ def test_register_initial_failure(mock_register, mock_add_atom, mock_tray, mock_
 
 
 @patch("PyQt6.QtWidgets.QMessageBox.question")
-def test_resolve_startup_conflicts_single_opens_settings(mock_question, mock_tray, mock_translate, dummy_config_path):
+def test_resolve_startup_conflicts_single_opens_settings(mock_question, mock_translate, dummy_config_path):
     """Single conflict → user clicks Yes → callback is invoked."""
     mock_question.return_value = QtWidgets.QMessageBox.StandardButton.Yes
     callback_called = []
 
     mgr = HotkeyManager(
-        tray_icon=mock_tray,
         translate=mock_translate,
         config_path=dummy_config_path,
         modifier=1, virtual_key=65, name="Alt+A",
@@ -127,13 +123,12 @@ def test_resolve_startup_conflicts_single_opens_settings(mock_question, mock_tra
 
 
 @patch("PyQt6.QtWidgets.QMessageBox.question")
-def test_resolve_startup_conflicts_ignores(mock_question, mock_tray, mock_translate, dummy_config_path):
+def test_resolve_startup_conflicts_ignores(mock_question, mock_translate, dummy_config_path):
     """Single conflict → user clicks No → callback is NOT invoked."""
     mock_question.return_value = QtWidgets.QMessageBox.StandardButton.No
     callback_called = []
 
     mgr = HotkeyManager(
-        tray_icon=mock_tray,
         translate=mock_translate,
         config_path=dummy_config_path,
         modifier=1, virtual_key=65, name="Alt+A",
@@ -146,13 +141,12 @@ def test_resolve_startup_conflicts_ignores(mock_question, mock_tray, mock_transl
 
 
 @patch("PyQt6.QtWidgets.QMessageBox.question")
-def test_resolve_startup_conflicts_multiple(mock_question, mock_tray, mock_translate, dummy_config_path):
+def test_resolve_startup_conflicts_multiple(mock_question, mock_translate, dummy_config_path):
     """Multiple conflicts → combined message → callback invoked on Yes."""
     mock_question.return_value = QtWidgets.QMessageBox.StandardButton.Yes
     callback_called = []
 
     mgr = HotkeyManager(
-        tray_icon=mock_tray,
         translate=mock_translate,
         config_path=dummy_config_path,
         modifier=1, virtual_key=65, name="Alt+Q",
@@ -167,12 +161,11 @@ def test_resolve_startup_conflicts_multiple(mock_question, mock_tray, mock_trans
     assert "Alt+Z" in call_args[2]
 
 
-def test_resolve_startup_conflicts_no_conflicts(mock_tray, mock_translate, dummy_config_path):
+def test_resolve_startup_conflicts_no_conflicts(mock_translate, dummy_config_path):
     """No conflicts → no dialog, no callback."""
     callback_called = []
 
     mgr = HotkeyManager(
-        tray_icon=mock_tray,
         translate=mock_translate,
         config_path=dummy_config_path,
         modifier=1, virtual_key=65, name="Alt+Q",
@@ -185,13 +178,12 @@ def test_resolve_startup_conflicts_no_conflicts(mock_tray, mock_translate, dummy
 @patch("ctypes.windll.kernel32.GlobalAddAtomW")
 @patch("ctypes.windll.user32.UnregisterHotKey")
 @patch("ctypes.windll.kernel32.GlobalDeleteAtom")
-def test_release_resources(mock_delete_atom, mock_unregister, mock_add_atom, mock_tray, mock_translate, dummy_config_path):
+def test_release_resources(mock_delete_atom, mock_unregister, mock_add_atom, mock_translate, dummy_config_path):
     """Verify that release_resources unregisters hotkeys and deletes generated atoms."""
     mock_add_atom.return_value = 100
     mock_unregister.return_value = True
 
     mgr = HotkeyManager(
-        tray_icon=mock_tray,
         translate=mock_translate,
         config_path=dummy_config_path,
         modifier=1,

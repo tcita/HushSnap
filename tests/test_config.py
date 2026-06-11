@@ -173,7 +173,8 @@ def test_normalize_ui_lang_zh_tw_variants():
 
 def test_normalize_ui_lang_unknown():
     assert _normalize_ui_language_code("fr") is None
-    assert _normalize_ui_language_code("ja") is None
+    assert _normalize_ui_language_code("ja") == "ja"
+    assert _normalize_ui_language_code("ja-JP") == "ja"
 
 
 def test_normalize_ui_lang_invalid_input():

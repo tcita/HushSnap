@@ -6,7 +6,7 @@ placeholders match, so no UI string silently degrades to the raw key.
 
 import re
 
-from hushsnap.translations import UI_TEXT, UI_LANG_EN, UI_LANG_ZH, UI_LANG_ZH_TW
+from hushsnap.translations import UI_TEXT, UI_LANG_EN, UI_LANG_ZH, UI_LANG_ZH_TW, UI_LANG_JA
 
 
 def _format_keys(template: str) -> set[str]:
@@ -18,7 +18,7 @@ def test_all_languages_have_same_keys():
     """Every key in the English pack must exist in all other languages."""
     en_keys = set(UI_TEXT[UI_LANG_EN].keys())
 
-    for lang in [UI_LANG_ZH, UI_LANG_ZH_TW]:
+    for lang in [UI_LANG_ZH, UI_LANG_ZH_TW, UI_LANG_JA]:
         lang_keys = set(UI_TEXT[lang].keys())
         missing = en_keys - lang_keys
         extra = lang_keys - en_keys
@@ -32,7 +32,7 @@ def test_format_placeholders_match():
     en = UI_TEXT[UI_LANG_EN]
     for key, en_template in en.items():
         en_placeholders = _format_keys(en_template)
-        for lang in [UI_LANG_ZH, UI_LANG_ZH_TW]:
+        for lang in [UI_LANG_ZH, UI_LANG_ZH_TW, UI_LANG_JA]:
             lang_template = UI_TEXT[lang].get(key)
             assert lang_template is not None, f"{lang} missing key: {key}"
             lang_placeholders = _format_keys(lang_template)

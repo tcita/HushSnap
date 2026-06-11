@@ -29,6 +29,7 @@ from .translations import (
     UI_LANG_EN,
     UI_LANG_ZH,
     UI_LANG_ZH_TW,
+    UI_LANG_JA,
     SUPPORTED_LANGUAGES,
     UI_TEXT,
 )
@@ -711,6 +712,9 @@ def _normalize_ui_language_code(raw_value, allow_auto=False):
     if normalized.startswith("en"):
         return UI_LANG_EN
 
+    if normalized in ("ja", "ja-jp"):
+        return UI_LANG_JA
+
     return None
 
 
@@ -735,6 +739,8 @@ def _get_system_ui_language():
             if sub_lang == 0x01:  # SUBLANG_CHINESE_TRADITIONAL (zh-TW)
                 return UI_LANG_ZH_TW
             return UI_LANG_ZH
+        if primary_lang == 0x11:  # LANG_JAPANESE
+            return UI_LANG_JA
     except Exception as e:
         logger.debug(f"Failed to get system UI language via GetUserDefaultUILanguage: {e}")
 
@@ -748,6 +754,8 @@ def _get_system_ui_language():
                 return UI_LANG_ZH_TW
             if "zh" in lang or "chinese" in lang:
                 return UI_LANG_ZH
+            if "ja" in lang or "japanese" in lang or "japan" in lang:
+                return UI_LANG_JA
     except Exception as e:
         logger.debug(f"Failed to get system language via locale: {e}")
         

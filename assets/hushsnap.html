@@ -4,7 +4,7 @@
   This is a standalone HTML scene used to generate the store listing
   screenshot required by the Microsoft Store submission process.
   It renders a mockup of the app's UI workflow (capture → hub → OCR result)
-  with multi-language switching (EN/ZH/TW) at 1000×600px.
+  with multi-language switching (EN/ZH/TW/JA) at 1000×600px.
   Not part of the application itself — open in a browser and screenshot it.
 -->
 <!DOCTYPE html>
@@ -123,6 +123,7 @@
   <button class="lang-btn" onclick="switchLang('en')">English</button>
   <button class="lang-btn active" onclick="switchLang('zh')">简体中文</button>
   <button class="lang-btn" onclick="switchLang('tw')">繁體中文</button>
+  <button class="lang-btn" onclick="switchLang('ja')">日本語</button>
 </div>
 
 <div class="scene">
@@ -229,6 +230,18 @@ const dictionary = {
     lblHub: "2. 縮圖",
     lblResult: "3. 結果",
     lblClick: "左鍵單擊"
+  },
+  ja: {
+    headline: "キャプチャ.<br><span>認識.</span><br>完了.",
+    tagline: "Windows 向けのローカル OCR ツール。軽快、プライベート、完全オフライン。",
+    disclaimer: "* 簡体字・繁体字・英語・日本語に対応。その他の言語は限定的です。",
+    ocrTitle: "OCR テキスト認識",
+    ocrWorkflow: "スクリーン→テキスト ワークフロー",
+    dragText: "アプリにドラッグ",
+    lblCapture: "1. キャプチャ",
+    lblHub: "2. サムネイル",
+    lblResult: "3. 結果",
+    lblClick: "左クリック"
   }
 };
 
