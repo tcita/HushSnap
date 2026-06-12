@@ -53,10 +53,13 @@ class OcrController:
         self.next_capture_should_ocr = False
         self._expecting_ocr_result = False
         self._toast_bridge = None
+        self._pinned_popups = []
+
+
 
         self._current_engine = OCR_ENGINE_PPOCR
 
-        self.bridge.signal.connect(self.on_ocr_finished)
+        self.bridge.ocr_result.connect(self.on_ocr_finished)
         self.bridge.warmup_finished.connect(self._schedule_post_warmup_trim)
         
         # Load and apply persisted pin state
@@ -81,8 +84,37 @@ class OcrController:
         """Return True if an OCR request is currently in progress."""
         return self._expecting_ocr_result or self._toast_bridge is not None
 
+    def _detach_if_pinned(self):
+        """If the active popup is pinned and contains content/is visible, move it to _pinned_popups
+        and create a new active popup instance. This prevents a new OCR request from
+        overwriting a user-pinned result."""
+        self._clean_pinned_popups()
+        # If the active popup is pinned and has content/is visible, detach it
+        if self.popup.is_pinned() and (self.popup.isVisible() or self.popup.text_edit.toPlainText()):
+            old_active = self.popup
+
+            # Disconnect the old popup's pin signal so it no longer
+            # triggers persistence; only the active popup's pin state
+            # is persisted to disk.
+            old_active.pin_toggled.disconnect(self._handle_pin_toggled)
+
+            # Create a new active popup.
+            # Apply persisted pin state *before* connecting the signal
+            # so the initial set_pinned does not fire _handle_pin_toggled
+            # (same safe ordering as __init__).
+            self.popup = OcrPopup(self.translate)
+            self.popup.apply_font_size()
+            if get_ocr_pinned():
+                self.popup.set_pinned(True)
+            self.popup.pin_toggled.connect(self._handle_pin_toggled)
+
+            # Old popup gets deleted when closed
+            old_active.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, True)
+            self._pinned_popups.append(old_active)
+
     def set_popup_anchor(self, x, y, width=None, height=None):
         """Set preferred screen position for the next OCR popup appearance."""
+        self._detach_if_pinned()
         self.popup.set_anchor_pos(x, y, width, height)
 
     def copy_text_from_image(self, pixmap, toast_window):
@@ -139,34 +171,82 @@ class OcrController:
     def _handle_pin_toggled(self, pinned):
         update_ocr_pinned(pinned)
 
+    def _clean_pinned_popups(self):
+        cleaned = []
+        for p in self._pinned_popups:
+            try:
+                # Accessing isVisible raises RuntimeError if C++ object is deleted
+                p.isVisible()
+                cleaned.append(p)
+            except RuntimeError:
+                pass
+        self._pinned_popups = cleaned
+
+    def _remove_pinned_popup(self, popup):
+        if popup in self._pinned_popups:
+            self._pinned_popups.remove(popup)
+
     def handle_capture_completed(self, captured_pixmap):
         if not self.next_capture_should_ocr:
             return
 
         self.next_capture_should_ocr = False
+        self._detach_if_pinned()
+
         self.popup.clear_anchor()
         self.popup.show_loading(pixmap=captured_pixmap)
         self.start_request(captured_pixmap.copy())
 
-    def on_ocr_finished(self, response):
+    def apply_font_sizes(self):
+        """Apply font size settings to both the active popup and all active pinned popups."""
+        self._clean_pinned_popups()
+        if self.popup:
+            self.popup.apply_font_size()
+        for p in self._pinned_popups:
+            try:
+                p.apply_font_size()
+            except RuntimeError:
+                pass
+
+    def has_visible_popups(self) -> bool:
+        """Return True if the active popup or any pinned popup is visible."""
+        self._clean_pinned_popups()
+        if self.popup and self.popup.isVisible():
+            return True
+        for p in self._pinned_popups:
+            try:
+                if p.isVisible():
+                    return True
+            except RuntimeError:
+                pass
+        return False
+
+    def on_ocr_finished(self, response, target_popup=None):
         self._trim_timer.start(5000)
         logging.debug("[on_ocr_finished] engine=%s, text_len=%d", 
                       response.recognition.engine_type if response.recognition else "unknown",
                       len(response.text or ""))
 
-        if not self._expecting_ocr_result:
+        # If this is a stale result for a request we no longer track as 'busy'
+        # (e.g. multiple requests in flight), we still allow it to show in its 
+        # dedicated popup.
+        if not self._expecting_ocr_result and target_popup is None:
             return
 
-        self._expecting_ocr_result = False
-        thumbnail_manager.dismiss_current()
+        # Only reset the global flag if this result belongs to the *current* active popup
+        # or if we don't have a specific target (legacy/fallback).
+        if target_popup is None or target_popup is self.popup:
+            self._expecting_ocr_result = False
+            thumbnail_manager.dismiss_current()
 
+        target = target_popup or self.popup
         text = response.text
         error = response.error
         pixmap = response.pixmap
 
         if error:
             logging.error(f"OCR Error: {error}")
-            self.popup.show_text(
+            target.show_text(
                 f"{self.translate('ocr_failed_title')}\n{self.translate('ocr_failed_body')}",
                 pixmap=pixmap,
             )
@@ -175,7 +255,7 @@ class OcrController:
         recognized = (text or "").rstrip()
         if not recognized:
             logging.debug("OCR result is empty.")
-            self.popup.show_text(self.translate("ocr_empty_popup_hint"), pixmap=pixmap)
+            target.show_text(self.translate("ocr_empty_popup_hint"), pixmap=pixmap)
             return
 
         if get_auto_copy_ocr_result(self.config_path):
@@ -183,21 +263,105 @@ class OcrController:
             if clipboard:
                 clipboard.setText(recognized)
 
-        self.popup.show_text(
+        target.show_text(
             recognized,
             pixmap=pixmap,
             lines=response.recognition.lines if response.recognition else None,
         )
+        
+        # UI/UX: If the target popup is showing at the exact same position 
+        # as another visible pinned popup, stagger it slightly.
+        # We call this AFTER show_text because for the first appearance,
+        # the popup only decides its screen position inside show_text -> _place_on_screen.
+        self._stagger_if_needed(target)
+
+    def _stagger_if_needed(self, popup):
+        """Prevent perfect overlapping of popups on screen."""
+        if not popup:
+            return
+        self._clean_pinned_popups()
+        
+        def get_all_anims(p):
+            anims = []
+            if hasattr(p, "_size_anim") and p._size_anim: anims.append(p._size_anim)
+            if hasattr(p, "_show_anim") and p._show_anim: anims.append(p._show_anim)
+            return anims
+
+        def get_target_pos(p):
+            if hasattr(p, "intended_pos"):
+                return p.intended_pos()
+            for a in get_all_anims(p):
+                if a.state() == QtCore.QAbstractAnimation.State.Running:
+                    if isinstance(a, QtCore.QPropertyAnimation) and a.propertyName() == b"geometry":
+                        return a.endValue().topLeft()
+                    if isinstance(a, QtCore.QAnimationGroup):
+                        for i in range(a.animationCount()):
+                            sub = a.animationAt(i)
+                            if isinstance(sub, QtCore.QPropertyAnimation) and sub.propertyName() == b"geometry":
+                                return sub.endValue().topLeft()
+            return p.pos()
+
+        current_pos = get_target_pos(popup)
+        # CRITICAL: Make an explicit copy to avoid in-place modification of current_pos
+        pos = QtCore.QPoint(current_pos)
+        offset = 32
+        threshold = 20 
+        
+        for _ in range(8):  
+            found = False
+            for p in self._pinned_popups:
+                if p is not popup and p.isVisible():
+                    p_pos = get_target_pos(p)
+                    if (p_pos - pos).manhattanLength() < threshold:
+                        found = True
+                        break
+            
+            if not found and self.popup and self.popup is not popup:
+                if self.popup.isVisible():
+                    p_pos = get_target_pos(self.popup)
+                    if (p_pos - pos).manhattanLength() < threshold:
+                        found = True
+            
+            if found:
+                pos += QtCore.QPoint(offset, offset)
+            else:
+                break
+        
+        if pos != current_pos:
+            logging.info(f"[OcrController] Staggering popup from {current_pos} to {pos}")
+            
+            if hasattr(popup, "set_intended_geom"):
+                popup.set_intended_geom(QtCore.QRect(pos, popup.size()))
+
+            for a in get_all_anims(popup):
+                if a.state() == QtCore.QAbstractAnimation.State.Running:
+                    if isinstance(a, QtCore.QPropertyAnimation) and a.propertyName() == b"geometry":
+                        new_geom = a.endValue()
+                        new_geom.moveTo(pos)
+                        a.setEndValue(new_geom)
+                    elif isinstance(a, QtCore.QAnimationGroup):
+                         for i in range(a.animationCount()):
+                            sub = a.animationAt(i)
+                            if isinstance(sub, QtCore.QPropertyAnimation) and sub.propertyName() == b"geometry":
+                                new_geom = sub.endValue()
+                                new_geom.moveTo(pos)
+                                sub.setEndValue(new_geom)
+            
+            popup.move(pos)
 
     def start_request(self, pixmap):
         self._trim_timer.stop()
         self._expecting_ocr_result = True
         debug_dir = self.user_data_dir if self.save_debug_image else None
 
+        # Capture current popup instance to ensure result is delivered correctly
+        # even if self.popup changes before the request finishes.
+        target = self.popup
+
         from PyQt6 import QtGui
         image = pixmap.toImage() if isinstance(pixmap, QtGui.QPixmap) else pixmap
         request = OcrRequest(pixmap=image, engine=OCR_ENGINE_PPOCR, debug_dir=debug_dir)
-        self.service.recognize_async(request, lambda response: self.bridge.signal.emit(response))
+        self.service.recognize_async(request, lambda resp: self.bridge.ocr_result.emit(resp, target))
 
     def _background_warmup(self):
         import threading

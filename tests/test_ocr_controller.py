@@ -69,9 +69,9 @@ class FakeSignal:
     def connect(self, handler):
         self._handlers.append(handler)
 
-    def emit(self, value):
+    def emit(self, *args):
         for handler in list(self._handlers):
-            handler(value)
+            handler(*args)
 
 
 class FakeTrayIcon:
@@ -367,3 +367,133 @@ def test_trim_current_engine_skips_when_ocr_active(monkeypatch, qapp, tmp_path):
     controller._trim_current_engine()
 
     assert trim_calls == []  # trim was skipped
+
+
+def test_handle_capture_completed_detaches_pinned_popup(monkeypatch, qapp, tmp_path, sample_pixmap):
+    """If the active popup is pinned and contains content/is visible, handle_capture_completed
+    should detach it and create a new active popup."""
+    # Globally mock show/raise/activateWindow for all popups created in this test
+    monkeypatch.setattr(ocr_controller.OcrPopup, "show", lambda self: None)
+    monkeypatch.setattr(ocr_controller.OcrPopup, "raise_", lambda self: None)
+    monkeypatch.setattr(ocr_controller.OcrPopup, "activateWindow", lambda self: None)
+
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+
+    # Simulate first popup is pinned and visible
+    controller.popup.set_pinned(True)
+    monkeypatch.setattr(controller.popup, "isVisible", lambda: True)
+
+    original_popup = controller.popup
+
+    # Perform a capture completed
+    controller.next_capture_should_ocr = True
+    controller.handle_capture_completed(sample_pixmap)
+
+    # The active popup should be a new instance now
+    assert controller.popup is not original_popup
+
+    # The old popup should be in _pinned_popups list
+    assert original_popup in controller._pinned_popups
+
+    # The old popup should have WA_DeleteOnClose set
+    assert original_popup.testAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
+
+    # The old popup's pin signal should be disconnected from the controller
+    assert original_popup.receivers(original_popup.pin_toggled) == 0
+
+    # _clean_pinned_popups removes stale entries whose C++ objects are gone.
+    # Simulate this by deleting the old popup, then calling clean.
+    # Remove the instance-level isVisible monkeypatch first so the real Qt
+    # method (which raises RuntimeError once the C++ object is gone) is used.
+    del original_popup.isVisible
+    original_popup.deleteLater()
+    QtWidgets.QApplication.sendPostedEvents(None, QtCore.QEvent.Type.DeferredDelete)
+    controller._clean_pinned_popups()
+    assert original_popup not in controller._pinned_popups
+
+
+def test_set_popup_anchor_detaches_pinned_popup(monkeypatch, qapp, tmp_path):
+    """If the active popup is pinned and contains content/is visible, set_popup_anchor
+    (triggered by clicking a thumbnail) should detach it and create a new active popup instance."""
+    monkeypatch.setattr(ocr_controller.OcrPopup, "show", lambda self: None)
+    monkeypatch.setattr(ocr_controller.OcrPopup, "raise_", lambda self: None)
+    monkeypatch.setattr(ocr_controller.OcrPopup, "activateWindow", lambda self: None)
+
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+
+    # Simulate first popup is pinned and visible
+    controller.popup.set_pinned(True)
+    monkeypatch.setattr(controller.popup, "isVisible", lambda: True)
+    controller.popup.text_edit.setPlainText("Old Result")
+
+    original_popup = controller.popup
+
+    # Trigger anchor setting (simulates thumbnail click)
+    controller.set_popup_anchor(100, 100)
+
+    # The active popup should be a new instance now
+    assert controller.popup is not original_popup
+    assert original_popup in controller._pinned_popups
+    assert original_popup.get_plain_text() == "Old Result"
+    assert controller.popup.get_plain_text() == ""
+
+
+def test_stagger_if_needed(monkeypatch, qapp, tmp_path):
+    """If a new popup shows up exactly at the same position as an existing pinned popup, 
+    it should be staggered."""
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+    
+    # 1. Setup a pinned popup at a fixed position
+    pinned_popup = ocr_controller.OcrPopup(_translate)
+    pinned_popup.move(100, 100)
+    monkeypatch.setattr(pinned_popup, "isVisible", lambda: True)
+    controller._pinned_popups.append(pinned_popup)
+    
+    # 2. Setup active popup at the same position
+    controller.popup.move(100, 100)
+    
+    # 3. Trigger staggering
+    controller._stagger_if_needed(controller.popup)
+    
+    # Position should have shifted by 28 pixels
+    assert controller.popup.pos() == QtCore.QPoint(128, 128)
+
+
+def test_concurrency_correct_popup_updated(monkeypatch, qapp, tmp_path, sample_pixmap):
+    """If multiple requests are in flight, each result should go to the popup 
+    that was active when the request started."""
+    service = FakeService()
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path, service=service)
+    
+    # Request 1
+    controller.enable_ocr_next_capture()
+    popup1 = controller.popup
+    controller.handle_capture_completed(sample_pixmap)
+    assert len(service.callbacks) == 1
+    callback1 = service.callbacks[0]
+    
+    # Request 2 (pins popup1 and creates popup2)
+    popup1.set_pinned(True)
+    monkeypatch.setattr(popup1, "isVisible", lambda: True)
+    controller.enable_ocr_next_capture()
+    controller.handle_capture_completed(sample_pixmap)
+    popup2 = controller.popup
+    assert popup2 is not popup1
+    assert len(service.callbacks) == 2
+    callback2 = service.callbacks[1]
+    
+    # Mock show_text for both
+    results = {}
+    popup1.show_text = lambda text, **kwargs: results.update({"p1": text})
+    popup2.show_text = lambda text, **kwargs: results.update({"p2": text})
+    
+    # Deliver Result 2 FIRST (out of order)
+    callback2(OcrResponse(text="Result 2", error="", pixmap=sample_pixmap, recognition=OcrRecognition()))
+    assert results["p2"] == "Result 2"
+    assert "p1" not in results
+    
+    # Deliver Result 1
+    callback1(OcrResponse(text="Result 1", error="", pixmap=sample_pixmap, recognition=OcrRecognition()))
+    assert results["p1"] == "Result 1"
+
+

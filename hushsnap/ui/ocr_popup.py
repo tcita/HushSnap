@@ -26,6 +26,7 @@ class OcrPopup(QtWidgets.QWidget):
         self._pinned = False
         self._plain_text = ""
         self._anchor_pos = None  # (x, y) screen coords for thumbnail transition
+        self._intended_rect = QtCore.QRect() # Track where we WANT to be, bypassing DPI/shadow offsets
 
         self.setWindowFlags(
             QtCore.Qt.WindowType.Window
@@ -375,6 +376,30 @@ class OcrPopup(QtWidgets.QWidget):
         self.raise_()
         self.activateWindow()
 
+    def set_intended_geom(self, geom):
+        """Update the target geometry that this window is moving towards."""
+        self._intended_rect = QtCore.QRect(geom)
+
+    def intended_pos(self):
+        """Return the logical intended top-left, preferring _intended_rect over pos()."""
+        if self._intended_rect.isValid():
+            return self._intended_rect.topLeft()
+        return self.pos()
+
+    def move(self, *args):
+        if len(args) == 1:
+            self.set_intended_geom(QtCore.QRect(args[0], self.size()))
+        else:
+            self.set_intended_geom(QtCore.QRect(args[0], args[1], self.width(), self.height()))
+        super().move(*args)
+
+    def setGeometry(self, *args):
+        if len(args) == 1:
+            self.set_intended_geom(args[0])
+        else:
+            self.set_intended_geom(QtCore.QRect(*args))
+        super().setGeometry(*args)
+
     # ── properties ───────────────────────────────────────────────────
     @property
     def last_pixmap(self):
@@ -515,6 +540,8 @@ class OcrPopup(QtWidgets.QWidget):
             tx = max(area.left(), min(target_geom.x(), area.right() - target_geom.width()))
             ty = max(area.top(), min(target_geom.y(), area.bottom() - target_geom.height()))
             target_geom.moveTo(tx, ty)
+
+        logging.critical(f"[DEBUG_POS] _adjust_window_size TARGET GEOM: {target_geom}")
 
         if self.isVisible():
             # Already visible? Smoothly animate to the new size to prevent "jumping"
@@ -1076,6 +1103,13 @@ class OcrPopup(QtWidgets.QWidget):
             self.hide()
         super().changeEvent(event)
 
+    def is_pinned(self) -> bool:
+        """Return True if the popup is pinned."""
+        return self._pinned
+
     def hideEvent(self, event):
         self._last_pixmap = None
         super().hideEvent(event)
+        if self.testAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose):
+            self.deleteLater()
+

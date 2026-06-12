@@ -311,7 +311,7 @@ class Application(QtCore.QObject):
                     self.translate,
                     self.config_path,
                     self.hotkey_manager,
-                    on_font_size_changed=self.ocr_controller.popup.apply_font_size,
+                    on_font_size_changed=self.ocr_controller.apply_font_sizes,
                 )
                 settings_action.triggered.connect(self.settings_controller.show)
                 self.settings_controller.language_changed.connect(self._handle_restart_requested)
@@ -454,7 +454,7 @@ class Application(QtCore.QObject):
 
             def _is_truly_idle(self):
                 return (not self.tm._windows and not self.pm._windows 
-                        and not self.oc.is_busy() and not self.oc.popup.isVisible())
+                        and not self.oc.is_busy() and not self.oc.has_visible_popups())
 
             def _check_and_start(self):
                 if self._is_truly_idle():
