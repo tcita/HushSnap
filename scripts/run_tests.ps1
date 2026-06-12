@@ -9,7 +9,7 @@ if (-not $PytestArgs -or $PytestArgs.Count -eq 0) {
     $PytestArgs = @("tests", "-q")
 }
 
-$repoRoot = $PSScriptRoot
+$repoRoot = Split-Path -Parent $PSScriptRoot
 $venvPython = Join-Path $repoRoot ".venv\Scripts\python.exe"
 $activeVenvPython = $null
 if ($env:VIRTUAL_ENV) {
