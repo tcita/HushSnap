@@ -28,8 +28,6 @@ def setup_logging(log_file_path: Path, force_level=None):
     """
     level = force_level if force_level is not None else DEFAULT_LEVEL
 
-
-
     # Format: [time] [level] [module:line] message
     formatter = logging.Formatter(
         '[%(asctime)s] [%(levelname)s] [%(name)s:%(lineno)d] %(message)s',

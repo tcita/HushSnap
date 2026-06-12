@@ -59,6 +59,7 @@ class HotkeyManager(QtCore.QObject):
         # Track startup conflicts so we can prompt the user after settings is ready.
         self._startup_conflicts = []  # list of ("main", hotkey_name)
 
+        self.tray_icon = None  # set by Application after construction
         self._watcher = None
         self._reload_timer = None
         self._config_file_path_str = str(config_path)

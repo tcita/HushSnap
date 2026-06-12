@@ -1,9 +1,3 @@
-import logging
-import re
-import statistics
-import threading
-import time
-
 """
 PP-OCR Engine Implementation — parameter choices vs RapidOCR defaults.
 
@@ -33,6 +27,12 @@ PP-OCR Engine Implementation — parameter choices vs RapidOCR defaults.
   the working set to stay at peak after OCR completes.  Disabling it lets the
   OS reclaim pages immediately, which matters for a long-running tray app.
 """
+
+import logging
+import re
+import statistics
+import threading
+import time
 
 # Defer ppocr library import to optimize application startup time
 from PyQt6 import QtCore, QtGui
@@ -798,7 +798,15 @@ def recognize_ppocr_qimage(image_or_result, language_tag: str = "") -> OcrRecogn
         logger.exception("PP-OCR engine call failed")
         return OcrRecognition(engine_type=OCR_ENGINE_PPOCR)
     finally:
-        # Crucial: Explicitly trigger GC after inference to prevent peak accumulation
+        # Explicit GC: ONNX Runtime allocates large native buffers whose
+        # lifetime Python ref-counting cannot fully track.  Without GC,
+        # repeated OCR calls leak private bytes and kernel handles within
+        # a handful of iterations.
+        #
+        # _trim_working_set() is deliberately NOT called here — trimming
+        # while OCR is still active would thrash (swap out model pages
+        # only to fault them back on the next call).  Trim belongs to
+        # IdleMemoryManager (idle ≥20 s).
         import gc
         del result, json_data, arr, bgr_image
         gc.collect()

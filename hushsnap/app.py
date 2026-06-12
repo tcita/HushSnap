@@ -35,7 +35,10 @@ from .constants import CAPTURE_DEBUG_LOG_FILENAME, SESSION_START_MARKER
 from .logging_config import setup_logging
 from .startup_profiler import StartupProfiler
 
-# Module-level state set during Application.run() so exception_hook can access them.
+# Module-level state set during Application.run() so exception_hook can access
+# them.  exception_hook is installed via sys.excepthook before __init__ completes,
+# so it cannot rely on instance attributes.  These are the only module-level
+# globals in the hot path — please don't add more.
 _log_file_path = None
 _translate = None
 

@@ -17,6 +17,9 @@ logger = logging.getLogger(__name__)
 # Task ID must match TaskId in AppxManifest_template.xml
 MSIX_STARTUP_TASK_ID = "HushSnapStartup"
 
+# Win32 error: the process is not running inside an AppX/MSIX package container
+APPMODEL_ERROR_NO_PACKAGE = 15700
+
 def is_running_as_package() -> bool:
     """
     Check if the application is running within an MSIX/AppX package container.
@@ -25,7 +28,7 @@ def is_running_as_package() -> bool:
         kernel32 = ctypes.windll.kernel32
         length = ctypes.c_uint32(0)
         res = kernel32.GetCurrentPackageFullName(ctypes.byref(length), None)
-        return res != 15700
+        return res != APPMODEL_ERROR_NO_PACKAGE
     except (AttributeError, Exception):
         return False
 
