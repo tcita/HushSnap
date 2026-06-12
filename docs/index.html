@@ -309,7 +309,8 @@ const dictionary = {
     lblHub: "2. Thumbnail",
     lblResult: "3. Result",
     lblClick: "Left-click",
-    storeText: "Download from Microsoft Store"
+    storeText: "Download from Microsoft Store",
+    storeUrl: "https://apps.microsoft.com/detail/9p0qzv5z8njz?hl=en-us&gl=US"
   },
   zh: {
     headline: "截图.<br><span>识字.</span><br>搞定.",
@@ -321,7 +322,8 @@ const dictionary = {
     lblHub: "2. 缩略图",
     lblResult: "3. 结果",
     lblClick: "左键单击",
-    storeText: "从 Microsoft Store 下载"
+    storeText: "从 Microsoft Store 下载",
+    storeUrl: "https://apps.microsoft.com/detail/9p0qzv5z8njz?hl=zh-cn&gl=CN"
   },
   tw: {
     headline: "截圖.<br><span>識字.</span><br>搞定.",
@@ -333,7 +335,8 @@ const dictionary = {
     lblHub: "2. 縮圖",
     lblResult: "3. 結果",
     lblClick: "左鍵單擊",
-    storeText: "從 Microsoft Store 下載"
+    storeText: "從 Microsoft Store 下載",
+    storeUrl: "https://apps.microsoft.com/detail/9p0qzv5z8njz?hl=zh-tw&gl=TW"
   },
   ja: {
     headline: "キャプチャ.<br><span>認識.</span><br>完了.",
@@ -345,7 +348,8 @@ const dictionary = {
     lblHub: "2. サムネイル",
     lblResult: "3. 結果",
     lblClick: "左クリック",
-    storeText: "Microsoft Store からダウンロード"
+    storeText: "Microsoft Store からダウンロード",
+    storeUrl: "https://apps.microsoft.com/detail/9p0qzv5z8njz?hl=ja-jp&gl=JP"
   }
 };
 
@@ -433,6 +437,10 @@ function switchLang(lang) {
 
   const dict = dictionary[lang];
 
+  // Update <html lang>
+  const htmlLangMap = { en: 'en', zh: 'zh-Hans', tw: 'zh-Hant', ja: 'ja' };
+  document.documentElement.lang = htmlLangMap[lang] || lang;
+
   // Update desktop scene
   const headlineEl = document.getElementById('el-headline');
   const taglineEl  = document.getElementById('el-tagline');
@@ -446,8 +454,10 @@ function switchLang(lang) {
   if (ocrNoteEl)     ocrNoteEl.innerHTML     = dict.disclaimer;
   if (dragTextEl)    dragTextEl.innerText    = dict.dragText;
 
-  const storeTextEl = document.getElementById('el-store-text');
-  if (storeTextEl) storeTextEl.innerText = dict.storeText;
+  const storeBtnEl   = document.getElementById('el-store-btn');
+  const storeTextEl  = document.getElementById('el-store-text');
+  if (storeBtnEl)    storeBtnEl.href       = dict.storeUrl;
+  if (storeTextEl)   storeTextEl.innerText = dict.storeText;
 
   const lblCaptureEl = document.getElementById('lbl-capture');
   const lblHubEl     = document.getElementById('lbl-hub');
@@ -459,11 +469,13 @@ function switchLang(lang) {
   if (lblClickEl)   lblClickEl.innerText   = dict.lblClick;
 
   // Update mobile hero
-  const headlineM = document.getElementById('el-headline-m');
-  const taglineM  = document.getElementById('el-tagline-m');
+  const headlineM  = document.getElementById('el-headline-m');
+  const taglineM   = document.getElementById('el-tagline-m');
+  const storeBtnM  = document.getElementById('el-store-btn-m');
   const storeTextM = document.getElementById('el-store-text-m');
   if (headlineM)  headlineM.innerHTML  = dict.headline;
   if (taglineM)   taglineM.innerText   = dict.tagline;
+  if (storeBtnM)  storeBtnM.href       = dict.storeUrl;
   if (storeTextM) storeTextM.innerText = dict.storeText;
 
   renderLayout();
