@@ -1,12 +1,10 @@
 import logging
 
-from PyQt6 import QtCore, QtWidgets
+from PyQt6 import QtCore
 
 from .config import (
     get_auto_copy_ocr_result,
     get_config_path,
-    get_ocr_pinned,
-    update_ocr_pinned,
 )
 from .constants import (
     OCR_ENGINE_PPOCR,
@@ -55,17 +53,12 @@ class OcrController:
         self._toast_bridge = None
         self._pinned_popups = []
 
-
-
         self._current_engine = OCR_ENGINE_PPOCR
 
         self.bridge.ocr_result.connect(self.on_ocr_finished)
         self.bridge.warmup_finished.connect(self._schedule_post_warmup_trim)
         
-        # Load and apply persisted pin state
-        initial_pinned = get_ocr_pinned()
-        if initial_pinned:
-            self.popup.set_pinned(True)
+        # New popups always start unpinned to avoid "sticky" state confusion.
         self.popup.pin_toggled.connect(self._handle_pin_toggled)
 
         self._trim_timer = QtCore.QTimer()
@@ -94,18 +87,12 @@ class OcrController:
             old_active = self.popup
 
             # Disconnect the old popup's pin signal so it no longer
-            # triggers persistence; only the active popup's pin state
-            # is persisted to disk.
+            # triggers logic in the controller.
             old_active.pin_toggled.disconnect(self._handle_pin_toggled)
 
             # Create a new active popup.
-            # Apply persisted pin state *before* connecting the signal
-            # so the initial set_pinned does not fire _handle_pin_toggled
-            # (same safe ordering as __init__).
             self.popup = OcrPopup(self.translate)
             self.popup.apply_font_size()
-            if get_ocr_pinned():
-                self.popup.set_pinned(True)
             self.popup.pin_toggled.connect(self._handle_pin_toggled)
 
             # Old popup gets deleted when closed
@@ -169,7 +156,10 @@ class OcrController:
             logging.getLogger(__name__).exception("Trim failed")
 
     def _handle_pin_toggled(self, pinned):
-        update_ocr_pinned(pinned)
+        # Pinning is now purely visual — the popup becomes an independent
+        # text box that stays where the user placed it.  No persistence,
+        # no auto-avoidance.  The handler exists as a future hook point.
+        pass
 
     def _clean_pinned_popups(self):
         cleaned = []
@@ -269,86 +259,6 @@ class OcrController:
             lines=response.recognition.lines if response.recognition else None,
         )
         
-        # UI/UX: If the target popup is showing at the exact same position 
-        # as another visible pinned popup, stagger it slightly.
-        # We call this AFTER show_text because for the first appearance,
-        # the popup only decides its screen position inside show_text -> _place_on_screen.
-        self._stagger_if_needed(target)
-
-    def _stagger_if_needed(self, popup):
-        """Prevent perfect overlapping of popups on screen."""
-        if not popup:
-            return
-        self._clean_pinned_popups()
-        
-        def get_all_anims(p):
-            anims = []
-            if hasattr(p, "_size_anim") and p._size_anim: anims.append(p._size_anim)
-            if hasattr(p, "_show_anim") and p._show_anim: anims.append(p._show_anim)
-            return anims
-
-        def get_target_pos(p):
-            if hasattr(p, "intended_pos"):
-                return p.intended_pos()
-            for a in get_all_anims(p):
-                if a.state() == QtCore.QAbstractAnimation.State.Running:
-                    if isinstance(a, QtCore.QPropertyAnimation) and a.propertyName() == b"geometry":
-                        return a.endValue().topLeft()
-                    if isinstance(a, QtCore.QAnimationGroup):
-                        for i in range(a.animationCount()):
-                            sub = a.animationAt(i)
-                            if isinstance(sub, QtCore.QPropertyAnimation) and sub.propertyName() == b"geometry":
-                                return sub.endValue().topLeft()
-            return p.pos()
-
-        current_pos = get_target_pos(popup)
-        # CRITICAL: Make an explicit copy to avoid in-place modification of current_pos
-        pos = QtCore.QPoint(current_pos)
-        offset = 32
-        threshold = 20 
-        
-        for _ in range(8):  
-            found = False
-            for p in self._pinned_popups:
-                if p is not popup and p.isVisible():
-                    p_pos = get_target_pos(p)
-                    if (p_pos - pos).manhattanLength() < threshold:
-                        found = True
-                        break
-            
-            if not found and self.popup and self.popup is not popup:
-                if self.popup.isVisible():
-                    p_pos = get_target_pos(self.popup)
-                    if (p_pos - pos).manhattanLength() < threshold:
-                        found = True
-            
-            if found:
-                pos += QtCore.QPoint(offset, offset)
-            else:
-                break
-        
-        if pos != current_pos:
-            logging.info(f"[OcrController] Staggering popup from {current_pos} to {pos}")
-            
-            if hasattr(popup, "set_intended_geom"):
-                popup.set_intended_geom(QtCore.QRect(pos, popup.size()))
-
-            for a in get_all_anims(popup):
-                if a.state() == QtCore.QAbstractAnimation.State.Running:
-                    if isinstance(a, QtCore.QPropertyAnimation) and a.propertyName() == b"geometry":
-                        new_geom = a.endValue()
-                        new_geom.moveTo(pos)
-                        a.setEndValue(new_geom)
-                    elif isinstance(a, QtCore.QAnimationGroup):
-                         for i in range(a.animationCount()):
-                            sub = a.animationAt(i)
-                            if isinstance(sub, QtCore.QPropertyAnimation) and sub.propertyName() == b"geometry":
-                                new_geom = sub.endValue()
-                                new_geom.moveTo(pos)
-                                sub.setEndValue(new_geom)
-            
-            popup.move(pos)
-
     def start_request(self, pixmap):
         self._trim_timer.stop()
         self._expecting_ocr_result = True

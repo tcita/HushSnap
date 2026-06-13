@@ -438,27 +438,6 @@ def test_set_popup_anchor_detaches_pinned_popup(monkeypatch, qapp, tmp_path):
     assert controller.popup.get_plain_text() == ""
 
 
-def test_stagger_if_needed(monkeypatch, qapp, tmp_path):
-    """If a new popup shows up exactly at the same position as an existing pinned popup, 
-    it should be staggered."""
-    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    
-    # 1. Setup a pinned popup at a fixed position
-    pinned_popup = ocr_controller.OcrPopup(_translate)
-    pinned_popup.move(100, 100)
-    monkeypatch.setattr(pinned_popup, "isVisible", lambda: True)
-    controller._pinned_popups.append(pinned_popup)
-    
-    # 2. Setup active popup at the same position
-    controller.popup.move(100, 100)
-    
-    # 3. Trigger staggering
-    controller._stagger_if_needed(controller.popup)
-    
-    # Position should have shifted by 28 pixels
-    assert controller.popup.pos() == QtCore.QPoint(128, 128)
-
-
 def test_concurrency_correct_popup_updated(monkeypatch, qapp, tmp_path, sample_pixmap):
     """If multiple requests are in flight, each result should go to the popup 
     that was active when the request started."""
