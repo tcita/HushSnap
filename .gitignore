@@ -18,6 +18,7 @@ dist-installer-test/
 .vs/
 .claude/
 .antigravitycli/
+.aider*
 
 # Tool output / profiling data
 scratch/
@@ -28,5 +29,4 @@ scratch/
 # Orphaned build links
 *.lnk
 
-ocr-demo.html
-.aider*
+
