@@ -11,7 +11,9 @@ from .styles import BRAND_GREEN
 # Minimum window size to prevent collapsing to zero
 WINDOW_MIN_WIDTH = 280
 WINDOW_MIN_HEIGHT = 180
-RESIZE_HIT = 24
+OUTER_MARGIN = 28  # Matches RESIZE_HIT — creates a clear "window chrome" ring
+RESIZE_HIT = 28
+CORNER_HIT = 52  # Wide corner zone — corners are point targets, need the extra room
 
 
 class OcrPopup(QtWidgets.QWidget):
@@ -43,7 +45,9 @@ class OcrPopup(QtWidgets.QWidget):
 
         # ── outer shell ──────────────────────────────────────────────
         outer = QtWidgets.QVBoxLayout(self)
-        outer.setContentsMargins(18, 18, 18, 18)  # shadow space + breathing room
+        outer.setContentsMargins(
+            OUTER_MARGIN, OUTER_MARGIN, OUTER_MARGIN, OUTER_MARGIN
+        )
 
         # ── pin & close buttons (absolutely positioned, overlay on content) ──
         self.pin_btn = QtWidgets.QPushButton(self)
@@ -304,7 +308,7 @@ class OcrPopup(QtWidgets.QWidget):
             content_w, content_h = 280, 180  # fallback
 
         if self._anchor_geom:
-            m = 18  # outer margin for shadow / breathing room
+            m = OUTER_MARGIN
             bar_h = 2  # progress bar
 
             # Loading card width: bounded to a narrow band so the
@@ -540,8 +544,6 @@ class OcrPopup(QtWidgets.QWidget):
             tx = max(area.left(), min(target_geom.x(), area.right() - target_geom.width()))
             ty = max(area.top(), min(target_geom.y(), area.bottom() - target_geom.height()))
             target_geom.moveTo(tx, ty)
-
-        logging.critical(f"[DEBUG_POS] _adjust_window_size TARGET GEOM: {target_geom}")
 
         if self.isVisible():
             # Already visible? Smoothly animate to the new size to prevent "jumping"
@@ -873,7 +875,28 @@ class OcrPopup(QtWidgets.QWidget):
     def _get_edge(self, pos):
         edge = QtCore.Qt.Edge(0)
         hit = RESIZE_HIT
+        corner = CORNER_HIT
         w, h = self.width(), self.height()
+
+        # ── expanded corner detection ──────────────────────────────
+        # Use a wider zone for corners so diagonal resize is easier to grab.
+        near_left_c = pos.x() <= corner
+        near_right_c = pos.x() >= w - corner
+        near_top_c = pos.y() <= corner
+        near_bottom_c = pos.y() >= h - corner
+
+        if (near_left_c or near_right_c) and (near_top_c or near_bottom_c):
+            if near_left_c:
+                edge |= QtCore.Qt.Edge.LeftEdge
+            if near_right_c:
+                edge |= QtCore.Qt.Edge.RightEdge
+            if near_top_c:
+                edge |= QtCore.Qt.Edge.TopEdge
+            if near_bottom_c:
+                edge |= QtCore.Qt.Edge.BottomEdge
+            return edge
+
+        # ── standard edge detection ─────────────────────────────────
         if pos.x() <= hit:
             edge |= QtCore.Qt.Edge.LeftEdge
         elif pos.x() >= w - hit:
@@ -1030,7 +1053,7 @@ class OcrPopup(QtWidgets.QWidget):
 
     def _update_button_positions(self):
         """Position floating overlay buttons on the card."""
-        ox, oy = 18, 18  # outer margin
+        ox, oy = OUTER_MARGIN, OUTER_MARGIN
         btn_margin = 6
         # Pin — top-left
         self.pin_btn.move(ox + btn_margin, oy + btn_margin)
