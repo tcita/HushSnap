@@ -105,7 +105,7 @@ def _build_controller(monkeypatch, qapp, tmp_path, service=None):
 def test_capture_completed_starts_ocr_request(monkeypatch, qapp, tmp_path, sample_pixmap):
     service = FakeService()
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path, service=service)
-    controller.enable_ocr_next_capture()
+    controller.schedule_ocr()
 
     controller.handle_capture_completed(sample_pixmap)
 
@@ -136,12 +136,12 @@ def test_ocr_finished_copies_text_and_updates_popup(monkeypatch, qapp, tmp_path,
     assert shown["pixmap"] is sample_pixmap
 
 
-def test_should_ocr_next_capture_sets_flag(monkeypatch, qapp, tmp_path):
+def test_schedule_ocr_sets_needs_ocr(monkeypatch, qapp, tmp_path):
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    assert controller.next_capture_should_ocr is False
+    assert controller.needs_ocr is False
 
-    controller.enable_ocr_next_capture()
-    assert controller.next_capture_should_ocr is True
+    controller.schedule_ocr()
+    assert controller.needs_ocr is True
 
 
 def test_handle_capture_completed_skips_when_not_enabled(monkeypatch, qapp, tmp_path, sample_pixmap):
@@ -153,7 +153,7 @@ def test_handle_capture_completed_skips_when_not_enabled(monkeypatch, qapp, tmp_
     assert len(service.requests) == 0
 
 
-def test_on_ocr_finished_clears_should_ocr_flag(monkeypatch, qapp, tmp_path, sample_pixmap):
+def test_on_ocr_finished_clears_needs_ocr(monkeypatch, qapp, tmp_path, sample_pixmap):
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
     qapp.clipboard().clear()
 
@@ -209,7 +209,7 @@ def test_warmup_skipped_when_ocr_already_requested(monkeypatch, qapp, tmp_path):
     """If user already triggered OCR, skip warmup — the OCR path will
     initialize the engine on its own."""
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    controller.next_capture_should_ocr = True
+    controller.needs_ocr = True
 
     warmup_calls = []
     monkeypatch.setattr(
@@ -220,14 +220,14 @@ def test_warmup_skipped_when_ocr_already_requested(monkeypatch, qapp, tmp_path):
     controller._background_warmup()
 
     assert warmup_calls == []
-    assert controller.next_capture_should_ocr is True
+    assert controller.needs_ocr is True
 
 
 def test_warmup_runs_when_no_ocr_pending(monkeypatch, qapp, tmp_path):
     """Warmup should initialize the engine and emit warmup_finished
     when no OCR request is in progress."""
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    controller.next_capture_should_ocr = False
+    controller.needs_ocr = False
     controller._expecting_ocr_result = False
 
     warmup_calls = []
@@ -275,7 +275,7 @@ def test_post_warmup_trim_starts_timer_when_idle(monkeypatch, qapp, tmp_path):
     """_schedule_post_warmup_trim should start the trim timer (interval=0)
     when no OCR is pending."""
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    controller.next_capture_should_ocr = False
+    controller.needs_ocr = False
     controller._expecting_ocr_result = False
 
     controller._trim_timer.stop()
@@ -328,7 +328,7 @@ def test_handle_capture_completed_shows_loading(monkeypatch, qapp, tmp_path, sam
         loading_pixmap.append(pixmap)
 
     controller.popup.show_loading = _show_loading
-    controller.next_capture_should_ocr = True
+    controller.needs_ocr = True
     controller.handle_capture_completed(sample_pixmap)
 
     assert len(loading_pixmap) == 1
@@ -339,7 +339,7 @@ def test_warmup_finished_signal_triggers_trim(monkeypatch, qapp, tmp_path):
     """The warmup_finished Qt signal must be connected to
     _schedule_post_warmup_trim, which starts the trim timer when idle."""
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    controller.next_capture_should_ocr = False
+    controller.needs_ocr = False
     controller._expecting_ocr_result = False
 
     controller._trim_timer.stop()
@@ -386,7 +386,7 @@ def test_handle_capture_completed_detaches_pinned_popup(monkeypatch, qapp, tmp_p
     original_popup = controller.popup
 
     # Perform a capture completed
-    controller.next_capture_should_ocr = True
+    controller.needs_ocr = True
     controller.handle_capture_completed(sample_pixmap)
 
     # The active popup should be a new instance now
@@ -466,7 +466,7 @@ def test_concurrency_correct_popup_updated(monkeypatch, qapp, tmp_path, sample_p
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path, service=service)
     
     # Request 1
-    controller.enable_ocr_next_capture()
+    controller.schedule_ocr()
     popup1 = controller.popup
     controller.handle_capture_completed(sample_pixmap)
     assert len(service.callbacks) == 1
@@ -475,7 +475,7 @@ def test_concurrency_correct_popup_updated(monkeypatch, qapp, tmp_path, sample_p
     # Request 2 (pins popup1 and creates popup2)
     popup1.set_pinned(True)
     monkeypatch.setattr(popup1, "isVisible", lambda: True)
-    controller.enable_ocr_next_capture()
+    controller.schedule_ocr()
     controller.handle_capture_completed(sample_pixmap)
     popup2 = controller.popup
     assert popup2 is not popup1

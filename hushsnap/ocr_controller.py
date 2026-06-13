@@ -50,7 +50,7 @@ class OcrController:
         self.bridge = SignalBridge()
         self.tray_icon = None
         self.capture_requester = None
-        self.next_capture_should_ocr = False
+        self.needs_ocr = False
         self._expecting_ocr_result = False
         self._toast_bridge = None
         self._pinned_popups = []
@@ -156,11 +156,11 @@ class OcrController:
         else:
             show_toast(self.translate("pin_ocr_empty"), is_error=True)
 
-    def enable_ocr_next_capture(self):
-        self.next_capture_should_ocr = True
+    def schedule_ocr(self):
+        self.needs_ocr = True
 
     def _trim_current_engine(self):
-        if self.next_capture_should_ocr or self._expecting_ocr_result:
+        if self.needs_ocr or self._expecting_ocr_result:
             return
         from .ocr.engine import trim_engine
         try:
@@ -187,10 +187,10 @@ class OcrController:
             self._pinned_popups.remove(popup)
 
     def handle_capture_completed(self, captured_pixmap):
-        if not self.next_capture_should_ocr:
+        if not self.needs_ocr:
             return
 
-        self.next_capture_should_ocr = False
+        self.needs_ocr = False
         self._detach_if_pinned()
 
         self.popup.clear_anchor()
@@ -366,7 +366,7 @@ class OcrController:
     def _background_warmup(self):
         import threading
         from .ocr.engine import warmup_engine
-        if self.next_capture_should_ocr or self._expecting_ocr_result:
+        if self.needs_ocr or self._expecting_ocr_result:
             self.bridge.warmup_finished.emit()
             return
 
@@ -381,6 +381,6 @@ class OcrController:
         threading.Thread(target=run_warmup, daemon=True).start()
 
     def _schedule_post_warmup_trim(self):
-        if self.next_capture_should_ocr or self._expecting_ocr_result:
+        if self.needs_ocr or self._expecting_ocr_result:
             return
         self._trim_timer.start(0)

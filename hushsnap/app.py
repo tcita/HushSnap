@@ -326,7 +326,7 @@ class Application(QtCore.QObject):
 
     def _on_capture_completed(self, captured_pixmap, logical_size):
         """Callback after screenshot is copied to clipboard."""
-        if not self.ocr_controller.next_capture_should_ocr:
+        if not self.ocr_controller.needs_ocr:
             try:
                 pil_img = qpixmap_to_pil(captured_pixmap)
                 # Store selection-based logical size as source of truth

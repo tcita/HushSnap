@@ -23,7 +23,7 @@ class DebugInterface:
         logger.info("[DebugInterface] Simulating manual OCR workflow for: %s", image_path)
 
         # 1. Simulate hotkey trigger intent
-        controller.enable_ocr_next_capture()
+        controller.schedule_ocr()
 
         # 2. Simulate capture window closing and returning Pixmap
         # This is the original entry point for OcrController to receive images,
