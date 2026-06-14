@@ -87,6 +87,18 @@ def main():
              "Arena=True pools allocations for ~7%% speedup but retains "
              "~700 MB after OCR unless trimmed."
     )
+    parser.add_argument(
+        "--no-cls",
+        action="store_true",
+        help="Disable direction classifier (Global.use_cls=False). "
+             "Tests impact of removing the 180° rotation classifier."
+    )
+    parser.add_argument(
+        "--no-det",
+        action="store_true",
+        help="Disable text detector (Global.use_det=False). "
+             "Sends full image directly to recognizer."
+    )
     args = parser.parse_args()
 
     # Resolve image path
@@ -112,6 +124,10 @@ def main():
         override_params["Global.max_side_len"] = args.max_side_len
     if args.arena:
         override_params["EngineConfig.onnxruntime.enable_cpu_mem_arena"] = True
+    if args.no_cls:
+        override_params["Global.use_cls"] = False
+    if args.no_det:
+        override_params["Global.use_det"] = False
 
     if override_params:
         from hushsnap.ocr.ppocr import set_engine_params_override

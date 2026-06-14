@@ -23,6 +23,13 @@ from ._result import BenchmarkResult, IterationResult
 logger = logging.getLogger(__name__)
 
 
+class _NullTextEdit:
+    """Minimal mock so that ``popup.text_edit.toPlainText()`` works."""
+    @staticmethod
+    def toPlainText():
+        return ""
+
+
 class _NullPopup(QtCore.QObject):
     """No-op popup that suppresses UI overhead during benchmarking.
 
@@ -32,11 +39,20 @@ class _NullPopup(QtCore.QObject):
     """
     pin_toggled = QtCore.pyqtSignal(bool)
 
+    # Provide the attributes that OcrController probes.
+    text_edit = _NullTextEdit()
+
+    def __init__(self):
+        super().__init__()
+
     def show_loading(self, **kwargs): pass
     def show_text(self, text="", **kwargs): pass
     def set_pinned(self, pinned): pass
+    def is_pinned(self): return False
+    def isVisible(self): return False
     def set_anchor_pos(self, x, y, width=None, height=None): pass
     def clear_anchor(self): pass
+    def apply_font_size(self): pass
 
 
 class BenchmarkRunner:
@@ -93,10 +109,10 @@ class BenchmarkRunner:
         # clipboard writes, tray notifications, and the 5 s idle-trim
         # timer don't fire during benchmarking.
         try:
-            self.controller.bridge.signal.disconnect()
+            self.controller.bridge.ocr_result.disconnect()
         except TypeError:
             pass  # no slots were connected (shouldn't happen, but safe)
-        self.controller.bridge.signal.connect(self._on_ocr_finished)
+        self.controller.bridge.ocr_result.connect(self._on_ocr_finished)
 
         # ── Internal state ────────────────────────────────────────
         self._finished = False
@@ -111,7 +127,7 @@ class BenchmarkRunner:
 
     def __exit__(self, *args):
         try:
-            self.controller.bridge.signal.disconnect()
+            self.controller.bridge.ocr_result.disconnect()
         except Exception:
             pass
         return False  # don't suppress exceptions
@@ -121,7 +137,7 @@ class BenchmarkRunner:
     def _on_warmup_done(self):
         self._warmup_done = True
 
-    def _on_ocr_finished(self, response):
+    def _on_ocr_finished(self, response, target_popup=None):
         """Record completion.  The OCR pipeline emits exactly one final
         response per request — there are no intermediate status updates,
         so every signal emission marks completion."""
