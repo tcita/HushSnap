@@ -1048,7 +1048,7 @@ class SettingsDialogController(QtCore.QObject):
 
         thumb_options = [
             (self.translate("settings_thumbnail_time_5s"), 5000),
-            (self.translate("settings_thumbnail_time_10s"), 10000),
+            (self.translate("settings_thumbnail_time_12s"), 12000),
             (self.translate("settings_thumbnail_time_30s"), 30000),
             (self.translate("settings_thumbnail_time_never"), 0),
         ]

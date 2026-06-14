@@ -249,7 +249,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
             from ..config import get_thumbnail_display_time, get_config_path
             return get_thumbnail_display_time(get_config_path())
         except Exception:
-            return 10000 # Fallback to 10s
+            return 12000 # Fallback to 12s
 
     def _pil_to_qpixmap(self, pil_img: Image.Image) -> QtGui.QPixmap:
         """Convert PIL Image to QPixmap efficiently."""

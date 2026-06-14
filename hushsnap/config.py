@@ -552,11 +552,11 @@ def update_last_save_directory(directory, config_path=None):
 
 
 def get_thumbnail_display_time(config_path=None):
-    """Read 'thumbnail_display_time' from config (default 10000)."""
+    """Read 'thumbnail_display_time' from config (default 12000)."""
     if config_path is None:
         config_path = get_config_path()
     config_data = _load_config_data(config_path)
-    return int(config_data.get("thumbnail_display_time", 10000))
+    return int(config_data.get("thumbnail_display_time", 12000))
 
 
 def update_thumbnail_display_time(ms, config_path=None):
