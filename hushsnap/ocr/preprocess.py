@@ -3,7 +3,9 @@
 Steps (all format/coordinate; NOT recognition enhancement):
 - DPR = 1.0   (grabWindow preserves the screen's native DPR; OCR
   engines operate in raw-pixel space and ignore the metadata)
-- Format = ARGB32  (consistent baseline for all engines)
+- Format = RGB32   (4-byte-aligned, [B,G,R,X] on little-endian;
+  ARGB32 is byte-identical for the first 3 channels and also
+  tolerated by downstream code)
 - Safe-pad  (background-sampled pad to 960 px minimum side so that
   OCR engines receive enough pixel resolution to work with)
 """
@@ -81,16 +83,16 @@ def _qimage_to_bgr(image: QtGui.QImage):
 
 
 def _bgr_to_qimage(bgr) -> QtGui.QImage:
-    """Convert a BGR NumPy array (h, w, 3) back to ARGB32 QImage."""
+    """Convert a BGR NumPy array (h, w, 3) back to RGB32 QImage."""
     import numpy as np
 
     h, w = bgr.shape[:2]
-    argb = np.zeros((h, w, 4), dtype=np.uint8)
-    argb[:, :, 0] = bgr[:, :, 0]  # B
-    argb[:, :, 1] = bgr[:, :, 1]  # G
-    argb[:, :, 2] = bgr[:, :, 2]  # R
-    argb[:, :, 3] = 255            # A (opaque)
-    result = QtGui.QImage(argb.data, w, h, w * 4, QtGui.QImage.Format.Format_ARGB32)
+    rgb32 = np.zeros((h, w, 4), dtype=np.uint8)
+    rgb32[:, :, 0] = bgr[:, :, 0]  # B
+    rgb32[:, :, 1] = bgr[:, :, 1]  # G
+    rgb32[:, :, 2] = bgr[:, :, 2]  # R
+    rgb32[:, :, 3] = 0              # X (don't care)
+    result = QtGui.QImage(rgb32.data, w, h, w * 4, QtGui.QImage.Format.Format_RGB32)
     return result.copy()  # own the memory
 
 
@@ -127,11 +129,16 @@ def _pad_if_small(image: QtGui.QImage, min_side: int = SAFE_PAD_MIN_SIDE) -> QtG
 
 
 def prepare_ocr_image(image_or_pixmap) -> QtGui.QImage:
-    """Unify pixel format to ARGB32 and reset DPR to 1.0.
+    """Unify pixel format to RGB32 and reset DPR to 1.0.
+
+    RGB32 is guaranteed 4-byte-aligned (no row padding), so downstream code
+    can safely reshape via ``np.frombuffer(bits()).reshape(h, w, 4)`` without
+    worrying about stride mismatches.
+
     Supports QPixmap, QImage, and PIL Image.
     """
     if isinstance(image_or_pixmap, QtGui.QPixmap):
-        image = image_or_pixmap.toImage().convertToFormat(QtGui.QImage.Format.Format_ARGB32)
+        image = image_or_pixmap.toImage().convertToFormat(QtGui.QImage.Format.Format_RGB32)
     elif Image and isinstance(image_or_pixmap, Image.Image):
         # Convert PIL Image to QImage
         pil_img = image_or_pixmap
@@ -139,15 +146,15 @@ def prepare_ocr_image(image_or_pixmap) -> QtGui.QImage:
             pil_img = pil_img.convert("RGBA")
         data = pil_img.tobytes("raw", "RGBA")
         image = QtGui.QImage(
-            data, 
-            pil_img.size[0], 
-            pil_img.size[1], 
+            data,
+            pil_img.size[0],
+            pil_img.size[1],
             QtGui.QImage.Format.Format_RGBA8888
-        ).copy().convertToFormat(QtGui.QImage.Format.Format_ARGB32)
+        ).copy().convertToFormat(QtGui.QImage.Format.Format_RGB32)
     else:
         # Assume it's a QImage
-        image = image_or_pixmap.convertToFormat(QtGui.QImage.Format.Format_ARGB32)
-    
+        image = image_or_pixmap.convertToFormat(QtGui.QImage.Format.Format_RGB32)
+
     if image.devicePixelRatio() != 1.0:
         image.setDevicePixelRatio(1.0)
     return image
@@ -160,7 +167,7 @@ def run_minimal_pipeline(
     """Prepare the source image for OCR.
 
     Steps (always applied):
-    1. Format/DPR normalisation (ARGB32, DPR 1.0)
+    1. Format/DPR normalisation (RGB32, DPR 1.0)
     2. Safe background-sampled pad when any side < 960 px
     """
     _ = settings or OcrPreprocessSettings()
@@ -174,7 +181,7 @@ def run_minimal_pipeline(
             key="prepare_ocr",
             label="Prepare OCR Input",
             enabled=True,
-            details="DPR 1.0, ARGB32",
+            details="DPR 1.0, RGB32",
         )
     )
 

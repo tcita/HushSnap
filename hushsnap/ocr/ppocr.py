@@ -751,14 +751,17 @@ def recognize_ppocr_qimage(image_or_result, language_tag: str = "") -> OcrRecogn
     try:
         logger.info("[ANCHOR] IMAGE_CONVERT_START")
         import numpy as np
-        # Use RGB32 because it's always 4-byte aligned, avoiding padding/stride issues
-        # that break the NumPy reshape. In little-endian, RGB32 is actually BGRX.
-        bgr_image = image.convertToFormat(QtGui.QImage.Format.Format_RGB32)
-        width = bgr_image.width()
-        height = bgr_image.height()
-        ptr = bgr_image.bits()
-        ptr.setsize(bgr_image.sizeInBytes())
-        # Slice [:, :, :3] converts BGRA to BGR, then copy() makes it contiguous for ONNX
+        # Callers must pass a QImage whose format stores [B, G, R] in the
+        # first three bytes on this platform (RGB32 / ARGB32 / ARGB32_PM on
+        # little-endian).  prepare_ocr_image() in preprocess.py guarantees
+        # RGB32, and ARGB32 is byte-identical for the first 3 channels.
+        # convertToFormat is omitted because it would add a redundant copy
+        # (~1.3 ms) with no effect on the BGR slice below.
+        width = image.width()
+        height = image.height()
+        ptr = image.bits()
+        ptr.setsize(image.sizeInBytes())
+        # [:, :, :3] drops the X/A channel → contiguous BGR array for ONNX.
         arr = np.frombuffer(ptr, dtype=np.uint8).reshape((height, width, 4))[:, :, :3].copy()
         logger.info("[ANCHOR] IMAGE_CONVERT_END")
 
