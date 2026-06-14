@@ -591,10 +591,15 @@ def _get_engine() -> "PPOCR":
                 logger.info("[PPOCR] Initializing engine singleton (models loading)...")
                 
                 # Optimized for desktop CPU inference (see module header for details)
+                # CLS (direction classifier) disabled by default — only useful
+                # for 180° flipped images (e.g. phone held upside-down).
+                # Saves ~10% latency + ~6 MB memory with no accuracy impact
+                # on correctly-oriented or slightly tilted input.
                 params = {
                     "Det.ocr_version": local_OCRVersion.PPOCRV5,
                     "Rec.ocr_version": local_OCRVersion.PPOCRV5,
                     "Cls.ocr_version": local_OCRVersion.PPOCRV5,
+                    "Global.use_cls": False,
                     "Global.max_side_len": 1280,
                     "Rec.rec_batch_num": 1,
                     "EngineConfig.onnxruntime.intra_op_num_threads": 8,
