@@ -177,7 +177,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
         # 4. Timer
         self.timer = QtCore.QTimer(self)
         self.timer.setSingleShot(True)
-        self.timer.timeout.connect(self.fade_anim.start)
+        self.timer.timeout.connect(self._on_auto_dismiss)
         
         self._is_dragging = False
         self._drag_start_pos = None
@@ -187,6 +187,15 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self._loading_progress = 0.0
         self._loading_anim = None  # QVariantAnimation for pulsing bar
         self._pill_state = 'none'  # 'none' | 'pin' | 'close' — drives paintEvent
+
+        # Countdown progress bar — thin line at card bottom that shrinks
+        # over the display duration, so the user always knows how much
+        # time is left before the thumbnail auto-dismisses.
+        self._countdown_deadline = None   # monotonic timestamp (seconds) or None
+        self._countdown_total_s = 0.0     # total configured display time
+        self._countdown_tick = QtCore.QTimer(self)
+        self._countdown_tick.setInterval(50)  # ~20 fps — smooth enough
+        self._countdown_tick.timeout.connect(self._tick_countdown)
 
     @staticmethod
     def _make_pin_icon():
@@ -285,6 +294,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self._loading = True
         self.timer.stop()
         self.fade_anim.stop()
+        self._pause_countdown()
         self.setWindowOpacity(1.0)
         self.action_pill.hide()
 
@@ -305,20 +315,91 @@ class ThumbnailWindow(QtWidgets.QWidget):
     def dismiss(self):
         """Stop loading and close the thumbnail (called when OCR popup is ready)."""
         self._loading = False
+        self._stop_countdown()
         if self._loading_anim is not None:
             self._loading_anim.stop()
             self._loading_anim = None
         self.close()
 
+    def _start_timer(self):
+        """Start the auto-dismiss timer if a finite display time is configured.
+        When display_ms is 0 ('Never hide'), the timer is not started.  """
+        ms = self._get_display_ms()
+        if ms > 0:
+            self.timer.start(ms)
+
+    def _on_auto_dismiss(self):
+        """Timer fired — stop the countdown bar and begin fade-out."""
+        self._stop_countdown()
+        self.fade_anim.start()
+
+    # ── Countdown progress bar ──────────────────────────────────────────
+    def _tick_countdown(self):
+        """Called every 50 ms to repaint the countdown bar."""
+        if self._countdown_deadline is None:
+            self._countdown_tick.stop()
+            return
+        remaining = self._countdown_deadline - time.monotonic()
+        if remaining <= 0:
+            self._countdown_deadline = None
+            self._countdown_tick.stop()
+        self.update()
+
+    def _start_countdown(self):
+        """Begin / resume the countdown progress bar.
+        Mirrors _start_timer so the bar always reflects the same duration.  """
+        ms = self._get_display_ms()
+        if ms <= 0:
+            self._countdown_deadline = None
+            self._countdown_tick.stop()
+            return
+        self._countdown_total_s = ms / 1000.0
+        self._countdown_deadline = time.monotonic() + self._countdown_total_s
+        self._countdown_tick.start()
+
+    def _pause_countdown(self):
+        """Freeze the countdown bar (e.g. on hover / drag / menu)."""
+        self._countdown_tick.stop()
+
+    def _stop_countdown(self):
+        """Tear down the countdown entirely (e.g. on dismiss / close)."""
+        self._countdown_tick.stop()
+        self._countdown_deadline = None
+        self.update()
+
+    def refresh_timer(self):
+        """Re-read config and immediately apply the new display duration.
+
+        Called when the user changes the thumbnail-display-time setting so
+        the currently-visible thumbnail reacts without waiting for the next
+        screenshot.  Switches between never-hide ↔ countdown seamlessly.
+        """
+        ms = self._get_display_ms()
+        if ms <= 0:
+            # "Never hide" — cancel any running timer / countdown, restore full opacity
+            self.timer.stop()
+            self.fade_anim.stop()
+            self._stop_countdown()
+            self.setWindowOpacity(1.0)
+        else:
+            # Finite duration — restart both timer and countdown from now
+            self.timer.stop()
+            self.fade_anim.stop()
+            self.setWindowOpacity(1.0)
+            self.timer.start(ms)
+            self._start_countdown()
+
     def showEvent(self, event):
         super().showEvent(event)
         self.pos_anim.start()
-        self.timer.start(self._get_display_ms())
+        self._start_timer()
+        self._start_countdown()
 
     def enterEvent(self, event):
         """Pause timer on hover, activate visual feedback, and show buttons."""
         self.timer.stop()
         self.fade_anim.stop()
+        self._pause_countdown()
         self.setWindowOpacity(1.0)
         self._hovered = True
         self.update()
@@ -328,7 +409,8 @@ class ThumbnailWindow(QtWidgets.QWidget):
     def leaveEvent(self, event):
         """Resume timer on leave, deactivate visual feedback, and hide buttons."""
         if not self._is_dragging and not self._menu_active:
-            self.timer.start(self._get_display_ms())
+            self._start_timer()
+            self._start_countdown()
         self._hovered = False
         self.update()
         self._restore_pill_style()
@@ -400,6 +482,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self.update()
         self.timer.stop()
         self.fade_anim.stop()
+        self._pause_countdown()
         self.setWindowOpacity(1.0)
 
         menu = QtWidgets.QMenu(self)
@@ -438,11 +521,13 @@ class ThumbnailWindow(QtWidgets.QWidget):
         else:
             self._hovered = False
             self.update()
-            self.timer.start(self._get_display_ms())
+            self._start_timer()
+            self._start_countdown()
 
     def _start_drag(self):
         self._is_dragging = True
         self.timer.stop()
+        self._pause_countdown()
         
         logger.debug("--- Drag-and-Drop Start ---")
         
@@ -566,7 +651,8 @@ class ThumbnailWindow(QtWidgets.QWidget):
                 self.setWindowOpacity(1.0)
                 self._hovered = False
                 self.action_pill.hide()
-                self.timer.start(self._get_display_ms())
+                self._start_timer()
+                self._start_countdown()
                 self.update()
         else:
             self.close()
@@ -657,6 +743,50 @@ class ThumbnailWindow(QtWidgets.QWidget):
                 QtCore.QRectF(self.card_rect.left() + margin + offset, bar_y, seg_w, bar_h),
                 1, 1,
             )
+            # Reset brush so it doesn't leak into the card border fill below
+            painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+
+        # Countdown progress bar — thin shrinking line at card bottom.
+        # Only shown when idle (not loading, not hovered) and a finite
+        # display time is configured.  Hidden during hover because the
+        # timer is paused then — a frozen bar conveys no useful info.
+        elif (not self._hovered
+              and self._countdown_deadline is not None
+              and self._countdown_total_s > 0):
+            remaining = max(0.0, self._countdown_deadline - time.monotonic())
+            progress = remaining / self._countdown_total_s  # 1.0 → 0.0
+
+            bar_h = 3
+            margin = 10
+            bar_y = self.card_rect.bottom() - bar_h - 3
+            track_w = self.card_rect.width() - margin * 2
+
+            # Subtle background track
+            painter.setPen(QtCore.Qt.PenStyle.NoPen)
+            painter.setBrush(QtGui.QColor(255, 255, 255, 25))
+            painter.drawRoundedRect(
+                QtCore.QRectF(self.card_rect.left() + margin, bar_y, track_w, bar_h),
+                1, 1,
+            )
+
+            # Fill colour: neutral white, warming to a soft red in the last 2 s
+            if remaining <= 2.0:
+                t = max(0.0, remaining) / 2.0  # 1.0 → 0.0 (2 s → 0 s)
+                r = 255
+                g = int(90 + (255 - 90) * t)
+                b = int(90 + (255 - 90) * t)
+                a = int(55 + (65 - 55) * (1.0 - t))  # 55 → 65 (bolder as time runs out)
+            else:
+                r, g, b, a = 255, 255, 255, 55
+
+            fill_w = int(track_w * progress)
+            if fill_w > 0:
+                painter.setBrush(QtGui.QColor(r, g, b, a))
+                painter.drawRoundedRect(
+                    QtCore.QRectF(self.card_rect.left() + margin, bar_y, fill_w, bar_h),
+                    1, 1,
+                )
+
             # Reset brush so it doesn't leak into the card border fill below
             painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
 
@@ -762,6 +892,19 @@ class ThumbnailManager(QtCore.QObject):
             except Exception:
                 pass
         self._windows.clear()
+
+    def refresh_current(self):
+        """Re-apply the display-time setting to the visible thumbnail.
+
+        Called from the settings dialog so the user sees the change
+        take effect on the currently-shown thumbnail immediately.
+        """
+        win = self.current_window()
+        if win is not None:
+            try:
+                win.refresh_timer()
+            except Exception:
+                pass
 
     def current_window_center(self):
         for w in self._windows:

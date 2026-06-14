@@ -24,6 +24,7 @@ from ..config import (
     update_thumbnail_display_time,
 )
 from ..system import startup_manager
+from .thumbnail import thumbnail_manager
 from .styles import (
     BRAND_GREEN,
     CAPTURE_CANCEL_BUTTON_STYLE,
@@ -1043,6 +1044,7 @@ class SettingsDialogController(QtCore.QObject):
         def change_thumb_time(index):
             val = combo_thumb.itemData(index)
             update_thumbnail_display_time(val, self.config_path)
+            thumbnail_manager.refresh_current()
 
         thumb_options = [
             (self.translate("settings_thumbnail_time_5s"), 5000),
