@@ -190,9 +190,11 @@ def create_tray(
             border-radius: 10px;
             padding: 8px;
             margin: 10px;
+            font-size: 13px;
             font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
         }
         QMenu::item {
+            font-size: 13px;
             font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
         }
         QMenu::separator {

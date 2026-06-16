@@ -276,12 +276,14 @@ QComboBox#settingsCombo QAbstractItemView {{
     selection-background-color: {SETTINGS_GHOST_HOVER_BG};
     selection-color: {SETTINGS_LABEL_COLOR};
     color: {SETTINGS_LABEL_COLOR};
+    font-size: 13px;
     font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
 }}
 QComboBox#settingsCombo QAbstractItemView::item {{
     padding: 7px 14px;
     min-height: 30px;
     color: {SETTINGS_LABEL_COLOR};
+    font-size: 13px;
     font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
 }}
 QComboBox#settingsCombo QAbstractItemView::item:hover {{

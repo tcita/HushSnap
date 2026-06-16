@@ -135,40 +135,29 @@ class CategoryList(QtWidgets.QListWidget):
         )
 
 
-def create_system_icon():
-    pixmap = QtGui.QPixmap(20, 20)
-    pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-    painter = QtGui.QPainter(pixmap)
-    painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-    
-    pen = QtGui.QPen(QtGui.QColor("#CCCCCC"), 1.5)
-    painter.setPen(pen)
-    painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
-    
-    painter.drawRoundedRect(2, 3, 16, 11, 1.5, 1.5)
-    painter.drawLine(10, 14, 10, 17)
-    painter.drawLine(7, 17, 13, 17)
-    
-    painter.end()
-    return QtGui.QIcon(pixmap)
+def _load_svg_icon(name, color_str="#CCCCCC", size=20):
+    """Load an SVG icon from the icons dir with the given color."""
+    import os
+    from PyQt6 import QtSvg
+    path = os.path.join(os.path.dirname(__file__), "icons", f"{name}.svg")
+    if not os.path.isfile(path):
+        return QtGui.QIcon()
+    with open(path, "r", encoding="utf-8") as f:
+        svg = f.read().replace("currentColor", color_str)
+    renderer = QtSvg.QSvgRenderer(QtCore.QByteArray(svg.encode("utf-8")))
+    pm = QtGui.QPixmap(size, size)
+    pm.fill(QtCore.Qt.GlobalColor.transparent)
+    p = QtGui.QPainter(pm)
+    renderer.render(p)
+    p.end()
+    return QtGui.QIcon(pm)
 
+
+def create_system_icon():
+    return _load_svg_icon("system")
 
 def create_language_icon():
-    pixmap = QtGui.QPixmap(20, 20)
-    pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-    painter = QtGui.QPainter(pixmap)
-    painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-    
-    pen = QtGui.QPen(QtGui.QColor("#CCCCCC"), 1.5)
-    painter.setPen(pen)
-    painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
-    
-    painter.drawEllipse(2, 2, 16, 16)
-    painter.drawEllipse(6, 2, 8, 16)
-    painter.drawLine(2, 10, 18, 10)
-    
-    painter.end()
-    return QtGui.QIcon(pixmap)
+    return _load_svg_icon("language")
 
 
 def _qt_key_to_hotkey_token(key):

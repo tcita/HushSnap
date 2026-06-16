@@ -302,7 +302,6 @@ class PinnedImageWindow(QtWidgets.QWidget):
         copy_action = menu.addAction(ui_text(lang, "pin_copy_image"))
         menu.addSeparator()
         desktop_action = menu.addAction(ui_text(lang, "thumbnail_save_to_desktop"))
-        save_action = menu.addAction(ui_text(lang, "thumbnail_save_as"))
         action = menu.exec(pos)
         if action == copy_action:
             cb = QtWidgets.QApplication.clipboard()
@@ -312,24 +311,16 @@ class PinnedImageWindow(QtWidgets.QWidget):
         elif action == desktop_action:
             try:
                 desktop = Path.home() / "Desktop"
-                file_path = desktop / f"pin_{QtCore.QDateTime.currentDateTime().toString('MMdd_HH-mm-ss')}.png"
+                timestamp = QtCore.QDateTime.currentDateTime().toString('yyyyMMdd_HHmmss')
+                base = f"HushSnap_{timestamp}"
+                file_path = desktop / f"{base}.png"
+                counter = 1
+                while file_path.exists():
+                    file_path = desktop / f"{base}({counter}).png"
+                    counter += 1
                 self.pil_image.save(file_path)
                 show_toast(ui_text(lang, "pin_saved_to_desktop"))
             except Exception: logger.exception("Failed to save pinned image to desktop")
-        elif action == save_action:
-            from ..config import get_last_save_directory, update_last_save_directory, get_config_path
-            default_dir = get_last_save_directory(get_config_path())
-            default_name = f"pin_{QtCore.QDateTime.currentDateTime().toString('MMdd_HHmmss')}.png"
-            file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
-                self, ui_text(lang, "thumbnail_save_as"),
-                str(Path(default_dir) / default_name),
-                "Images (*.png *.jpg *.bmp)"
-            )
-            if file_path:
-                self.pil_image.save(file_path)
-                update_last_save_directory(Path(file_path).parent, get_config_path())
-                show_toast(ui_text(lang, "save_as_done"))
-                os.startfile(Path(file_path).parent)
         elif action == ocr_action:
             self.ocr_requested.emit(self.pixmap, self)
 

@@ -2,7 +2,8 @@
 Floating OCR text popup widget.
 """
 
-from PyQt6 import QtCore, QtGui, QtWidgets
+import os
+from PyQt6 import QtCore, QtGui, QtWidgets, QtSvg
 
 from ..config import get_ocr_font_size, get_resource_dir
 from ..constants import APP_ICON_FILENAME
@@ -196,6 +197,7 @@ class OcrPopup(QtWidgets.QWidget):
             " border: none;"
             " border-radius: 0;"
             " padding: 0px;"
+            " font-size: 14px;"
             " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
             " line-height: 1.6;"
             " selection-background-color: rgba(95, 201, 138, 80);"
@@ -583,186 +585,54 @@ class OcrPopup(QtWidgets.QWidget):
 
     # ── custom icons ─────────────────────────────────────────────────
     @staticmethod
-    def _make_close_icon():
-        """X icon for the top-right close button."""
-        def draw_close(color_str, width):
-            pixmap = QtGui.QPixmap(24, 24)
-            pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-            p = QtGui.QPainter(pixmap)
-            p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-            p.setPen(
-                QtGui.QPen(
-                    QtGui.QColor(color_str),
-                    width,
-                    QtCore.Qt.PenStyle.SolidLine,
-                    QtCore.Qt.PenCapStyle.RoundCap,
-                    QtCore.Qt.PenJoinStyle.RoundJoin,
-                )
-            )
-            p.drawLine(QtCore.QPointF(8, 8), QtCore.QPointF(16, 16))
-            p.drawLine(QtCore.QPointF(16, 8), QtCore.QPointF(8, 16))
+    @staticmethod
+    def _svg_icon(name, normal_color, active_color):
+        """Load an SVG icon from the icons dir with two color variants."""
+        icons_dir = os.path.join(os.path.dirname(__file__), "icons")
+        path = os.path.join(icons_dir, f"{name}.svg")
+        if not os.path.isfile(path):
+            return QtGui.QIcon()
+
+        def _render(color_str):
+            with open(path, "r", encoding="utf-8") as f:
+                svg = f.read().replace("currentColor", color_str)
+            r = QtSvg.QSvgRenderer(QtCore.QByteArray(svg.encode("utf-8")))
+            pm = QtGui.QPixmap(24, 24)
+            pm.fill(QtCore.Qt.GlobalColor.transparent)
+            p = QtGui.QPainter(pm)
+            r.render(p)
             p.end()
-            return pixmap
+            return pm
 
         icon = QtGui.QIcon()
-        icon.addPixmap(draw_close("#d4f5e2", 2.2), QtGui.QIcon.Mode.Normal)
-        icon.addPixmap(draw_close("#ffffff", 2.5), QtGui.QIcon.Mode.Active)
+        icon.addPixmap(_render(normal_color), QtGui.QIcon.Mode.Normal)
+        icon.addPixmap(_render(active_color), QtGui.QIcon.Mode.Active)
         return icon
+
+    @staticmethod
+    def _make_close_icon():
+        return OcrPopup._svg_icon("close", "#d4f5e2", "#ffffff")
 
     @staticmethod
     def _make_copy_icon():
-        def draw_copy(color_str):
-            pixmap = QtGui.QPixmap(24, 24)
-            pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-            p = QtGui.QPainter(pixmap)
-            p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-            p.setPen(
-                QtGui.QPen(
-                    QtGui.QColor(color_str),
-                    2,
-                    QtCore.Qt.PenStyle.SolidLine,
-                    QtCore.Qt.PenCapStyle.RoundCap,
-                    QtCore.Qt.PenJoinStyle.RoundJoin,
-                )
-            )
-            p.drawRect(7, 7, 10, 10)
-            p.drawPolyline([QtCore.QPointF(14, 4), QtCore.QPointF(4, 4), QtCore.QPointF(4, 14)])
-            p.end()
-            return pixmap
-
-        icon = QtGui.QIcon()
-        icon.addPixmap(draw_copy(BRAND_GREEN), QtGui.QIcon.Mode.Normal)
-        icon.addPixmap(draw_copy("#a3f2c2"), QtGui.QIcon.Mode.Active)
-        return icon
+        return OcrPopup._svg_icon("copy_simple", BRAND_GREEN, "#a3f2c2")
 
     @staticmethod
     def _make_check_icon():
-        """Checkmark icon for the Update button."""
-        def draw_check(color_str):
-            pixmap = QtGui.QPixmap(24, 24)
-            pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-            p = QtGui.QPainter(pixmap)
-            p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-            p.setPen(
-                QtGui.QPen(
-                    QtGui.QColor(color_str),
-                    2.2,
-                    QtCore.Qt.PenStyle.SolidLine,
-                    QtCore.Qt.PenCapStyle.RoundCap,
-                    QtCore.Qt.PenJoinStyle.RoundJoin,
-                )
-            )
-            p.drawPolyline([
-                QtCore.QPointF(4, 13),
-                QtCore.QPointF(9, 18),
-                QtCore.QPointF(20, 7),
-            ])
-            p.end()
-            return pixmap
-
-        icon = QtGui.QIcon()
-        icon.addPixmap(draw_check("#d4f5e2"), QtGui.QIcon.Mode.Normal)
-        icon.addPixmap(draw_check("#ffffff"), QtGui.QIcon.Mode.Active)
-        return icon
+        return OcrPopup._svg_icon("check", "#d4f5e2", "#ffffff")
 
     @staticmethod
     def _make_success_check_icon():
-        """Green checkmark for copy-success animation (matches theme #5fc98a)."""
-        def draw_success(color_str):
-            pixmap = QtGui.QPixmap(24, 24)
-            pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-            p = QtGui.QPainter(pixmap)
-            p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-            p.setPen(
-                QtGui.QPen(
-                    QtGui.QColor(color_str),
-                    2.2,
-                    QtCore.Qt.PenStyle.SolidLine,
-                    QtCore.Qt.PenCapStyle.RoundCap,
-                    QtCore.Qt.PenJoinStyle.RoundJoin,
-                )
-            )
-            p.drawPolyline([
-                QtCore.QPointF(4, 13),
-                QtCore.QPointF(9, 18),
-                QtCore.QPointF(20, 7),
-            ])
-            p.end()
-            return pixmap
-
-        icon = QtGui.QIcon()
-        icon.addPixmap(draw_success(BRAND_GREEN), QtGui.QIcon.Mode.Normal)
-        icon.addPixmap(draw_success("#a3f2c2"), QtGui.QIcon.Mode.Active)
-        return icon
+        return OcrPopup._svg_icon("check", BRAND_GREEN, "#a3f2c2")
 
     @staticmethod
     def _make_x_icon():
-        """X icon for the Cancel button."""
-        def draw_x(color_str):
-            pixmap = QtGui.QPixmap(24, 24)
-            pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-            p = QtGui.QPainter(pixmap)
-            p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-            p.setPen(
-                QtGui.QPen(
-                    QtGui.QColor(color_str),
-                    1.8,
-                    QtCore.Qt.PenStyle.SolidLine,
-                    QtCore.Qt.PenCapStyle.RoundCap,
-                    QtCore.Qt.PenJoinStyle.RoundJoin,
-                )
-            )
-            p.drawLine(QtCore.QPointF(6, 6), QtCore.QPointF(18, 18))
-            p.drawLine(QtCore.QPointF(18, 6), QtCore.QPointF(6, 18))
-            p.end()
-            return pixmap
-
-        icon = QtGui.QIcon()
-        icon.addPixmap(draw_x(BRAND_GREEN), QtGui.QIcon.Mode.Normal)
-        icon.addPixmap(draw_x("#a3f2c2"), QtGui.QIcon.Mode.Active)
-        return icon
+        return OcrPopup._svg_icon("close", BRAND_GREEN, "#a3f2c2")
 
     @staticmethod
     def _make_pin_icon(checked=False):
-        def draw_pin(color_str):
-            pixmap = QtGui.QPixmap(24, 24)
-            pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-            p = QtGui.QPainter(pixmap)
-            p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-            p.setPen(
-                QtGui.QPen(
-                    QtGui.QColor(color_str),
-                    2,
-                    QtCore.Qt.PenStyle.SolidLine,
-                    QtCore.Qt.PenCapStyle.RoundCap,
-                    QtCore.Qt.PenJoinStyle.RoundJoin,
-                )
-            )
-            if not checked:
-                p.translate(12, 12)
-                p.rotate(-45)
-                p.translate(-12, -12)
-            path = QtGui.QPainterPath()
-            path.moveTo(12, 17)
-            path.lineTo(12, 22)
-            path.moveTo(9, 11)
-            path.lineTo(6, 14)
-            path.lineTo(6, 16)
-            path.lineTo(18, 16)
-            path.lineTo(18, 14)
-            path.lineTo(15, 11)
-            path.lineTo(15, 6)
-            path.lineTo(9, 6)
-            path.closeSubpath()
-            path.addEllipse(QtCore.QRectF(8, 2, 8, 4))
-            p.drawPath(path)
-            p.end()
-            return pixmap
-
-        icon = QtGui.QIcon()
-        icon.addPixmap(draw_pin(BRAND_GREEN), QtGui.QIcon.Mode.Normal)
-        icon.addPixmap(draw_pin("#a3f2c2"), QtGui.QIcon.Mode.Active)
-        return icon
+        name = "pin" if checked else "pin_unlocked"
+        return OcrPopup._svg_icon(name, BRAND_GREEN, "#a3f2c2")
 
     # ── pin ──────────────────────────────────────────────────────────
     def _on_pin_toggled(self, checked):
