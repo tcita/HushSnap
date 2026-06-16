@@ -187,21 +187,39 @@ def _ensure_default_config_exists(config_path):
     * First run: creates the file with all defaults.
     * Subsequent runs / upgrades: merges in any keys that were added in a
       newer version, without touching values the user has already changed.
+    * Also repairs string-typed keys whose values are empty (e.g. a user or
+      bug wrote ``hotkey = ""``), replacing them with their defaults.
     """
     try:
         if config_path.exists():
             # Existing config — fill in any keys that are missing (e.g. after
             # an upgrade that introduced new settings).
             config_data = _load_config_data(config_path)
+            changed = False
+
             missing = {
                 k: v for k, v in _CONFIG_DEFAULTS.items() if k not in config_data
             }
             if missing:
                 config_data.update(missing)
-                _write_config_data(config_path, config_data)
+                changed = True
                 logger.debug(
                     "Config migrated — added keys: %s", list(missing.keys())
                 )
+
+            # Repair string-typed keys that are present but empty.
+            for key, default_val in _CONFIG_DEFAULTS.items():
+                if key in config_data and isinstance(default_val, str):
+                    current = config_data.get(key)
+                    if not isinstance(current, str) or not current.strip():
+                        config_data[key] = default_val
+                        changed = True
+                        logger.warning(
+                            "Config key '%s' was empty — repaired to default.", key
+                        )
+
+            if changed:
+                _write_config_data(config_path, config_data)
             return
 
         # Fresh install — write the full defaults set.
@@ -433,14 +451,6 @@ def _write_state_data(state_data, state_path=None):
         f'ocr_engine = "{engine}"',
         f'ocr_font_size = {font_size}',
     ]
-    # Persist any editor_* keys generically
-    for key, value in sorted(state_data.items()):
-        if not key.startswith("editor_"):
-            continue
-        if isinstance(value, int):
-            lines.append(f"{key} = {value}")
-        elif isinstance(value, str):
-            lines.append(f'{key} = "{value}"')
     lines.append("")
     state_path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -531,7 +541,7 @@ def update_auto_copy_ocr_result(enabled, config_path=None):
 
 
 def get_last_save_directory(config_path=None):
-    """Read 'last_save_directory' from config (default user's Desktop)."""
+    """Read 'last_save_directory' from config (default user's Pictures)."""
     if config_path is None:
         config_path = get_config_path()
     config_data = _load_config_data(config_path)
@@ -540,10 +550,9 @@ def get_last_save_directory(config_path=None):
         path = Path(raw.strip())
         if path.is_dir():
             return str(path)
-    # Fallback: Desktop
-    desktop = Path.home() / "Desktop"
-    if desktop.is_dir():
-        return str(desktop)
+    pictures = Path.home() / "Pictures"
+    if pictures.is_dir():
+        return str(pictures)
     return str(Path.home())
 
 
@@ -632,77 +641,6 @@ def update_ocr_font_size(font_size, state_path=None):
         _write_state_data(state_data, state_path)
     except Exception as e:
         logger.error(f"Failed to update OCR font size in state: {e}")
-
-
-# ── Editor tool preferences (persisted across sessions) ────────────────────
-
-_EDITOR_BRUSH_SIZE_DEFAULT = 3
-
-# Default colors per tool — each tool has its own "personality"
-_EDITOR_TOOL_DEFAULTS: dict[str, dict[str, object]] = {
-    "brush":       {"color": "#5FC98A", "size": 3},
-    "highlighter": {"color": "#FFFF00"},
-    "rectangle":   {"color": "#FF4444"},
-    "ellipse":     {"color": "#FF4444"},
-    "arrow":       {"color": "#FF4444"},
-}
-
-
-def _editor_state_key(tool_id: str, suffix: str) -> str:
-    return f"editor_{tool_id}_{suffix}"
-
-
-def get_editor_brush_size(state_path=None) -> int:
-    """Read persisted brush size (kept for backward compat)."""
-    if state_path is None:
-        state_path = STATE_PATH
-    _ensure_default_state_exists(state_path)
-    state_data = _load_state_data(state_path)
-    size = state_data.get("editor_brush_size", _EDITOR_BRUSH_SIZE_DEFAULT)
-    if isinstance(size, int) and 1 <= size <= 50:
-        return size
-    return _EDITOR_BRUSH_SIZE_DEFAULT
-
-
-def update_editor_brush_size(size: int, state_path=None) -> None:
-    """Persist brush size."""
-    if state_path is None:
-        state_path = STATE_PATH
-    _ensure_default_state_exists(state_path)
-    try:
-        state_data = _load_state_data(state_path)
-        state_data["editor_brush_size"] = int(size)
-        _write_state_data(state_data, state_path)
-    except Exception as e:
-        logger.error(f"Failed to update editor brush size in state: {e}")
-
-
-def get_editor_tool_color(tool_id: str, state_path=None) -> str:
-    """Read persisted colour for *tool_id* from state file."""
-    if state_path is None:
-        state_path = STATE_PATH
-    _ensure_default_state_exists(state_path)
-    defaults = _EDITOR_TOOL_DEFAULTS.get(tool_id, {})
-    default_color = str(defaults.get("color", "#5FC98A"))
-    state_data = _load_state_data(state_path)
-    key = _editor_state_key(tool_id, "color")
-    color = state_data.get(key, default_color)
-    if isinstance(color, str) and color.startswith("#") and len(color) == 7:
-        return color
-    return default_color
-
-
-def update_editor_tool_color(tool_id: str, color: str, state_path=None) -> None:
-    """Persist *color* (hex string) for *tool_id* to state file."""
-    if state_path is None:
-        state_path = STATE_PATH
-    _ensure_default_state_exists(state_path)
-    try:
-        state_data = _load_state_data(state_path)
-        state_data[_editor_state_key(tool_id, "color")] = str(color)
-        _write_state_data(state_data, state_path)
-    except Exception as e:
-        logger.error(f"Failed to update editor {tool_id} color in state: {e}")
 
 
 def load_hotkey_setting():

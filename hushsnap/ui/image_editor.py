@@ -17,11 +17,7 @@ from typing import Optional, Callable
 from PIL import Image, ImageDraw, ImageFont
 from PyQt6 import QtCore, QtGui, QtWidgets, QtSvg
 
-from ..config import (
-    get_editor_brush_size, update_editor_brush_size,
-    get_editor_tool_color, update_editor_tool_color,
-    get_config_path,
-)
+from ..config import get_config_path
 from ..dpi import current_dpr
 from .styles import BRAND_GREEN
 
@@ -2068,7 +2064,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
 
         self._setup_ui()
         self._setup_tools()
-        self._load_tool_preferences()
         self._init_from_image()
         self._activate_tool("pan")
 
@@ -2498,27 +2493,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
             "pan": PanTool(self),
         }
 
-    def _load_tool_preferences(self) -> None:
-        """Restore saved brush size & persisted tool colours from state."""
-        config_path = get_config_path()
-        # Brush size
-        try:
-            brush = self._tools.get("brush")
-            if brush:
-                brush.size = get_editor_brush_size(config_path)
-        except Exception:
-            pass
-        # Colours for draw / shape tools
-        for tool_id in ("brush", "highlighter", "rectangle", "ellipse", "arrow"):
-            try:
-                color = QtGui.QColor(get_editor_tool_color(tool_id, config_path))
-                tool = self._tools.get(tool_id)
-                if tool and hasattr(tool, "color"):
-                    color.setAlpha(tool.color.alpha())  # keep per-tool alpha
-                    tool.color = color
-            except Exception:
-                continue
-
     def _activate_tool(self, tool_id: str) -> None:
         if tool_id not in self._tools:
             return
@@ -2611,8 +2585,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
         color.setAlpha(tool.color.alpha())
         tool.color = color
         self._sync_options_from_tool(tool_id)
-        if tool_id in ("brush", "highlighter", "rectangle", "ellipse", "arrow"):
-            update_editor_tool_color(tool_id, color.name(), get_config_path())
         if tool_id == "text":
             tool._sync_widgets()
 
@@ -2627,8 +2599,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
         if self._active_tool == tool:
             self._update_tool_cursor()
             
-        if tool_id == "brush":
-            update_editor_brush_size(value, get_config_path())
         if tool_id == "text":
             tool._sync_widgets()
 
@@ -2943,7 +2913,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
 
     def _save_as(self) -> None:
         import time
-        from ..config import get_last_save_directory, update_last_save_directory, get_config_path
+        from ..config import get_last_save_directory, update_last_save_directory
 
         default_dir = get_last_save_directory(get_config_path())
         default_name = f"HushSnap_{time.strftime('%Y%m%d_%H%M%S')}.png"
@@ -2957,7 +2927,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
             return
         try:
             file_path = Path(file_path_str)
-            # Remember directory for next save
             update_last_save_directory(file_path.parent, get_config_path())
 
             # Build composite pixmap, convert to PIL for save
