@@ -837,12 +837,11 @@ class TextTool(BaseTool):
         if self._editing_widget:
             self._editing_widget.commit_edit()
 
-        # Sync tool state FROM the item so the toolbar shows this item's
-        # real color/font — then toolbar changes apply to live editor.
-        self.color = item.color
-        self.font_family = item.font_family
-        self.font_size = item.font_size
-        self._editor._sync_options_from_tool("text")
+        # Adopt the tool's current color/font — re-editing applies
+        # whatever is selected in the toolbar right now.
+        item.color = QtGui.QColor(self.color)
+        item.font_family = self.font_family
+        item.font_size = self.font_size
 
         self._editing_widget = _InlineTextEditor(canvas, self, item)
         self._editing_widget.show()
@@ -850,14 +849,8 @@ class TextTool(BaseTool):
         canvas.update()
 
     def _sync_widgets(self) -> None:
-        """Update active editor position and style if scale/offset/font changed."""
+        """Update active editor geometry if scale/offset changed."""
         if self._editing_widget:
-            # Push current tool state into the active edit item so font/color
-            # changes in the toolbar take effect immediately on the live editor.
-            self._editing_widget._item.color = self.color
-            self._editing_widget._item.font_family = self.font_family
-            self._editing_widget._item.font_size = self.font_size
-            self._editing_widget._apply_style()
             self._editing_widget._update_geometry()
         self._editor._canvas.update()
 
