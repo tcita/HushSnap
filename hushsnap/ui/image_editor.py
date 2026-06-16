@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import io
 from abc import ABC, abstractmethod
+from enum import Enum
 from pathlib import Path
 from typing import Optional, Callable
 
@@ -328,6 +329,14 @@ def _qpixmap_to_pil(pixmap: QtGui.QPixmap) -> Image.Image:
 
 # ── Undo system ──────────────────────────────────────────────────────────────
 
+class UndoChangeType(Enum):
+    """Type of change an undo entry captures, determining what state is stored."""
+    FULL = "full"                    # PIL image + annotations + text (crop, full ops)
+    ANNOTATIONS = "annotations"      # Only annotations pixmap + text items (brush, eraser, shapes, arrows, highlighter)
+    TEXT = "text"                    # Only text items (text tool add/edit/delete/move)
+    REGION = "region"                # Only a rectangular region of PIL pixels (mosaic)
+
+
 class TextItem:
     """Data model for a single text annotation."""
     def __init__(self, text: str, img_pos: QtCore.QPointF,
@@ -338,13 +347,31 @@ class TextItem:
         self.font_family = font_family
         self.font_size = font_size
 
-class _UndoEntry:
-    """Snapshot of editor state at a point in time."""
-    __slots__ = ("pil_image", "annotations_pixmap", "text_items")
 
-    def __init__(self, pil_img: Image.Image, annot_pxm: Optional[QtGui.QPixmap],
-                 text_items: Optional[list[TextItem]] = None):
-        self.pil_image = pil_img.copy()
+class _UndoEntry:
+    """Snapshot of editor state, optimized by change type to avoid copying the
+    full PIL image when only annotations or text items change."""
+
+    __slots__ = (
+        "change_type",
+        "pil_image",           # FULL only
+        "annotations_pixmap",  # FULL, ANNOTATIONS
+        "text_items",          # FULL, ANNOTATIONS, TEXT
+        "region_bounds",       # REGION only: QtCore.QRect
+        "region_pixels",       # REGION only: bytes from PIL Image.tobytes()
+    )
+
+    def __init__(
+        self,
+        change_type: UndoChangeType,
+        pil_img: Optional[Image.Image] = None,
+        annot_pxm: Optional[QtGui.QPixmap] = None,
+        text_items: Optional[list[TextItem]] = None,
+        region_bounds: Optional[QtCore.QRect] = None,
+        region_pixels: Optional[bytes] = None,
+    ):
+        self.change_type = change_type
+        self.pil_image = pil_img.copy() if pil_img else None
         self.annotations_pixmap = annot_pxm.copy() if annot_pxm else None
         # Deep copy text items
         self.text_items = [
@@ -352,6 +379,8 @@ class _UndoEntry:
                      t.font_family, t.font_size)
             for t in text_items
         ] if text_items else []
+        self.region_bounds = region_bounds
+        self.region_pixels = region_pixels
 
 
 # ── Abstract base tool ───────────────────────────────────────────────────────
@@ -499,12 +528,11 @@ class BrushTool(BaseTool):
         return "brush"
 
     def on_activate(self) -> None:
-        self._editor._show_tool_options(["color", "size"])
         self._editor._update_tool_cursor()
 
     def on_mouse_press(self, canvas, event) -> bool:
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
-            self._editor._save_undo()
+            self._editor._save_undo(UndoChangeType.ANNOTATIONS)
             pt = self._to_image_coords(canvas, event.position().toPoint())
             self._stroke_begin(pt)
             self._stroke_add_point(pt)
@@ -554,12 +582,11 @@ class HighlighterTool(BaseTool):
         return "highlighter"
 
     def on_activate(self) -> None:
-        self._editor._show_tool_options(["color", "size", "opacity"])
         self._editor._update_tool_cursor()
 
     def on_mouse_press(self, canvas, event) -> bool:
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
-            self._editor._save_undo()
+            self._editor._save_undo(UndoChangeType.ANNOTATIONS)
             pt = self._to_image_coords(canvas, event.position().toPoint())
             self._stroke_begin(pt)
             self._stroke_add_point(pt)
@@ -604,12 +631,11 @@ class EraserTool(BaseTool):
         return "eraser"
 
     def on_activate(self) -> None:
-        self._editor._show_tool_options(["size"])
         self._editor._update_tool_cursor()
 
     def on_mouse_press(self, canvas, event) -> bool:
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
-            self._editor._save_undo()
+            self._editor._save_undo(UndoChangeType.ANNOTATIONS)
             self._last_point = self._to_image_coords(canvas, event.position().toPoint())
             # Draw initial dot directly on annotations
             painter = QtGui.QPainter(self._editor._annotations_pixmap)
@@ -671,12 +697,10 @@ class MosaicTool(BaseTool):
         return "mosaic"
 
     def on_activate(self) -> None:
-        self._editor._show_tool_options(["size"])
         self._editor._canvas.setCursor(QtCore.Qt.CursorShape.CrossCursor)
 
     def on_mouse_press(self, canvas, event) -> bool:
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
-            self._editor._save_undo()
             self._start_point = self._to_image_coords(canvas, event.position().toPoint())
             self._current_point = self._start_point
             self._editor._overlay_pixmap.fill(QtCore.Qt.GlobalColor.transparent)
@@ -725,6 +749,14 @@ class MosaicTool(BaseTool):
             w, h = x2 - x1, y2 - y1
             if w > 2 and h > 2:
                 try:
+                    # Save undo region BEFORE pixelating
+                    old_region = self._editor._pil_image.crop((x1, y1, x2, y2))
+                    region_bytes = old_region.tobytes()
+                    self._editor._save_undo(
+                        UndoChangeType.REGION,
+                        region_bounds=QtCore.QRect(x1, y1, w, h),
+                        region_pixels=region_bytes,
+                    )
                     region = self._editor._pil_image.crop((x1, y1, x2, y2))
                     bs = max(1, self.block_size)
                     small_w = max(1, region.width // bs)
@@ -782,7 +814,6 @@ class CropTool(BaseTool):
     def on_activate(self) -> None:
         img_w, img_h = self._editor._pil_image.size
         self._crop_rect = QtCore.QRect(0, 0, img_w, img_h)
-        self._editor._show_tool_options([])
         self._editor._canvas.setCursor(QtCore.Qt.CursorShape.OpenHandCursor)
         self._create_action_buttons()
         self._redraw_overlay()
@@ -967,10 +998,12 @@ class CropTool(BaseTool):
             return
         # Full-image crop is a no-op — just exit without modifying anything.
         img_w, img_h = self._editor._pil_image.size
-        if r.left() <= 0 and r.top() <= 0 and r.right() >= img_w and r.bottom() >= img_h:
+        if (r.left() <= 0 and r.top() <= 0
+                and r.x() + r.width() >= img_w
+                and r.y() + r.height() >= img_h):
             self._editor._activate_tool("pan")
             return
-        self._editor._save_undo()
+        self._editor._save_undo(UndoChangeType.FULL)
         try:
             cropped = self._editor._pil_image.crop(
                 (r.left(), r.top(), r.right(), r.bottom())
@@ -1159,12 +1192,11 @@ class ShapeTool(BaseTool):
         return self._shape
 
     def on_activate(self) -> None:
-        self._editor._show_tool_options(["color", "size"])
         self._editor._canvas.setCursor(QtCore.Qt.CursorShape.CrossCursor)
 
     def on_mouse_press(self, canvas, event) -> bool:
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
-            self._editor._save_undo()
+            self._editor._save_undo(UndoChangeType.ANNOTATIONS)
             self._start_pt = self._to_image_coords(canvas, event.position().toPoint())
             self._end_pt = self._start_pt
             return True
@@ -1251,12 +1283,11 @@ class ArrowTool(BaseTool):
         return "arrow"
 
     def on_activate(self) -> None:
-        self._editor._show_tool_options(["color", "size"])
         self._editor._canvas.setCursor(QtCore.Qt.CursorShape.CrossCursor)
 
     def on_mouse_press(self, canvas, event) -> bool:
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
-            self._editor._save_undo()
+            self._editor._save_undo(UndoChangeType.ANNOTATIONS)
             self._start_pt = self._to_image_coords(canvas, event.position().toPoint())
             self._end_pt = self._start_pt
             return True
@@ -1353,7 +1384,6 @@ class PanTool(BaseTool):
         return "pan"
 
     def on_activate(self) -> None:
-        self._editor._show_tool_options([])
         self._editor._canvas.setCursor(QtCore.Qt.CursorShape.OpenHandCursor)
 
     def on_mouse_press(self, canvas, event) -> bool:
@@ -1413,7 +1443,6 @@ class TextTool(BaseTool):
         return "text"
 
     def on_activate(self) -> None:
-        self._editor._show_tool_options(["font", "font_size", "color"])
         self._editor._canvas.setCursor(QtCore.Qt.CursorShape.IBeamCursor)
 
     def on_deactivate(self) -> None:
@@ -1444,9 +1473,9 @@ class TextTool(BaseTool):
         
         # 3. No hit -> create new item
         img_pt = self._to_image_coords(canvas, pos.toPoint())
-        new_item = TextItem("", QtCore.QPointF(img_pt[0], img_pt[1]), 
+        new_item = TextItem("", QtCore.QPointF(img_pt[0], img_pt[1]),
                             QtGui.QColor(self.color), self.font_family, self.font_size)
-        self._editor._save_undo()
+        self._editor._save_undo(UndoChangeType.TEXT)
         self._editor._text_items.append(new_item)
         self._spawn_editor(canvas, new_item)
         return True
@@ -1676,11 +1705,17 @@ class EditorCanvas(QtWidgets.QWidget):
 
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:
         painter = QtGui.QPainter(self)
-        painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform)
+        scale = self._editor._effective_scale()
+        # <100% → smooth interpolation (clean thumbnails).
+        # ≥100% → no hint = nearest-neighbour (sharp pixels, fast).
+        if scale < 1.0:
+            painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform)
         painter.fillRect(self.rect(), QtGui.QColor("#1a1a1a"))
 
-        # Checkerboard for transparency
-        self._draw_checkerboard(painter)
+        # Checkerboard only matters when zoomed out (transparency visible
+        # around the image).  Skip at ≥100% to avoid millions of cells.
+        if scale < 1.0:
+            self._draw_checkerboard(painter, event.rect())
 
         pm = self._editor._display_pixmap
         if pm:
@@ -1744,11 +1779,14 @@ class EditorCanvas(QtWidgets.QWidget):
 
         painter.restore()
 
-    def _draw_checkerboard(self, painter: QtGui.QPainter) -> None:
-        """Draw a subtle checkerboard pattern to indicate transparency."""
-        if not self._editor._display_pixmap:
-            return
+    def _draw_checkerboard(self, painter: QtGui.QPainter,
+                           clip_rect: QtCore.QRect) -> None:
+        """Draw a subtle checkerboard pattern to indicate transparency.
+        Restricted to *clip_rect* (the paint-event dirty rect) so the
+        double loop stays cheap at any zoom level."""
         pm = self._editor._display_pixmap
+        if not pm:
+            return
         scale = self._editor._effective_scale()
         offset = self._image_offset()
         scaled_w = pm.width() * scale
@@ -1759,10 +1797,12 @@ class EditorCanvas(QtWidgets.QWidget):
         light = QtGui.QColor("#2a2a2a")
         dark = QtGui.QColor("#222222")
 
-        x_start = max(0, int(img_rect.x() / cs) * cs)
-        y_start = max(0, int(img_rect.y() / cs) * cs)
-        x_end = min(self.width(), int(img_rect.right()))
-        y_end = min(self.height(), int(img_rect.bottom()))
+        x_start = max(int(clip_rect.x() / cs) * cs,
+                      int(img_rect.x() / cs) * cs)
+        y_start = max(int(clip_rect.y() / cs) * cs,
+                      int(img_rect.y() / cs) * cs)
+        x_end = min(int(clip_rect.right()), int(img_rect.right()))
+        y_end = min(int(clip_rect.bottom()), int(img_rect.bottom()))
 
         for y in range(y_start, y_end, cs):
             for x in range(x_start, x_end, cs):
@@ -1828,7 +1868,7 @@ class EditorCanvas(QtWidgets.QWidget):
         # Apply zoom factor (10% per step)
         factor = 1.10 if delta > 0 else 1.0 / 1.10
         new_scale = editor._scale * factor
-        new_scale = max(0.05, min(new_scale, 20.0))
+        new_scale = max(0.10, min(new_scale, 5.0))
         if abs(new_scale - editor._scale) < 0.001:
             event.accept()
             return
@@ -2363,11 +2403,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
                 layout.addWidget(combo)
                 self._option_widgets[(tool_id, "fontSizeSpin")] = combo
 
-            elif key == "instruction":
-                lbl = QtWidgets.QLabel(self._tr("editor_crop_instruction"))
-                lbl.setStyleSheet("color: #5FC98A; font-size: 12px; padding: 2px 8px; background: transparent;")
-                layout.addWidget(lbl)
-
         layout.addStretch()
         return page
 
@@ -2518,10 +2553,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
         if self._active_tool and hasattr(self._active_tool, "size"):
             screen_size = int(self._active_tool.size * self._effective_scale())
             self._canvas.setCursor(_make_circle_cursor(screen_size))
-
-    def _show_tool_options(self, option_keys: list[str]) -> None:
-        """Called by tools on activate to ensure the correct option page is visible."""
-        pass  # Page is already switched in _activate_tool
 
     def _sync_options_from_tool(self, tool_id: str) -> None:
         """Sync option widget values from the tool's current state."""
@@ -2710,16 +2741,40 @@ class ImageEditorWindow(QtWidgets.QWidget):
 
     # ── Undo / Redo ───────────────────────────────────────────────────────
 
-    def _save_undo(self) -> None:
-        """Push current state to undo stack before a destructive operation."""
-        annot_copy = (
-            self._annotations_pixmap.copy()
-            if self._annotations_pixmap
-            else None
-        )
-        self._undo_stack.append(_UndoEntry(
-            self._pil_image, annot_copy, self._text_items,
-        ))
+    def _save_undo(
+        self,
+        change_type: UndoChangeType = UndoChangeType.FULL,
+        region_bounds: Optional[QtCore.QRect] = None,
+        region_pixels: Optional[bytes] = None,
+    ) -> None:
+        """Push current state to undo stack before a destructive operation.
+
+        Args:
+            change_type: What kind of change is about to happen.
+            region_bounds: Required when change_type is REGION.
+            region_pixels: Required when change_type is REGION.
+        """
+        if change_type == UndoChangeType.REGION:
+            assert region_bounds is not None and region_pixels is not None
+            entry = _UndoEntry(
+                change_type, region_bounds=region_bounds, region_pixels=region_pixels,
+            )
+        elif change_type == UndoChangeType.TEXT:
+            entry = _UndoEntry(change_type, text_items=self._text_items)
+        elif change_type == UndoChangeType.ANNOTATIONS:
+            annot_copy = (
+                self._annotations_pixmap.copy() if self._annotations_pixmap else None
+            )
+            entry = _UndoEntry(change_type, annot_pxm=annot_copy, text_items=self._text_items)
+        else:
+            # FULL — full capture (preserves existing behavior)
+            annot_copy = (
+                self._annotations_pixmap.copy() if self._annotations_pixmap else None
+            )
+            entry = _UndoEntry(change_type, pil_img=self._pil_image,
+                               annot_pxm=annot_copy, text_items=self._text_items)
+
+        self._undo_stack.append(entry)
         if len(self._undo_stack) > self.MAX_UNDO:
             self._undo_stack.pop(0)
         self._redo_stack.clear()
@@ -2728,62 +2783,115 @@ class ImageEditorWindow(QtWidgets.QWidget):
     def _undo(self) -> None:
         if not self._undo_stack:
             return
-        # Save current to redo
-        annot_copy = (
-            self._annotations_pixmap.copy()
-            if self._annotations_pixmap
-            else None
-        )
-        self._redo_stack.append(_UndoEntry(
-            self._pil_image, annot_copy, self._text_items,
-        ))
-        # Restore from undo
         entry = self._undo_stack.pop()
-        self._pil_image = entry.pil_image
-        if entry.annotations_pixmap is not None:
-            self._annotations_pixmap = entry.annotations_pixmap
-        self._text_items = entry.text_items
-        self._rebuild_display()
+        self._capture_current_for_redo(entry)
+        self._apply_undo_entry(entry)
         self._update_undo_buttons()
 
     def _redo(self) -> None:
         if not self._redo_stack:
             return
-        # Save current to undo
-        annot_copy = (
-            self._annotations_pixmap.copy()
-            if self._annotations_pixmap
-            else None
-        )
-        self._undo_stack.append(_UndoEntry(
-            self._pil_image, annot_copy, self._text_items,
-        ))
-        # Restore from redo
         entry = self._redo_stack.pop()
-        self._pil_image = entry.pil_image
-        if entry.annotations_pixmap is not None:
-            self._annotations_pixmap = entry.annotations_pixmap
-        self._text_items = entry.text_items
-        self._rebuild_display()
+        self._capture_current_for_undo(entry)
+        self._apply_undo_entry(entry)
         self._update_undo_buttons()
+
+    def _capture_current_for_redo(self, undone_entry: _UndoEntry) -> None:
+        """Capture current state into a redo entry matching the type being undone."""
+        ct = undone_entry.change_type
+        if ct == UndoChangeType.FULL:
+            annot_copy = self._annotations_pixmap.copy() if self._annotations_pixmap else None
+            self._redo_stack.append(_UndoEntry(
+                UndoChangeType.FULL, pil_img=self._pil_image,
+                annot_pxm=annot_copy, text_items=self._text_items,
+            ))
+        elif ct == UndoChangeType.ANNOTATIONS:
+            annot_copy = self._annotations_pixmap.copy() if self._annotations_pixmap else None
+            self._redo_stack.append(_UndoEntry(
+                UndoChangeType.ANNOTATIONS, annot_pxm=annot_copy, text_items=self._text_items,
+            ))
+        elif ct == UndoChangeType.TEXT:
+            self._redo_stack.append(_UndoEntry(
+                UndoChangeType.TEXT, text_items=self._text_items,
+            ))
+        elif ct == UndoChangeType.REGION:
+            b = undone_entry.region_bounds
+            current = self._pil_image.crop(
+                (b.x(), b.y(), b.x() + b.width(), b.y() + b.height())
+            )
+            self._redo_stack.append(_UndoEntry(
+                UndoChangeType.REGION,
+                region_bounds=QtCore.QRect(b),
+                region_pixels=current.tobytes(),
+            ))
+
+    def _capture_current_for_undo(self, redone_entry: _UndoEntry) -> None:
+        """Capture current state into an undo entry matching the type being redone."""
+        ct = redone_entry.change_type
+        if ct == UndoChangeType.FULL:
+            annot_copy = self._annotations_pixmap.copy() if self._annotations_pixmap else None
+            self._undo_stack.append(_UndoEntry(
+                UndoChangeType.FULL, pil_img=self._pil_image,
+                annot_pxm=annot_copy, text_items=self._text_items,
+            ))
+        elif ct == UndoChangeType.ANNOTATIONS:
+            annot_copy = self._annotations_pixmap.copy() if self._annotations_pixmap else None
+            self._undo_stack.append(_UndoEntry(
+                UndoChangeType.ANNOTATIONS, annot_pxm=annot_copy, text_items=self._text_items,
+            ))
+        elif ct == UndoChangeType.TEXT:
+            self._undo_stack.append(_UndoEntry(
+                UndoChangeType.TEXT, text_items=self._text_items,
+            ))
+        elif ct == UndoChangeType.REGION:
+            b = redone_entry.region_bounds
+            current = self._pil_image.crop(
+                (b.x(), b.y(), b.x() + b.width(), b.y() + b.height())
+            )
+            self._undo_stack.append(_UndoEntry(
+                UndoChangeType.REGION,
+                region_bounds=QtCore.QRect(b),
+                region_pixels=current.tobytes(),
+            ))
+
+    def _apply_undo_entry(self, entry: _UndoEntry) -> None:
+        """Restore editor state from an undo/redo entry."""
+        if entry.change_type == UndoChangeType.FULL:
+            if entry.pil_image is not None:
+                self._pil_image = entry.pil_image
+            if entry.annotations_pixmap is not None:
+                self._annotations_pixmap = entry.annotations_pixmap
+            self._text_items = entry.text_items[:] if entry.text_items is not None else []
+            self._rebuild_display()
+
+        elif entry.change_type == UndoChangeType.ANNOTATIONS:
+            if entry.annotations_pixmap is not None:
+                self._annotations_pixmap = entry.annotations_pixmap
+            self._text_items = entry.text_items[:] if entry.text_items is not None else []
+            self._canvas.update()
+
+        elif entry.change_type == UndoChangeType.TEXT:
+            self._text_items = entry.text_items[:] if entry.text_items is not None else []
+            self._canvas.update()
+
+        elif entry.change_type == UndoChangeType.REGION:
+            b = entry.region_bounds
+            if b is not None and entry.region_pixels is not None:
+                restored = Image.frombytes(
+                    self._pil_image.mode,
+                    (b.width(), b.height()),
+                    entry.region_pixels,
+                )
+                self._pil_image.paste(restored, (b.x(), b.y()))
+                self._rebuild_display()
+
+        self._modified = True
 
     def _update_undo_buttons(self) -> None:
         self._undo_btn.setEnabled(len(self._undo_stack) > 0)
         self._redo_btn.setEnabled(len(self._redo_stack) > 0)
 
     # ── Transform operations ──────────────────────────────────────────────
-
-    # ── Crop toolbar callbacks ───────────────────────────────────────────
-
-    def _on_crop_apply(self) -> None:
-        tool = self._tools.get("crop")
-        if tool and isinstance(tool, CropTool):
-            tool.apply_crop()
-
-    def _on_crop_cancel(self) -> None:
-        tool = self._tools.get("crop")
-        if tool and isinstance(tool, CropTool):
-            tool.cancel_crop()
 
     # ── Copy to clipboard ─────────────────────────────────────────────────
 
@@ -2818,8 +2926,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
             show_toast(self._tr("editor_copied"))
         except Exception:
             logger.exception("Copy to clipboard failed")
-
-    # ── Resize ─────────────────────────────────────────────────────────────
 
     # ── Status ────────────────────────────────────────────────────────────
 
