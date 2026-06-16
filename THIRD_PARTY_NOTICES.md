@@ -25,6 +25,14 @@ portions.
 - Usage in HushSnap: The `rapidocr` Python package (v3.8.1+) runs PP-OCR
   ONNX models via onnxruntime in-process. Models are bundled with the package.
 
+## Pinta (MIT)
+
+- Project: [Pinta](https://github.com/PintaProject/Pinta)
+- License: MIT License
+- Usage in HushSnap: The built-in image editor's toolset design (brush,
+  highlighter, eraser, mosaic, text, pan, undo/redo, zoom) and interaction
+  patterns were referenced from Pinta, an open-source raster graphics editor.
+
 ## PP-OCR Models (Apache 2.0)
 
 - Project: [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)

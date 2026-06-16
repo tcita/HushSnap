@@ -4,7 +4,6 @@ import shutil
 import sys
 import logging
 import time
-import tempfile
 import subprocess
 from pathlib import Path
 
@@ -228,6 +227,19 @@ class Application(QtCore.QObject):
             global _translate
             _translate = self.translate
 
+            # ── Suppress harmless Qt 6.10.x internal QFont::setPointSize(-1) warnings ──
+            # Qt 6 changed QFont internals: the sentinel value -1 ("use default") is now
+            # passed through setPointSize() during CSS font-family resolution and widget
+            # font cascade, which logs a qWarning.  This is a Qt framework implementation
+            # detail — the font resolves correctly regardless, but the log noise is
+            # distracting.  Filter it here rather than chasing every internal call site.
+            _prev = []  # mutable capture to avoid closure-before-assignment
+            _prev.append(QtCore.qInstallMessageHandler(
+                lambda t, c, m: (_prev[0](t, c, m) if _prev[0] else None)
+                if "setPointSize" not in m
+                else None
+            ))
+
     def _init_logic_controllers(self):
         # 1. OCR Controller
         self.ocr_controller = OcrController(
@@ -269,9 +281,8 @@ class Application(QtCore.QObject):
 
         # 5. UI Wiring (Thumbnail & Pinned Image)
         thumbnail_manager.clicked.connect(self._handle_thumbnail_clicked)
-        thumbnail_manager.open_viewer.connect(self._handle_open_viewer)
         thumbnail_manager.save_to_desktop.connect(self._handle_save_to_desktop)
-        thumbnail_manager.save_requested.connect(self._handle_thumbnail_save)
+        thumbnail_manager.edit_requested.connect(self._handle_open_editor)
         thumbnail_manager.pin_requested.connect(
             lambda pil, pos, size: pinned_image_manager.pin_image(
                 pil, 
@@ -366,19 +377,19 @@ class Application(QtCore.QObject):
         ).copy()
         self.ocr_controller.start_request(QtGui.QPixmap.fromImage(qimage))
 
-    def _handle_open_viewer(self, pil_img):
+    def _handle_open_editor(self, pil_img):
+        """Open the lightweight image editor for the given PIL image."""
         try:
-            temp_path = Path(tempfile.gettempdir()) / f"view_{int(time.time())}.png"
-            pil_img.save(temp_path)
-            os.startfile(temp_path)
+            from .ui.image_editor import show_image_editor
+            show_image_editor(pil_img, self.translate)
         except Exception:
-            self.logger.exception("Failed to open image in viewer")
+            self.logger.exception("Failed to open image editor")
 
     def _handle_save_to_desktop(self, pil_img):
         try:
             desktop = Path.home() / "Desktop"
-            timestamp = time.strftime("%m%d_%H-%M-%S")
-            base = f"_{timestamp}"
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            base = f"HushSnap_{timestamp}"
             file_path = desktop / f"{base}.png"
             counter = 1
             while file_path.exists():
@@ -388,25 +399,6 @@ class Application(QtCore.QObject):
             show_toast(self.translate("pin_saved_to_desktop"))
         except Exception:
             self.logger.exception("Failed to save image to desktop")
-
-    def _handle_thumbnail_save(self, pil_img):
-        try:
-            from .config import get_last_save_directory, update_last_save_directory, get_config_path
-            default_dir = get_last_save_directory(get_config_path())
-            default_name = f"_{time.strftime('%m%d_%H-%M-%S')}.png"
-            file_path_str, _ = QtWidgets.QFileDialog.getSaveFileName(
-                None, self.translate("thumbnail_save_as"),
-                str(Path(default_dir) / default_name),
-                "Images (*.png *.jpg *.bmp)"
-            )
-            if file_path_str:
-                file_path = Path(file_path_str)
-                pil_img.save(file_path)
-                update_last_save_directory(file_path.parent, get_config_path())
-                show_toast(self.translate("save_as_done"))
-                os.startfile(file_path.parent)
-        except Exception:
-            self.logger.exception("Failed to save image")
 
     def _handle_status_toast(self, title_key, body_key, is_error, kwargs):
         from .ui.toast import show_toast

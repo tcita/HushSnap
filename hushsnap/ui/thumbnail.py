@@ -5,7 +5,7 @@ import time
 import logging
 from pathlib import Path
 
-from PyQt6 import QtCore, QtGui, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets, QtSvg
 from PIL import Image
 
 from .styles import BRAND_GREEN, MODERN_MENU_STYLE
@@ -29,10 +29,9 @@ class ThumbnailWindow(QtWidgets.QWidget):
     """
     # Signals for local handling, Manager will relay these globally
     clicked_signal = QtCore.pyqtSignal()
-    open_viewer_signal = QtCore.pyqtSignal()
     save_to_desktop_signal = QtCore.pyqtSignal()
-    save_requested_signal = QtCore.pyqtSignal()
     pin_requested_signal = QtCore.pyqtSignal()
+    edit_requested_signal = QtCore.pyqtSignal()
 
     def __init__(self, pil_image: Image.Image):
         super().__init__()
@@ -198,50 +197,36 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self._countdown_tick.timeout.connect(self._tick_countdown)
 
     @staticmethod
-    def _make_pin_icon():
-        """Creates a vector pin icon matching OcrPopup style."""
-        def draw_pin(color_str):
-            pixmap = QtGui.QPixmap(24, 24)
-            pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-            p = QtGui.QPainter(pixmap)
-            p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-            p.setPen(QtGui.QPen(QtGui.QColor(color_str), 2, QtCore.Qt.PenStyle.SolidLine, QtCore.Qt.PenCapStyle.RoundCap, QtCore.Qt.PenJoinStyle.RoundJoin))
-            # Tilted look
-            p.translate(12, 12)
-            p.rotate(-45)
-            p.translate(-12, -12)
-            path = QtGui.QPainterPath()
-            path.moveTo(12, 17); path.lineTo(12, 22)
-            path.moveTo(9, 11); path.lineTo(6, 14); path.lineTo(6, 16); path.lineTo(18, 16); path.lineTo(18, 14); path.lineTo(15, 11); path.lineTo(15, 6); path.lineTo(9, 6)
-            path.closeSubpath()
-            path.addEllipse(QtCore.QRectF(8, 2, 8, 4))
-            p.drawPath(path)
+    def _svg_icon(name, normal_color, active_color):
+        """Load an SVG icon from the icons dir with two color variants."""
+        icons_dir = os.path.join(os.path.dirname(__file__), "icons")
+        path = os.path.join(icons_dir, f"{name}.svg")
+        if not os.path.isfile(path):
+            return QtGui.QIcon()
+
+        def _render(color_str):
+            with open(path, "r", encoding="utf-8") as f:
+                svg = f.read().replace("currentColor", color_str)
+            r = QtSvg.QSvgRenderer(QtCore.QByteArray(svg.encode("utf-8")))
+            pm = QtGui.QPixmap(24, 24)
+            pm.fill(QtCore.Qt.GlobalColor.transparent)
+            p = QtGui.QPainter(pm)
+            r.render(p)
             p.end()
-            return pixmap
+            return pm
 
         icon = QtGui.QIcon()
-        icon.addPixmap(draw_pin(BRAND_GREEN), QtGui.QIcon.Mode.Normal)
-        icon.addPixmap(draw_pin("#8ef0b6"), QtGui.QIcon.Mode.Active)
+        icon.addPixmap(_render(normal_color), QtGui.QIcon.Mode.Normal)
+        icon.addPixmap(_render(active_color), QtGui.QIcon.Mode.Active)
         return icon
 
     @staticmethod
-    def _make_close_icon():
-        """Creates a vector X icon matching OcrPopup style."""
-        def draw_close(color_str):
-            pixmap = QtGui.QPixmap(24, 24)
-            pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-            p = QtGui.QPainter(pixmap)
-            p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-            p.setPen(QtGui.QPen(QtGui.QColor(color_str), 2.2, QtCore.Qt.PenStyle.SolidLine, QtCore.Qt.PenCapStyle.RoundCap, QtCore.Qt.PenJoinStyle.RoundJoin))
-            p.drawLine(QtCore.QPointF(8, 8), QtCore.QPointF(16, 16))
-            p.drawLine(QtCore.QPointF(16, 8), QtCore.QPointF(8, 16))
-            p.end()
-            return pixmap
+    def _make_pin_icon():
+        return ThumbnailWindow._svg_icon("pin_unlocked", BRAND_GREEN, "#8ef0b6")
 
-        icon = QtGui.QIcon()
-        icon.addPixmap(draw_close("#ffffff"), QtGui.QIcon.Mode.Normal)
-        icon.addPixmap(draw_close("#ff5c5c"), QtGui.QIcon.Mode.Active)
-        return icon
+    @staticmethod
+    def _make_close_icon():
+        return ThumbnailWindow._svg_icon("close", "#ffffff", "#ff5c5c")
 
     def _get_display_ms(self) -> int:
         """Get the configured display duration from settings."""
@@ -497,22 +482,18 @@ class ThumbnailWindow(QtWidgets.QWidget):
         menu.setGraphicsEffect(shadow)
 
         pin_action = menu.addAction(ui_text(lang, "thumbnail_pin"))
-        view_action = menu.addAction(ui_text(lang, "thumbnail_view_image"))
+        edit_action = menu.addAction(ui_text(lang, "thumbnail_edit"))
         menu.addSeparator()
         desktop_action = menu.addAction(ui_text(lang, "thumbnail_save_to_desktop"))
-        save_action = menu.addAction(ui_text(lang, "thumbnail_save_as"))
 
         action = menu.exec(pos)
         self._menu_active = False
 
-        if action == view_action:
-            self.open_viewer_signal.emit()
+        if action == edit_action:
+            self.edit_requested_signal.emit()
             self.close()
         elif action == desktop_action:
             self.save_to_desktop_signal.emit()
-            self.close()
-        elif action == save_action:
-            self.save_requested_signal.emit()
             self.close()
         elif action == pin_action:
             self.pin_requested_signal.emit()
@@ -840,10 +821,9 @@ class ThumbnailManager(QtCore.QObject):
     """
     show_signal = QtCore.pyqtSignal(object)
     clicked = QtCore.pyqtSignal(object)
-    open_viewer = QtCore.pyqtSignal(object)
     save_to_desktop = QtCore.pyqtSignal(object)
-    save_requested = QtCore.pyqtSignal(object)
     pin_requested = QtCore.pyqtSignal(object, object, object)
+    edit_requested = QtCore.pyqtSignal(object)
 
     def __init__(self):
         super().__init__()
@@ -860,9 +840,8 @@ class ThumbnailManager(QtCore.QObject):
         
         win = ThumbnailWindow(pil_image)
         win.clicked_signal.connect(lambda: self.clicked.emit(pil_image))
-        win.open_viewer_signal.connect(lambda: self.open_viewer.emit(pil_image))
         win.save_to_desktop_signal.connect(lambda: self.save_to_desktop.emit(pil_image))
-        win.save_requested_signal.connect(lambda: self.save_requested.emit(pil_image))
+        win.edit_requested_signal.connect(lambda: self.edit_requested.emit(pil_image))
         win.pin_requested_signal.connect(
             lambda: self.pin_requested.emit(
                 pil_image, 
