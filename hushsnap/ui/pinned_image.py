@@ -8,6 +8,7 @@ import time
 
 from .styles import MODERN_MENU_STYLE
 from .toast import show_toast
+from ..dpi import current_dpr, logical_to_physical_size, physical_to_logical_size
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +25,8 @@ class PinnedImageWindow(QtWidgets.QWidget):
         self.aspect_ratio = self.pixmap.width() / self.pixmap.height()
         
         # 1. Get real screen scaling
-        screen_obj = QtGui.QGuiApplication.primaryScreen()
-        dpr = screen_obj.devicePixelRatio() if screen_obj else 1.0
-        
+        dpr = current_dpr()
+
         # 2. Fix pixmap scaling for High-DPI rendering
         self.pixmap.setDevicePixelRatio(dpr)
         
@@ -51,8 +51,7 @@ class PinnedImageWindow(QtWidgets.QWidget):
             img_h = logical_size.height()
         else:
             phys_w, phys_h = pil_image.size
-            img_w = phys_w / dpr
-            img_h = phys_h / dpr
+            img_w, img_h = physical_to_logical_size(phys_w, phys_h, dpr=dpr)
 
         screen = QtWidgets.QApplication.primaryScreen().availableGeometry()
 
@@ -276,7 +275,8 @@ class PinnedImageWindow(QtWidgets.QWidget):
             painter.setPen(QtGui.QPen(QtGui.QColor(0, 0, 0, alpha), 1))
             painter.drawRoundedRect(QtCore.QRectF(content_rect).adjusted(-i + 0.5, -i + 0.5, i - 0.5, i + 0.5), self.border_radius + i, self.border_radius + i)
         dpr = self.devicePixelRatio()
-        scaled_pixmap = self.pixmap.scaled(int(content_rect.width() * dpr), int(content_rect.height() * dpr), QtCore.Qt.AspectRatioMode.KeepAspectRatio, QtCore.Qt.TransformationMode.SmoothTransformation)
+        pw, ph = logical_to_physical_size(int(content_rect.width()), int(content_rect.height()), dpr=dpr)
+        scaled_pixmap = self.pixmap.scaled(pw, ph, QtCore.Qt.AspectRatioMode.KeepAspectRatio, QtCore.Qt.TransformationMode.SmoothTransformation)
         scaled_pixmap.setDevicePixelRatio(dpr)
         if self.border_radius > 0:
             path = QtGui.QPainterPath()

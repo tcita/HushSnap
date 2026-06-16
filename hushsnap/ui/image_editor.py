@@ -21,6 +21,7 @@ from ..config import (
     get_editor_tool_color, update_editor_tool_color,
     get_config_path,
 )
+from ..dpi import current_dpr
 from .styles import BRAND_GREEN
 
 logger = logging.getLogger(__name__)
@@ -2014,8 +2015,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._scale = 1.0
         # Device pixel ratio: at 100% zoom the image displays at 1:1
         # physical-pixel mapping, matching pinned-image behaviour.
-        screen = QtGui.QGuiApplication.primaryScreen()
-        self._dpr = screen.devicePixelRatio() if screen else 1.0
+        self._dpr = current_dpr()
         self._modified = False
         self._undo_stack: list[_UndoEntry] = []
         self._redo_stack: list[_UndoEntry] = []

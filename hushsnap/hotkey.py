@@ -7,6 +7,7 @@ from ctypes import wintypes
 from PyQt6 import QtCore, QtWidgets
 
 from .constants import WM_HOTKEY
+from .dpi import grab_full_screen
 
 
 import ctypes
@@ -56,12 +57,8 @@ class HotkeyFilter(QtCore.QAbstractNativeEventFilter):
                 # Performance optimization: capture screen immediately in nativeEventFilter.
                 # This runs before Qt's event queue, so the screenshot is effectively frozen
                 # before the capture UI appears, reducing on-screen change interference.
-                screen = QtWidgets.QApplication.primaryScreen()
-                if screen:
-                    device_pixel_ratio = screen.devicePixelRatio()
-                    # Grab the entire desktop (WId 0).
-                    screen_pixmap = screen.grabWindow(0)
-                    screen_pixmap.setDevicePixelRatio(device_pixel_ratio)
+                screen_pixmap = grab_full_screen()
+                if screen_pixmap:
                     self.on_trigger(screen_pixmap)
 
                 # Return True to stop propagation to other filters.

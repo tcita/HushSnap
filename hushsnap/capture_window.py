@@ -12,6 +12,7 @@ from ctypes import wintypes
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from .config import get_copy_image_to_clipboard
+from .dpi import logical_to_physical_rect
 from .constants import (
     CAPTURE_CLICK_THRESHOLD_PX,
     CAPTURE_OVERLAY_RGBA,
@@ -434,14 +435,10 @@ class CaptureWindow(QtWidgets.QWidget):
                 captured = full
                 logical_size = self.rect().size()
             else:
-                # Region capture: convert logical coordinates to physical pixels by screen scale.
+                # Region capture: convert logical coordinates to physical pixels.
                 ratio = self.pixmap.devicePixelRatio()
-                physical = QtCore.QRect(
-                    int(rect.x() * ratio), int(rect.y() * ratio),
-                    int(rect.width() * ratio), int(rect.height() * ratio)
-                )
+                physical = logical_to_physical_rect(rect, dpr=ratio)
                 final = self.pixmap.copy(physical)
-                # Ensure the pixmap knows its scaling ratio for correct clipboard/UI rendering
                 final.setDevicePixelRatio(ratio)
                 
                 if copy_to_clipboard:
