@@ -1,7 +1,7 @@
 """
 HushSnap lightweight image editor.
-Provides brush, highlighter, eraser, mosaic, crop, zoom, rotate,
-text annotation, and undo/redo.
+Provides brush, highlighter, eraser, mosaic, crop, zoom,
+text annotation, shape, arrow tools, and undo/redo.
 Opened from the thumbnail right-click "Edit" action.
 """
 
@@ -16,6 +16,11 @@ from typing import Optional, Callable
 from PIL import Image, ImageDraw, ImageFont
 from PyQt6 import QtCore, QtGui, QtWidgets, QtSvg
 
+from ..config import (
+    get_editor_brush_size, update_editor_brush_size,
+    get_editor_tool_color, update_editor_tool_color,
+    get_config_path,
+)
 from .styles import BRAND_GREEN
 
 logger = logging.getLogger(__name__)
@@ -26,7 +31,6 @@ EDITOR_WINDOW_STYLE = """
 QWidget#editorWindow {
     background-color: #2d2d2d;
     color: #e0e0e0;
-    font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
     font-size: 12px;
 }
 """
@@ -136,35 +140,104 @@ QSlider::sub-page:horizontal {
     border-radius: 2px;
 }
 QComboBox {
-    background-color: #3a3a3a;
-    border: 1px solid rgba(255, 255, 255, 25);
-    border-radius: 4px;
-    padding: 3px 8px;
+    background-color: #353535;
+    border: 1px solid rgba(255, 255, 255, 30);
+    border-radius: 5px;
+    padding: 5px 28px 5px 10px;
     color: #ccc;
-    font-size: 11px;
-    min-width: 80px;
+    font-size: 12px;
+        min-width: 80px;
 }
 QComboBox:hover {
-    border-color: rgba(95, 201, 138, 120);
+    border-color: rgba(95, 201, 138, 140);
+    background-color: #3a3a3a;
+}
+QComboBox:focus {
+    border-color: #5FC98A;
+}
+QComboBox::drop-down {
+    border: none;
+    width: 24px;
+}
+QComboBox::down-arrow {
+    image: none;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid #999;
+    width: 0;
+    height: 0;
+    margin-right: 6px;
 }
 QComboBox QAbstractItemView {
     background-color: #2d2d2d;
-    border: 1px solid #555;
+    border: 1px solid rgba(255, 255, 255, 20);
+    border-radius: 5px;
+    outline: 0px;
+    padding: 4px 0;
     color: #ccc;
-    selection-background-color: #5FC98A;
+    font-size: 12px;
+        selection-background-color: rgba(95, 201, 138, 50);
+    selection-color: #fff;
+}
+QComboBox QAbstractItemView::item {
+    padding: 7px 14px;
+    min-height: 28px;
+}
+QComboBox QAbstractItemView::item:hover {
+    background-color: rgba(95, 201, 138, 25);
+    color: #fff;
 }
 QSpinBox {
-    background-color: #3a3a3a;
-    border: 1px solid rgba(255, 255, 255, 25);
-    border-radius: 4px;
-    padding: 3px 6px;
+    background-color: #353535;
+    border: 1px solid rgba(255, 255, 255, 30);
+    border-radius: 5px;
+    padding: 5px 10px;
     color: #ccc;
-    font-size: 11px;
+    font-size: 12px;
 }
 QSpinBox:hover {
-    border-color: rgba(95, 201, 138, 120);
+    border-color: rgba(95, 201, 138, 140);
+    background-color: #3a3a3a;
+}
+QSpinBox:focus {
+    border-color: #5FC98A;
 }
 """
+
+# ── Editor-specific combobox with frameless popup ─────────────────────────────
+
+class _EditorComboBox(QtWidgets.QComboBox):
+    """QComboBox whose dropdown popup is frameless / translucent, matching
+    the editor's dark theme — the same approach as settings' SleekComboBox."""
+
+    def showPopup(self) -> None:
+        popup = self.view().window()
+        if popup:
+            popup.setWindowFlags(
+                QtCore.Qt.WindowType.Popup
+                | QtCore.Qt.WindowType.FramelessWindowHint,
+            )
+            popup.setAttribute(
+                QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True
+            )
+        super().showPopup()
+
+
+class _EditorFontComboBox(QtWidgets.QFontComboBox):
+    """QFontComboBox variant with the same frameless popup treatment."""
+
+    def showPopup(self) -> None:
+        popup = self.view().window()
+        if popup:
+            popup.setWindowFlags(
+                QtCore.Qt.WindowType.Popup
+                | QtCore.Qt.WindowType.FramelessWindowHint,
+            )
+            popup.setAttribute(
+                QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True
+            )
+        super().showPopup()
+
 
 # ── Icon helpers ─────────────────────────────────────────────────────────────
 
@@ -339,7 +412,7 @@ class BaseTool(ABC):
     ) -> tuple[int, int]:
         """Convert widget coordinates to image pixel coordinates."""
         offset = canvas._image_offset()
-        scale = canvas._editor._scale
+        scale = canvas._editor._effective_scale()
         return (
             int((widget_pos.x() - offset.x()) / scale),
             int((widget_pos.y() - offset.y()) / scale),
@@ -640,8 +713,16 @@ class MosaicTool(BaseTool):
             x1, x2 = min(x1, x2), max(x1, x2)
             y1, y2 = min(y1, y2), max(y1, y2)
 
+            # Clamp to image bounds so dragging partially outside still
+            # pixelates the intersection region.
+            img_w, img_h = self._editor._pil_image.size
+            x1 = max(0, min(x1, img_w))
+            y1 = max(0, min(y1, img_h))
+            x2 = max(0, min(x2, img_w))
+            y2 = max(0, min(y2, img_h))
+
             w, h = x2 - x1, y2 - y1
-            if w > 2 and h > 2 and x1 >= 0 and y1 >= 0:
+            if w > 2 and h > 2:
                 try:
                     region = self._editor._pil_image.crop((x1, y1, x2, y2))
                     bs = max(1, self.block_size)
@@ -670,6 +751,594 @@ class MosaicTool(BaseTool):
             canvas.update()
             return True
         return False
+
+
+class CropTool(BaseTool):
+    """Crop tool with draggable corner / edge handles and dimmed overlay.
+
+    Standard UX — the crop rect covers the full image initially; drag any
+    corner or edge to trim.  Enter / toolbar button confirms; Esc cancels.
+    """
+
+    HANDLE_R = 6   # image-pixel hit radius for handles
+    MIN_CROP = 10  # minimum crop dimension in image pixels
+
+    def __init__(self, editor: "ImageEditorWindow"):
+        super().__init__(editor)
+        self._crop_rect: Optional[QtCore.QRect] = None
+        self._dragging: Optional[str] = None
+        self._drag_start_rect: Optional[QtCore.QRect] = None
+        self._drag_start_img: Optional[tuple[int, int]] = None
+        # Floating action buttons (children of the canvas)
+        self._action_cancel: Optional[QtWidgets.QPushButton] = None
+        self._action_apply: Optional[QtWidgets.QPushButton] = None
+
+    def tool_id(self) -> str:
+        return "crop"
+
+    # ── activation ──────────────────────────────────────────────────────
+
+    def on_activate(self) -> None:
+        img_w, img_h = self._editor._pil_image.size
+        self._crop_rect = QtCore.QRect(0, 0, img_w, img_h)
+        self._editor._show_tool_options([])
+        self._editor._canvas.setCursor(QtCore.Qt.CursorShape.OpenHandCursor)
+        self._create_action_buttons()
+        self._redraw_overlay()
+        self._editor._canvas.update()
+
+    def on_deactivate(self) -> None:
+        self._crop_rect = None
+        self._dragging = None
+        self._destroy_action_buttons()
+        self._editor._overlay_pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+        self._editor._canvas.update()
+
+    # ── floating action buttons ──────────────────────────────────────────
+
+    def _create_action_buttons(self) -> None:
+        canvas = self._editor._canvas
+        t = self._editor._tr
+
+        self._action_cancel = QtWidgets.QPushButton(t("editor_crop_cancel"), canvas)
+        self._action_cancel.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self._action_cancel.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(40,40,40,200);
+                border: 1px solid rgba(255,255,255,20);
+                border-radius: 11px;
+                padding: 4px 14px;
+                color: #ccc;
+                font-size: 12px;
+            }}
+            QPushButton:hover {{
+                background: rgba(60,60,60,220);
+                border-color: rgba(255,255,255,35);
+                color: #fff;
+            }}
+        """)
+        self._action_cancel.clicked.connect(self.cancel_crop)
+
+        self._action_apply = QtWidgets.QPushButton(t("editor_crop_confirm"), canvas)
+        self._action_apply.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self._action_apply.setStyleSheet(f"""
+            QPushButton {{
+                background: #5FC98A;
+                border: none;
+                border-radius: 11px;
+                padding: 4px 16px;
+                color: #fff;
+                font-size: 12px;
+                font-weight: 600;
+            }}
+            QPushButton:hover {{
+                background: #6fd99d;
+            }}
+            QPushButton:pressed {{
+                background: #4ab87a;
+            }}
+        """)
+        self._action_apply.clicked.connect(self.apply_crop)
+
+        self._position_action_buttons()
+
+    def _destroy_action_buttons(self) -> None:
+        for b in (self._action_cancel, self._action_apply):
+            if b:
+                b.deleteLater()
+        self._action_cancel = None
+        self._action_apply = None
+
+    def _position_action_buttons(self) -> None:
+        """Place the two floating buttons centred just below the crop rect."""
+        r = self._crop_rect
+        canvas = self._editor._canvas
+        if r is None or not self._action_apply:
+            return
+        scale = self._editor._effective_scale()
+        offset = canvas._image_offset()
+        # Anchor: centre of the crop-rect bottom edge
+        cx = r.center().x() * scale + offset.x()
+        cy = r.bottom() * scale + offset.y() + 8  # 8px gap below the rect
+        # Position the two buttons side-by-side
+        cancel_w = self._action_cancel.sizeHint().width()
+        apply_w = self._action_apply.sizeHint().width()
+        gap = 8
+        total_w = cancel_w + apply_w + gap
+        left = int(cx - total_w / 2)
+        self._action_cancel.move(left, int(cy))
+        self._action_apply.move(left + cancel_w + gap, int(cy))
+        self._action_cancel.show()
+        self._action_apply.show()
+
+    # ── mouse ───────────────────────────────────────────────────────────
+
+    def on_mouse_press(self, canvas, event) -> bool:
+        if event.button() != QtCore.Qt.MouseButton.LeftButton:
+            return False
+        pos = event.position().toPoint()
+        # 1. Handle hit → resize crop
+        handle = self._hit_test(canvas, pos) if self._crop_rect else None
+        if handle:
+            self._dragging = handle
+            self._drag_start_rect = QtCore.QRect(self._crop_rect)
+            self._drag_start_img = self._to_image_coords(canvas, pos)
+            return True
+        # 2. Inside crop rect → reposition crop
+        img = self._to_image_coords(canvas, pos)
+        if self._crop_rect and self._crop_rect.contains(img[0], img[1]):
+            self._dragging = "move"
+            self._drag_start_rect = QtCore.QRect(self._crop_rect)
+            self._drag_start_img = img
+            return True
+        # 3. Outside crop rect → pan the image (like hand tool)
+        self._dragging = "pan"
+        self._drag_start_img = (
+            event.globalPosition().toPoint().x(),
+            event.globalPosition().toPoint().y(),
+        )
+        canvas.setCursor(QtCore.Qt.CursorShape.ClosedHandCursor)
+        return True
+
+    def on_mouse_move(self, canvas, event) -> bool:
+        pos = event.position().toPoint()
+        if self._dragging == "pan":
+            cur = event.globalPosition().toPoint()
+            sx, sy = self._drag_start_img
+            dx, dy = cur.x() - sx, cur.y() - sy
+            self._drag_start_img = (cur.x(), cur.y())
+            sa = self._editor._scroll_area
+            hb = sa.horizontalScrollBar()
+            vb = sa.verticalScrollBar()
+            hb.setValue(int(hb.value() - dx))
+            vb.setValue(int(vb.value() - dy))
+            return True
+
+        if self._dragging:
+            img = self._to_image_coords(canvas, pos)
+            self._update_rect(img[0], img[1])
+            self._redraw_overlay()
+            canvas.update()
+            return True
+
+        # cursor feedback (hover, not dragging)
+        h = self._hit_test(canvas, pos) if self._crop_rect else None
+        if h in ("tl", "br"):
+            canvas.setCursor(QtCore.Qt.CursorShape.SizeFDiagCursor)
+        elif h in ("tr", "bl"):
+            canvas.setCursor(QtCore.Qt.CursorShape.SizeBDiagCursor)
+        elif h in ("t", "b"):
+            canvas.setCursor(QtCore.Qt.CursorShape.SizeVerCursor)
+        elif h in ("l", "r"):
+            canvas.setCursor(QtCore.Qt.CursorShape.SizeHorCursor)
+        elif h == "move":
+            canvas.setCursor(QtCore.Qt.CursorShape.SizeAllCursor)
+        else:
+            canvas.setCursor(QtCore.Qt.CursorShape.OpenHandCursor)
+        return bool(h)
+
+    def on_mouse_release(self, canvas, event) -> bool:
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
+            if self._dragging == "pan":
+                canvas.setCursor(QtCore.Qt.CursorShape.OpenHandCursor)
+            self._dragging = None
+            self._drag_start_rect = None
+            self._drag_start_img = None
+            return True
+        return False
+
+    def on_key_press(self, canvas, event) -> bool:
+        if event.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter):
+            self.apply_crop()
+            return True
+        if event.key() == QtCore.Qt.Key.Key_Escape:
+            self.cancel_crop()
+            return True
+        return False
+
+    # ── public API (called from toolbar buttons) ─────────────────────────
+
+    def apply_crop(self) -> None:
+        if not self._crop_rect:
+            return
+        r = self._crop_rect
+        if r.width() < self.MIN_CROP or r.height() < self.MIN_CROP:
+            return
+        # Full-image crop is a no-op — just exit without modifying anything.
+        img_w, img_h = self._editor._pil_image.size
+        if r.left() <= 0 and r.top() <= 0 and r.right() >= img_w and r.bottom() >= img_h:
+            self._editor._activate_tool("pan")
+            return
+        self._editor._save_undo()
+        try:
+            cropped = self._editor._pil_image.crop(
+                (r.left(), r.top(), r.right(), r.bottom())
+            )
+            self._editor._pil_image = cropped
+            self._editor._clear_annotations()
+            self._editor._rebuild_display()
+            self._editor._resize_canvas()
+            self._editor._center_image_on_canvas()
+            self._editor._modified = True
+        except Exception:
+            logger.exception("CropTool: failed to apply crop")
+        # After cropping, exit crop mode — the user is done.
+        self._editor._activate_tool("pan")
+
+    def cancel_crop(self) -> None:
+        self._editor._activate_tool("pan")
+
+    # ── internals ────────────────────────────────────────────────────────
+
+    _HANDLES = {
+        "tl":  lambda r: (r.left(),  r.top()),
+        "t":   lambda r: (r.center().x(), r.top()),
+        "tr":  lambda r: (r.right(), r.top()),
+        "l":   lambda r: (r.left(),  r.center().y()),
+        "r":   lambda r: (r.right(), r.center().y()),
+        "bl":  lambda r: (r.left(),  r.bottom()),
+        "b":   lambda r: (r.center().x(), r.bottom()),
+        "br":  lambda r: (r.right(), r.bottom()),
+    }
+
+    def _hit_test(self, canvas, screen_pos: QtCore.QPoint) -> Optional[str]:
+        """Return handle id under *screen_pos*, or 'move', or None."""
+        r = self._crop_rect
+        if r is None:
+            return None
+        img = self._to_image_coords(canvas, screen_pos)
+        ix, iy = img[0], img[1]
+        # Check corner / edge handles first
+        for name, fn in self._HANDLES.items():
+            hx, hy = fn(r)
+            if abs(ix - hx) <= self.HANDLE_R and abs(iy - hy) <= self.HANDLE_R:
+                return name
+        if r.contains(ix, iy):
+            return "move"
+        return None
+
+    def _update_rect(self, img_x: int, img_y: int) -> None:
+        sx, sy = self._drag_start_img
+        dx, dy = img_x - sx, img_y - sy
+        r = self._drag_start_rect
+        img_w, img_h = self._editor._pil_image.size
+        d = self._dragging
+
+        nl, nt = r.left(), r.top()
+        nr, nb = r.right(), r.bottom()
+
+        if d == "move":
+            nw, nh = r.width(), r.height()
+            nl = max(0, min(r.left() + dx, img_w - nw))
+            nt = max(0, min(r.top() + dy, img_h - nh))
+            nr, nb = nl + nw, nt + nh
+        else:
+            if d in ("tl", "l", "bl"):
+                nl = max(0, min(r.left() + dx, r.right() - self.MIN_CROP))
+            if d in ("tr", "r", "br"):
+                nr = max(r.left() + self.MIN_CROP, min(r.right() + dx, img_w))
+            if d in ("tl", "t", "tr"):
+                nt = max(0, min(r.top() + dy, r.bottom() - self.MIN_CROP))
+            if d in ("bl", "b", "br"):
+                nb = max(r.top() + self.MIN_CROP, min(r.bottom() + dy, img_h))
+
+        self._crop_rect = QtCore.QRect(nl, nt, nr - nl, nb - nt)
+
+    def _redraw_overlay(self) -> None:
+        overlay = self._editor._overlay_pixmap
+        overlay.fill(QtCore.Qt.GlobalColor.transparent)
+        r = self._crop_rect
+        if r is None:
+            return
+
+        painter = QtGui.QPainter(overlay)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        img_w, img_h = self._editor._pil_image.size
+
+        # Dim outside the crop rect
+        dim = QtGui.QColor(0, 0, 0, 130)
+        painter.setBrush(QtGui.QBrush(dim))
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        # top / bottom / left / right strips
+        if r.top() > 0:
+            painter.drawRect(0, 0, img_w, r.top())
+        if r.bottom() < img_h:
+            painter.drawRect(0, r.bottom(), img_w, img_h - r.bottom())
+        if r.left() > 0:
+            painter.drawRect(0, r.top(), r.left(), r.height())
+        if r.right() < img_w:
+            painter.drawRect(r.right(), r.top(), img_w - r.right(), r.height())
+
+        # Crop border
+        pen = QtGui.QPen(QtGui.QColor("#5FC98A"), 1.5,
+                         QtCore.Qt.PenStyle.SolidLine)
+        painter.setPen(pen)
+        painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+        painter.drawRect(r)
+
+        # Rule-of-thirds guides
+        tw, th = r.width() / 3.0, r.height() / 3.0
+        gpen = QtGui.QPen(QtGui.QColor(255, 255, 255, 70), 0.5,
+                          QtCore.Qt.PenStyle.DashLine)
+        painter.setPen(gpen)
+        for i in range(1, 3):
+            painter.drawLine(
+                QtCore.QPointF(r.left() + tw * i, r.top()),
+                QtCore.QPointF(r.left() + tw * i, r.bottom()),
+            )
+            painter.drawLine(
+                QtCore.QPointF(r.left(), r.top() + th * i),
+                QtCore.QPointF(r.right(), r.top() + th * i),
+            )
+
+        # Corner handles (white fill + green border)
+        corner_sz = 7
+        edge_sz = 5
+        painter.setPen(QtGui.QPen(QtGui.QColor("#5FC98A"), 1.5))
+        painter.setBrush(QtGui.QBrush(QtGui.QColor("#ffffff")))
+        for name, fn in self._HANDLES.items():
+            hx, hy = fn(r)
+            sz = corner_sz if len(name) == 2 else edge_sz
+            painter.drawRect(QtCore.QRectF(
+                hx - sz / 2.0, hy - sz / 2.0, sz, sz,
+            ))
+
+        # Dimension label (e.g. "800 × 600") at top-right corner
+        dim_text = f"{r.width()} × {r.height()}"
+        font = QtGui.QFontDatabase.systemFont(
+            QtGui.QFontDatabase.SystemFont.GeneralFont
+        )
+        font.setPixelSize(11)
+        painter.setFont(font)
+        fm = QtGui.QFontMetricsF(font)
+        text_rect = fm.boundingRect(dim_text)
+        pad = 4.0
+        bw = text_rect.width() + pad * 2
+        bh = text_rect.height() + pad * 2
+        # Prefer above the rect; flip below if too close to the top edge
+        label_x = r.right() - bw - 4
+        label_y = r.top() - bh - 4
+        if label_y < 2:
+            label_y = r.top() + 4
+        bg = QtCore.QRectF(label_x, label_y, bw, bh)
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        painter.setBrush(QtGui.QBrush(QtGui.QColor(0, 0, 0, 160)))
+        painter.drawRoundedRect(bg, 3, 3)
+        painter.setPen(QtGui.QPen(QtGui.QColor("#ffffff")))
+        painter.drawText(bg.adjusted(pad, pad, -pad, -pad),
+                         QtCore.Qt.AlignmentFlag.AlignCenter, dim_text)
+
+        painter.end()
+
+        # Keep floating action buttons pinned below the crop rect
+        self._position_action_buttons()
+
+
+class ShapeTool(BaseTool):
+    """Draw rectangle or ellipse outlines on the annotations layer."""
+
+    def __init__(self, editor: "ImageEditorWindow", shape: str = "rectangle"):
+        super().__init__(editor)
+        self._shape = shape  # "rectangle" or "ellipse"
+        self._color = QtGui.QColor("#FF4444")
+        self._size = 3
+        self._start_pt: Optional[tuple[int, int]] = None
+        self._end_pt: Optional[tuple[int, int]] = None
+
+    @property
+    def color(self) -> QtGui.QColor: return self._color
+    @color.setter
+    def color(self, v: QtGui.QColor): self._color = v
+    @property
+    def size(self) -> int: return self._size
+    @size.setter
+    def size(self, v: int): self._size = v
+
+    def tool_id(self) -> str:
+        return self._shape
+
+    def on_activate(self) -> None:
+        self._editor._show_tool_options(["color", "size"])
+        self._editor._canvas.setCursor(QtCore.Qt.CursorShape.CrossCursor)
+
+    def on_mouse_press(self, canvas, event) -> bool:
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
+            self._editor._save_undo()
+            self._start_pt = self._to_image_coords(canvas, event.position().toPoint())
+            self._end_pt = self._start_pt
+            return True
+        return False
+
+    def on_mouse_move(self, canvas, event) -> bool:
+        if self._start_pt is not None and (
+            event.buttons() & QtCore.Qt.MouseButton.LeftButton
+        ):
+            self._end_pt = self._to_image_coords(canvas, event.position().toPoint())
+            self._redraw_overlay()
+            canvas.update()
+            return True
+        return False
+
+    def on_mouse_release(self, canvas, event) -> bool:
+        if event.button() == QtCore.Qt.MouseButton.LeftButton and self._start_pt is not None:
+            self._editor._overlay_pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+            self._draw_shape(self._editor._annotations_pixmap)
+            self._editor._modified = True
+            self._start_pt = None
+            self._end_pt = None
+            canvas.update()
+            return True
+        return False
+
+    def on_key_press(self, canvas, event) -> bool:
+        if event.key() == QtCore.Qt.Key.Key_Escape:
+            self._start_pt = None
+            self._end_pt = None
+            self._editor._overlay_pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+            canvas.update()
+            return True
+        return False
+
+    def _redraw_overlay(self) -> None:
+        self._editor._overlay_pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+        self._draw_shape(self._editor._overlay_pixmap)
+
+    def _draw_shape(self, target: QtGui.QPixmap) -> None:
+        if self._start_pt is None or self._end_pt is None:
+            return
+        x1, y1 = self._start_pt
+        x2, y2 = self._end_pt
+        rect = QtCore.QRect(
+            min(x1, x2), min(y1, y2),
+            abs(x2 - x1), abs(y2 - y1),
+        )
+        painter = QtGui.QPainter(target)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        pen = QtGui.QPen(self._color, self._size,
+                         QtCore.Qt.PenStyle.SolidLine,
+                         QtCore.Qt.PenCapStyle.SquareCap,
+                         QtCore.Qt.PenJoinStyle.MiterJoin)
+        painter.setPen(pen)
+        painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+        if self._shape == "rectangle":
+            painter.drawRect(rect)
+        else:
+            painter.drawEllipse(rect)
+        painter.end()
+
+
+class ArrowTool(BaseTool):
+    """Draw arrows with an arrowhead on the annotations layer."""
+
+    def __init__(self, editor: "ImageEditorWindow"):
+        super().__init__(editor)
+        self._color = QtGui.QColor("#FF4444")
+        self._size = 3
+        self._start_pt: Optional[tuple[int, int]] = None
+        self._end_pt: Optional[tuple[int, int]] = None
+
+    @property
+    def color(self) -> QtGui.QColor: return self._color
+    @color.setter
+    def color(self, v: QtGui.QColor): self._color = v
+    @property
+    def size(self) -> int: return self._size
+    @size.setter
+    def size(self, v: int): self._size = v
+
+    def tool_id(self) -> str:
+        return "arrow"
+
+    def on_activate(self) -> None:
+        self._editor._show_tool_options(["color", "size"])
+        self._editor._canvas.setCursor(QtCore.Qt.CursorShape.CrossCursor)
+
+    def on_mouse_press(self, canvas, event) -> bool:
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
+            self._editor._save_undo()
+            self._start_pt = self._to_image_coords(canvas, event.position().toPoint())
+            self._end_pt = self._start_pt
+            return True
+        return False
+
+    def on_mouse_move(self, canvas, event) -> bool:
+        if self._start_pt is not None and (
+            event.buttons() & QtCore.Qt.MouseButton.LeftButton
+        ):
+            self._end_pt = self._to_image_coords(canvas, event.position().toPoint())
+            self._redraw_overlay()
+            canvas.update()
+            return True
+        return False
+
+    def on_mouse_release(self, canvas, event) -> bool:
+        if event.button() == QtCore.Qt.MouseButton.LeftButton and self._start_pt is not None:
+            self._editor._overlay_pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+            self._draw_arrow(self._editor._annotations_pixmap)
+            self._editor._modified = True
+            self._start_pt = None
+            self._end_pt = None
+            canvas.update()
+            return True
+        return False
+
+    def on_key_press(self, canvas, event) -> bool:
+        if event.key() == QtCore.Qt.Key.Key_Escape:
+            self._start_pt = None
+            self._end_pt = None
+            self._editor._overlay_pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+            canvas.update()
+            return True
+        return False
+
+    def _redraw_overlay(self) -> None:
+        self._editor._overlay_pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+        self._draw_arrow(self._editor._overlay_pixmap)
+
+    def _draw_arrow(self, target: QtGui.QPixmap) -> None:
+        if self._start_pt is None or self._end_pt is None:
+            return
+        import math
+        x1, y1 = self._start_pt
+        x2, y2 = self._end_pt
+
+        painter = QtGui.QPainter(target)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+
+        # Line
+        pen = QtGui.QPen(self._color, self._size,
+                         QtCore.Qt.PenStyle.SolidLine,
+                         QtCore.Qt.PenCapStyle.RoundCap,
+                         QtCore.Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+        painter.drawLine(QtCore.QPointF(x1, y1), QtCore.QPointF(x2, y2))
+
+        # Arrowhead (only if line has length)
+        dx, dy = x2 - x1, y2 - y1
+        line_len = math.hypot(dx, dy)
+        if line_len < 1:
+            painter.end()
+            return
+
+        angle = math.atan2(dy, dx)
+        arrow_len = max(10.0, self._size * 4.0)
+        spread = 0.45  # radians (~26°)
+
+        px = x2 - arrow_len * math.cos(angle - spread)
+        py = y2 - arrow_len * math.sin(angle - spread)
+        qx = x2 - arrow_len * math.cos(angle + spread)
+        qy = y2 - arrow_len * math.sin(angle + spread)
+
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        painter.setBrush(QtGui.QBrush(self._color))
+        arrowhead = QtGui.QPolygonF([
+            QtCore.QPointF(x2, y2),
+            QtCore.QPointF(px, py),
+            QtCore.QPointF(qx, qy),
+        ])
+        painter.drawPolygon(arrowhead)
+        painter.end()
 
 
 class PanTool(BaseTool):
@@ -728,9 +1397,10 @@ class TextTool(BaseTool):
 
     def __init__(self, editor: "ImageEditorWindow"):
         super().__init__(editor)
-        # Pick a safe default: prefer Microsoft YaHei if available, else Arial
-        available = QtGui.QFontDatabase.families()
-        self.font_family = "Microsoft YaHei" if "Microsoft YaHei" in available else "Arial"
+        # Use the system default font — safe on every platform / locale
+        self.font_family = QtGui.QFontDatabase.systemFont(
+            QtGui.QFontDatabase.SystemFont.GeneralFont
+        ).family()
         self.font_size = 24
         self.color = QtGui.QColor("#FFFFFF")
         
@@ -809,7 +1479,7 @@ class TextTool(BaseTool):
 
     def _hit_test(self, canvas, screen_pos) -> int:
         """Return index of item at screen_pos, or -1."""
-        scale = self._editor._scale
+        scale = self._editor._effective_scale()
         offset = canvas._image_offset()
         
         # Test in reverse order (top items first)
@@ -849,8 +1519,13 @@ class TextTool(BaseTool):
         canvas.update()
 
     def _sync_widgets(self) -> None:
-        """Update active editor geometry if scale/offset changed."""
+        """Push current toolbar state to the active editor and refresh it."""
         if self._editing_widget:
+            item = self._editing_widget._item
+            item.color = QtGui.QColor(self.color)
+            item.font_family = self.font_family
+            item.font_size = self.font_size
+            self._editing_widget._apply_style()
             self._editing_widget._update_geometry()
         self._editor._canvas.update()
 
@@ -905,27 +1580,33 @@ class _InlineTextEditor(QtWidgets.QLineEdit):
         self.textChanged.connect(self._on_text_changed)
 
     def _apply_style(self) -> None:
-        scale = self._tool._editor._scale
+        scale = self._tool._editor._effective_scale()
         fs = max(10, int(self._item.font_size * scale))
         ff = self._item.font_family
         color = self._item.color.name()
         self.setStyleSheet(
             f"QLineEdit {{ background: rgba(30,30,30,180); border: 1px solid #5FC98A;"
             f"border-radius: 2px; color: {color}; padding: 2px 4px;"
-            f"font-size: {fs}px; font-family: '{ff}'; selection-background-color: #5FC98A; }}"
+            f"font-size: {fs}px;"
+            f"selection-background-color: #5FC98A; }}"
         )
 
     def _update_geometry(self) -> None:
         canvas = self.parentWidget()
-        scale = self._tool._editor._scale
+        scale = self._tool._editor._effective_scale()
         offset = canvas._image_offset()
-        
+
         screen_x = self._item.img_pos.x() * scale + offset.x()
         screen_y = self._item.img_pos.y() * scale + offset.y()
-        
+
         fm = self.fontMetrics()
-        w = max(100, fm.horizontalAdvance(self.text()) + 20)
-        h = fm.height() + 10
+        # Scale minimum size and padding with zoom so the widget grows /
+        # shrinks in proportion to the image, not in absolute pixels.
+        min_w = int(100 * scale)
+        pad_w = int(20 * scale)
+        pad_h = int(10 * scale)
+        w = max(min_w, fm.horizontalAdvance(self.text()) + pad_w)
+        h = fm.height() + pad_h
         self.setGeometry(int(screen_x), int(screen_y), int(w), int(h))
 
     def _on_text_changed(self) -> None:
@@ -984,7 +1665,7 @@ class EditorCanvas(QtWidgets.QWidget):
         if not self._editor._display_pixmap:
             return QtCore.QPointF(0, 0)
         pm = self._editor._display_pixmap
-        scale = self._editor._scale
+        scale = self._editor._effective_scale()
         scaled_w = pm.width() * scale
         scaled_h = pm.height() * scale
         # Center the image in the canvas (which is now larger than viewport)
@@ -1002,7 +1683,7 @@ class EditorCanvas(QtWidgets.QWidget):
 
         pm = self._editor._display_pixmap
         if pm:
-            scale = self._editor._scale
+            scale = self._editor._effective_scale()
             offset = self._image_offset()
             painter.save()
             painter.translate(offset)
@@ -1033,12 +1714,12 @@ class EditorCanvas(QtWidgets.QWidget):
 
     def _render_text_items(self, painter: QtGui.QPainter) -> None:
         """Render persistent text items."""
-        scale = self._editor._scale
+        scale = self._editor._effective_scale()
         offset = self._image_offset()
-        
+
         painter.save()
         painter.setRenderHint(QtGui.QPainter.RenderHint.TextAntialiasing)
-        
+
         # Check if we are currently editing an item (to skip drawing it)
         editing_item = None
         text_tool = self._editor._tools.get("text")
@@ -1048,18 +1729,18 @@ class EditorCanvas(QtWidgets.QWidget):
         for item in self._editor._text_items:
             if item == editing_item:
                 continue
-                
+
             fs = max(1, int(item.font_size * scale))
             font = QtGui.QFont(item.font_family, fs)
             painter.setFont(font)
             painter.setPen(item.color)
-            
+
             screen_x = item.img_pos.x() * scale + offset.x()
             screen_y = item.img_pos.y() * scale + offset.y()
-            
+
             metrics = painter.fontMetrics()
             painter.drawText(int(screen_x), int(screen_y + metrics.ascent()), item.text)
-            
+
         painter.restore()
 
     def _draw_checkerboard(self, painter: QtGui.QPainter) -> None:
@@ -1067,7 +1748,7 @@ class EditorCanvas(QtWidgets.QWidget):
         if not self._editor._display_pixmap:
             return
         pm = self._editor._display_pixmap
-        scale = self._editor._scale
+        scale = self._editor._effective_scale()
         offset = self._image_offset()
         scaled_w = pm.width() * scale
         scaled_h = pm.height() * scale
@@ -1138,9 +1819,10 @@ class EditorCanvas(QtWidgets.QWidget):
         cursor_pos = event.position()
         old_offset = self._image_offset()
 
-        # Image-space coordinate under the cursor
-        img_x = (cursor_pos.x() - old_offset.x()) / editor._scale
-        img_y = (cursor_pos.y() - old_offset.y()) / editor._scale
+        # Image-space coordinate under the cursor (physical pixels)
+        old_effective = editor._effective_scale()
+        img_x = (cursor_pos.x() - old_offset.x()) / old_effective
+        img_y = (cursor_pos.y() - old_offset.y()) / old_effective
 
         # Apply zoom factor (10% per step)
         factor = 1.10 if delta > 0 else 1.0 / 1.10
@@ -1154,15 +1836,12 @@ class EditorCanvas(QtWidgets.QWidget):
 
         # Compute new scroll position: the image pixel under the cursor
         # before zoom should stay under the cursor after zoom.
-        #   cursor_pos.x() = scroll + viewport_x   (viewport_x is fixed)
-        # After zoom, want:  img * new_scale + new_offset = new_scroll + viewport_x
-        # → new_scroll = img * new_scale + new_offset - viewport_x
-        # → new_scroll = img * new_scale + new_offset - (cursor_pos.x() - old_scroll)
         old_scroll_x = editor._scroll_area.horizontalScrollBar().value()
         old_scroll_y = editor._scroll_area.verticalScrollBar().value()
         new_offset = self._image_offset()
-        new_scroll_x = int(img_x * new_scale + new_offset.x() - cursor_pos.x() + old_scroll_x)
-        new_scroll_y = int(img_y * new_scale + new_offset.y() - cursor_pos.y() + old_scroll_y)
+        new_effective = editor._effective_scale()
+        new_scroll_x = int(img_x * new_effective + new_offset.x() - cursor_pos.x() + old_scroll_x)
+        new_scroll_y = int(img_y * new_effective + new_offset.y() - cursor_pos.y() + old_scroll_y)
 
         h_bar = editor._scroll_area.horizontalScrollBar()
         v_bar = editor._scroll_area.verticalScrollBar()
@@ -1201,15 +1880,18 @@ _SWATCH_PAD = 4
 _SWATCH_GAP = 2
 
 
-class _ColorButton(QtWidgets.QPushButton):
-    """Custom circular color selection button with perfect anti-aliased rendering."""
+class _ColorButton(QtWidgets.QWidget):
+    """Custom circular color selection button — plain QWidget to avoid
+    QPushButton's native-OS background on Windows."""
+
+    clicked = QtCore.pyqtSignal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedSize(26, 26)
         self.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self._color = QtGui.QColor("#FFFFFF")
         self._hovered = False
-        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
 
     def setColor(self, color: QtGui.QColor) -> None:
         self._color = color
@@ -1218,36 +1900,31 @@ class _ColorButton(QtWidgets.QPushButton):
     def enterEvent(self, event: QtCore.QEvent) -> None:
         self._hovered = True
         self.update()
-        super().enterEvent(event)
 
     def leaveEvent(self, event: QtCore.QEvent) -> None:
         self._hovered = False
         self.update()
-        super().leaveEvent(event)
+
+    def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
+            self.clicked.emit()
 
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
 
-        # Clear background area with transparent color to avoid any residual background garbage or artifacts
-        painter.setCompositionMode(QtGui.QPainter.CompositionMode.CompositionMode_Source)
-        painter.fillRect(self.rect(), QtCore.Qt.GlobalColor.transparent)
-        painter.setCompositionMode(QtGui.QPainter.CompositionMode.CompositionMode_SourceOver)
-
-        # Draw the perfectly circular color button
+        # Draw the perfectly circular color swatch
         rect = QtCore.QRectF(self.rect()).adjusted(1.0, 1.0, -1.0, -1.0)
-        
-        # Solid fill color
+
+        # Solid fill
         painter.setBrush(QtGui.QBrush(self._color))
-        
-        # Border outline
+
+        # Border
         if self._hovered:
-            # Hover state: border color is the brand green (#5FC98A)
             pen = QtGui.QPen(QtGui.QColor("#5FC98A"), 2.0)
         else:
-            # Normal state: border color is semi-transparent white (rgba(255,255,255,40))
             pen = QtGui.QPen(QtGui.QColor(255, 255, 255, 102), 2.0)
-            
+
         painter.setPen(pen)
         painter.drawEllipse(rect)
         painter.end()
@@ -1335,6 +2012,10 @@ class ImageEditorWindow(QtWidgets.QWidget):
 
         # State
         self._scale = 1.0
+        # Device pixel ratio: at 100% zoom the image displays at 1:1
+        # physical-pixel mapping, matching pinned-image behaviour.
+        screen = QtGui.QGuiApplication.primaryScreen()
+        self._dpr = screen.devicePixelRatio() if screen else 1.0
         self._modified = False
         self._undo_stack: list[_UndoEntry] = []
         self._redo_stack: list[_UndoEntry] = []
@@ -1347,6 +2028,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
 
         self._setup_ui()
         self._setup_tools()
+        self._load_tool_preferences()
         self._init_from_image()
         self._activate_tool("pan")
 
@@ -1432,59 +2114,56 @@ class ImageEditorWindow(QtWidgets.QWidget):
         bar.setStyleSheet(EDITOR_TOOLBAR_ROW_STYLE)
         layout = QtWidgets.QHBoxLayout(bar)
         layout.setContentsMargins(8, 4, 8, 4)
-        layout.setSpacing(4)
+        layout.setSpacing(3)
 
-        # Tool group
-        tool_config = [
+        # ── Tool groups (separated by thin vertical rules) ────────────────
+
+        def _add_sep():
+            s = QtWidgets.QFrame()
+            s.setFrameShape(QtWidgets.QFrame.Shape.VLine)
+            s.setStyleSheet("background-color: rgba(255,255,255,12); border: none;")
+            s.setFixedWidth(1)
+            s.setFixedHeight(20)
+            layout.addSpacing(6)
+            layout.addWidget(s)
+            layout.addSpacing(6)
+
+        def _add_tools(tools):
+            for tid, label_key, icon_name in tools:
+                btn = QtWidgets.QToolButton()
+                btn.setIcon(_load_editor_icon(icon_name))
+                btn.setIconSize(QtCore.QSize(20, 20))
+                btn.setToolTip(self._tr(label_key))
+                btn.setCheckable(True)
+                btn.setStyleSheet(EDITOR_TOOL_BUTTON_STYLE)
+                btn.clicked.connect(lambda checked, t=tid: self._activate_tool(t))
+                layout.addWidget(btn)
+                self._tool_buttons[tid] = btn
+
+        # Group 1 — Draw
+        _add_tools([
             ("brush", "tool_brush", "brush"),
             ("highlighter", "tool_highlighter", "highlighter"),
             ("eraser", "tool_eraser", "eraser"),
-            ("mosaic", "tool_mosaic", "mosaic"),
+        ])
+
+        _add_sep()
+
+        # Group 2 — Shapes & Annotate
+        _add_tools([
+            ("rectangle", "tool_rectangle", "rectangle"),
+            ("ellipse", "tool_ellipse", "ellipse"),
+            ("arrow", "tool_arrow", "arrow"),
             ("text", "tool_text", "text"),
-            ("pan", "tool_pan", "pan"),
-        ]
-        for tid, label_key, icon_name in tool_config:
-            btn = QtWidgets.QToolButton()
-            btn.setIcon(_load_editor_icon(icon_name))
-            btn.setIconSize(QtCore.QSize(20, 20))
-            btn.setToolTip(self._tr(label_key))
-            btn.setCheckable(True)
-            btn.setStyleSheet(EDITOR_TOOL_BUTTON_STYLE)
-            btn.clicked.connect(lambda checked, t=tid: self._activate_tool(t))
-            layout.addWidget(btn)
-            self._tool_buttons[tid] = btn
+        ])
 
-        layout.addSpacing(12)
+        _add_sep()
 
-        # Separator
-        sep = QtWidgets.QFrame()
-        sep.setFrameShape(QtWidgets.QFrame.Shape.VLine)
-        sep.setStyleSheet("background-color: rgba(255,255,255,15); border: none;")
-        sep.setFixedWidth(1)
-        sep.setFixedHeight(24)
-        layout.addWidget(sep)
-
-        layout.addSpacing(8)
-
-        # Rotate button (single: clockwise 90°)
-        rotate_btn = QtWidgets.QPushButton()
-        rotate_btn.setIcon(_load_editor_icon("rotate"))
-        rotate_btn.setIconSize(QtCore.QSize(20, 20))
-        rotate_btn.setToolTip(self._tr("editor_rotate_cw"))
-        rotate_btn.setFixedSize(32, 28)
-        rotate_btn.setStyleSheet(EDITOR_PUSH_BUTTON_STYLE)
-        rotate_btn.clicked.connect(lambda: self._rotate(-90))
-        layout.addWidget(rotate_btn)
-
-        # Resize button
-        resize_btn = QtWidgets.QPushButton()
-        resize_btn.setIcon(_load_editor_icon("resize"))
-        resize_btn.setIconSize(QtCore.QSize(20, 20))
-        resize_btn.setToolTip(self._tr("editor_resize_title"))
-        resize_btn.setFixedSize(32, 28)
-        resize_btn.setStyleSheet(EDITOR_PUSH_BUTTON_STYLE)
-        resize_btn.clicked.connect(self._resize_image)
-        layout.addWidget(resize_btn)
+        # Group 3 — Modify
+        _add_tools([
+            ("mosaic", "tool_mosaic", "mosaic"),
+            ("crop", "tool_crop", "crop"),
+        ])
 
         layout.addStretch()
 
@@ -1511,29 +2190,12 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._redo_btn.setEnabled(False)
         layout.addWidget(self._redo_btn)
 
-        layout.addSpacing(4)
+        _add_sep()
 
-        # Copy to clipboard
-        copy_btn = QtWidgets.QPushButton()
-        copy_btn.setIcon(_load_editor_icon("copy"))
-        copy_btn.setIconSize(QtCore.QSize(20, 20))
-        copy_btn.setToolTip(self._tr("editor_copy"))
-        copy_btn.setFixedSize(32, 28)
-        copy_btn.setStyleSheet(EDITOR_PUSH_BUTTON_STYLE)
-        copy_btn.clicked.connect(self._copy_to_clipboard)
-        layout.addWidget(copy_btn)
-
-        layout.addSpacing(4)
-
-        # Save
-        save_btn = QtWidgets.QPushButton()
-        save_btn.setIcon(_load_editor_icon("save", QtGui.QColor("#ffffff")))
-        save_btn.setIconSize(QtCore.QSize(18, 18))
-        save_btn.setObjectName("editorSaveBtn")
-        save_btn.setShortcut("Ctrl+S")
-        save_btn.setStyleSheet(EDITOR_SAVE_BUTTON_STYLE)
-        save_btn.clicked.connect(self._save_as)
-        layout.addWidget(save_btn)
+        # Pan (navigation utility)
+        _add_tools([
+            ("pan", "tool_pan", "pan"),
+        ])
 
         return bar
 
@@ -1555,15 +2217,39 @@ class ImageEditorWindow(QtWidgets.QWidget):
         page_mosaic = self._make_options_page(["size"], "mosaic")
         self._options_stack.addWidget(page_mosaic)
 
-        # Page 4: Text options (font + size + color)
+        # Page 4: Crop tool — just a hint (buttons float below the image)
+        page_crop = QtWidgets.QWidget()
+        page_crop.setStyleSheet(EDITOR_OPTIONS_STYLE)
+        crop_layout = QtWidgets.QHBoxLayout(page_crop)
+        crop_layout.setContentsMargins(10, 2, 10, 2)
+        crop_instruction = QtWidgets.QLabel(self._tr("editor_crop_instruction"))
+        crop_instruction.setStyleSheet("color: #aaa; font-size: 11px; background: transparent;")
+        crop_layout.addWidget(crop_instruction)
+        crop_layout.addStretch()
+        self._options_stack.addWidget(page_crop)
+
+        # Page 5: Text options (font + size + color)
         page_text = self._make_options_page(["font", "font_size", "color"], "text")
         self._options_stack.addWidget(page_text)
 
-        # Page 5: Pan tool (no options)
+        # Page 6: Pan tool (no options)
         page_pan = QtWidgets.QWidget()
         self._options_stack.addWidget(page_pan)
 
-    PAGE_INDEX = {"brush": 0, "highlighter": 1, "eraser": 2, "mosaic": 3, "text": 4, "pan": 5}
+        # Page 7: Rectangle options (color + size)
+        page_rect = self._make_options_page(["color", "size"], "rectangle")
+        self._options_stack.addWidget(page_rect)
+
+        # Page 8: Ellipse options (color + size)
+        page_ellipse = self._make_options_page(["color", "size"], "ellipse")
+        self._options_stack.addWidget(page_ellipse)
+
+        # Page 9: Arrow options (color + size)
+        page_arrow = self._make_options_page(["color", "size"], "arrow")
+        self._options_stack.addWidget(page_arrow)
+
+    PAGE_INDEX = {"brush": 0, "highlighter": 1, "eraser": 2, "mosaic": 3, "crop": 4, "text": 5,
+                  "pan": 6, "rectangle": 7, "ellipse": 8, "arrow": 9}
 
     def _make_options_page(
         self, option_keys: list[str], tool_id: str
@@ -1643,14 +2329,13 @@ class ImageEditorWindow(QtWidgets.QWidget):
                 lbl = QtWidgets.QLabel(self._tr("editor_font") + ":")
                 lbl.setObjectName("optionLabel")
                 layout.addWidget(lbl)
-                combo = QtWidgets.QFontComboBox()
-                combo.setWritingSystem(QtGui.QFontDatabase.WritingSystem.Latin)
-                # Prefer a safe default that exists on all platforms
-                available = QtGui.QFontDatabase.families()
-                default_family = "Arial"  # universally available
-                if "Microsoft YaHei" in available:
-                    default_family = "Microsoft YaHei"
-                idx = combo.findText(default_family)
+                combo = _EditorFontComboBox()
+                combo.setWritingSystem(QtGui.QFontDatabase.WritingSystem.Any)
+                # Use the system default — safe everywhere
+                sys_family = QtGui.QFontDatabase.systemFont(
+                    QtGui.QFontDatabase.SystemFont.GeneralFont
+                ).family()
+                idx = combo.findText(sys_family)
                 if idx >= 0:
                     combo.setCurrentIndex(idx)
                 combo.setObjectName(f"fontCombo_{tool_id}")
@@ -1667,7 +2352,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
                 # Word-style preset sizes
                 _FONT_SIZES = ["8", "9", "10", "11", "12", "14", "16", "18",
                                "20", "24", "28", "36", "48", "72", "96", "144"]
-                combo = QtWidgets.QComboBox()
+                combo = _EditorComboBox()
                 combo.addItems(_FONT_SIZES)
                 combo.setEditable(True)  # allow typing custom sizes
                 combo.setCurrentText("24")
@@ -1688,16 +2373,73 @@ class ImageEditorWindow(QtWidgets.QWidget):
 
     def _create_status_bar(self) -> QtWidgets.QWidget:
         bar = QtWidgets.QWidget()
-        bar.setFixedHeight(28)
-        bar.setStyleSheet("background-color: #222; border-top: 1px solid rgba(255,255,255,10);")
+        bar.setFixedHeight(36)
+        bar.setStyleSheet("background-color: #1e1e1e; border-top: 1px solid rgba(255,255,255,8);")
         layout = QtWidgets.QHBoxLayout(bar)
-        layout.setContentsMargins(10, 0, 10, 0)
+        layout.setContentsMargins(12, 0, 10, 0)
+        layout.setSpacing(6)
 
         self._status_label = QtWidgets.QLabel()
         self._status_label.setObjectName("statusLabel")
         self._status_label.setStyleSheet(EDITOR_STATUS_STYLE)
         layout.addWidget(self._status_label)
         layout.addStretch()
+
+        # ── Copy button ──
+        copy_label = self._tr("editor_copy")
+        copy_btn = QtWidgets.QPushButton(f"  {copy_label}")
+        copy_btn.setIcon(_load_editor_icon("copy"))
+        copy_btn.setIconSize(QtCore.QSize(14, 14))
+        copy_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        copy_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: #2d2d2d;
+                border: 1px solid #3d3d3d;
+                border-radius: 13px;
+                padding: 4px 12px 4px 8px;
+                color: #bbb;
+                font-size: 12px;
+            }}
+            QPushButton:hover {{
+                background: #383838;
+                border-color: #4d4d4d;
+                color: #e0e0e0;
+            }}
+            QPushButton:pressed {{
+                background: #333;
+            }}
+        """)
+        copy_btn.clicked.connect(self._copy_to_clipboard)
+        layout.addWidget(copy_btn)
+
+        # ── Save button — same dark-pill base, green accent on the icon ──
+        save_label = self._tr("editor_save")
+        save_btn = QtWidgets.QPushButton(f"  {save_label}")
+        save_btn.setIcon(_load_editor_icon("save", QtGui.QColor("#5FC98A")))
+        save_btn.setIconSize(QtCore.QSize(14, 14))
+        save_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        save_btn.setShortcut("Ctrl+S")
+        save_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: #2d2d2d;
+                border: 1px solid #3d3d3d;
+                border-radius: 13px;
+                padding: 5px 14px 5px 8px;
+                color: #d0d0d0;
+                font-size: 12px;
+            }}
+            QPushButton:hover {{
+                background: #383838;
+                border-color: #4d4d4d;
+                color: #e8e8e8;
+            }}
+            QPushButton:pressed {{
+                background: #333;
+            }}
+        """)
+        save_btn.clicked.connect(self._save_as)
+        layout.addWidget(save_btn)
+
         # Zoom indicator
         self._zoom_label = QtWidgets.QLabel()
         self._zoom_label.setObjectName("zoomLabel")
@@ -1713,9 +2455,34 @@ class ImageEditorWindow(QtWidgets.QWidget):
             "highlighter": HighlighterTool(self),
             "eraser": EraserTool(self),
             "mosaic": MosaicTool(self),
+            "crop": CropTool(self),
             "text": TextTool(self),
+            "rectangle": ShapeTool(self, "rectangle"),
+            "ellipse": ShapeTool(self, "ellipse"),
+            "arrow": ArrowTool(self),
             "pan": PanTool(self),
         }
+
+    def _load_tool_preferences(self) -> None:
+        """Restore saved brush size & persisted tool colours from state."""
+        config_path = get_config_path()
+        # Brush size
+        try:
+            brush = self._tools.get("brush")
+            if brush:
+                brush.size = get_editor_brush_size(config_path)
+        except Exception:
+            pass
+        # Colours for draw / shape tools
+        for tool_id in ("brush", "highlighter", "rectangle", "ellipse", "arrow"):
+            try:
+                color = QtGui.QColor(get_editor_tool_color(tool_id, config_path))
+                tool = self._tools.get(tool_id)
+                if tool and hasattr(tool, "color"):
+                    color.setAlpha(tool.color.alpha())  # keep per-tool alpha
+                    tool.color = color
+            except Exception:
+                continue
 
     def _activate_tool(self, tool_id: str) -> None:
         if tool_id not in self._tools:
@@ -1736,11 +2503,20 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._sync_options_from_tool(tool_id)
         self._canvas.update()
 
+    def _effective_scale(self) -> float:
+        """Display scale that accounts for device pixel ratio.
+
+        At 100 % zoom (_scale = 1.0) this returns 1 / dpr so the image
+        occupies physical_px / dpr logical pixels — i.e. 1 image pixel
+        maps to exactly 1 screen physical pixel, matching pinned-image
+        behaviour on high-DPI displays.
+        """
+        return self._scale / self._dpr
+
     def _update_tool_cursor(self) -> None:
         """Update canvas cursor based on active tool and its size."""
         if self._active_tool and hasattr(self._active_tool, "size"):
-            # Size on screen = tool.size * scale
-            screen_size = int(self._active_tool.size * self._scale)
+            screen_size = int(self._active_tool.size * self._effective_scale())
             self._canvas.setCursor(_make_circle_cursor(screen_size))
 
     def _show_tool_options(self, option_keys: list[str]) -> None:
@@ -1804,6 +2580,8 @@ class ImageEditorWindow(QtWidgets.QWidget):
         color.setAlpha(tool.color.alpha())
         tool.color = color
         self._sync_options_from_tool(tool_id)
+        if tool_id in ("brush", "highlighter", "rectangle", "ellipse", "arrow"):
+            update_editor_tool_color(tool_id, color.name(), get_config_path())
         if tool_id == "text":
             tool._sync_widgets()
 
@@ -1818,6 +2596,8 @@ class ImageEditorWindow(QtWidgets.QWidget):
         if self._active_tool == tool:
             self._update_tool_cursor()
             
+        if tool_id == "brush":
+            update_editor_brush_size(value, get_config_path())
         if tool_id == "text":
             tool._sync_widgets()
 
@@ -1874,7 +2654,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
             return
         vw, vh = vp.width(), vp.height()
         pm = self._display_pixmap
-        scale = self._scale
+        scale = self._effective_scale()
         iw = int(pm.width() * scale)
         ih = int(pm.height() * scale)
 
@@ -1993,67 +2773,17 @@ class ImageEditorWindow(QtWidgets.QWidget):
 
     # ── Transform operations ──────────────────────────────────────────────
 
-    def _rotate(self, angle: float) -> None:
-        """Rotate the image and all annotations together."""
-        self._save_undo()
-        try:
-            old_w, old_h = self._pil_image.size
-            cx, cy = old_w / 2.0, old_h / 2.0  # rotation center
+    # ── Crop toolbar callbacks ───────────────────────────────────────────
 
-            # 1. Rotate base image
-            self._pil_image = self._pil_image.rotate(angle, expand=True, resample=Image.BICUBIC)
-            new_w, new_h = self._pil_image.size
+    def _on_crop_apply(self) -> None:
+        tool = self._tools.get("crop")
+        if tool and isinstance(tool, CropTool):
+            tool.apply_crop()
 
-            # 2. Rotate annotations layer
-            if self._annotations_pixmap and not self._annotations_pixmap.isNull():
-                annot_pil = _qpixmap_to_pil(self._annotations_pixmap)
-                annot_pil = annot_pil.rotate(angle, expand=True, resample=Image.BICUBIC)
-                self._annotations_pixmap = _pil_to_qpixmap(annot_pil)
-            else:
-                self._annotations_pixmap = QtGui.QPixmap(new_w, new_h)
-                self._annotations_pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-
-            # 3. Rotate overlay layer
-            if self._overlay_pixmap and not self._overlay_pixmap.isNull():
-                overlay_pil = _qpixmap_to_pil(self._overlay_pixmap)
-                overlay_pil = overlay_pil.rotate(angle, expand=True, resample=Image.BICUBIC)
-                self._overlay_pixmap = _pil_to_qpixmap(overlay_pil)
-            else:
-                self._overlay_pixmap = QtGui.QPixmap(new_w, new_h)
-                self._overlay_pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-
-            # 4. Transform text item positions
-            import math
-            rad = math.radians(angle)
-            cos_a, sin_a = math.cos(rad), math.sin(rad)
-            # Compute the offset from expand — same offset PIL applies
-            # PIL rotates around (0,0) then shifts by the expansion
-            # For a point at (px, py), rotation around center (cx, cy):
-            #   new_px = (px - cx)*cos_a - (py - cy)*sin_a + (new_w/2)
-            #   new_py = (px - cx)*sin_a + (py - cy)*cos_a + (new_h/2)
-            new_cx, new_cy = new_w / 2.0, new_h / 2.0
-            for item in self._text_items:
-                dx = item.img_pos.x() - cx
-                dy = item.img_pos.y() - cy
-                item.img_pos = QtCore.QPointF(
-                    dx * cos_a - dy * sin_a + new_cx,
-                    dx * sin_a + dy * cos_a + new_cy,
-                )
-
-            # 5. Update display
-            self._display_pixmap = _pil_to_qpixmap(self._pil_image)
-            self._resize_canvas()
-            self._center_image_on_canvas()
-            self._canvas.update()
-            self._update_status()
-            self._modified = True
-
-            # Update text tool widgets
-            text_tool = self._tools.get("text")
-            if text_tool:
-                text_tool._sync_widgets()
-        except Exception:
-            logger.exception("Rotate failed")
+    def _on_crop_cancel(self) -> None:
+        tool = self._tools.get("crop")
+        if tool and isinstance(tool, CropTool):
+            tool.cancel_crop()
 
     # ── Copy to clipboard ─────────────────────────────────────────────────
 
@@ -2090,224 +2820,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
             logger.exception("Copy to clipboard failed")
 
     # ── Resize ─────────────────────────────────────────────────────────────
-
-    def _resize_image(self) -> None:
-        """Open a resize dialog (Photoshop-style: type exact values, no spin arrows)."""
-        from ..config import get_last_save_directory, get_config_path
-
-        dlg = QtWidgets.QDialog(self)
-        dlg.setWindowTitle(self._tr("editor_resize_title"))
-        dlg.setFixedSize(360, 200)
-        dlg.setStyleSheet(
-            "QDialog { background: #2d2d2d; }"
-            "QLabel { color: #ccc; font-size: 12px; }"
-            "QLineEdit { background: #3a3a3a; color: #e0e0e0; border: 1px solid #555; border-radius: 4px; padding: 5px 8px; font-size: 13px; min-width: 90px; }"
-            "QCheckBox { color: #ccc; font-size: 12px; }"
-            "QPushButton { background: #3a3a3a; color: #ccc; border: 1px solid rgba(255,255,255,25); border-radius: 5px; padding: 6px 16px; font-size: 12px; }"
-            "QPushButton:hover { background: rgba(95,201,138,50); color: #fff; }"
-        )
-
-        layout = QtWidgets.QVBoxLayout(dlg)
-        layout.setContentsMargins(24, 20, 24, 20)
-        layout.setSpacing(12)
-
-        orig_w, orig_h = self._pil_image.size
-        aspect = orig_w / orig_h if orig_h > 0 else 1.0
-        self._resize_blocked = False  # guard against signal loops
-
-        # ── Width / Height row ──
-        wh_layout = QtWidgets.QHBoxLayout()
-        wh_layout.setSpacing(8)
-
-        w_lbl = QtWidgets.QLabel(self._tr("editor_resize_width"))
-        self._resize_w_edit = QtWidgets.QLineEdit(str(orig_w))
-        self._resize_w_edit.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-        wh_layout.addWidget(w_lbl)
-        wh_layout.addWidget(self._resize_w_edit)
-
-        # Linked chain button for aspect ratio
-        chain_locked_icon = _load_editor_icon("chain", QtGui.QColor("#5FC98A"))
-        chain_unlocked_icon = _load_editor_icon("chain", QtGui.QColor("#666666"))
-        self._resize_chain_btn = QtWidgets.QPushButton()
-        self._resize_chain_btn.setCheckable(True)
-        self._resize_chain_btn.setChecked(True)
-        self._resize_chain_btn.setFixedSize(32, 28)
-        self._resize_chain_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-        self._resize_chain_btn.setToolTip(self._tr("editor_resize_keep_aspect"))
-        self._resize_chain_btn.setStyleSheet(
-            "QPushButton { background: transparent; border: none; }"
-        )
-        self._resize_chain_btn.setIcon(chain_locked_icon)
-        self._resize_chain_btn.setIconSize(QtCore.QSize(20, 20))
-        self._resize_chain_btn.toggled.connect(
-            lambda checked: self._resize_chain_btn.setIcon(
-                chain_locked_icon if checked else chain_unlocked_icon
-            )
-        )
-        wh_layout.addWidget(self._resize_chain_btn)
-
-        h_lbl = QtWidgets.QLabel(self._tr("editor_resize_height"))
-        self._resize_h_edit = QtWidgets.QLineEdit(str(orig_h))
-        self._resize_h_edit.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-        wh_layout.addWidget(h_lbl)
-        wh_layout.addWidget(self._resize_h_edit)
-        layout.addLayout(wh_layout)
-
-        # ── Percent row ──
-        pct_layout = QtWidgets.QHBoxLayout()
-        pct_layout.setSpacing(8)
-        pct_lbl = QtWidgets.QLabel(self._tr("editor_resize_percent"))
-        self._resize_pct_edit = QtWidgets.QLineEdit("100")
-        self._resize_pct_edit.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-        self._resize_pct_edit.setFixedWidth(70)
-        pct_layout.addWidget(pct_lbl)
-        pct_layout.addWidget(self._resize_pct_edit)
-        pct_layout.addStretch()
-        layout.addLayout(pct_layout)
-
-        # ── Parse helpers ──
-        def get_w():
-            try: return max(1, int(self._resize_w_edit.text().strip()))
-            except ValueError: return orig_w
-
-        def get_h():
-            try: return max(1, int(self._resize_h_edit.text().strip()))
-            except ValueError: return orig_h
-
-        def get_pct():
-            try: return max(1, min(10000, int(self._resize_pct_edit.text().strip())))
-            except ValueError: return 100
-
-        def sync_h_from_w():
-            if self._resize_chain_btn.isChecked() and not self._resize_blocked:
-                self._resize_blocked = True
-                w = get_w()
-                self._resize_h_edit.setText(str(max(1, round(w / aspect))))
-                self._resize_pct_edit.setText(str(round(w / orig_w * 100)))
-                self._resize_blocked = False
-
-        def sync_w_from_h():
-            if self._resize_chain_btn.isChecked() and not self._resize_blocked:
-                self._resize_blocked = True
-                h = get_h()
-                self._resize_w_edit.setText(str(max(1, round(h * aspect))))
-                self._resize_pct_edit.setText(str(round(h / orig_h * 100)))
-                self._resize_blocked = False
-
-        def sync_wh_from_pct():
-            if not self._resize_blocked:
-                self._resize_blocked = True
-                pct = get_pct()
-                self._resize_w_edit.setText(str(max(1, round(orig_w * pct / 100))))
-                self._resize_h_edit.setText(str(max(1, round(orig_h * pct / 100))))
-                self._resize_blocked = False
-
-        def sync_pct_from_w():
-            if not self._resize_blocked:
-                self._resize_blocked = True
-                w = get_w()
-                self._resize_pct_edit.setText(str(round(w / orig_w * 100)))
-                self._resize_blocked = False
-
-        self._resize_w_edit.textChanged.connect(lambda t: (sync_h_from_w(), sync_pct_from_w()))
-        self._resize_h_edit.textChanged.connect(lambda t: sync_w_from_h())
-        self._resize_pct_edit.textChanged.connect(lambda t: sync_wh_from_pct())
-
-        # ── Buttons ──
-        btn_layout = QtWidgets.QHBoxLayout()
-        reset_btn = QtWidgets.QPushButton("Reset")
-        reset_btn.setStyleSheet(
-            "QPushButton { background: transparent; color: #999; border: 1px solid rgba(255,255,255,15); border-radius: 4px; padding: 5px 12px; font-size: 12px; }"
-            "QPushButton:hover { color: #ccc; border-color: rgba(255,255,255,30); }"
-        )
-        reset_btn.clicked.connect(
-            lambda: (
-                self._resize_w_edit.setText(str(orig_w)),
-                self._resize_h_edit.setText(str(orig_h)),
-                self._resize_pct_edit.setText("100"),
-            )
-        )
-        btn_layout.addWidget(reset_btn)
-        btn_layout.addStretch()
-        cancel_btn = QtWidgets.QPushButton("Cancel")
-        cancel_btn.clicked.connect(dlg.reject)
-        ok_btn = QtWidgets.QPushButton("OK")
-        ok_btn.setStyleSheet(
-            "QPushButton { background-color: #5FC98A; color: #fff; font-weight: 600; }"
-            "QPushButton:hover { background-color: #7ad9a0; }"
-        )
-        ok_btn.clicked.connect(dlg.accept)
-        btn_layout.addWidget(cancel_btn)
-        btn_layout.addWidget(ok_btn)
-        layout.addLayout(btn_layout)
-
-        if dlg.exec() != QtWidgets.QDialog.DialogCode.Accepted:
-            return
-
-        try:
-            new_w = max(1, int(self._resize_w_edit.text().strip()))
-        except ValueError:
-            new_w = orig_w
-        try:
-            new_h = max(1, int(self._resize_h_edit.text().strip()))
-        except ValueError:
-            new_h = orig_h
-        if new_w == orig_w and new_h == orig_h:
-            return
-
-        self._save_undo()
-        try:
-            orig_w, orig_h = self._pil_image.size
-            scale_x = new_w / orig_w
-            scale_y = new_h / orig_h
-
-            # 1. Resize base image
-            self._pil_image = self._pil_image.resize((new_w, new_h), Image.LANCZOS)
-
-            # 2. Scale annotations layer
-            if self._annotations_pixmap and not self._annotations_pixmap.isNull():
-                self._annotations_pixmap = self._annotations_pixmap.scaled(
-                    new_w, new_h,
-                    QtCore.Qt.AspectRatioMode.IgnoreAspectRatio,
-                    QtCore.Qt.TransformationMode.SmoothTransformation,
-                )
-            else:
-                self._annotations_pixmap = QtGui.QPixmap(new_w, new_h)
-                self._annotations_pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-
-            # 3. Scale overlay layer
-            if self._overlay_pixmap and not self._overlay_pixmap.isNull():
-                self._overlay_pixmap = self._overlay_pixmap.scaled(
-                    new_w, new_h,
-                    QtCore.Qt.AspectRatioMode.IgnoreAspectRatio,
-                    QtCore.Qt.TransformationMode.SmoothTransformation,
-                )
-            else:
-                self._overlay_pixmap = QtGui.QPixmap(new_w, new_h)
-                self._overlay_pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-
-            # 4. Scale text item positions and font sizes
-            for item in self._text_items:
-                item.img_pos = QtCore.QPointF(
-                    item.img_pos.x() * scale_x,
-                    item.img_pos.y() * scale_y,
-                )
-                item.font_size = max(1, round(item.font_size * min(scale_x, scale_y)))
-
-            # 5. Update display
-            self._display_pixmap = _pil_to_qpixmap(self._pil_image)
-            self._resize_canvas()
-            self._center_image_on_canvas()
-            self._canvas.update()
-            self._update_status()
-            self._modified = True
-
-            # Update text tool widgets
-            text_tool = self._tools.get("text")
-            if text_tool:
-                text_tool._sync_widgets()
-        except Exception:
-            logger.exception("Resize failed")
 
     # ── Status ────────────────────────────────────────────────────────────
 

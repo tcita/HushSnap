@@ -422,7 +422,7 @@ def _load_state_data(state_path=None):
 
 
 def _write_state_data(state_data, state_path=None):
-    """Write state data to disk as a minimal TOML file (no comments, not user-editable)."""
+    """Write state data to disk as a minimal TOML file."""
     if state_path is None:
         state_path = STATE_PATH
     engine = _normalize_ocr_engine(state_data.get("ocr_engine")) or OCR_ENGINE_PPOCR
@@ -432,8 +432,16 @@ def _write_state_data(state_data, state_path=None):
     lines = [
         f'ocr_engine = "{engine}"',
         f'ocr_font_size = {font_size}',
-        "",
     ]
+    # Persist any editor_* keys generically
+    for key, value in sorted(state_data.items()):
+        if not key.startswith("editor_"):
+            continue
+        if isinstance(value, int):
+            lines.append(f"{key} = {value}")
+        elif isinstance(value, str):
+            lines.append(f'{key} = "{value}"')
+    lines.append("")
     state_path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -624,6 +632,77 @@ def update_ocr_font_size(font_size, state_path=None):
         _write_state_data(state_data, state_path)
     except Exception as e:
         logger.error(f"Failed to update OCR font size in state: {e}")
+
+
+# ── Editor tool preferences (persisted across sessions) ────────────────────
+
+_EDITOR_BRUSH_SIZE_DEFAULT = 3
+
+# Default colors per tool — each tool has its own "personality"
+_EDITOR_TOOL_DEFAULTS: dict[str, dict[str, object]] = {
+    "brush":       {"color": "#5FC98A", "size": 3},
+    "highlighter": {"color": "#FFFF00"},
+    "rectangle":   {"color": "#FF4444"},
+    "ellipse":     {"color": "#FF4444"},
+    "arrow":       {"color": "#FF4444"},
+}
+
+
+def _editor_state_key(tool_id: str, suffix: str) -> str:
+    return f"editor_{tool_id}_{suffix}"
+
+
+def get_editor_brush_size(state_path=None) -> int:
+    """Read persisted brush size (kept for backward compat)."""
+    if state_path is None:
+        state_path = STATE_PATH
+    _ensure_default_state_exists(state_path)
+    state_data = _load_state_data(state_path)
+    size = state_data.get("editor_brush_size", _EDITOR_BRUSH_SIZE_DEFAULT)
+    if isinstance(size, int) and 1 <= size <= 50:
+        return size
+    return _EDITOR_BRUSH_SIZE_DEFAULT
+
+
+def update_editor_brush_size(size: int, state_path=None) -> None:
+    """Persist brush size."""
+    if state_path is None:
+        state_path = STATE_PATH
+    _ensure_default_state_exists(state_path)
+    try:
+        state_data = _load_state_data(state_path)
+        state_data["editor_brush_size"] = int(size)
+        _write_state_data(state_data, state_path)
+    except Exception as e:
+        logger.error(f"Failed to update editor brush size in state: {e}")
+
+
+def get_editor_tool_color(tool_id: str, state_path=None) -> str:
+    """Read persisted colour for *tool_id* from state file."""
+    if state_path is None:
+        state_path = STATE_PATH
+    _ensure_default_state_exists(state_path)
+    defaults = _EDITOR_TOOL_DEFAULTS.get(tool_id, {})
+    default_color = str(defaults.get("color", "#5FC98A"))
+    state_data = _load_state_data(state_path)
+    key = _editor_state_key(tool_id, "color")
+    color = state_data.get(key, default_color)
+    if isinstance(color, str) and color.startswith("#") and len(color) == 7:
+        return color
+    return default_color
+
+
+def update_editor_tool_color(tool_id: str, color: str, state_path=None) -> None:
+    """Persist *color* (hex string) for *tool_id* to state file."""
+    if state_path is None:
+        state_path = STATE_PATH
+    _ensure_default_state_exists(state_path)
+    try:
+        state_data = _load_state_data(state_path)
+        state_data[_editor_state_key(tool_id, "color")] = str(color)
+        _write_state_data(state_data, state_path)
+    except Exception as e:
+        logger.error(f"Failed to update editor {tool_id} color in state: {e}")
 
 
 def load_hotkey_setting():

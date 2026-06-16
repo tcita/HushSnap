@@ -134,6 +134,9 @@ UI_TEXT = {
         "tool_crop": "Crop",
         "tool_text": "Text",
         "tool_pan": "Hand",
+        "tool_rectangle": "Rectangle",
+        "tool_ellipse": "Ellipse",
+        "tool_arrow": "Arrow",
 
         "editor_undo": "Undo",
         "editor_redo": "Redo",
@@ -155,7 +158,9 @@ UI_TEXT = {
         "editor_font": "Font",
         "editor_font_size": "Font Size",
 
-        "editor_crop_instruction": "Drag to select region, Enter to confirm, Esc to cancel",
+        "editor_crop_instruction": "Drag handles to crop, Enter to confirm, Esc to cancel",
+        "editor_crop_confirm": "Crop",
+        "editor_crop_cancel": "Cancel",
         "editor_text_input_title": "Enter Text",
         "editor_text_prompt": "Text to draw on image:",
         "editor_modified_confirm": "Image has been modified. Discard changes?",
@@ -296,6 +301,9 @@ UI_TEXT = {
         "tool_crop": "裁剪",
         "tool_text": "文字",
         "tool_pan": "抓手",
+        "tool_rectangle": "矩形",
+        "tool_ellipse": "椭圆",
+        "tool_arrow": "箭头",
 
         "editor_undo": "撤销",
         "editor_redo": "重做",
@@ -317,7 +325,9 @@ UI_TEXT = {
         "editor_font": "字体",
         "editor_font_size": "字号",
 
-        "editor_crop_instruction": "拖动选择区域，回车确认，Esc取消",
+        "editor_crop_instruction": "拖拽控点裁剪，Enter 确认，Esc 取消",
+        "editor_crop_confirm": "裁剪",
+        "editor_crop_cancel": "取消",
         "editor_text_input_title": "输入文字",
         "editor_text_prompt": "要绘制到图片上的文字：",
         "editor_modified_confirm": "图片已修改，放弃更改？",
@@ -457,6 +467,9 @@ UI_TEXT = {
         "tool_crop": "裁剪",
         "tool_text": "文字",
         "tool_pan": "抓手",
+        "tool_rectangle": "矩形",
+        "tool_ellipse": "橢圓",
+        "tool_arrow": "箭頭",
 
         "editor_undo": "復原",
         "editor_redo": "重做",
@@ -478,7 +491,9 @@ UI_TEXT = {
         "editor_font": "字型",
         "editor_font_size": "字型大小",
 
-        "editor_crop_instruction": "拖曳選擇區域，Enter 確認，Esc 取消",
+        "editor_crop_instruction": "拖曳控點裁剪，Enter 確認，Esc 取消",
+        "editor_crop_confirm": "裁剪",
+        "editor_crop_cancel": "取消",
         "editor_text_input_title": "輸入文字",
         "editor_text_prompt": "要繪製到圖片上的文字：",
         "editor_modified_confirm": "圖片已修改，放棄更改？",
@@ -618,6 +633,9 @@ UI_TEXT = {
         "tool_crop": "切り抜き",
         "tool_text": "テキスト",
         "tool_pan": "手のひら",
+        "tool_rectangle": "矩形",
+        "tool_ellipse": "楕円",
+        "tool_arrow": "矢印",
 
         "editor_undo": "元に戻す",
         "editor_redo": "やり直し",
@@ -639,7 +657,9 @@ UI_TEXT = {
         "editor_font": "フォント",
         "editor_font_size": "フォントサイズ",
 
-        "editor_crop_instruction": "領域をドラッグして選択し、Enterで確定、Escでキャンセル",
+        "editor_crop_instruction": "ハンドルをドラッグしてクロップ、Enterで確定、Escでキャンセル",
+        "editor_crop_confirm": "クロップ",
+        "editor_crop_cancel": "キャンセル",
         "editor_text_input_title": "テキスト入力",
         "editor_text_prompt": "画像に描画するテキスト：",
         "editor_modified_confirm": "画像が変更されています。変更を破棄しますか？",

@@ -168,6 +168,7 @@ class Application(QtCore.QObject):
         self.hotkey_manager = None
         self.settings_controller = None
         self.idle_manager = None
+        self._editor_window = None  # active image-editor reference
 
     def run(self):
         """Execute the full application lifecycle."""
@@ -381,7 +382,9 @@ class Application(QtCore.QObject):
         """Open the lightweight image editor for the given PIL image."""
         try:
             from .ui.image_editor import show_image_editor
-            show_image_editor(pil_img, self.translate)
+            win = show_image_editor(pil_img, self.translate)
+            self._editor_window = win
+            win.destroyed.connect(lambda: setattr(self, '_editor_window', None))
         except Exception:
             self.logger.exception("Failed to open image editor")
 
@@ -432,6 +435,8 @@ class Application(QtCore.QObject):
             )
 
     def _init_idle_manager(self, tm, pm):
+        app_ref = self  # capture for the closure below
+
         class IdleMemoryManager(QtCore.QObject):
             def __init__(self, tm, pm, oc):
                 super().__init__()
@@ -445,8 +450,13 @@ class Application(QtCore.QObject):
                 self.check_timer.start(5000)
 
             def _is_truly_idle(self):
-                return (not self.tm._windows and not self.pm._windows 
-                        and not self.oc.is_busy() and not self.oc.has_visible_popups())
+                editor_active = (
+                    app_ref._editor_window is not None
+                    and app_ref._editor_window.isVisible()
+                )
+                return (not self.tm._windows and not self.pm._windows
+                        and not self.oc.is_busy() and not self.oc.has_visible_popups()
+                        and not editor_active)
 
             def _check_and_start(self):
                 if self._is_truly_idle():
