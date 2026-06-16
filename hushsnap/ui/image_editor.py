@@ -1186,7 +1186,7 @@ class EditorCanvas(QtWidgets.QWidget):
 # Preset color palette: 4 columns × 4 rows
 _SWATCH_COLORS = [
     # Row 1
-    ("#FF4444", "Red"),     ("#FF8800", "Orange"),  ("#FFDD00", "Yellow"),  ("#5FC98A", "Green"),
+    ("#FF4444", "Red"),     ("#FF8800", "Orange"),  ("#FFFF00", "Yellow"),  ("#5FC98A", "Green"),
     # Row 2
     ("#00CCCC", "Cyan"),    ("#4488FF", "Blue"),    ("#8844FF", "Purple"),  ("#FF44AA", "Pink"),
     # Row 3
@@ -1201,12 +1201,64 @@ _SWATCH_PAD = 4
 _SWATCH_GAP = 2
 
 
+class _ColorButton(QtWidgets.QPushButton):
+    """Custom circular color selection button with perfect anti-aliased rendering."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(26, 26)
+        self.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self._color = QtGui.QColor("#FFFFFF")
+        self._hovered = False
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
+
+    def setColor(self, color: QtGui.QColor) -> None:
+        self._color = color
+        self.update()
+
+    def enterEvent(self, event: QtCore.QEvent) -> None:
+        self._hovered = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event: QtCore.QEvent) -> None:
+        self._hovered = False
+        self.update()
+        super().leaveEvent(event)
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+
+        # Clear background area with transparent color to avoid any residual background garbage or artifacts
+        painter.setCompositionMode(QtGui.QPainter.CompositionMode.CompositionMode_Source)
+        painter.fillRect(self.rect(), QtCore.Qt.GlobalColor.transparent)
+        painter.setCompositionMode(QtGui.QPainter.CompositionMode.CompositionMode_SourceOver)
+
+        # Draw the perfectly circular color button
+        rect = QtCore.QRectF(self.rect()).adjusted(1.0, 1.0, -1.0, -1.0)
+        
+        # Solid fill color
+        painter.setBrush(QtGui.QBrush(self._color))
+        
+        # Border outline
+        if self._hovered:
+            # Hover state: border color is the brand green (#5FC98A)
+            pen = QtGui.QPen(QtGui.QColor("#5FC98A"), 2.0)
+        else:
+            # Normal state: border color is semi-transparent white (rgba(255,255,255,40))
+            pen = QtGui.QPen(QtGui.QColor(255, 255, 255, 102), 2.0)
+            
+        painter.setPen(pen)
+        painter.drawEllipse(rect)
+        painter.end()
+
+
 class _SwatchPopup(QtWidgets.QFrame):
     """Lightweight color swatch grid popup — replaces QColorDialog."""
 
     color_selected = QtCore.pyqtSignal(QtGui.QColor)
 
-    def __init__(self, parent: QtWidgets.QWidget):
+    def __init__(self, parent: QtWidgets.QWidget, alpha: int = 255):
         super().__init__(parent)
         self.setWindowFlags(
             QtCore.Qt.WindowType.Popup
@@ -1229,7 +1281,7 @@ class _SwatchPopup(QtWidgets.QFrame):
             border = "1px solid rgba(255,255,255,30)" if hex_color == "#FFFFFF" else "none"
             btn.setStyleSheet(
                 f"QPushButton {{"
-                f"  background-color: {hex_color};"
+                f"  background-color: rgba({r},{g},{b},{alpha});"
                 f"  border: {border}; border-radius: {_SWATCH_SIZE // 2}px;"
                 f"}}"
                 f"QPushButton:hover {{ border: 2px solid #fff; }}"
@@ -1527,17 +1579,9 @@ class ImageEditorWindow(QtWidgets.QWidget):
                 lbl = QtWidgets.QLabel(self._tr("editor_color") + ":")
                 lbl.setObjectName("optionLabel")
                 layout.addWidget(lbl)
-                btn = QtWidgets.QPushButton()
-                btn.setFixedSize(26, 26)
-                btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+                btn = _ColorButton()
                 btn.setToolTip(self._tr("editor_color"))
-                # Store ref by object name for retrieval
                 btn.setObjectName(f"colorBtn_{tool_id}")
-                btn.setStyleSheet(
-                    "QPushButton { border: 2px solid rgba(255,255,255,40); border-radius: 13px; }"
-                    "QPushButton:hover { border-color: #5FC98A; }"
-                )
-                # Connect to color dialog
                 btn.clicked.connect(lambda: self._pick_color(tool_id))
                 layout.addWidget(btn)
                 self._option_widgets[(tool_id, "colorBtn")] = btn
@@ -1713,12 +1757,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
         if hasattr(tool, "color"):
             btn = ow.get((tool_id, "colorBtn"))
             if btn:
-                c = tool.color
-                btn.setStyleSheet(
-                    f"QPushButton {{ background-color: rgba({c.red()},{c.green()},{c.blue()},{c.alpha()});"
-                    f"border: 2px solid rgba(255,255,255,40); border-radius: 13px; }}"
-                    f"QPushButton:hover {{ border-color: #5FC98A; }}"
-                )
+                btn.setColor(tool.color)
         # Size slider
         slider = ow.get((tool_id, "sizeSlider"))
         if slider and hasattr(tool, "size"):
@@ -1751,7 +1790,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
         if not tool or not hasattr(tool, "color"):
             return
         anchor = self._option_widgets.get((tool_id, "colorBtn"))
-        popup = _SwatchPopup(self)
+        popup = _SwatchPopup(self, alpha=tool.color.alpha())
         popup.color_selected.connect(
             lambda c, tid=tool_id: self._on_color_picked(tid, c)
         )
@@ -1761,6 +1800,8 @@ class ImageEditorWindow(QtWidgets.QWidget):
         tool = self._tools.get(tool_id)
         if not tool or not hasattr(tool, "color"):
             return
+        # Preserve existing alpha (opacity slider) — swatch only sets RGB
+        color.setAlpha(tool.color.alpha())
         tool.color = color
         self._sync_options_from_tool(tool_id)
         if tool_id == "text":
