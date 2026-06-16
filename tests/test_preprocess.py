@@ -51,7 +51,7 @@ def test_prepare_ocr_image(qapp, sample_pixmap):
     sample_pixmap.setDevicePixelRatio(2.0)
     prepared = prepare_ocr_image(sample_pixmap)
     assert prepared.devicePixelRatio() == 1.0
-    assert prepared.format() == QtGui.QImage.Format.Format_ARGB32
+    assert prepared.format() == QtGui.QImage.Format.Format_RGB32
 
 
 def test_run_minimal_pipeline(qapp, sample_pixmap):
@@ -60,7 +60,7 @@ def test_run_minimal_pipeline(qapp, sample_pixmap):
     result = run_minimal_pipeline(sample_pixmap, settings=settings)
 
     assert isinstance(result, OcrPreprocessResult)
-    assert result.image.format() == QtGui.QImage.Format.Format_ARGB32
+    assert result.image.format() == QtGui.QImage.Format.Format_RGB32
     assert result.resolved_scale_factor == 1.0
 
     step_keys = [step.key for step in result.applied_steps]

@@ -97,7 +97,7 @@ def test_ocr_service_receives_preprocessed_image(monkeypatch, sample_pixmap):
     assert captured["language_tag"] == "en-US"
     # OcrService preprocesses the pixmap — the engine should receive a QImage
     assert isinstance(captured["image"], QtGui.QImage)
-    assert captured["image"].format() == QtGui.QImage.Format.Format_ARGB32
+    assert captured["image"].format() == QtGui.QImage.Format.Format_RGB32
 
 
 def test_compose_text_from_result_keeps_chinese_tokens_intact():

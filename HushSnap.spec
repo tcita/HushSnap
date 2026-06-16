@@ -7,7 +7,9 @@ project_root = Path(spec_file).resolve().parent if spec_file else Path.cwd()
 
 from PyInstaller.utils.hooks import collect_data_files
 
-bundle_datas = [('hushsnap.ico', '.')] + collect_data_files('rapidocr')
+# Collect SVG icons — loaded via filesystem reads (open / QIcon path), not Python imports
+icons_glob = [str(f) for f in (project_root / 'hushsnap' / 'ui' / 'icons').glob('*.svg')]
+bundle_datas = [('hushsnap.ico', '.')] + collect_data_files('rapidocr') + [(f, 'hushsnap/ui/icons') for f in icons_glob]
 
 a = Analysis(
     ['HushSnap.py'],
@@ -46,7 +48,7 @@ a = Analysis(
         'PyQt6.QtNetwork', 'PyQt6.QtSql', 'PyQt6.QtWebEngine', 'PyQt6.QtQml',
         'PyQt6.QtQuick', 'PyQt6.QtMultimedia', 'PyQt6.QtBluetooth',
         'PyQt6.QtNfc', 'PyQt6.QtSerialPort', 'PyQt6.QtDesigner',
-        'PyQt6.QtHelp', 'PyQt6.QtTest', 'PyQt6.QtXml', 'PyQt6.QtSvg',
+        'PyQt6.QtHelp', 'PyQt6.QtTest', 'PyQt6.QtXml',
         'openvino', 'openvino_telemetry',
         'cv2.videoio', 'cv2.samples', 'PIL._avif',
         'hushsnap.benchmark',

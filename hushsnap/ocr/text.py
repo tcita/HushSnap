@@ -61,7 +61,10 @@ def normalize_token_text(token: str) -> str:
 
 
 def compose_default_line_text(line: OcrLine) -> str:
-    return cleanup_ocr_text_line((line.text or "").rstrip())
+    # Strip trailing spaces/tabs (OCR noise) but preserve \n paragraph markers
+    # placed by _separate_paragraphs.  normalize_ocr_text (finalize_text) handles
+    # full line-by-line cleanup after join.
+    return cleanup_ocr_text_line((line.text or "").rstrip(" \t"))
 
 
 def compose_spaced_line_text(line: OcrLine) -> str:
@@ -69,9 +72,9 @@ def compose_spaced_line_text(line: OcrLine) -> str:
 
 
 def compose_cjk_line_text(line: OcrLine) -> str:
-    # If it's already a pre-composed line with indentation (e.g. from PP-OCR layout)
-    # we just return it with trailing spaces removed.
-    return (line.text or "").rstrip()
+    # If it's already a pre-composed line with indentation (e.g. from PP-OCR layout),
+    # return with only spaces/tabs stripped — \n paragraph markers must survive.
+    return (line.text or "").rstrip(" \t")
 
 
 def normalize_ocr_text(text: str) -> str:

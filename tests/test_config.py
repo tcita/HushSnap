@@ -202,7 +202,7 @@ def test_config_migration_adds_missing_keys(tmp_path):
     # Default keys injected
     assert data["debug"] is True  # dev-mode default
     assert data["copy_image_to_clipboard"] is True
-    assert data["thumbnail_display_time"] == 10000
+    assert data["thumbnail_display_time"] == 12000
 
 
 def test_config_migration_does_not_overwrite_existing_keys(tmp_path):
