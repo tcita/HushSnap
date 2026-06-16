@@ -757,7 +757,7 @@ class MosaicTool(BaseTool):
                     bs = max(1, self.block_size)
                     small_w = max(1, region.width // bs)
                     small_h = max(1, region.height // bs)
-                    small = region.resize((small_w, small_h), Image.NEAREST)
+                    small = region.resize((small_w, small_h), Image.BILINEAR)
                     pixelated = small.resize(region.size, Image.NEAREST)
                     self._editor._pil_image.paste(pixelated, (x1, y1))
                     self._editor._rebuild_display()
@@ -1170,7 +1170,7 @@ class ShapeTool(BaseTool):
     def __init__(self, editor: "ImageEditorWindow", shape: str = "rectangle"):
         super().__init__(editor)
         self._shape = shape  # "rectangle" or "ellipse"
-        self._color = QtGui.QColor("#FF4444")
+        self._color = QtGui.QColor("#4488FF")
         self._size = 3
         self._start_pt: Optional[tuple[int, int]] = None
         self._end_pt: Optional[tuple[int, int]] = None
@@ -1261,7 +1261,7 @@ class ArrowTool(BaseTool):
 
     def __init__(self, editor: "ImageEditorWindow"):
         super().__init__(editor)
-        self._color = QtGui.QColor("#FF4444")
+        self._color = QtGui.QColor("#4488FF")
         self._size = 3
         self._start_pt: Optional[tuple[int, int]] = None
         self._end_pt: Optional[tuple[int, int]] = None
@@ -1429,7 +1429,7 @@ class TextTool(BaseTool):
             QtGui.QFontDatabase.SystemFont.GeneralFont
         ).family()
         self.font_size = 24
-        self.color = QtGui.QColor("#FFFFFF")
+        self.color = QtGui.QColor("#888888")
         
         self._dragging_item: Optional[TextItem] = None
         self._drag_offset = QtCore.QPointF()
@@ -1864,7 +1864,7 @@ class EditorCanvas(QtWidgets.QWidget):
         # Apply zoom factor (10% per step)
         factor = 1.10 if delta > 0 else 1.0 / 1.10
         new_scale = editor._scale * factor
-        new_scale = max(0.10, min(new_scale, 5.0))
+        new_scale = max(0.50, min(new_scale, 5.0))
         if abs(new_scale - editor._scale) < 0.001:
             event.accept()
             return
@@ -2385,8 +2385,8 @@ class ImageEditorWindow(QtWidgets.QWidget):
                 lbl.setObjectName("optionLabel")
                 layout.addWidget(lbl)
                 # Word-style preset sizes
-                _FONT_SIZES = ["8", "9", "10", "11", "12", "14", "16", "18",
-                               "20", "24", "28", "36", "48", "72", "96", "144"]
+                _FONT_SIZES = ["8", "10", "12", "14", "18",
+                               "24", "36", "48", "72"]
                 combo = _EditorComboBox()
                 combo.addItems(_FONT_SIZES)
                 combo.setEditable(True)  # allow typing custom sizes
