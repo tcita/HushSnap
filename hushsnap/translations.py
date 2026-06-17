@@ -137,9 +137,12 @@ UI_TEXT = {
         "tool_rectangle": "Rectangle",
         "tool_ellipse": "Ellipse",
         "tool_arrow": "Arrow",
+        "tool_line": "Line",
+        "tool_sequence": "Sequence",
 
         "editor_undo": "Undo",
         "editor_redo": "Redo",
+        "editor_reset": "Reset",
         "editor_save": "Save",
         "editor_save_as": "Save As...",
 
@@ -148,6 +151,8 @@ UI_TEXT = {
         "editor_opacity": "Opacity",
         "editor_font": "Font",
         "editor_font_size": "Font Size",
+        "editor_fill": "Fill",
+        "editor_double_arrow": "Double Arrow",
 
         "editor_crop_instruction": "Drag handles to crop, Enter to confirm, Esc to cancel",
         "editor_crop_confirm": "Crop",
@@ -286,9 +291,13 @@ UI_TEXT = {
         "tool_rectangle": "矩形",
         "tool_ellipse": "椭圆",
         "tool_arrow": "箭头",
+        "tool_line": "直线",
+        "tool_sequence": "序号",
 
         "editor_undo": "撤销",
+
         "editor_redo": "重做",
+        "editor_reset": "重置",
         "editor_save": "保存",
         "editor_save_as": "另存为...",
 
@@ -297,6 +306,8 @@ UI_TEXT = {
         "editor_opacity": "不透明度",
         "editor_font": "字体",
         "editor_font_size": "字号",
+        "editor_fill": "填充",
+        "editor_double_arrow": "双向箭头",
 
         "editor_crop_instruction": "拖拽控点裁剪，Enter 确认，Esc 取消",
         "editor_crop_confirm": "裁剪",
@@ -421,22 +432,26 @@ UI_TEXT = {
         "hotkey_kept_old": "{new_hotkey} 被佔用，已保持 {old_hotkey}",
 
         # Image Editor
-        "thumbnail_edit": "編輯",
+        "thumbnail_edit": "编辑",
 
-        "editor_title": "HushSnap 圖片編輯器",
-        "tool_brush": "畫筆",
-        "tool_highlighter": "螢光筆",
+        "editor_title": "HushSnap 图片编辑器",
+        "tool_brush": "画笔",
+        "tool_highlighter": "荧光笔",
         "tool_eraser": "橡皮擦",
-        "tool_mosaic": "馬賽克",
+        "tool_mosaic": "马赛克",
         "tool_crop": "裁剪",
         "tool_text": "文字",
         "tool_pan": "抓手",
         "tool_rectangle": "矩形",
-        "tool_ellipse": "橢圓",
-        "tool_arrow": "箭頭",
+        "tool_ellipse": "椭圆",
+        "tool_arrow": "箭头",
+        "tool_line": "直线",
+        "tool_sequence": "序号",
 
-        "editor_undo": "復原",
+        "editor_undo": "撤销",
+
         "editor_redo": "重做",
+        "editor_reset": "重置",
         "editor_save": "儲存",
         "editor_save_as": "另存為...",
 
@@ -445,6 +460,8 @@ UI_TEXT = {
         "editor_opacity": "不透明度",
         "editor_font": "字型",
         "editor_font_size": "字型大小",
+        "editor_fill": "填充",
+        "editor_double_arrow": "雙向箭頭",
 
         "editor_crop_instruction": "拖曳控點裁剪，Enter 確認，Esc 取消",
         "editor_crop_confirm": "裁剪",
@@ -582,9 +599,12 @@ UI_TEXT = {
         "tool_rectangle": "矩形",
         "tool_ellipse": "楕円",
         "tool_arrow": "矢印",
+        "tool_line": "直線",
+        "tool_sequence": "番号",
 
         "editor_undo": "元に戻す",
         "editor_redo": "やり直し",
+        "editor_reset": "リセット",
         "editor_save": "保存",
         "editor_save_as": "名前を付けて保存...",
 
@@ -593,6 +613,8 @@ UI_TEXT = {
         "editor_opacity": "不透明度",
         "editor_font": "フォント",
         "editor_font_size": "フォントサイズ",
+        "editor_fill": "塗りつぶし",
+        "editor_double_arrow": "両端矢印",
 
         "editor_crop_instruction": "ハンドルをドラッグしてクロップ、Enterで確定、Escでキャンセル",
         "editor_crop_confirm": "クロップ",

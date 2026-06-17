@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import io
+import math
 from abc import ABC, abstractmethod
 from enum import Enum
 from pathlib import Path
@@ -24,6 +25,13 @@ from .styles import BRAND_GREEN
 logger = logging.getLogger(__name__)
 
 # ── Style constants ──────────────────────────────────────────────────────────
+
+# Text annotation is always white fill + black outline (drawn as two passes:
+# the outline first, then the fill on top) so it stays readable on any
+# screenshot background without a user-chosen color. Text has no color picker.
+TEXT_FILL_COLOR = "#FFFFFF"
+TEXT_OUTLINE_COLOR = "#000000"
+TEXT_OUTLINE_WIDTH = 0.18  # as a fraction of font pixel size
 
 EDITOR_WINDOW_STYLE = """
 QWidget#editorWindow {
@@ -81,6 +89,33 @@ QPushButton:disabled {
     background-color: #333;
     color: #666;
     border-color: rgba(255, 255, 255, 10);
+}
+"""
+
+# Compact toggle button used inside the (38px-tall) options bar. The regular
+# tool-button style is too tall (min-height 28 + padding 5×2 + border 1×2 =
+# 40px) and gets clipped by the bar's bottom edge, leaving a borderless
+# "piano key" look. This variant keeps the same visual language but fits.
+EDITOR_OPTION_TOGGLE_STYLE = """
+QToolButton {
+    background-color: transparent;
+    border: 1px solid rgba(255, 255, 255, 25);
+    border-radius: 5px;
+    padding: 3px 8px;
+    color: #ccc;
+    font-size: 11px;
+    min-width: 24px;
+    min-height: 22px;
+}
+QToolButton:hover {
+    background-color: rgba(95, 201, 138, 50);
+    border-color: rgba(95, 201, 138, 120);
+    color: #fff;
+}
+QToolButton:checked {
+    background-color: rgba(95, 201, 138, 70);
+    border-color: #5FC98A;
+    color: #fff;
 }
 """
 
@@ -268,6 +303,50 @@ def _load_editor_icon(name: str, color: QtGui.QColor = QtGui.QColor("#ccc")) -> 
 
 
 # ── Helper functions ─────────────────────────────────────────────────────────
+
+def _draw_outlined_text(
+    painter: QtGui.QPainter,
+    pos: QtCore.QPointF,
+    text: str,
+    font: QtGui.QFont,
+) -> None:
+    """Draw text as a black outline with a white fill on top.
+
+    Uses a QPainterPath so the outline hugs the glyph shape (Qt has no native
+    stroke-text). Outline width scales with the font size. Always renders the
+    same way on screen and at export, so text stays readable on any background
+    without a user-chosen color.
+    """
+    painter.save()
+    painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+    painter.setRenderHint(QtGui.QPainter.RenderHint.TextAntialiasing)
+
+    path = QtGui.QPainterPath()
+    path.addText(pos, font, text)
+
+    # Calculate outline width based on pixel size
+    ps = font.pixelSize()
+    if ps <= 0:
+        # Fallback if pixelSize is not set (e.g. using points)
+        ps = QtGui.QFontInfo(font).pixelSize()
+    
+    outline_w = max(1.0, ps * TEXT_OUTLINE_WIDTH)
+    
+    # 1. Draw the black outline (stroke only)
+    outline_pen = QtGui.QPen(QtGui.QColor(TEXT_OUTLINE_COLOR), outline_w)
+    outline_pen.setJoinStyle(QtCore.Qt.PenJoinStyle.RoundJoin)
+    outline_pen.setCapStyle(QtCore.Qt.PenCapStyle.RoundCap)
+    painter.setPen(outline_pen)
+    painter.setBrush(QtGui.QBrush(QtCore.Qt.BrushStyle.NoBrush))
+    painter.drawPath(path)
+
+    # 2. Draw the white fill on top (fill only, no stroke)
+    painter.setPen(QtCore.Qt.PenStyle.NoPen)
+    painter.setBrush(QtGui.QBrush(QtGui.QColor(TEXT_FILL_COLOR)))
+    painter.drawPath(path)
+    
+    painter.restore()
+
 
 def _make_circle_cursor(size: int = 12) -> QtGui.QCursor:
     """Create a Photoshop-style circle cursor matching the brush size."""
@@ -505,7 +584,7 @@ class BrushTool(BaseTool):
 
     def __init__(self, editor: "ImageEditorWindow"):
         super().__init__(editor)
-        self._stroke_color = QtGui.QColor("#5FC98A")
+        self._stroke_color = QtGui.QColor("#4488FF")
         self._stroke_size = 3
         self._stroke_pixmap: Optional[QtGui.QPixmap] = None
         self._stroke_path: Optional[QtGui.QPainterPath] = None
@@ -561,7 +640,7 @@ class HighlighterTool(BaseTool):
     def __init__(self, editor: "ImageEditorWindow"):
         super().__init__(editor)
         self._stroke_color = QtGui.QColor(255, 255, 0, 80)
-        self._stroke_size = 20
+        self._stroke_size = 24
         self._stroke_pixmap: Optional[QtGui.QPixmap] = None
         self._stroke_path: Optional[QtGui.QPainterPath] = None
 
@@ -615,7 +694,7 @@ class EraserTool(BaseTool):
 
     def __init__(self, editor: "ImageEditorWindow"):
         super().__init__(editor)
-        self._stroke_size = 20
+        self._stroke_size = 24
         self._last_point: Optional[tuple[int, int]] = None
 
     @property
@@ -685,7 +764,7 @@ class MosaicTool(BaseTool):
 
     def __init__(self, editor: "ImageEditorWindow"):
         super().__init__(editor)
-        self.block_size = 10
+        self.block_size = 12
         self._start_point: Optional[tuple[int, int]] = None
         self._current_point: Optional[tuple[int, int]] = None
 
@@ -1173,9 +1252,13 @@ class ShapeTool(BaseTool):
 
     def __init__(self, editor: "ImageEditorWindow", shape: str = "rectangle"):
         super().__init__(editor)
-        self._shape = shape  # "rectangle" or "ellipse"
+        self._shape = shape  # "rectangle", "ellipse", or "line"
         self._color = QtGui.QColor("#4488FF")
         self._size = 3
+        self._fill = False
+        # Line-only: optional arrowhead(s) at the end(s)
+        self._arrow_end = False
+        self._double_arrow = False
         self._start_pt: Optional[tuple[int, int]] = None
         self._end_pt: Optional[tuple[int, int]] = None
 
@@ -1187,6 +1270,18 @@ class ShapeTool(BaseTool):
     def size(self) -> int: return self._size
     @size.setter
     def size(self, v: int): self._size = v
+    @property
+    def fill(self) -> bool: return self._fill
+    @fill.setter
+    def fill(self, v: bool): self._fill = v
+    @property
+    def arrow_end(self) -> bool: return self._arrow_end
+    @arrow_end.setter
+    def arrow_end(self, v: bool): self._arrow_end = v
+    @property
+    def double_arrow(self) -> bool: return self._double_arrow
+    @double_arrow.setter
+    def double_arrow(self, v: bool): self._double_arrow = v
 
     def tool_id(self) -> str:
         return self._shape
@@ -1247,28 +1342,78 @@ class ShapeTool(BaseTool):
         )
         painter = QtGui.QPainter(target)
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        
         pen = QtGui.QPen(self._color, self._size,
                          QtCore.Qt.PenStyle.SolidLine,
                          QtCore.Qt.PenCapStyle.SquareCap,
                          QtCore.Qt.PenJoinStyle.MiterJoin)
         painter.setPen(pen)
-        painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+        
+        if self._fill:
+            painter.setBrush(QtGui.QBrush(self._color))
+        else:
+            painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+            
         if self._shape == "rectangle":
             painter.drawRect(rect)
-        else:
+        elif self._shape == "ellipse":
             painter.drawEllipse(rect)
+        elif self._shape == "line":
+            # Lines look better with round caps; arrows are optional
+            line_pen = QtGui.QPen(self._color, self._size,
+                                  QtCore.Qt.PenStyle.SolidLine,
+                                  QtCore.Qt.PenCapStyle.RoundCap,
+                                  QtCore.Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(line_pen)
+            painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+            painter.drawLine(QtCore.QPointF(x1, y1), QtCore.QPointF(x2, y2))
+            if self._arrow_end:
+                self._draw_arrowheads(painter, x1, y1, x2, y2)
         painter.end()
 
+    def _draw_arrowheads(
+        self, painter: QtGui.QPainter,
+        x1: float, y1: float, x2: float, y2: float,
+    ) -> None:
+        """Draw arrowhead triangle(s) at the line end(s)."""
+        dx, dy = x2 - x1, y2 - y1
+        line_len = math.hypot(dx, dy)
+        if line_len < 1:
+            return
+        angle = math.atan2(dy, dx)
+        arrow_len = max(10.0, self._size * 4.0)
+        spread = 0.45  # radians (~26°)
 
-class ArrowTool(BaseTool):
-    """Draw arrows with an arrowhead on the annotations layer."""
+        def _head(px2: float, py2: float, angle_dir: float) -> None:
+            px = px2 - arrow_len * math.cos(angle_dir - spread)
+            py = py2 - arrow_len * math.sin(angle_dir - spread)
+            qx = px2 - arrow_len * math.cos(angle_dir + spread)
+            qy = py2 - arrow_len * math.sin(angle_dir + spread)
+            painter.setPen(QtCore.Qt.PenStyle.NoPen)
+            painter.setBrush(QtGui.QBrush(self._color))
+            painter.drawPolygon(QtGui.QPolygonF([
+                QtCore.QPointF(px2, py2),
+                QtCore.QPointF(px, py),
+                QtCore.QPointF(qx, qy),
+            ]))
+
+        _head(x2, y2, angle)
+        if self._double_arrow:
+            _head(x1, y1, angle + math.pi)
+
+
+class SequenceTool(BaseTool):
+    """Draw numbered step bubbles (①, ②, ③...)."""
 
     def __init__(self, editor: "ImageEditorWindow"):
         super().__init__(editor)
+        # Stroke color — the bubble is white-filled with a colored ring, so the
+        # color only tints the outline. Blue keeps the default calm and on-family
+        # with the other annotation tools; reach for red/orange via the palette
+        # when a louder cue is wanted.
         self._color = QtGui.QColor("#4488FF")
-        self._size = 3
-        self._start_pt: Optional[tuple[int, int]] = None
-        self._end_pt: Optional[tuple[int, int]] = None
+        self._size = 28 # Circle diameter
+        self._current_step = 1
 
     @property
     def color(self) -> QtGui.QColor: return self._color
@@ -1280,96 +1425,64 @@ class ArrowTool(BaseTool):
     def size(self, v: int): self._size = v
 
     def tool_id(self) -> str:
-        return "arrow"
+        return "sequence"
 
     def on_activate(self) -> None:
-        self._editor._canvas.setCursor(QtCore.Qt.CursorShape.CrossCursor)
+        self._editor._canvas.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
 
     def on_mouse_press(self, canvas, event) -> bool:
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
             self._editor._save_undo(UndoChangeType.ANNOTATIONS)
-            self._start_pt = self._to_image_coords(canvas, event.position().toPoint())
-            self._end_pt = self._start_pt
-            return True
-        return False
-
-    def on_mouse_move(self, canvas, event) -> bool:
-        if self._start_pt is not None and (
-            event.buttons() & QtCore.Qt.MouseButton.LeftButton
-        ):
-            self._end_pt = self._to_image_coords(canvas, event.position().toPoint())
-            self._redraw_overlay()
-            canvas.update()
-            return True
-        return False
-
-    def on_mouse_release(self, canvas, event) -> bool:
-        if event.button() == QtCore.Qt.MouseButton.LeftButton and self._start_pt is not None:
-            self._editor._overlay_pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-            self._draw_arrow(self._editor._annotations_pixmap)
+            img_pt = self._to_image_coords(canvas, event.position().toPoint())
+            # Bake directly onto the annotations layer — simple and keeps
+            # numbering sequential without a separate item type.
+            self._draw_step(self._editor._annotations_pixmap, img_pt)
+            self._current_step += 1
             self._editor._modified = True
-            self._start_pt = None
-            self._end_pt = None
             canvas.update()
             return True
         return False
 
-    def on_key_press(self, canvas, event) -> bool:
-        if event.key() == QtCore.Qt.Key.Key_Escape:
-            self._start_pt = None
-            self._end_pt = None
-            self._editor._overlay_pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-            canvas.update()
-            return True
-        return False
+    def _draw_step(self, target: QtGui.QPixmap, pt: tuple[int, int]) -> None:
+        """White-filled bubble with a colored ring and dark number text.
 
-    def _redraw_overlay(self) -> None:
-        self._editor._overlay_pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-        self._draw_arrow(self._editor._overlay_pixmap)
-
-    def _draw_arrow(self, target: QtGui.QPixmap) -> None:
-        if self._start_pt is None or self._end_pt is None:
-            return
-        import math
-        x1, y1 = self._start_pt
-        x2, y2 = self._end_pt
-
+        White fill + near-black text (~16:1 contrast) stays legible on any
+        screenshot background; the colored ring carries the user-chosen hue.
+        """
         painter = QtGui.QPainter(target)
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.TextAntialiasing)
 
-        # Line
-        pen = QtGui.QPen(self._color, self._size,
-                         QtCore.Qt.PenStyle.SolidLine,
-                         QtCore.Qt.PenCapStyle.RoundCap,
-                         QtCore.Qt.PenJoinStyle.RoundJoin)
-        painter.setPen(pen)
-        painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
-        painter.drawLine(QtCore.QPointF(x1, y1), QtCore.QPointF(x2, y2))
+        cx, cy = pt
+        r = self._size / 2.0
 
-        # Arrowhead (only if line has length)
-        dx, dy = x2 - x1, y2 - y1
-        line_len = math.hypot(dx, dy)
-        if line_len < 1:
-            painter.end()
-            return
+        # Ring stroke width scales with bubble size, clamped for crispness.
+        ring_w = max(2.0, self._size * 0.12)
 
-        angle = math.atan2(dy, dx)
-        arrow_len = max(10.0, self._size * 4.0)
-        spread = 0.45  # radians (~26°)
-
-        px = x2 - arrow_len * math.cos(angle - spread)
-        py = y2 - arrow_len * math.sin(angle - spread)
-        qx = x2 - arrow_len * math.cos(angle + spread)
-        qy = y2 - arrow_len * math.sin(angle + spread)
-
+        # White fill
         painter.setPen(QtCore.Qt.PenStyle.NoPen)
-        painter.setBrush(QtGui.QBrush(self._color))
-        arrowhead = QtGui.QPolygonF([
-            QtCore.QPointF(x2, y2),
-            QtCore.QPointF(px, py),
-            QtCore.QPointF(qx, qy),
-        ])
-        painter.drawPolygon(arrowhead)
+        painter.setBrush(QtGui.QBrush(QtGui.QColor("#FFFFFF")))
+        painter.drawEllipse(QtCore.QPointF(cx, cy), r, r)
+
+        # Colored ring (drawn slightly inset so the antialiased edge sits on
+        # the white fill, not the transparent surroundings).
+        ring_pen = QtGui.QPen(self._color, ring_w)
+        ring_pen.setCapStyle(QtCore.Qt.PenCapStyle.RoundCap)
+        painter.setPen(ring_pen)
+        painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+        painter.drawEllipse(QtCore.QPointF(cx, cy), r - ring_w / 2.0, r - ring_w / 2.0)
+
+        # Dark number — near-black for max contrast against the white fill.
+        font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.SystemFont.GeneralFont)
+        font.setBold(True)
+        font.setPixelSize(int(self._size * 0.6))
+        painter.setFont(font)
+        painter.setPen(QtGui.QPen(QtGui.QColor("#222222")))
+        painter.drawText(
+            QtCore.QRectF(cx - r, cy - r, self._size, self._size),
+            QtCore.Qt.AlignmentFlag.AlignCenter,
+            str(self._current_step),
+        )
         painter.end()
 
 
@@ -1433,7 +1546,9 @@ class TextTool(BaseTool):
             QtGui.QFontDatabase.SystemFont.GeneralFont
         ).family()
         self.font_size = 24
-        self.color = QtGui.QColor("#888888")
+        # Text always renders as white-fill + black-outline for universal
+        # legibility; the color picker is disabled for this tool.
+        self.color = QtGui.QColor("#FFFFFF")
         
         self._dragging_item: Optional[TextItem] = None
         self._drag_offset = QtCore.QPointF()
@@ -1454,6 +1569,10 @@ class TextTool(BaseTool):
         if event.button() != QtCore.Qt.MouseButton.LeftButton:
             return False
         
+        # Explicitly take focus to the canvas first, so the system doesn't
+        # steal it back from our inline editor after we create it.
+        canvas.setFocus()
+
         # 1. Close active editor if clicking elsewhere
         if self._editing_widget:
             self._editing_widget.commit_edit()
@@ -1494,7 +1613,10 @@ class TextTool(BaseTool):
             self._dragging_item = None
             canvas.setCursor(QtCore.Qt.CursorShape.IBeamCursor)
             return True
-        return False
+        # Return True even if not dragging to prevent the canvas from
+        # stealing focus (e.g. on mouse release) after we just spawned 
+        # an inline editor.
+        return True
 
     def on_mouse_double_click(self, canvas, event) -> bool:
         if event.button() != QtCore.Qt.MouseButton.LeftButton:
@@ -1515,24 +1637,28 @@ class TextTool(BaseTool):
         # Test in reverse order (top items first)
         for i in range(len(self._editor._text_items)-1, -1, -1):
             item = self._editor._text_items[i]
-            if not item.text: continue
+            if not item.text:
+                continue
             
-            # Calculate bounding box in screen space.
-            # Use setPixelSize (not QFont(family, pt)) so the on-screen
-            # hit box matches the px-based export bake — font_size is in
-            # image pixels throughout the editor.
             fs = max(1, int(item.font_size * scale))
             font = QtGui.QFont(item.font_family)
             font.setPixelSize(fs)
             metrics = QtGui.QFontMetrics(font)
-            rect = metrics.boundingRect(item.text)
+            
+            # Use horizontalAdvance for width and height() for vertical span
+            tw = metrics.horizontalAdvance(item.text)
+            th = metrics.height()
             
             screen_x = item.img_pos.x() * scale + offset.x()
             screen_y = item.img_pos.y() * scale + offset.y()
             
-            item_rect = QtCore.QRect(int(screen_x), int(screen_y), 
-                                      rect.width() + 10, rect.height() + 10)
-            if item_rect.contains(screen_pos.toPoint()):
+            # Create a hit box that covers the text plus some padding.
+            # Text starts at screen_x and spans tw.
+            # Vertically, it starts at screen_y and spans th.
+            hit_rect = QtCore.QRect(int(screen_x), int(screen_y), int(tw), int(th))
+            hit_rect.adjust(-5, -5, 5, 5) # 5px padding for easier grabbing
+            
+            if hit_rect.contains(screen_pos.toPoint()):
                 return i
         return -1
 
@@ -1549,7 +1675,9 @@ class TextTool(BaseTool):
 
         self._editing_widget = _InlineTextEditor(canvas, self, item)
         self._editing_widget.show()
-        self._editing_widget.setFocus()
+        # Use a singleShot to ensure focus is set after the current event chain
+        # completes, preventing focus loss during the mouse press/release cycle.
+        QtCore.QTimer.singleShot(0, self._editing_widget.setFocus)
         canvas.update()
 
     def _sync_widgets(self) -> None:
@@ -1597,38 +1725,69 @@ class TextTool(BaseTool):
         return None
 
 
-class _InlineTextEditor(QtWidgets.QLineEdit):
-    """Temporary editor widget that appears only during text entry."""
+class _InlineTextEditor(QtWidgets.QWidget):
+    """Temporary stroked-text editor that appears during text entry.
+
+    A hidden QLineEdit owns all input logic (typing, IME, clipboard, cursor
+    movement); this widget paints the result as white-fill + black-outline
+    text plus a blinking caret, so what the user types already matches the
+    committed look. The text is positioned at the item's image-space point,
+    identical to where it renders after commit.
+    """
 
     def __init__(self, parent: QtWidgets.QWidget, tool: "TextTool", item: TextItem):
         super().__init__(parent)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        # Ensure it stays on top and handles its own focus
+        self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
+        
         self._tool = tool
         self._item = item
         self._before_edit_text = item.text
-        
-        self.setText(item.text)
-        self.setFrame(False)
-        # Apply the font (via stylesheet) BEFORE measuring, so the initial
-        # box size reflects font_size. _update_geometry reads fontMetrics(),
-        # which only carries the item's font size once _apply_style has run
-        # — doing it in the other order leaves the box at the default font
-        # size on first spawn (e.g. 200px text opened in a tiny box).
+        self._birth_time = QtCore.QElapsedTimer()
+        self._birth_time.start()
+
+        # Hidden input engine — transparent in every respect, keeps keyboard
+        # focus so IME / dead keys / paste all work for free.
+        self._input = QtWidgets.QLineEdit(self)
+        self._input.setText(item.text)
+        self._input.setFrame(False)
+        self._input.setStyleSheet(
+            "QLineEdit { background: transparent; border: none; color: transparent;"
+            "padding: 0; }"
+        )
+        self._input.textChanged.connect(self._on_text_changed)
+        self._input.returnPressed.connect(self.commit_edit)
+        # Give it some size so it can receive focus reliably
+        self._input.resize(20, 20)
+        self._input.lower()
+
+        self._cursor_visible = True
+        self._cursor_timer = QtCore.QTimer(self)
+        self._cursor_timer.setInterval(530)
+        self._cursor_timer.timeout.connect(self._blink_cursor)
+        self._cursor_timer.start()
+
+        self._committed = False  # guards against double commit (Return + focusOut)
         self._apply_style()
         self._update_geometry()
 
-        self.textChanged.connect(self._on_text_changed)
+    # ── Public API used by TextTool / canvas ──────────────────────────────
+
+    @property
+    def _text(self) -> str:
+        return self._input.text()
+
+    def text(self) -> str:  # noqa: D401 — kept for call-site compatibility
+        return self._input.text()
+
+    def setText(self, t: str) -> None:
+        self._input.setText(t)
 
     def _apply_style(self) -> None:
-        scale = self._tool._editor._effective_scale()
-        fs = max(10, int(self._item.font_size * scale))
-        ff = self._item.font_family
-        color = self._item.color.name()
-        self.setStyleSheet(
-            f"QLineEdit {{ background: rgba(30,30,30,180); border: 1px solid #5FC98A;"
-            f"border-radius: 2px; color: {color}; padding: 2px 4px;"
-            f"font-size: {fs}px;"
-            f"selection-background-color: #5FC98A; }}"
-        )
+        # No stylesheet styling needed; we paint everything ourselves.
+        # Exists for compatibility with the TextTool._sync_widgets path.
+        self.update()
 
     def _update_geometry(self) -> None:
         canvas = self.parentWidget()
@@ -1638,29 +1797,128 @@ class _InlineTextEditor(QtWidgets.QLineEdit):
         screen_x = self._item.img_pos.x() * scale + offset.x()
         screen_y = self._item.img_pos.y() * scale + offset.y()
 
-        # Measure with the item's font explicitly. self.fontMetrics() is
-        # unreliable during __init__ — the stylesheet font-size hasn't been
-        # polished yet, so it returns the default font and the spawn box
-        # ignores font_size. Building QFontMetrics from the item's size
-        # makes both the init and the _sync_widgets paths correct.
-        fs = max(10, int(self._item.font_size * scale))
+        fs = max(1, int(self._item.font_size * scale))
         mfont = QtGui.QFont(self._item.font_family)
         mfont.setPixelSize(fs)
         fm = QtGui.QFontMetrics(mfont)
-        # Scale minimum size and padding with zoom so the widget grows /
-        # shrinks in proportion to the image, not in absolute pixels.
+
+        # Calculate outline width to ensure padding is sufficient
+        outline_w = max(1.0, fs * TEXT_OUTLINE_WIDTH)
+        
+        # Keep the editor wide enough for the current text plus room to type,
+        # and tall enough for the full line height + a little descender slack.
         min_w = int(100 * scale)
-        pad_w = int(20 * scale)
-        pad_h = int(10 * scale)
-        w = max(min_w, fm.horizontalAdvance(self.text()) + pad_w)
-        h = fm.height() + pad_h
-        self.setGeometry(int(screen_x), int(screen_y), int(w), int(h))
+        pad_w = max(8, int(20 * scale))
+        # Add extra padding for the outline to avoid clipping
+        pad_top = int(outline_w / 2) + 2
+        pad_h = fm.height() + int(outline_w) + 4
+        
+        w = max(min_w, fm.horizontalAdvance(self._input.text()) + pad_w)
+        h = pad_h
+        
+        # Adjust geometry so the text aligns correctly despite padding
+        self.setGeometry(int(screen_x), int(screen_y - pad_top), int(w), int(h))
 
     def _on_text_changed(self) -> None:
         self._update_geometry()
+        self.update()
+
+    def _blink_cursor(self) -> None:
+        self._cursor_visible = not self._cursor_visible
+        self.update()
+
+    # ── Painting ─────────────────────────────────────────────────────────
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.TextAntialiasing)
+
+        # Draw a more visible background and border to indicate the active typing area
+        painter.setPen(QtGui.QPen(QtGui.QColor(BRAND_GREEN), 1.0))
+        painter.setBrush(QtGui.QBrush(QtGui.QColor(255, 255, 255, 30)))
+        painter.drawRoundedRect(self.rect().adjusted(0, 0, -1, -1), 3, 3)
+
+        scale = self._tool._editor._effective_scale()
+        fs = max(1, int(self._item.font_size * scale))
+        font = QtGui.QFont(self._item.font_family)
+        font.setPixelSize(fs)
+        fm = QtGui.QFontMetrics(font)
+
+        # Account for the top padding in the geometry
+        outline_w = max(1.0, fs * TEXT_OUTLINE_WIDTH)
+        pad_top = int(outline_w / 2) + 2
+        
+        text = self._input.text()
+        # Baseline sits at ascent + padding
+        baseline = QtCore.QPointF(0, fm.ascent() + pad_top)
+        if text:
+            _draw_outlined_text(painter, baseline, text, font)
+
+        # Blinking caret at the current input cursor position.
+        if self._cursor_visible:
+            pos = self._input.cursorPosition()
+            prefix = text[:pos]
+            cx = fm.horizontalAdvance(prefix)
+            caret_h = fm.ascent() + fm.descent()
+            caret_w = max(2.0, fs * 0.05)
+            
+            # Draw caret with a thin dark outline for visibility on all backgrounds
+            painter.setPen(QtGui.QPen(QtGui.QColor(0, 0, 0, 150), 0.5))
+            painter.setBrush(QtGui.QBrush(QtGui.QColor(255, 255, 255)))
+            painter.drawRect(QtCore.QRectF(cx, pad_top, caret_w, caret_h))
+
+    # ── Input routing ────────────────────────────────────────────────────
+
+    def focusInEvent(self, e: QtGui.QFocusEvent) -> None:
+        self._input.setFocus()
+        super().focusInEvent(e)
+
+    def keyPressEvent(self, e: QtGui.QKeyEvent) -> None:
+        if self._committed:
+            return
+        if e.key() == QtCore.Qt.Key.Key_Escape:
+            self._input.setText(self._before_edit_text)
+            self.commit_edit()
+            e.accept()
+            return
+        # Everything else (including Return, handled via returnPressed) goes to
+        # the hidden QLineEdit so IME / editing keys behave natively.
+        self._input.keyPressEvent(e)
+        if self._committed:
+            return
+        # Restart the blink on any key so the caret stays solid while typing.
+        self._cursor_visible = True
+        self._cursor_timer.start()
+        self.update()
+
+    def inputMethodEvent(self, e: QtGui.QInputMethodEvent) -> None:
+        # Forward IME composition to the hidden field.
+        self._input.inputMethodEvent(e)
+
+    def inputMethodQuery(self, query: QtCore.Qt.InputMethodQuery) -> object:
+        return self._input.inputMethodQuery(query)
+
+    def focusOutEvent(self, e: QtGui.QFocusEvent) -> None:
+        # Prevent immediate deletion if focus is lost right after creation
+        # (e.g. due to the mouse release event on the canvas).
+        if not self._input.text().strip() and not self._before_edit_text:
+            if self._birth_time.elapsed() < 300:
+                # Still very young, likely a focus glitch; keep it alive.
+                # Use a singleShot to try to reclaim focus.
+                QtCore.QTimer.singleShot(10, self._input.setFocus)
+                return
+        
+        self.commit_edit()
+        super().focusOutEvent(e)
 
     def commit_edit(self) -> None:
-        txt = self.text().strip()
+        if self._committed:
+            return
+        self._committed = True
+        if self._cursor_timer.isActive():
+            self._cursor_timer.stop()
+        txt = self._input.text().strip()
         if txt:
             self._item.text = txt
             self._tool._mark_modified()
@@ -1669,27 +1927,13 @@ class _InlineTextEditor(QtWidgets.QLineEdit):
             if self._item in self._tool._editor._text_items:
                 self._tool._editor._text_items.remove(self._item)
         else:
-            # Existing item cleared -> revert or remove? WeChat reverts.
+            # Existing item cleared -> revert (WeChat-style).
             self._item.text = self._before_edit_text
-            
+
         self._tool._editing_widget = None
         self.parentWidget().update()
         self.deleteLater()
 
-    def keyPressEvent(self, e: QtGui.QKeyEvent) -> None:
-        if e.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter):
-            self.commit_edit()
-            e.accept()
-        elif e.key() == QtCore.Qt.Key.Key_Escape:
-            self.setText(self._before_edit_text)
-            self.commit_edit()
-            e.accept()
-        else:
-            super().keyPressEvent(e)
-
-    def focusOutEvent(self, e: QtGui.QFocusEvent) -> None:
-        self.commit_edit()
-        super().focusOutEvent(e)
 
 
 # ── Editor Canvas ────────────────────────────────────────────────────────────
@@ -1772,15 +2016,19 @@ class EditorCanvas(QtWidgets.QWidget):
 
         painter.save()
         painter.setRenderHint(QtGui.QPainter.RenderHint.TextAntialiasing)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
 
-        # Check if we are currently editing an item (to skip drawing it)
-        editing_item = None
+        # The item being edited is drawn by the inline editor itself (stroked
+        # text), so skip it here to avoid double-painting.
         text_tool = self._editor._tools.get("text")
-        if text_tool and hasattr(text_tool, "_editing_widget") and text_tool._editing_widget:
+        editing_item = None
+        if text_tool and getattr(text_tool, "_editing_widget", None):
             editing_item = text_tool._editing_widget._item
 
         for item in self._editor._text_items:
-            if item == editing_item:
+            if item is editing_item:
+                continue
+            if not item.text:
                 continue
 
             fs = max(1, int(item.font_size * scale))
@@ -1789,13 +2037,16 @@ class EditorCanvas(QtWidgets.QWidget):
             font = QtGui.QFont(item.font_family)
             font.setPixelSize(fs)
             painter.setFont(font)
-            painter.setPen(item.color)
 
             screen_x = item.img_pos.x() * scale + offset.x()
             screen_y = item.img_pos.y() * scale + offset.y()
 
             metrics = painter.fontMetrics()
-            painter.drawText(int(screen_x), int(screen_y + metrics.ascent()), item.text)
+            # White fill + black outline — readable on any background, no
+            # per-item color. addText takes a baseline point, matching the
+            # (x, y + ascent) convention the old drawText used.
+            baseline = QtCore.QPointF(screen_x, screen_y + metrics.ascent())
+            _draw_outlined_text(painter, baseline, item.text, font)
 
         painter.restore()
 
@@ -2205,28 +2456,32 @@ class ImageEditorWindow(QtWidgets.QWidget):
                 btn = QtWidgets.QToolButton()
                 btn.setIcon(_load_editor_icon(icon_name))
                 btn.setIconSize(QtCore.QSize(20, 20))
-                btn.setToolTip(self._tr(label_key))
+                tip = self._tr(label_key)
+                sc = self.TOOL_SHORTCUTS.get(tid)
+                if sc:
+                    tip = f"{tip} ({sc})"
+                btn.setToolTip(tip)
                 btn.setCheckable(True)
                 btn.setStyleSheet(EDITOR_TOOL_BUTTON_STYLE)
                 btn.clicked.connect(lambda checked, t=tid: self._activate_tool(t))
                 layout.addWidget(btn)
                 self._tool_buttons[tid] = btn
 
-        # Group 1 — Draw
+        # Group 1 — Shapes
         _add_tools([
-            ("brush", "tool_brush", "brush"),
-            ("highlighter", "tool_highlighter", "highlighter"),
-            ("eraser", "tool_eraser", "eraser"),
+            ("rectangle", "tool_rectangle", "rectangle"),
+            ("ellipse", "tool_ellipse", "ellipse"),
+            ("line", "tool_line", "line"),
+            ("sequence", "tool_sequence", "sequence"),
         ])
 
         _add_sep()
 
-        # Group 2 — Shapes & Annotate
+        # Group 2 — Draw & Text
         _add_tools([
-            ("rectangle", "tool_rectangle", "rectangle"),
-            ("ellipse", "tool_ellipse", "ellipse"),
-            ("arrow", "tool_arrow", "arrow"),
             ("text", "tool_text", "text"),
+            ("brush", "tool_brush", "brush"),
+            ("highlighter", "tool_highlighter", "highlighter"),
         ])
 
         _add_sep()
@@ -2234,6 +2489,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
         # Group 3 — Modify
         _add_tools([
             ("mosaic", "tool_mosaic", "mosaic"),
+            ("eraser", "tool_eraser", "eraser"),
             ("crop", "tool_crop", "crop"),
         ])
 
@@ -2243,7 +2499,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._undo_btn = QtWidgets.QPushButton()
         self._undo_btn.setIcon(_load_editor_icon("undo"))
         self._undo_btn.setIconSize(QtCore.QSize(20, 20))
-        self._undo_btn.setToolTip(self._tr("editor_undo"))
+        self._undo_btn.setToolTip(self._tr("editor_undo") + " (Ctrl+Z)")
         self._undo_btn.setShortcut("Ctrl+Z")
         self._undo_btn.setFixedSize(32, 28)
         self._undo_btn.setStyleSheet(EDITOR_PUSH_BUTTON_STYLE)
@@ -2254,8 +2510,10 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._redo_btn = QtWidgets.QPushButton()
         self._redo_btn.setIcon(_load_editor_icon("redo"))
         self._redo_btn.setIconSize(QtCore.QSize(20, 20))
-        self._redo_btn.setToolTip(self._tr("editor_redo"))
+        self._redo_btn.setToolTip(self._tr("editor_redo") + " (Ctrl+Y, Ctrl+Shift+Z)")
+        # Redo supports both common shortcuts
         self._redo_btn.setShortcut("Ctrl+Y")
+        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+Z"), self, self._redo)
         self._redo_btn.setFixedSize(32, 28)
         self._redo_btn.setStyleSheet(EDITOR_PUSH_BUTTON_STYLE)
         self._redo_btn.clicked.connect(self._redo)
@@ -2264,10 +2522,39 @@ class ImageEditorWindow(QtWidgets.QWidget):
 
         _add_sep()
 
+        # Reset button
+        self._reset_btn = QtWidgets.QPushButton()
+        self._reset_btn.setToolTip(self._tr("editor_reset"))
+        self._reset_btn.setIcon(_load_editor_icon("reset", QtGui.QColor("#ff5050")))
+        self._reset_btn.setIconSize(QtCore.QSize(20, 20))
+        self._reset_btn.setFixedSize(32, 28)
+        self._reset_btn.setStyleSheet(EDITOR_PUSH_BUTTON_STYLE)
+        self._reset_btn.clicked.connect(self._reset_image)
+        layout.addWidget(self._reset_btn)
+
+        _add_sep()
+
         # Pan (navigation utility)
         _add_tools([
             ("pan", "tool_pan", "pan"),
         ])
+
+        # ── Global keyboard shortcuts for tools ───────────────────────────
+        # B=Brush, H=Highlighter, E=Eraser, M=Mosaic, C=Crop, T=Text, R=Rect,
+        # O=Ellipse, L=Line, A=Line+Arrow, N=Sequence, V=Pan
+        shortcut_map = {
+            "B": "brush", "H": "highlighter", "E": "eraser", "M": "mosaic",
+            "C": "crop", "T": "text", "R": "rectangle", "O": "ellipse",
+            "L": "line", "N": "sequence", "V": "pan"
+        }
+        for key, tid in shortcut_map.items():
+            QtGui.QShortcut(QtGui.QKeySequence(key), self, lambda t=tid: self._activate_tool(t))
+        # A = straight line with an end arrowhead (the former dedicated arrow tool)
+        QtGui.QShortcut(QtGui.QKeySequence("A"), self, self._activate_line_with_arrow)
+
+        # [ / ] for size adjustment
+        QtGui.QShortcut(QtGui.QKeySequence("["), self, self._decrease_size)
+        QtGui.QShortcut(QtGui.QKeySequence("]"), self, self._increase_size)
 
         return bar
 
@@ -2300,28 +2587,40 @@ class ImageEditorWindow(QtWidgets.QWidget):
         crop_layout.addStretch()
         self._options_stack.addWidget(page_crop)
 
-        # Page 5: Text options (font + size + color)
-        page_text = self._make_options_page(["font", "font_size", "color"], "text")
+        # Page 5: Text options (font + size) — text color is fixed
+        # (white fill + black outline), so there's no color picker here.
+        page_text = self._make_options_page(["font", "font_size"], "text")
         self._options_stack.addWidget(page_text)
 
         # Page 6: Pan tool (no options)
         page_pan = QtWidgets.QWidget()
         self._options_stack.addWidget(page_pan)
 
-        # Page 7: Rectangle options (color + size)
-        page_rect = self._make_options_page(["color", "size"], "rectangle")
+        # Page 7: Rectangle options (color + size + fill)
+        page_rect = self._make_options_page(["color", "size", "fill"], "rectangle")
         self._options_stack.addWidget(page_rect)
 
-        # Page 8: Ellipse options (color + size)
-        page_ellipse = self._make_options_page(["color", "size"], "ellipse")
+        # Page 8: Ellipse options (color + size + fill)
+        page_ellipse = self._make_options_page(["color", "size", "fill"], "ellipse")
         self._options_stack.addWidget(page_ellipse)
 
-        # Page 9: Arrow options (color + size)
-        page_arrow = self._make_options_page(["color", "size"], "arrow")
-        self._options_stack.addWidget(page_arrow)
+        # Page 9: Line options (color + size + arrow + double_arrow)
+        page_line = self._make_options_page(["color", "size", "arrow", "double_arrow"], "line")
+        self._options_stack.addWidget(page_line)
+
+        # Page 10: Sequence options (color + size)
+        page_sequence = self._make_options_page(["color", "size"], "sequence")
+        self._options_stack.addWidget(page_sequence)
 
     PAGE_INDEX = {"brush": 0, "highlighter": 1, "eraser": 2, "mosaic": 3, "crop": 4, "text": 5,
-                  "pan": 6, "rectangle": 7, "ellipse": 8, "arrow": 9}
+                  "pan": 6, "rectangle": 7, "ellipse": 8, "line": 9, "sequence": 10}
+
+    # Single-letter shortcut shown in each tool button's tooltip.
+    TOOL_SHORTCUTS = {
+        "brush": "B", "highlighter": "H", "eraser": "E", "mosaic": "M",
+        "crop": "C", "text": "T", "rectangle": "R", "ellipse": "O",
+        "line": "L", "sequence": "N", "pan": "V",
+    }
 
     def _make_options_page(
         self, option_keys: list[str], tool_id: str
@@ -2369,20 +2668,24 @@ class ImageEditorWindow(QtWidgets.QWidget):
                 lbl = QtWidgets.QLabel(self._tr("editor_size") + ":")
                 lbl.setObjectName("optionLabel")
                 layout.addWidget(lbl)
+                
+                # Size presets (dots)
+                layout.addWidget(self._create_size_presets(tool_id))
+                
                 slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-                slider.setFixedWidth(120)
+                slider.setFixedWidth(100) # Slightly narrower to fit presets
                 slider.setToolTip(self._tr("editor_size"))
                 slider.setObjectName(f"sizeSlider_{tool_id}")
                 # Configure range based on tool
                 if tool_id == "mosaic":
                     slider.setRange(2, 40)
-                    slider.setValue(10)
+                    slider.setValue(12)
                 elif tool_id == "eraser":
                     slider.setRange(3, 60)
-                    slider.setValue(20)
+                    slider.setValue(24)
                 elif tool_id == "highlighter":
                     slider.setRange(5, 80)
-                    slider.setValue(20)
+                    slider.setValue(24)
                 else:
                     slider.setRange(1, 50)
                     slider.setValue(3)
@@ -2396,6 +2699,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
                 val_lbl.setStyleSheet("color: #aaa; font-size: 11px; background: transparent; min-width: 20px;")
                 slider.valueChanged.connect(lambda v, l=val_lbl: l.setText(str(v)))
                 layout.addWidget(val_lbl)
+                self._sync_size_presets(tool_id, slider.value())  # initial highlight
 
             elif key == "font":
                 lbl = QtWidgets.QLabel(self._tr("editor_font") + ":")
@@ -2434,6 +2738,41 @@ class ImageEditorWindow(QtWidgets.QWidget):
                 )
                 layout.addWidget(combo)
                 self._option_widgets[(tool_id, "fontSizeSpin")] = combo
+
+            elif key == "fill":
+                btn = QtWidgets.QToolButton()
+                btn.setCheckable(True)
+                btn.setText(self._tr("editor_fill"))
+                btn.setToolTip(self._tr("editor_fill"))
+                btn.setStyleSheet(EDITOR_OPTION_TOGGLE_STYLE)
+                btn.setObjectName(f"fillBtn_{tool_id}")
+                btn.clicked.connect(lambda checked, tid=tool_id: self._on_fill_changed(tid, checked))
+                layout.addWidget(btn)
+                self._option_widgets[(tool_id, "fillBtn")] = btn
+
+            elif key == "arrow":
+                btn = QtWidgets.QToolButton()
+                btn.setCheckable(True)
+                btn.setIcon(_load_editor_icon("arrow"))
+                btn.setIconSize(QtCore.QSize(16, 16))
+                btn.setToolTip(self._tr("tool_arrow"))
+                btn.setStyleSheet(EDITOR_OPTION_TOGGLE_STYLE)
+                btn.setObjectName(f"arrowBtn_{tool_id}")
+                btn.clicked.connect(lambda checked, tid=tool_id: self._on_arrow_changed(tid, checked))
+                layout.addWidget(btn)
+                self._option_widgets[(tool_id, "arrowBtn")] = btn
+
+            elif key == "double_arrow":
+                btn = QtWidgets.QToolButton()
+                btn.setCheckable(True)
+                btn.setIcon(_load_editor_icon("double_arrow"))
+                btn.setIconSize(QtCore.QSize(16, 16))
+                btn.setToolTip(self._tr("editor_double_arrow"))
+                btn.setStyleSheet(EDITOR_OPTION_TOGGLE_STYLE)
+                btn.setObjectName(f"doubleArrowBtn_{tool_id}")
+                btn.clicked.connect(lambda checked, tid=tool_id: self._on_double_arrow_changed(tid, checked))
+                layout.addWidget(btn)
+                self._option_widgets[(tool_id, "doubleArrowBtn")] = btn
 
         layout.addStretch()
         return page
@@ -2514,6 +2853,41 @@ class ImageEditorWindow(QtWidgets.QWidget):
         layout.addWidget(self._zoom_label)
         return bar
 
+    def _increase_size(self) -> None:
+        """Increase current tool's size by 1 (or 5 for large tools)."""
+        if not self._active_tool: return
+        slider = self._option_widgets.get((self._active_tool.tool_id(), "sizeSlider"))
+        if slider:
+            step = 5 if self._active_tool.tool_id() in ("eraser", "highlighter", "mosaic") else 1
+            slider.setValue(slider.value() + step)
+
+    def _decrease_size(self) -> None:
+        """Decrease current tool's size by 1 (or 5 for large tools)."""
+        if not self._active_tool: return
+        slider = self._option_widgets.get((self._active_tool.tool_id(), "sizeSlider"))
+        if slider:
+            step = 5 if self._active_tool.tool_id() in ("eraser", "highlighter", "mosaic") else 1
+            slider.setValue(slider.value() - step)
+
+    def _reset_image(self) -> None:
+        """Revert image to original state and clear annotations."""
+        if not self._modified and not self._text_items and (
+            not self._annotations_pixmap or self._annotations_pixmap.isNull() or
+            self._annotations_pixmap.toImage().allGray() # approximate check
+        ):
+            # Already clean
+            return
+            
+        # Confirmation could be added here, but for a lightweight tool, 
+        # just saving an undo point is safer and faster.
+        self._save_undo(UndoChangeType.FULL)
+        self._pil_image = self._original_pil.copy()
+        self._clear_annotations()
+        self._rebuild_display()
+        self._resize_canvas()
+        self._center_image_on_canvas()
+        self._modified = True # technically it's a 'change' from current state
+
     # ── Tools ─────────────────────────────────────────────────────────────
 
     def _setup_tools(self) -> None:
@@ -2526,19 +2900,27 @@ class ImageEditorWindow(QtWidgets.QWidget):
             "text": TextTool(self),
             "rectangle": ShapeTool(self, "rectangle"),
             "ellipse": ShapeTool(self, "ellipse"),
-            "arrow": ArrowTool(self),
+            "line": ShapeTool(self, "line"),
+            "sequence": SequenceTool(self),
             "pan": PanTool(self),
         }
 
     def _activate_tool(self, tool_id: str) -> None:
+        # Always enforce single-selection across the toolbar, even if the
+        # requested tool isn't registered — otherwise a dead button can leave
+        # two tools visually checked at once.
+        for tid, btn in self._tool_buttons.items():
+            btn.setChecked(tid == tool_id)
         if tool_id not in self._tools:
+            # Unregistered tool: deactivate the current tool and bail out.
+            if self._active_tool:
+                self._active_tool.on_deactivate()
+                self._active_tool = None
+            self._canvas.update()
             return
         # Deactivate previous
         if self._active_tool:
             self._active_tool.on_deactivate()
-        # Uncheck all tool buttons
-        for tid, btn in self._tool_buttons.items():
-            btn.setChecked(tid == tool_id)
         # Activate new
         self._active_tool = self._tools[tool_id]
         self._active_tool.on_activate()
@@ -2548,6 +2930,14 @@ class ImageEditorWindow(QtWidgets.QWidget):
         # Update option widget values from tool state
         self._sync_options_from_tool(tool_id)
         self._canvas.update()
+
+    def _activate_line_with_arrow(self) -> None:
+        """A-key: switch to the line tool and turn on the end arrowhead."""
+        self._activate_tool("line")
+        tool = self._tools.get("line")
+        if tool and hasattr(tool, "arrow_end") and not tool.arrow_end:
+            tool.arrow_end = True
+            self._sync_options_from_tool("line")
 
     def _effective_scale(self) -> float:
         """Display scale that accounts for device pixel ratio.
@@ -2602,6 +2992,24 @@ class ImageEditorWindow(QtWidgets.QWidget):
             fs.blockSignals(True)
             fs.setCurrentText(str(tool.font_size))
             fs.blockSignals(False)
+        # Fill toggle
+        ft = ow.get((tool_id, "fillBtn"))
+        if ft and hasattr(tool, "fill"):
+            ft.blockSignals(True)
+            ft.setChecked(tool.fill)
+            ft.blockSignals(False)
+        # Arrow-end toggle (line tool)
+        ae = ow.get((tool_id, "arrowBtn"))
+        if ae and hasattr(tool, "arrow_end"):
+            ae.blockSignals(True)
+            ae.setChecked(tool.arrow_end)
+            ae.blockSignals(False)
+        # Double arrow toggle
+        da = ow.get((tool_id, "doubleArrowBtn"))
+        if da and hasattr(tool, "double_arrow"):
+            da.blockSignals(True)
+            da.setChecked(tool.double_arrow)
+            da.blockSignals(False)
 
     def _pick_color(self, tool_id: str) -> None:
         tool = self._tools.get(tool_id)
@@ -2625,19 +3033,113 @@ class ImageEditorWindow(QtWidgets.QWidget):
         if tool_id == "text":
             tool._sync_widgets()
 
+    # ── Size presets (small / medium / large dots) ────────────────────────
+
+    def _size_range_for(self, tool_id: str) -> tuple[int, int]:
+        """Min/max size for a tool — mirrors the slider configuration."""
+        if tool_id == "mosaic":
+            return (2, 40)
+        if tool_id == "eraser":
+            return (3, 60)
+        if tool_id == "highlighter":
+            return (5, 80)
+        return (1, 50)
+
+    # Hand-tuned small / medium / large presets per tool. The "small" value is
+    # always <= the tool's default so the default size is reachable from the
+    # dots, and the three steps feel evenly spaced for real use rather than
+    # being a mechanical slice of the numeric range.
+    # brush/shape defaults follow the 2-3 px convention used by Snipaste /
+    # WeChat screenshot tools; highlighter/eraser align to ~single-line text
+    # height so the default covers one line of body copy; mosaic block_size is
+    # a pixelation *cell* (bigger = more obfuscated), not a brush width; the
+    # "small" preset is always <= the tool default so the default is reachable.
+    _SIZE_PRESETS: dict[str, tuple[int, int, int]] = {
+        "brush": (2, 5, 10),
+        "highlighter": (12, 24, 40),
+        "eraser": (12, 24, 48),
+        "mosaic": (6, 12, 20),
+        "rectangle": (2, 5, 10),
+        "ellipse": (2, 5, 10),
+        "line": (2, 5, 10),
+        "sequence": (20, 28, 40),
+    }
+
+    def _size_preset_values(self, tool_id: str) -> list[int]:
+        """Three preset sizes for the dots (small / medium / large)."""
+        lo, hi = self._size_range_for(tool_id)
+        vals = list(self._SIZE_PRESETS.get(tool_id, (3, 10, 25)))
+        # Clamp each to the tool's actual slider range just in case.
+        return [min(hi, max(lo, v)) for v in vals]
+
+    def _create_size_presets(self, tool_id: str) -> QtWidgets.QWidget:
+        """A row of small/medium/large dots that jump the size slider."""
+        container = QtWidgets.QWidget()
+        h = QtWidgets.QHBoxLayout(container)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.setSpacing(4)
+
+        values = self._size_preset_values(tool_id)
+        dot_sizes = [6, 10, 14]  # ● glyph font-size in px → visually S/M/L
+
+        group = QtWidgets.QButtonGroup(self)
+        group.setExclusive(True)
+        buttons: list[tuple[int, QtWidgets.QToolButton]] = []
+
+        for val, dot in zip(values, dot_sizes):
+            b = QtWidgets.QToolButton()
+            b.setText("●")  # ●
+            b.setCheckable(True)
+            b.setFixedSize(22, 22)
+            b.setToolTip(str(val))
+            b.setStyleSheet(
+                "QToolButton { background: transparent; border: none; "
+                f"color: #888; font-size: {dot}px; }}"
+                "QToolButton:hover { color: #ccc; }"
+                "QToolButton:checked { color: #5FC98A; }"
+            )
+            b.clicked.connect(
+                lambda _checked=False, v=val, t=tool_id: self._apply_size_preset(t, v)
+            )
+            group.addButton(b)
+            h.addWidget(b)
+            buttons.append((val, b))
+
+        self._option_widgets[(tool_id, "sizePresets")] = buttons
+        self._option_widgets[(tool_id, "sizePresetGroup")] = group
+        return container
+
+    def _apply_size_preset(self, tool_id: str, value: int) -> None:
+        slider = self._option_widgets.get((tool_id, "sizeSlider"))
+        if slider:
+            slider.setValue(value)  # emits valueChanged → _on_size_changed
+        self._sync_size_presets(tool_id, value)
+
+    def _sync_size_presets(self, tool_id: str, value: int) -> None:
+        """Check the preset matching the current size (none if no exact match)."""
+        buttons = self._option_widgets.get((tool_id, "sizePresets"))
+        if not buttons:
+            return
+        for val, b in buttons:
+            b.blockSignals(True)
+            b.setChecked(val == value)
+            b.blockSignals(False)
+
     def _on_size_changed(self, tool_id: str, value: int) -> None:
         tool = self._tools.get(tool_id)
         if tool and hasattr(tool, "size"):
             tool.size = value
         if tool and hasattr(tool, "block_size"):
             tool.block_size = value
-        
+
         # Refresh cursor if this is the active tool
         if self._active_tool == tool:
             self._update_tool_cursor()
-            
+
         if tool_id == "text":
             tool._sync_widgets()
+
+        self._sync_size_presets(tool_id, value)
 
     def _on_opacity_changed(self, tool_id: str, value: int) -> None:
         tool = self._tools.get(tool_id)
@@ -2648,6 +3150,21 @@ class ImageEditorWindow(QtWidgets.QWidget):
             self._sync_options_from_tool(tool_id)
             if tool_id == "text":
                 tool._sync_widgets()
+
+    def _on_double_arrow_changed(self, tool_id: str, checked: bool) -> None:
+        tool = self._tools.get(tool_id)
+        if tool and hasattr(tool, "double_arrow"):
+            tool.double_arrow = checked
+
+    def _on_arrow_changed(self, tool_id: str, checked: bool) -> None:
+        tool = self._tools.get(tool_id)
+        if tool and hasattr(tool, "arrow_end"):
+            tool.arrow_end = checked
+
+    def _on_fill_changed(self, tool_id: str, checked: bool) -> None:
+        tool = self._tools.get(tool_id)
+        if tool and hasattr(tool, "fill"):
+            tool.fill = checked
 
     def _on_font_changed(self, tool_id: str, family: str) -> None:
         tool = self._tools.get(tool_id)
@@ -2931,8 +3448,19 @@ class ImageEditorWindow(QtWidgets.QWidget):
                     pil_font = ImageFont.truetype(font_path, item.font_size) if font_path else ImageFont.load_default()
                 except Exception:
                     pil_font = ImageFont.load_default()
-                fill = (item.color.red(), item.color.green(), item.color.blue(), item.color.alpha())
-                draw.text((int(item.img_pos.x()), int(item.img_pos.y())), item.text, fill=fill, font=pil_font)
+                # White fill + black outline (matches the on-screen preview).
+                # PIL draws stroke *centered* on the glyph edge, so half the
+                # width bleeds under the fill and half shows outside it — keep
+                # the width modest so the white core stays dominant.
+                stroke_w = max(1, int(item.font_size * TEXT_OUTLINE_WIDTH / 2))
+                draw.text(
+                    (int(item.img_pos.x()), int(item.img_pos.y())),
+                    item.text,
+                    fill=TEXT_FILL_COLOR,
+                    stroke_width=stroke_w,
+                    stroke_fill=TEXT_OUTLINE_COLOR,
+                    font=pil_font,
+                )
         return _pil_to_qpixmap(save_img)
 
     def _copy_to_clipboard(self) -> None:
