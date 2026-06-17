@@ -16,7 +16,6 @@ from hushsnap.ui.image_editor import (
     BrushTool,
     EraserTool,
     ShapeTool,
-    ArrowTool,
     HighlighterTool,
     MosaicTool,
     CropTool,
@@ -217,12 +216,25 @@ class TestSaveUndo:
         editor._save_undo(UndoChangeType.ANNOTATIONS)
         assert len(editor._redo_stack) == 0
 
-    def test_save_respects_max_undo(self, editor):
-        """Stack is capped at MAX_UNDO = 25."""
-        editor.MAX_UNDO = 3
+    def test_save_respects_max_undo_steps(self, editor):
+        """Stack is capped at MAX_UNDO_STEPS."""
+        editor.MAX_UNDO_STEPS = 3
+        editor.MAX_UNDO_MEMORY_MB = 4096  # high enough that only the step cap binds
         for _ in range(5):
             editor._save_undo(UndoChangeType.ANNOTATIONS)
         assert len(editor._undo_stack) == 3
+
+    def test_save_respects_memory_cap(self, editor):
+        """Stack is pruned to fit MAX_UNDO_MEMORY_MB, keeping at least one entry."""
+        # Give a generous step cap so only the memory cap binds, then set the
+        # memory budget smaller than a single annotations snapshot so every
+        # entry overflows it.
+        editor.MAX_UNDO_STEPS = 100
+        editor.MAX_UNDO_MEMORY_MB = 0.0
+        for _ in range(5):
+            editor._save_undo(UndoChangeType.ANNOTATIONS)
+        # Memory loop keeps at least one entry regardless of the budget.
+        assert len(editor._undo_stack) == 1
 
     def test_save_updates_undo_button(self, editor):
         """Undo button is enabled after first save."""
@@ -427,21 +439,6 @@ class TestShapeToolSaveBehavior:
 
     def test_ellipse_same_behavior(self, editor):
         tool = editor._tools["ellipse"]
-        editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
-        editor._save_undo = MagicMock()
-        event = QtGui.QMouseEvent(
-            QtCore.QEvent.Type.MouseButtonPress,
-            QtCore.QPointF(50, 50), QtCore.QPointF(50, 50),
-            QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.LeftButton,
-            QtCore.Qt.KeyboardModifier.NoModifier,
-        )
-        tool.on_mouse_press(editor._canvas, event)
-        editor._save_undo.assert_called_once_with(UndoChangeType.ANNOTATIONS)
-
-
-class TestArrowToolSaveBehavior:
-    def test_save_on_mouse_press(self, editor):
-        tool = editor._tools["arrow"]
         editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
         editor._save_undo = MagicMock()
         event = QtGui.QMouseEvent(

@@ -69,6 +69,11 @@ QToolButton:checked {
     border-color: #5FC98A;
     color: #fff;
 }
+QToolButton:pressed {
+    background-color: rgba(95, 201, 138, 100);
+    border-color: #5FC98A;
+    color: #fff;
+}
 """
 
 EDITOR_PUSH_BUTTON_STYLE = """
@@ -85,10 +90,15 @@ QPushButton:hover {
     border-color: rgba(95, 201, 138, 120);
     color: #fff;
 }
+QPushButton:pressed {
+    background-color: #2c2c2c;
+    border-color: rgba(95, 201, 138, 160);
+    color: #fff;
+}
 QPushButton:disabled {
-    background-color: #333;
-    color: #666;
-    border-color: rgba(255, 255, 255, 10);
+    background-color: #262626;
+    color: #555;
+    border-color: rgba(255, 255, 255, 8);
 }
 """
 
@@ -117,6 +127,11 @@ QToolButton:checked {
     border-color: #5FC98A;
     color: #fff;
 }
+QToolButton:pressed {
+    background-color: rgba(95, 201, 138, 100);
+    border-color: #5FC98A;
+    color: #fff;
+}
 """
 
 EDITOR_SAVE_BUTTON_STYLE = f"""
@@ -131,6 +146,9 @@ QPushButton#editorSaveBtn {{
 }}
 QPushButton#editorSaveBtn:hover {{
     background-color: #7ad9a0;
+}}
+QPushButton#editorSaveBtn:pressed {{
+    background-color: #4ab87a;
 }}
 """
 
@@ -292,11 +310,26 @@ def _load_editor_icon(name: str, color: QtGui.QColor = QtGui.QColor("#ccc")) -> 
         renderer = QtSvg.QSvgRenderer(QtCore.QByteArray(svg_data.encode("utf-8")))
         pixmap = QtGui.QPixmap(32, 32)
         pixmap.fill(QtCore.Qt.GlobalColor.transparent)
-        
+
         painter = QtGui.QPainter(pixmap)
         renderer.render(painter)
         painter.end()
-        return QtGui.QIcon(pixmap)
+
+        icon = QtGui.QIcon()
+        icon.addPixmap(pixmap, QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+        # Explicit disabled variant: the same glyph drawn at low opacity so a
+        # disabled icon button reads as clearly inactive. Qt's auto-generated
+        # disabled mode only desaturates (~13% dimmer on a dark UI), which is
+        # too subtle to tell an undo/redo button you can't press from one you
+        # can — a faded ghost at 35% opacity is unambiguous.
+        disabled_px = QtGui.QPixmap(32, 32)
+        disabled_px.fill(QtCore.Qt.GlobalColor.transparent)
+        dp = QtGui.QPainter(disabled_px)
+        dp.setOpacity(0.35)
+        dp.drawPixmap(0, 0, pixmap)
+        dp.end()
+        icon.addPixmap(disabled_px, QtGui.QIcon.Mode.Disabled, QtGui.QIcon.State.Off)
+        return icon
     except Exception as e:
         logger.error(f"Failed to load editor icon {name}: {e}")
         return QtGui.QIcon()
@@ -922,6 +955,10 @@ class CropTool(BaseTool):
                 background: rgba(60,60,60,220);
                 border-color: rgba(255,255,255,35);
                 color: #fff;
+            }}
+            QPushButton:pressed {{
+                background: rgba(28,28,28,235);
+                border-color: rgba(255,255,255,20);
             }}
         """)
         self._action_cancel.clicked.connect(self.cancel_crop)
@@ -2226,6 +2263,7 @@ class _ColorButton(QtWidgets.QWidget):
         self.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self._color = QtGui.QColor("#FFFFFF")
         self._hovered = False
+        self._pressed = False
 
     def setColor(self, color: QtGui.QColor) -> None:
         self._color = color
@@ -2237,18 +2275,29 @@ class _ColorButton(QtWidgets.QWidget):
 
     def leaveEvent(self, event: QtCore.QEvent) -> None:
         self._hovered = False
+        self._pressed = False
         self.update()
 
-    def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
+            self._pressed = True
+            self.update()
+
+    def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
+        was_pressed = self._pressed
+        self._pressed = False
+        self.update()
+        if was_pressed and event.button() == QtCore.Qt.MouseButton.LeftButton:
             self.clicked.emit()
 
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
 
-        # Draw the perfectly circular color swatch
-        rect = QtCore.QRectF(self.rect()).adjusted(1.0, 1.0, -1.0, -1.0)
+        # Draw the perfectly circular color swatch. Inset a touch more while
+        # pressed so the disc reads as sinking into the bar on click.
+        inset = 2.0 if self._pressed else 1.0
+        rect = QtCore.QRectF(self.rect()).adjusted(inset, inset, -inset, -inset)
 
         # Show the color HUE only (alpha forced to 255). The swatch sits on
         # the fixed options-bar background, so rendering a semi-transparent
@@ -2261,7 +2310,9 @@ class _ColorButton(QtWidgets.QWidget):
         painter.setBrush(QtGui.QBrush(display))
 
         # Border
-        if self._hovered:
+        if self._pressed:
+            pen = QtGui.QPen(QtGui.QColor("#5FC98A"), 2.5)
+        elif self._hovered:
             pen = QtGui.QPen(QtGui.QColor("#5FC98A"), 2.0)
         else:
             pen = QtGui.QPen(QtGui.QColor(255, 255, 255, 102), 2.0)
@@ -2308,6 +2359,7 @@ class _SwatchPopup(QtWidgets.QFrame):
                 f"  border: {border}; border-radius: {_SWATCH_SIZE // 2}px;"
                 f"}}"
                 f"QPushButton:hover {{ border: 2px solid #fff; }}"
+                f"QPushButton:pressed {{ border: 2px solid #5FC98A; }}"
             )
             btn.clicked.connect(lambda checked, c=QtGui.QColor(hex_color): self._on_pick(c))
             row, col = divmod(i, _SWATCH_COLS)
@@ -2338,7 +2390,16 @@ class _SwatchPopup(QtWidgets.QFrame):
 class ImageEditorWindow(QtWidgets.QWidget):
     """Main editor window with toolbar, canvas, and controls."""
 
-    MAX_UNDO = 25
+    # Undo/redo "scratch disk" limits. Two independent caps protect memory:
+    #   - MAX_UNDO_STEPS: hard ceiling on how many history entries a single
+    #     stack can hold, so a long editing session can't grow unbounded by
+    #     step count alone.
+    #   - MAX_UNDO_MEMORY_MB: ceiling on the *bytes* a stack may occupy, so a
+    #     few huge full-image snapshots (e.g. 4K crops) can't blow past the
+    #     step budget and exhaust RAM. Whichever cap is hit first prunes the
+    #     oldest entries from the bottom of the stack.
+    MAX_UNDO_STEPS = 15
+    MAX_UNDO_MEMORY_MB = 512
     MAX_FONT_SIZE = 200  # upper bound for typed font sizes (px)
 
     def __init__(
@@ -2443,6 +2504,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
         close_btn.setStyleSheet(
             "QPushButton { background: transparent; border: none; color: #999; font-size: 14px; }"
             "QPushButton:hover { background-color: rgba(255, 80, 80, 60); color: #fff; border-radius: 4px; }"
+            "QPushButton:pressed { background-color: rgba(255, 80, 80, 120); color: #fff; border-radius: 4px; }"
         )
         close_btn.clicked.connect(self.close)
         layout.addWidget(close_btn)
@@ -2529,9 +2591,16 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._redo_btn.setIcon(_load_editor_icon("redo"))
         self._redo_btn.setIconSize(QtCore.QSize(20, 20))
         self._redo_btn.setToolTip(self._tr("editor_redo") + " (Ctrl+Y, Ctrl+Shift+Z)")
-        # Redo supports both common shortcuts
+        # Redo supports both common shortcuts. Ctrl+Y rides on the button's own
+        # shortcut (auto-disabled when the button is). Ctrl+Shift+Z uses a
+        # standalone QShortcut, which is NOT tied to the button — so we mirror
+        # its enabled state in _update_undo_buttons to keep the keyboard path
+        # consistent with the (possibly disabled) on-screen button.
         self._redo_btn.setShortcut("Ctrl+Y")
-        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+Z"), self, self._redo)
+        self._redo_shift_sc = QtGui.QShortcut(
+            QtGui.QKeySequence("Ctrl+Shift+Z"), self, self._redo
+        )
+        self._redo_shift_sc.setEnabled(False)
         self._redo_btn.setFixedSize(32, 28)
         self._redo_btn.setStyleSheet(EDITOR_PUSH_BUTTON_STYLE)
         self._redo_btn.clicked.connect(self._redo)
@@ -3287,6 +3356,21 @@ class ImageEditorWindow(QtWidgets.QWidget):
 
     # ── Undo / Redo ───────────────────────────────────────────────────────
 
+    def _estimate_undo_entry_size(self, entry: _UndoEntry) -> float:
+        """Estimate memory usage of an undo entry in MiB."""
+        size = 0.0
+        # PIL Image (RGBA)
+        if entry.pil_image:
+            w, h = entry.pil_image.size
+            size += (w * h * 4)
+        # QPixmap (assuming RGBA8888 / 4bpp)
+        if entry.annotations_pixmap:
+            size += (entry.annotations_pixmap.width() * entry.annotations_pixmap.height() * 4)
+        # Region bytes
+        if entry.region_pixels:
+            size += len(entry.region_pixels)
+        return size / (1024.0 * 1024.0)
+
     def _save_undo(
         self,
         change_type: UndoChangeType = UndoChangeType.FULL,
@@ -3321,10 +3405,31 @@ class ImageEditorWindow(QtWidgets.QWidget):
                                annot_pxm=annot_copy, text_items=self._text_items)
 
         self._undo_stack.append(entry)
-        if len(self._undo_stack) > self.MAX_UNDO:
-            self._undo_stack.pop(0)
+
+        # Enforce step and memory limits by pruning the bottom of the stack.
+        # The redo stack is cleared (a new edit invalidates the redo history),
+        # so only the undo stack needs pruning here.
+        self._enforce_stack_limits(self._undo_stack)
+
         self._redo_stack.clear()
         self._update_undo_buttons()
+
+    def _enforce_stack_limits(self, stack: list[_UndoEntry]) -> None:
+        """Prune the oldest entries from *stack* so it stays within the
+        fixed step count (``MAX_UNDO_STEPS``) and memory budget
+        (``MAX_UNDO_MEMORY_MB``). At least one entry is always kept so the
+        most recent action remains reachable.
+
+        Applied to both the undo and redo stacks — without capping redo,
+        undoing many times would let the redo stack grow without bound and
+        sidestep the memory limit entirely.
+        """
+        while len(stack) > self.MAX_UNDO_STEPS:
+            stack.pop(0)
+        total_mem = sum(self._estimate_undo_entry_size(e) for e in stack)
+        while total_mem > self.MAX_UNDO_MEMORY_MB and len(stack) > 1:
+            removed = stack.pop(0)
+            total_mem -= self._estimate_undo_entry_size(removed)
 
     def _undo(self) -> None:
         if not self._undo_stack:
@@ -3370,6 +3475,8 @@ class ImageEditorWindow(QtWidgets.QWidget):
                 region_bounds=QtCore.QRect(b),
                 region_pixels=current.tobytes(),
             ))
+        # Keep the redo stack inside the same step/memory caps as undo.
+        self._enforce_stack_limits(self._redo_stack)
 
     def _capture_current_for_undo(self, redone_entry: _UndoEntry) -> None:
         """Capture current state into an undo entry matching the type being redone."""
@@ -3399,6 +3506,8 @@ class ImageEditorWindow(QtWidgets.QWidget):
                 region_bounds=QtCore.QRect(b),
                 region_pixels=current.tobytes(),
             ))
+        # Redoing grows the undo stack again; keep it within the same caps.
+        self._enforce_stack_limits(self._undo_stack)
 
     def _apply_undo_entry(self, entry: _UndoEntry) -> None:
         """Restore editor state from an undo/redo entry."""
@@ -3434,8 +3543,13 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._modified = True
 
     def _update_undo_buttons(self) -> None:
-        self._undo_btn.setEnabled(len(self._undo_stack) > 0)
-        self._redo_btn.setEnabled(len(self._redo_stack) > 0)
+        can_undo = len(self._undo_stack) > 0
+        can_redo = len(self._redo_stack) > 0
+        self._undo_btn.setEnabled(can_undo)
+        self._redo_btn.setEnabled(can_redo)
+        # Keep the standalone Ctrl+Shift+Z shortcut in lockstep with the redo
+        # button so a disabled redo can't be triggered from the keyboard.
+        self._redo_shift_sc.setEnabled(can_redo)
 
     # ── Transform operations ──────────────────────────────────────────────
 
