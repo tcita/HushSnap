@@ -1001,8 +1001,12 @@ class CropTool(BaseTool):
             return
         self._editor._save_undo(UndoChangeType.FULL)
         try:
+            # QRect.right()/bottom() are CLOSED (= left+width-1), but PIL
+            # crop takes a half-open box [left, top, right, bottom). Use the
+            # width/height-derived exclusive edges so the last column/row
+            # isn't dropped.
             cropped = self._editor._pil_image.crop(
-                (r.left(), r.top(), r.right(), r.bottom())
+                (r.left(), r.top(), r.x() + r.width(), r.y() + r.height())
             )
             self._editor._pil_image = cropped
             self._editor._clear_annotations()

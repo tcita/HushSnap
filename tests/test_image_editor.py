@@ -518,6 +518,35 @@ class TestCropToolSaveBehavior:
         tool.apply_crop()
         editor._save_undo.assert_not_called()
 
+    def test_apply_crop_preserves_exact_dimensions(self, editor):
+        """Cropping keeps the full crop-rect width/height (no off-by-one).
+
+        Regression: QRect.right()/bottom() are closed boundaries, while
+        PIL.crop() takes a half-open box, so the old code dropped the last
+        column and the last row.
+        """
+        tool = editor._tools["crop"]
+        # Distinct color per column/row so dropped edges are detectable.
+        src = Image.new("RGBA", (100, 80), (0, 0, 0, 255))
+        px = src.load()
+        for y in range(80):
+            px[59, y] = (255, 0, 0, 255)   # intended right-edge column
+        for x in range(100):
+            px[x, 49] = (0, 255, 0, 255)   # intended bottom row
+        editor._pil_image = src.copy()
+        editor._rebuild_display()
+
+        # Rect 10..59 × 10..49 → expect 50×40, edges included.
+        tool._crop_rect = QtCore.QRect(10, 10, 50, 40)
+        tool.apply_crop()
+
+        assert editor._pil_image.size == (50, 40)
+        # Right edge column (now index 49) and bottom row (now index 39)
+        # must both be present — the off-by-one dropped exactly these.
+        cpx = editor._pil_image.load()
+        assert cpx[49, 0] == (255, 0, 0, 255)
+        assert cpx[0, 39] == (0, 255, 0, 255)
+
 
 class TestTextToolSaveBehavior:
     def test_save_on_new_item(self, editor):
