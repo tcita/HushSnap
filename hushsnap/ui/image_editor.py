@@ -2456,11 +2456,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
                 btn = QtWidgets.QToolButton()
                 btn.setIcon(_load_editor_icon(icon_name))
                 btn.setIconSize(QtCore.QSize(20, 20))
-                tip = self._tr(label_key)
-                sc = self.TOOL_SHORTCUTS.get(tid)
-                if sc:
-                    tip = f"{tip} ({sc})"
-                btn.setToolTip(tip)
+                btn.setToolTip(self._tr(label_key))
                 btn.setCheckable(True)
                 btn.setStyleSheet(EDITOR_TOOL_BUTTON_STYLE)
                 btn.clicked.connect(lambda checked, t=tid: self._activate_tool(t))
@@ -2539,22 +2535,10 @@ class ImageEditorWindow(QtWidgets.QWidget):
             ("pan", "tool_pan", "pan"),
         ])
 
-        # ── Global keyboard shortcuts for tools ───────────────────────────
-        # B=Brush, H=Highlighter, E=Eraser, M=Mosaic, C=Crop, T=Text, R=Rect,
-        # O=Ellipse, L=Line, A=Line+Arrow, N=Sequence, V=Pan
-        shortcut_map = {
-            "B": "brush", "H": "highlighter", "E": "eraser", "M": "mosaic",
-            "C": "crop", "T": "text", "R": "rectangle", "O": "ellipse",
-            "L": "line", "N": "sequence", "V": "pan"
-        }
-        for key, tid in shortcut_map.items():
-            QtGui.QShortcut(QtGui.QKeySequence(key), self, lambda t=tid: self._activate_tool(t))
-        # A = straight line with an end arrowhead (the former dedicated arrow tool)
-        QtGui.QShortcut(QtGui.QKeySequence("A"), self, self._activate_line_with_arrow)
-
-        # [ / ] for size adjustment
-        QtGui.QShortcut(QtGui.QKeySequence("["), self, self._decrease_size)
-        QtGui.QShortcut(QtGui.QKeySequence("]"), self, self._increase_size)
+        # Note: no single-letter tool shortcuts (B/H/E/.../V/A) and no [ / ]
+        # size keys — they conflicted with typing in the text tool and the
+        # editable font-size box. Tool switching is mouse-only; undo/redo
+        # (Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z) and save (Ctrl+S) remain.
 
         return bar
 
@@ -2614,13 +2598,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
 
     PAGE_INDEX = {"brush": 0, "highlighter": 1, "eraser": 2, "mosaic": 3, "crop": 4, "text": 5,
                   "pan": 6, "rectangle": 7, "ellipse": 8, "line": 9, "sequence": 10}
-
-    # Single-letter shortcut shown in each tool button's tooltip.
-    TOOL_SHORTCUTS = {
-        "brush": "B", "highlighter": "H", "eraser": "E", "mosaic": "M",
-        "crop": "C", "text": "T", "rectangle": "R", "ellipse": "O",
-        "line": "L", "sequence": "N", "pan": "V",
-    }
 
     def _make_options_page(
         self, option_keys: list[str], tool_id: str
