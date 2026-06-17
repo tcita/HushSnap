@@ -789,7 +789,7 @@ class CropTool(BaseTool):
     corner or edge to trim.  Enter / toolbar button confirms; Esc cancels.
     """
 
-    HANDLE_R = 6   # image-pixel hit radius for handles
+    HANDLE_R = 10  # image-pixel hit radius for handles
     MIN_CROP = 10  # minimum crop dimension in image pixels
 
     def __init__(self, editor: "ImageEditorWindow"):
@@ -1104,7 +1104,7 @@ class CropTool(BaseTool):
             painter.drawRect(r.right(), r.top(), img_w - r.right(), r.height())
 
         # Crop border
-        pen = QtGui.QPen(QtGui.QColor("#5FC98A"), 1.5,
+        pen = QtGui.QPen(QtGui.QColor("#5FC98A"), 2.5,
                          QtCore.Qt.PenStyle.SolidLine)
         painter.setPen(pen)
         painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
@@ -1126,9 +1126,9 @@ class CropTool(BaseTool):
             )
 
         # Corner handles (white fill + green border)
-        corner_sz = 7
-        edge_sz = 5
-        painter.setPen(QtGui.QPen(QtGui.QColor("#5FC98A"), 1.5))
+        corner_sz = 11
+        edge_sz = 9
+        painter.setPen(QtGui.QPen(QtGui.QColor("#5FC98A"), 2.0))
         painter.setBrush(QtGui.QBrush(QtGui.QColor("#ffffff")))
         for name, fn in self._HANDLES.items():
             hx, hy = fn(r)

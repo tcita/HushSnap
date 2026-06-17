@@ -548,6 +548,47 @@ class TestCropToolSaveBehavior:
         assert cpx[0, 39] == (0, 255, 0, 255)
 
 
+class TestCropHandleVisibility:
+    """Crop border and handles are painted thick enough to stay visible
+    after the overlay is scaled down to the viewport.
+
+    The overlay is drawn in image pixels and then scaled by paintEvent,
+    so thin values (1.5px border, 7px handles) shrank to <1px / <2px on
+    a 4K screenshot fit to a 960px window — nearly invisible. These
+    constants guard the thicker values.
+    """
+
+    def test_border_pen_is_thick(self):
+        from hushsnap.ui import image_editor as ie
+        import inspect
+        src = inspect.getsource(ie.CropTool._redraw_overlay)
+        assert 'QColor("#5FC98A"), 2.5' in src, (
+            "crop border pen width regressed below 2.5px"
+        )
+
+    def test_handle_sizes(self):
+        from hushsnap.ui import image_editor as ie
+        import inspect
+        src = inspect.getsource(ie.CropTool._redraw_overlay)
+        assert "corner_sz = 11" in src, "corner handle regressed below 11px"
+        assert "edge_sz = 9" in src, "edge handle regressed below 9px"
+
+    def test_handle_border_pen(self):
+        """Handle outline pen also thickened (was 1.5)."""
+        from hushsnap.ui import image_editor as ie
+        import inspect
+        src = inspect.getsource(ie.CropTool._redraw_overlay)
+        assert 'QColor("#5FC98A"), 2.0' in src, (
+            "handle border pen width regressed below 2.0px"
+        )
+
+    def test_hit_radius_matches_handle_size(self):
+        """HANDLE_R should be roughly half the corner handle so the
+        grabbable area covers the visible handle."""
+        from hushsnap.ui.image_editor import CropTool
+        assert CropTool.HANDLE_R >= 9, "hit radius too small for the handles"
+
+
 class TestTextToolSaveBehavior:
     def test_save_on_new_item(self, editor):
         """Creating a new text item calls _save_undo with TEXT."""
