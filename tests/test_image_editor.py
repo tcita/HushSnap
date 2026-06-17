@@ -217,24 +217,21 @@ class TestSaveUndo:
         assert len(editor._redo_stack) == 0
 
     def test_save_respects_max_undo_steps(self, editor):
-        """Stack is capped at MAX_UNDO_STEPS."""
+        """Stack is capped at MAX_UNDO_STEPS (oldest pruned first)."""
         editor.MAX_UNDO_STEPS = 3
-        editor.MAX_UNDO_MEMORY_MB = 4096  # high enough that only the step cap binds
         for _ in range(5):
             editor._save_undo(UndoChangeType.ANNOTATIONS)
         assert len(editor._undo_stack) == 3
 
-    def test_save_respects_memory_cap(self, editor):
-        """Stack is pruned to fit MAX_UNDO_MEMORY_MB, keeping at least one entry."""
-        # Give a generous step cap so only the memory cap binds, then set the
-        # memory budget smaller than a single annotations snapshot so every
-        # entry overflows it.
-        editor.MAX_UNDO_STEPS = 100
-        editor.MAX_UNDO_MEMORY_MB = 0.0
+    def test_save_redo_stack_also_step_capped(self, editor):
+        """Redo stack is held to MAX_UNDO_STEPS too, not just undo."""
+        editor.MAX_UNDO_STEPS = 3
         for _ in range(5):
             editor._save_undo(UndoChangeType.ANNOTATIONS)
-        # Memory loop keeps at least one entry regardless of the budget.
-        assert len(editor._undo_stack) == 1
+        # Undo all the way back — redo stack must cap at MAX_UNDO_STEPS.
+        for _ in range(len(editor._undo_stack)):
+            editor._undo()
+        assert len(editor._redo_stack) == 3
 
     def test_save_updates_undo_button(self, editor):
         """Undo button is enabled after first save."""

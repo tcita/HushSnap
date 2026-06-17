@@ -2390,16 +2390,13 @@ class _SwatchPopup(QtWidgets.QFrame):
 class ImageEditorWindow(QtWidgets.QWidget):
     """Main editor window with toolbar, canvas, and controls."""
 
-    # Undo/redo "scratch disk" limits. Two independent caps protect memory:
-    #   - MAX_UNDO_STEPS: hard ceiling on how many history entries a single
-    #     stack can hold, so a long editing session can't grow unbounded by
-    #     step count alone.
-    #   - MAX_UNDO_MEMORY_MB: ceiling on the *bytes* a stack may occupy, so a
-    #     few huge full-image snapshots (e.g. 4K crops) can't blow past the
-    #     step budget and exhaust RAM. Whichever cap is hit first prunes the
-    #     oldest entries from the bottom of the stack.
-    MAX_UNDO_STEPS = 15
-    MAX_UNDO_MEMORY_MB = 512
+    # Undo/redo history depth. A single fixed step cap on each stack — light
+    # screenshot annotation rarely wants to reach back more than a few strokes
+    # (anything older is usually a "start over" via reset), so a tight budget
+    # keeps memory bounded without the cost/complexity of a separate byte cap.
+    # 10 × a 4K annotation layer (~33MB) is ~330MB peak in the worst case;
+    # editor close releases it (see trim_working_set).
+    MAX_UNDO_STEPS = 10
     MAX_FONT_SIZE = 200  # upper bound for typed font sizes (px)
 
     def __init__(
@@ -3356,21 +3353,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
 
     # ── Undo / Redo ───────────────────────────────────────────────────────
 
-    def _estimate_undo_entry_size(self, entry: _UndoEntry) -> float:
-        """Estimate memory usage of an undo entry in MiB."""
-        size = 0.0
-        # PIL Image (RGBA)
-        if entry.pil_image:
-            w, h = entry.pil_image.size
-            size += (w * h * 4)
-        # QPixmap (assuming RGBA8888 / 4bpp)
-        if entry.annotations_pixmap:
-            size += (entry.annotations_pixmap.width() * entry.annotations_pixmap.height() * 4)
-        # Region bytes
-        if entry.region_pixels:
-            size += len(entry.region_pixels)
-        return size / (1024.0 * 1024.0)
-
     def _save_undo(
         self,
         change_type: UndoChangeType = UndoChangeType.FULL,
@@ -3415,21 +3397,14 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._update_undo_buttons()
 
     def _enforce_stack_limits(self, stack: list[_UndoEntry]) -> None:
-        """Prune the oldest entries from *stack* so it stays within the
-        fixed step count (``MAX_UNDO_STEPS``) and memory budget
-        (``MAX_UNDO_MEMORY_MB``). At least one entry is always kept so the
-        most recent action remains reachable.
+        """Prune the oldest entries from *stack* so it stays at or below
+        ``MAX_UNDO_STEPS``.
 
         Applied to both the undo and redo stacks — without capping redo,
-        undoing many times would let the redo stack grow without bound and
-        sidestep the memory limit entirely.
+        undoing many times would let the redo stack grow without bound.
         """
         while len(stack) > self.MAX_UNDO_STEPS:
             stack.pop(0)
-        total_mem = sum(self._estimate_undo_entry_size(e) for e in stack)
-        while total_mem > self.MAX_UNDO_MEMORY_MB and len(stack) > 1:
-            removed = stack.pop(0)
-            total_mem -= self._estimate_undo_entry_size(removed)
 
     def _undo(self) -> None:
         if not self._undo_stack:
