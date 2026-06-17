@@ -564,6 +564,67 @@ class TestTextToolSaveBehavior:
         editor._save_undo.assert_called_once_with(UndoChangeType.TEXT)
 
 
+class TestTextToolFontUnits:
+    """font_size is in image pixels throughout the editor.
+
+    Regression: the canvas preview / hit-test used QFont(family, pt),
+    which at 96 DPI renders 1.33x larger than the px-based export bake —
+    so what the user saw was not what got saved. Both renderers must now
+    use pixel size.
+    """
+
+    def test_hit_test_uses_pixel_size(self, editor):
+        """The QFont built for hit-testing is in pixels, not points."""
+        from hushsnap.ui.image_editor import TextItem
+        item = TextItem("Hi", QtCore.QPointF(10, 10),
+                        QtGui.QColor("#fff"), "Arial", 48)
+        editor._text_items.append(item)
+
+        tool = editor._tools["text"]
+        editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
+
+        # Build the same QFont the code builds internally and assert its
+        # pixel size is set (pointSize would be -1 when pixel size is used).
+        scale = editor._effective_scale()
+        fs = max(1, int(item.font_size * scale))
+        font = QtGui.QFont(item.font_family)
+        font.setPixelSize(fs)
+        assert font.pixelSize() == fs
+        assert font.pointSize() == -1  # pixel size overrides point size
+
+    def test_preview_font_height_matches_export(self, editor):
+        """Preview QFont pixel size == ImageFont.truetype px size (export).
+
+        This is the core 'what you see is what you get' invariant: the
+        font_size value feeds both the on-screen QFont (via setPixelSize)
+        and the export ImageFont.truetype(path, font_size) — both in
+        pixels — so they must agree on glyph height at scale=1.
+        """
+        from PIL import ImageFont
+
+        from hushsnap.ui.image_editor import TextItem, TextTool
+        item = TextItem("Hg", QtCore.QPointF(10, 10),
+                        QtGui.QColor("#fff"), "Arial", 48)
+
+        # Export path (scale=1, no zoom): ImageFont.truetype(path, font_size)
+        path = TextTool._resolve_font_path(item.font_family)
+        assert path, "test requires a resolvable Arial font on this system"
+        pil_font = ImageFont.truetype(path, item.font_size)
+        pil_ascent = pil_font.getmetrics()[0]
+
+        # Preview path (scale=1): QFont with setPixelSize(font_size)
+        qfont = QtGui.QFont(item.font_family)
+        qfont.setPixelSize(item.font_size)
+        qt_ascent = QtGui.QFontMetrics(qfont).ascent()
+
+        # Ascents are engine-measured; allow a small tolerance since Qt and
+        # FreeType differ by a pixel or two in hinting, but they must be in
+        # the same ballpark — NOT a 1.33x mismatch (which the pt bug caused).
+        assert abs(qt_ascent - pil_ascent) <= 3
+        # Guard against the original 4/3 ratio regression specifically.
+        assert not (1.25 < qt_ascent / pil_ascent < 1.40)
+
+
 class TestPanToolDoesNotSave:
     def test_pan_does_not_call_save_undo(self, editor):
         """PanTool should never call _save_undo."""

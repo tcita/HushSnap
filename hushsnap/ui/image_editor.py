@@ -1517,9 +1517,13 @@ class TextTool(BaseTool):
             item = self._editor._text_items[i]
             if not item.text: continue
             
-            # Calculate bounding box in screen space
+            # Calculate bounding box in screen space.
+            # Use setPixelSize (not QFont(family, pt)) so the on-screen
+            # hit box matches the px-based export bake — font_size is in
+            # image pixels throughout the editor.
             fs = max(1, int(item.font_size * scale))
-            font = QtGui.QFont(item.font_family, fs)
+            font = QtGui.QFont(item.font_family)
+            font.setPixelSize(fs)
             metrics = QtGui.QFontMetrics(font)
             rect = metrics.boundingRect(item.text)
             
@@ -1767,7 +1771,10 @@ class EditorCanvas(QtWidgets.QWidget):
                 continue
 
             fs = max(1, int(item.font_size * scale))
-            font = QtGui.QFont(item.font_family, fs)
+            # setPixelSize (px) — matches the px-based export bake so the
+            # preview shows the same size that gets saved.
+            font = QtGui.QFont(item.font_family)
+            font.setPixelSize(fs)
             painter.setFont(font)
             painter.setPen(item.color)
 
