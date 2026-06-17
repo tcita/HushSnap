@@ -1367,7 +1367,10 @@ class ShapeTool(BaseTool):
             painter.setPen(line_pen)
             painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
             painter.drawLine(QtCore.QPointF(x1, y1), QtCore.QPointF(x2, y2))
-            if self._arrow_end:
+            # Arrowheads when either toggle is on. double_arrow implies both
+            # ends, so it draws heads regardless of arrow_end; arrow_end alone
+            # draws only the end head.
+            if self._arrow_end or self._double_arrow:
                 self._draw_arrowheads(painter, x1, y1, x2, y2)
         painter.end()
 
@@ -1621,10 +1624,14 @@ class TextTool(BaseTool):
     def on_mouse_double_click(self, canvas, event) -> bool:
         if event.button() != QtCore.Qt.MouseButton.LeftButton:
             return False
-        
+
         hit_idx = self._hit_test(canvas, event.position())
         if hit_idx != -1:
             item = self._editor._text_items[hit_idx]
+            # The two presses that make up the double-click each started a
+            # drag on this item; cancel that so the editor opens clean.
+            self._dragging_item = None
+            canvas.setCursor(QtCore.Qt.CursorShape.IBeamCursor)
             self._spawn_editor(canvas, item)
             return True
         return False
@@ -1725,6 +1732,21 @@ class TextTool(BaseTool):
         return None
 
 
+class _HiddenLineEdit(QtWidgets.QLineEdit):
+    """A QLineEdit that paints nothing.
+
+    Used as the input engine inside the stroked-text editor: it owns all the
+    typing / IME / clipboard logic, but its own text and caret are never drawn
+    (the parent paints the outlined text + a custom caret). Overriding
+    paintEvent to skip drawing is the only reliable way to kill the native
+    caret in Qt6 — stylesheet/palette tricks leave a stray caret line.
+    """
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:
+        # Intentionally empty: no text, no caret, no frame.
+        return
+
+
 class _InlineTextEditor(QtWidgets.QWidget):
     """Temporary stroked-text editor that appears during text entry.
 
@@ -1747,14 +1769,13 @@ class _InlineTextEditor(QtWidgets.QWidget):
         self._birth_time = QtCore.QElapsedTimer()
         self._birth_time.start()
 
-        # Hidden input engine — transparent in every respect, keeps keyboard
-        # focus so IME / dead keys / paste all work for free.
-        self._input = QtWidgets.QLineEdit(self)
+        # Hidden input engine — owns all input logic (typing, IME, clipboard)
+        # but paints nothing. We render the stroked text + caret ourselves.
+        self._input = _HiddenLineEdit(self)
         self._input.setText(item.text)
         self._input.setFrame(False)
         self._input.setStyleSheet(
-            "QLineEdit { background: transparent; border: none; color: transparent;"
-            "padding: 0; }"
+            "QLineEdit { background: transparent; border: none; padding: 0; }"
         )
         self._input.textChanged.connect(self._on_text_changed)
         self._input.returnPressed.connect(self.commit_edit)
@@ -1900,15 +1921,16 @@ class _InlineTextEditor(QtWidgets.QWidget):
         return self._input.inputMethodQuery(query)
 
     def focusOutEvent(self, e: QtGui.QFocusEvent) -> None:
-        # Prevent immediate deletion if focus is lost right after creation
-        # (e.g. due to the mouse release event on the canvas).
-        if not self._input.text().strip() and not self._before_edit_text:
-            if self._birth_time.elapsed() < 300:
-                # Still very young, likely a focus glitch; keep it alive.
-                # Use a singleShot to try to reclaim focus.
-                QtCore.QTimer.singleShot(10, self._input.setFocus)
-                return
-        
+        # The editor can lose focus immediately after spawn — both for new
+        # items (empty) and when re-editing an existing item — because the
+        # mouse press/release cycle that created/activated it (including a
+        # double-click) ripples focus events. Treat any focus loss within the
+        # first 300ms as that spawn-time glitch: reclaim focus instead of
+        # committing, so double-click-to-edit actually opens the editor.
+        if self._birth_time.elapsed() < 300:
+            QtCore.QTimer.singleShot(10, self._input.setFocus)
+            return
+
         self.commit_edit()
         super().focusOutEvent(e)
 
@@ -3132,11 +3154,23 @@ class ImageEditorWindow(QtWidgets.QWidget):
         tool = self._tools.get(tool_id)
         if tool and hasattr(tool, "double_arrow"):
             tool.double_arrow = checked
+            # Single-arrow and double-arrow are mutually exclusive on the UI
+            # (three states: none / one end / both ends). Picking double clears
+            # single so only one button is lit at a time.
+            if checked and hasattr(tool, "arrow_end") and tool.arrow_end:
+                tool.arrow_end = False
+                self._sync_options_from_tool(tool_id)
 
     def _on_arrow_changed(self, tool_id: str, checked: bool) -> None:
         tool = self._tools.get(tool_id)
         if tool and hasattr(tool, "arrow_end"):
             tool.arrow_end = checked
+            # Single-arrow and double-arrow are mutually exclusive on the UI
+            # (three states: none / one end / both ends). Picking single clears
+            # double; unchecking single leaves plain line.
+            if checked and hasattr(tool, "double_arrow") and tool.double_arrow:
+                tool.double_arrow = False
+                self._sync_options_from_tool(tool_id)
 
     def _on_fill_changed(self, tool_id: str, checked: bool) -> None:
         tool = self._tools.get(tool_id)
