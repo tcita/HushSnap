@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import io
 import math
+import gc
 from abc import ABC, abstractmethod
 from enum import Enum
 from pathlib import Path
@@ -3634,8 +3635,53 @@ class ImageEditorWindow(QtWidgets.QWidget):
         super().mouseReleaseEvent(event)
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        # Release the heavy image/pixmap buffers and break the editor<->tool
+        # reference cycle before the window is torn down.
+        #
+        # Without this, closing the editor leaves ~hundreds of MB pinned:
+        # WA_DeleteOnClose schedules deleteLater() (runs on the next event-
+        # loop idle), and the editor ↔ BaseTool._editor cycle plus Python's
+        # generational GC means the PIL/QPixmap/undo buffers aren't reclaimed
+        # promptly — the process working set stays near the editing peak until
+        # a later GC pass or an explicit trim. Dropping the references here
+        # and forcing a collection lets memory go back down right away.
+        self._cleanup_resources()
         event.accept()
         super().closeEvent(event)
+
+    def _cleanup_resources(self) -> None:
+        """Drop large buffers and break reference cycles on close.
+
+        Only Python-side heavy buffers and the editor↔tool cycle are
+        released here; Qt child widgets are torn down by the normal
+        parent→child delete cascade triggered by WA_DeleteOnClose, so we
+        do NOT clear the widget dicts — doing so mid-close can corrupt
+        that cascade.
+        """
+        # Detach the active tool (it may hold a per-stroke pixmap).
+        self._active_tool = None
+
+        # Heavy image buffers — the bulk of the working-set footprint.
+        self._undo_stack.clear()
+        self._redo_stack.clear()
+        self._text_items.clear()
+        self._display_pixmap = None
+        self._annotations_pixmap = None
+        self._overlay_pixmap = None
+        self._pil_image = None
+        self._original_pil = None
+
+        # Break the editor ↔ tool cycle: every tool stores a back-reference
+        # in self._editor. Clearing the dict lets Python's GC collect the
+        # editor and its buffers instead of leaving them pinned until a
+        # later generational pass. Done last, after the buffers above are
+        # already dropped, so no tool destructor can touch them.
+        if self._tools:
+            self._tools.clear()
+
+        # Force immediate reclamation of the now-unreferenced buffers
+        # instead of waiting for an indeterminate generational GC pass.
+        gc.collect()
 
 
 # ── Public entry point ───────────────────────────────────────────────────────
