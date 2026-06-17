@@ -1608,9 +1608,14 @@ class _InlineTextEditor(QtWidgets.QLineEdit):
         
         self.setText(item.text)
         self.setFrame(False)
-        self._update_geometry()
+        # Apply the font (via stylesheet) BEFORE measuring, so the initial
+        # box size reflects font_size. _update_geometry reads fontMetrics(),
+        # which only carries the item's font size once _apply_style has run
+        # — doing it in the other order leaves the box at the default font
+        # size on first spawn (e.g. 200px text opened in a tiny box).
         self._apply_style()
-        
+        self._update_geometry()
+
         self.textChanged.connect(self._on_text_changed)
 
     def _apply_style(self) -> None:
@@ -1633,7 +1638,15 @@ class _InlineTextEditor(QtWidgets.QLineEdit):
         screen_x = self._item.img_pos.x() * scale + offset.x()
         screen_y = self._item.img_pos.y() * scale + offset.y()
 
-        fm = self.fontMetrics()
+        # Measure with the item's font explicitly. self.fontMetrics() is
+        # unreliable during __init__ — the stylesheet font-size hasn't been
+        # polished yet, so it returns the default font and the spawn box
+        # ignores font_size. Building QFontMetrics from the item's size
+        # makes both the init and the _sync_widgets paths correct.
+        fs = max(10, int(self._item.font_size * scale))
+        mfont = QtGui.QFont(self._item.font_family)
+        mfont.setPixelSize(fs)
+        fm = QtGui.QFontMetrics(mfont)
         # Scale minimum size and padding with zoom so the widget grows /
         # shrinks in proportion to the image, not in absolute pixels.
         min_w = int(100 * scale)

@@ -671,6 +671,64 @@ class TestFontSizeCap:
         assert combo.currentText().strip() == "200"
 
 
+class TestInlineEditorSpawnSize:
+    """The inline text editor's box must reflect font_size on FIRST spawn,
+    not just after a subsequent _sync_widgets.
+
+    Regression: _InlineTextEditor.__init__ measured geometry with
+    self.fontMetrics() before the stylesheet font had been applied, so the
+    spawn box stayed at the default font size regardless of font_size
+    (e.g. 200px text opened in a ~26px box). _update_geometry now measures
+    with an explicit QFont built from item.font_size.
+    """
+
+    def _spawn_box_height(self, editor, font_size: int) -> int:
+        from hushsnap.ui.image_editor import TextItem
+        tool = editor._tools["text"]
+        tool.font_size = font_size
+        tool.font_family = "Arial"
+        tool.color = QtGui.QColor("#000000")
+        editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
+
+        item = TextItem("", QtCore.QPointF(50, 50),
+                        QtGui.QColor(tool.color), tool.font_family, tool.font_size)
+        editor._text_items.append(item)
+        tool._spawn_editor(editor._canvas, item)
+        h = tool._editing_widget.geometry().height()
+        tool._editing_widget.commit_edit()
+        return h
+
+    def test_spawn_box_grows_with_font_size(self, editor):
+        small = self._spawn_box_height(editor, 12)
+        large = self._spawn_box_height(editor, 200)
+        # A 200px font must produce a markedly taller box than a 12px one.
+        assert large > small * 3, f"box not growing: small={small} large={large}"
+
+    def test_spawn_box_matches_sync_widgets_size(self, editor):
+        """Spawn size should equal the size after _sync_widgets (the path
+        that already worked) — i.e. init no longer undersizes."""
+        from hushsnap.ui.image_editor import TextItem
+        tool = editor._tools["text"]
+        tool.font_size = 200
+        tool.font_family = "Arial"
+        tool.color = QtGui.QColor("#000000")
+        editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
+
+        item = TextItem("", QtCore.QPointF(50, 50),
+                        QtGui.QColor(tool.color), tool.font_family, tool.font_size)
+        editor._text_items.append(item)
+        tool._spawn_editor(editor._canvas, item)
+        spawn_h = tool._editing_widget.geometry().height()
+
+        tool._sync_widgets()
+        sync_h = tool._editing_widget.geometry().height()
+
+        tool._editing_widget.commit_edit()
+        # Init must not be (much) smaller than the synced size — the old bug
+        # left spawn at ~26 while sync gave ~183.
+        assert spawn_h >= sync_h - 2, f"spawn={spawn_h} sync={sync_h}"
+
+
 class TestPanToolDoesNotSave:
     def test_pan_does_not_call_save_undo(self, editor):
         """PanTool should never call _save_undo."""
