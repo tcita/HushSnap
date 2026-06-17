@@ -1964,8 +1964,15 @@ class _ColorButton(QtWidgets.QWidget):
         # Draw the perfectly circular color swatch
         rect = QtCore.QRectF(self.rect()).adjusted(1.0, 1.0, -1.0, -1.0)
 
-        # Solid fill
-        painter.setBrush(QtGui.QBrush(self._color))
+        # Show the color HUE only (alpha forced to 255). The swatch sits on
+        # the fixed options-bar background, so rendering a semi-transparent
+        # color here would composite against that dark bg and misrepresent
+        # what the tool paints onto the screenshot (e.g. highlighter yellow
+        # @ alpha 80 would look olive). Transparency is conveyed by the
+        # opacity slider; the swatch's job is "which hue".
+        display = QtGui.QColor(self._color)
+        display.setAlpha(255)
+        painter.setBrush(QtGui.QBrush(display))
 
         # Border
         if self._hovered:
@@ -1983,7 +1990,7 @@ class _SwatchPopup(QtWidgets.QFrame):
 
     color_selected = QtCore.pyqtSignal(QtGui.QColor)
 
-    def __init__(self, parent: QtWidgets.QWidget, alpha: int = 255):
+    def __init__(self, parent: QtWidgets.QWidget):
         super().__init__(parent)
         self.setWindowFlags(
             QtCore.Qt.WindowType.Popup
@@ -2004,9 +2011,14 @@ class _SwatchPopup(QtWidgets.QFrame):
             r, g, b = int(hex_color[1:3], 16), int(hex_color[3:5], 16), int(hex_color[5:7], 16)
             # White swatch needs a subtle border to be visible on dark bg
             border = "1px solid rgba(255,255,255,30)" if hex_color == "#FFFFFF" else "none"
+            # Swatches show the pure hue (alpha=255). The popup sits on a
+            # fixed #333 background, so a semi-transparent swatch would
+            # composite against it and misrepresent the painted result
+            # (highlighter colors especially). Transparency is controlled
+            # separately via the opacity slider.
             btn.setStyleSheet(
                 f"QPushButton {{"
-                f"  background-color: rgba({r},{g},{b},{alpha});"
+                f"  background-color: rgb({r},{g},{b});"
                 f"  border: {border}; border-radius: {_SWATCH_SIZE // 2}px;"
                 f"}}"
                 f"QPushButton:hover {{ border: 2px solid #fff; }}"
@@ -2582,7 +2594,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
         if not tool or not hasattr(tool, "color"):
             return
         anchor = self._option_widgets.get((tool_id, "colorBtn"))
-        popup = _SwatchPopup(self, alpha=tool.color.alpha())
+        popup = _SwatchPopup(self)
         popup.color_selected.connect(
             lambda c, tid=tool_id: self._on_color_picked(tid, c)
         )
@@ -2967,12 +2979,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
         self._drag_pos = None
         super().mouseReleaseEvent(event)
-
-    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
-        if event.key() == QtCore.Qt.Key.Key_Escape:
-            self.close()
-        else:
-            super().keyPressEvent(event)
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         event.accept()

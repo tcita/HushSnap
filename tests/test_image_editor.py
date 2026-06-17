@@ -640,6 +640,134 @@ class TestPanToolDoesNotSave:
         editor._save_undo.assert_not_called()
 
 
+class TestEscapeDoesNotCloseWindow:
+    """The editor must NOT close on Escape at the window level.
+
+    Escape is reserved for canceling in-progress tool operations (crop,
+    mosaic, shape drag, inline text edit). A window-level Esc→close used
+    to exist and would silently discard all annotations when a user hit
+    Esc while no tool operation was active — that behavior is gone.
+
+    These tests guard against it being reintroduced.
+    """
+
+    def test_no_window_level_keyPressEvent_override(self, editor):
+        """ImageEditorWindow no longer overrides keyPressEvent to close on Esc.
+
+        QWidget's default keyPressEvent does nothing for Esc, so removing
+        the override is sufficient. Assert the class itself doesn't define
+        a keyPressEvent that closes on Escape.
+        """
+        import inspect
+        from hushsnap.ui import image_editor as ie
+
+        # If keyPressEvent is defined on the class, it must not reference
+        # Key_Escape + self.close().
+        if "keyPressEvent" in ImageEditorWindow.__dict__:
+            src = inspect.getsource(ImageEditorWindow.__dict__["keyPressEvent"])
+            assert "Key_Escape" not in src, (
+                "ImageEditorWindow.keyPressEvent handles Escape — window-level "
+                "Esc→close must not be reintroduced"
+            )
+
+    def test_escape_does_not_close_window(self, editor):
+        """Pressing Esc at the window level (no active tool op) does not close."""
+        editor.close = MagicMock()
+        key = QtGui.QKeyEvent(
+            QtCore.QEvent.Type.KeyPress,
+            QtCore.Qt.Key.Key_Escape,
+            QtCore.Qt.KeyboardModifier.NoModifier,
+        )
+        # Simulate Qt delivering the key to the window (as it would when no
+        # child widget / tool has consumed it).
+        QtWidgets.QWidget.keyPressEvent(editor, key)
+        editor.close.assert_not_called()
+
+    def test_crop_escape_still_cancels(self, editor):
+        """Tool-level Escape (cancel crop) still works after removing the
+        window-level handler."""
+        tool = editor._tools["crop"]
+        editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
+        editor._activate_tool("crop")
+        assert tool._crop_rect is not None  # crop mode active
+
+        key = QtGui.QKeyEvent(
+            QtCore.QEvent.Type.KeyPress,
+            QtCore.Qt.Key.Key_Escape,
+            QtCore.Qt.KeyboardModifier.NoModifier,
+        )
+        handled = tool.on_key_press(editor._canvas, key)
+        assert handled is True
+        # cancel_crop switches back to pan, which deactivates crop
+        assert editor._active_tool is editor._tools["pan"]
+
+
+class TestColorSwatchShowsPureHue:
+    """Swatches show the pure hue (alpha forced to 255), not the tool's
+    composited-against-dark-background color.
+
+    Design intent: the swatch sits on a fixed dark options-bar background.
+    A semi-transparent tool color (e.g. highlighter yellow @ alpha 80)
+    composited against that bg reads as olive (107,107,27), nothing like
+    what the tool paints on a white screenshot (255,255,175). So the
+    swatch must display the pure hue; transparency is the opacity slider's
+    job. These tests guard that contract.
+    """
+
+    def test_color_button_ignores_alpha_when_rendering(self, qapp):
+        from hushsnap.ui.image_editor import _ColorButton
+
+        btn = _ColorButton()
+        # Highlighter's actual color: yellow @ alpha 80.
+        btn.setColor(QtGui.QColor(255, 255, 0, 80))
+
+        # Render onto a dark background mimicking the options bar.
+        img = QtGui.QImage(btn.size(), QtGui.QImage.Format.Format_RGBA8888)
+        img.fill(QtGui.QColor("#282828"))  # options-bar background
+        btn.render(img)
+
+        # Sample the swatch center. If alpha were honored, the pixel would
+        # be the olive composite (~107,107,27). With the fix it must be the
+        # pure hue (~255,255,0).
+        c = img.pixelColor(btn.width() // 2, btn.height() // 2)
+        r, g, b = c.red(), c.green(), c.blue()
+        # Pure yellow: R and G high, B near 0.
+        assert r > 230 and g > 230 and b < 40, f"swatch rendered {r,g,b}, not pure hue"
+        # Specifically NOT the olive composite the alpha-bug produced.
+        assert not (90 < r < 130 and 90 < g < 130), "swatch still shows olive (alpha honored)"
+
+    def test_swatch_popup_candidates_are_opaque(self, qapp):
+        from hushsnap.ui.image_editor import _SwatchPopup, _SWATCH_COLORS
+
+        popup = _SwatchPopup(None)
+        # The popup constructor no longer accepts an alpha param — confirm
+        # the signature dropped it (guards against re-adding the misleading
+        # alpha rendering path).
+        import inspect
+        sig = inspect.signature(_SwatchPopup.__init__)
+        assert "alpha" not in sig.parameters
+
+        # Every candidate button's stylesheet must use rgb() (opaque), not
+        # rgba() with a tool alpha — find the yellow swatch and check it.
+        yellow_hex = "#FFFF00"
+        assert any(h == yellow_hex for h, _ in _SWATCH_COLORS), "test expects a yellow swatch"
+        # Render the popup and sample the yellow cell: should be pure yellow.
+        img = QtGui.QImage(popup.size(), QtGui.QImage.Format.Format_RGBA8888)
+        img.fill(QtGui.QColor("#333"))
+        popup.render(img)
+        # Scan for a near-pure-yellow pixel (the swatch disc).
+        found_pure = False
+        for y in range(0, img.height(), 2):
+            for x in range(0, img.width(), 2):
+                c = img.pixelColor(x, y)
+                if c.red() > 230 and c.green() > 230 and c.blue() < 60:
+                    found_pure = True
+                    break
+            if found_pure:
+                break
+        assert found_pure, "no opaque pure-yellow swatch pixel found in popup"
+
+
 # ── Integration: PIL preservation ────────────────────────────────────────────
 
 
