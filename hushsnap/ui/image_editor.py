@@ -2053,6 +2053,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
     """Main editor window with toolbar, canvas, and controls."""
 
     MAX_UNDO = 25
+    MAX_FONT_SIZE = 200  # upper bound for typed font sizes (px)
 
     def __init__(
         self,
@@ -2649,7 +2650,18 @@ class ImageEditorWindow(QtWidgets.QWidget):
             return
         tool = self._tools.get(tool_id)
         if tool and hasattr(tool, "font_size"):
-            tool.font_size = max(1, min(value, 999))
+            # Clamp to a sane range. 200px covers large 4K watermarks; the
+            # old 999 cap let absurd values through, which made the inline
+            # text editor explode in size and hard to position.
+            clamped = max(1, min(value, self.MAX_FONT_SIZE))
+            tool.font_size = clamped
+            # Reflect clamping back into the combo so the displayed value
+            # matches the applied one (e.g. typing 250 shows 200).
+            combo = self._option_widgets.get((tool_id, "fontSizeSpin"))
+            if combo and combo.currentText().strip() != str(clamped):
+                combo.blockSignals(True)
+                combo.setCurrentText(str(clamped))
+                combo.blockSignals(False)
             if tool_id == "text":
                 tool._sync_widgets()
 

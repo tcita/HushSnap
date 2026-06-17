@@ -625,6 +625,52 @@ class TestTextToolFontUnits:
         assert not (1.25 < qt_ascent / pil_ascent < 1.40)
 
 
+class TestFontSizeCap:
+    """Typed font sizes are clamped to MAX_FONT_SIZE (200), not 999.
+
+    999px was absurd — a single glyph spanning several screens, making
+    the inline editor unusable. 200 still covers large 4K watermarks.
+    The combo also reflects the clamped value so the displayed number
+    matches what's applied.
+    """
+
+    def test_max_font_size_is_200(self, editor):
+        assert editor.MAX_FONT_SIZE == 200
+
+    def test_input_above_cap_is_clamped(self, editor):
+        editor._on_font_size_text_changed("text", "999")
+        assert editor._tools["text"].font_size == 200
+
+    def test_input_just_above_cap_clamps_to_cap(self, editor):
+        editor._on_font_size_text_changed("text", "250")
+        assert editor._tools["text"].font_size == 200
+
+    def test_input_below_cap_unchanged(self, editor):
+        editor._on_font_size_text_changed("text", "150")
+        assert editor._tools["text"].font_size == 150
+
+    def test_input_at_cap_unchanged(self, editor):
+        editor._on_font_size_text_changed("text", "200")
+        assert editor._tools["text"].font_size == 200
+
+    def test_input_zero_or_negative_clamps_to_one(self, editor):
+        editor._on_font_size_text_changed("text", "0")
+        assert editor._tools["text"].font_size == 1
+        editor._on_font_size_text_changed("text", "-5")
+        assert editor._tools["text"].font_size == 1
+
+    def test_non_numeric_input_ignored(self, editor):
+        before = editor._tools["text"].font_size
+        editor._on_font_size_text_changed("text", "abc")
+        assert editor._tools["text"].font_size == before
+
+    def test_clamped_value_reflected_in_combo(self, editor):
+        """Typing 250 updates the combo text to 200 (no stale display)."""
+        combo = editor._option_widgets[("text", "fontSizeSpin")]
+        editor._on_font_size_text_changed("text", "250")
+        assert combo.currentText().strip() == "200"
+
+
 class TestPanToolDoesNotSave:
     def test_pan_does_not_call_save_undo(self, editor):
         """PanTool should never call _save_undo."""
