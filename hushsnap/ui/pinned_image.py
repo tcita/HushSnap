@@ -320,12 +320,6 @@ class PinnedImageWindow(QtWidgets.QWidget):
                     counter += 1
                 self.pil_image.save(file_path)
                 show_toast(ui_text(lang, "pin_saved_to_desktop"))
-                # Reveal the saved file in Explorer (best-effort; never blocks).
-                try:
-                    from ..system.shell_utils import reveal_in_explorer
-                    reveal_in_explorer(file_path)
-                except Exception:
-                    logger.debug("reveal_in_explorer unavailable", exc_info=True)
             except Exception: logger.exception("Failed to save pinned image to desktop")
         elif action == ocr_action:
             self.ocr_requested.emit(self.pixmap, self)

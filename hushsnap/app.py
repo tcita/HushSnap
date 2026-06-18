@@ -430,12 +430,6 @@ class Application(QtCore.QObject):
                 counter += 1
             pil_img.save(file_path)
             show_toast(self.translate("pin_saved_to_desktop"))
-            # Reveal the saved file in Explorer (best-effort; never blocks).
-            try:
-                from .system.shell_utils import reveal_in_explorer
-                reveal_in_explorer(file_path)
-            except Exception:
-                self.logger.debug("reveal_in_explorer unavailable", exc_info=True)
         except Exception:
             self.logger.exception("Failed to save image to desktop")
 
