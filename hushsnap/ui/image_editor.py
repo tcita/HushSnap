@@ -1112,6 +1112,12 @@ class ImageEditorWindow(QtWidgets.QWidget):
                 show_toast(self._tr("editor_saved"))
             except Exception:
                 pass
+            # Reveal the saved file in Explorer (best-effort; never blocks).
+            try:
+                from ..system.shell_utils import reveal_in_explorer
+                reveal_in_explorer(file_path)
+            except Exception:
+                logger.debug("reveal_in_explorer unavailable", exc_info=True)
         except Exception:
             logger.exception("Failed to save image")
 
