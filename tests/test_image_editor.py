@@ -716,37 +716,36 @@ class TestTextToolFontUnits:
         assert font.pixelSize() == fs
         assert font.pointSize() == -1  # pixel size overrides point size
 
-    def test_preview_font_height_matches_export(self, editor):
-        """Preview QFont pixel size == ImageFont.truetype px size (export).
+    def test_export_bakes_text_with_pixel_sized_font(self, editor, monkeypatch):
+        """Export composites text using a QFont sized in pixels, not points.
 
-        This is the core 'what you see is what you get' invariant: the
-        font_size value feeds both the on-screen QFont (via setPixelSize)
-        and the export ImageFont.truetype(path, font_size) — both in
-        pixels — so they must agree on glyph height at scale=1.
+        WYSIWYG regression guard. Preview and export now share
+        _draw_outlined_text, so they agree by construction — but only if the
+        export builds its QFont with setPixelSize(font_size). A point-size
+        QFont would render ~1.33x larger at 96 DPI, diverging from preview.
+        (Previously this compared against a PIL ImageFont export path that
+        the refactor removed; it now pins the shared QPainter path directly.)
         """
-        from PIL import ImageFont
+        import hushsnap.ui.image_editor as ie
+        from hushsnap.ui.image_editor import TextItem
 
-        from hushsnap.ui.image_editor import TextItem, TextTool
+        captured: dict = {}
+
+        def _capture(painter, pos, text, font):
+            captured["font"] = font
+
+        monkeypatch.setattr(ie, "_draw_outlined_text", _capture)
+
         item = TextItem("Hg", QtCore.QPointF(10, 10),
                         QtGui.QColor("#fff"), "Arial", 48)
+        editor._text_items.append(item)
 
-        # Export path (scale=1, no zoom): ImageFont.truetype(path, font_size)
-        path = TextTool._resolve_font_path(item.font_family)
-        assert path, "test requires a resolvable Arial font on this system"
-        pil_font = ImageFont.truetype(path, item.font_size)
-        pil_ascent = pil_font.getmetrics()[0]
+        editor._get_composite_pixmap()
 
-        # Preview path (scale=1): QFont with setPixelSize(font_size)
-        qfont = QtGui.QFont(item.font_family)
-        qfont.setPixelSize(item.font_size)
-        qt_ascent = QtGui.QFontMetrics(qfont).ascent()
-
-        # Ascents are engine-measured; allow a small tolerance since Qt and
-        # FreeType differ by a pixel or two in hinting, but they must be in
-        # the same ballpark — NOT a 1.33x mismatch (which the pt bug caused).
-        assert abs(qt_ascent - pil_ascent) <= 3
-        # Guard against the original 4/3 ratio regression specifically.
-        assert not (1.25 < qt_ascent / pil_ascent < 1.40)
+        assert "font" in captured, "export did not bake any text"
+        font = captured["font"]
+        assert font.pixelSize() == 48
+        assert font.pointSize() == -1  # pixel size overrides point size
 
 
 class TestFontSizeCap:
@@ -965,7 +964,8 @@ class TestColorSwatchShowsPureHue:
         assert not (90 < r < 130 and 90 < g < 130), "swatch still shows olive (alpha honored)"
 
     def test_swatch_popup_candidates_are_opaque(self, qapp):
-        from hushsnap.ui.image_editor import _SwatchPopup, _SWATCH_COLORS
+        from hushsnap.ui.image_editor import _SwatchPopup
+        from hushsnap.ui.editor.constants import _SWATCH_COLORS
 
         popup = _SwatchPopup(None)
         # The popup constructor no longer accepts an alpha param — confirm

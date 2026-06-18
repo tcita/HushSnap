@@ -106,24 +106,6 @@ QToolButton:pressed {
 }
 """
 
-EDITOR_SAVE_BUTTON_STYLE = f"""
-QPushButton#editorSaveBtn {{
-    background-color: {BRAND_GREEN};
-    border: none;
-    border-radius: 5px;
-    padding: 6px 18px;
-    color: #ffffff;
-    font-size: 12px;
-    font-weight: 600;
-}}
-QPushButton#editorSaveBtn:hover {{
-    background-color: #7ad9a0;
-}}
-QPushButton#editorSaveBtn:pressed {{
-    background-color: #4ab87a;
-}}
-"""
-
 EDITOR_STATUS_STYLE = """
 QLabel#statusLabel {
     color: #999;

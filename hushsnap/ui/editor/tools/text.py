@@ -1,4 +1,3 @@
-import os
 from typing import Optional
 from PyQt6 import QtCore, QtGui
 from .base import BaseTool
@@ -7,9 +6,6 @@ from ..widgets.inline_editor import _InlineTextEditor
 
 class TextTool(BaseTool):
     """Text annotation tool."""
-
-    _FONT_DIR = None
-    _FONT_CACHE: dict[str, str] = {}
 
     def __init__(self, editor):
         super().__init__(editor)
@@ -153,32 +149,3 @@ class TextTool(BaseTool):
 
     def _mark_modified(self) -> None:
         self._editor._modified = True
-
-    @classmethod
-    def _resolve_font_path(cls, family: str) -> Optional[str]:
-        if family in cls._FONT_CACHE:
-            return cls._FONT_CACHE[family]
-        if cls._FONT_DIR is None:
-            import sys
-            cls._FONT_DIR = ("C:\\Windows\\Fonts" if sys.platform == "win32"
-                             else "/usr/share/fonts")
-        known: dict[str, str] = {
-            "Microsoft YaHei": "msyh.ttc", "Microsoft JhengHei": "msjh.ttc",
-            "SimSun": "simsun.ttc", "SimHei": "simhei.ttf",
-            "KaiTi": "simkai.ttf", "Arial": "arial.ttf",
-            "Consolas": "consola.ttf", "Courier New": "cour.ttf",
-            "Times New Roman": "times.ttf",
-        }
-        filename = known.get(family)
-        if filename:
-            path = os.path.join(cls._FONT_DIR, filename)
-            if os.path.isfile(path):
-                cls._FONT_CACHE[family] = path
-                return path
-        for ext in (".ttf", ".ttc"):
-            path = os.path.join(cls._FONT_DIR, family + ext)
-            if os.path.isfile(path):
-                cls._FONT_CACHE[family] = path
-                return path
-        cls._FONT_CACHE[family] = ""
-        return None
