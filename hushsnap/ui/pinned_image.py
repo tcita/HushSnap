@@ -17,6 +17,7 @@ class PinnedImageWindow(QtWidgets.QWidget):
     Floating, resizable, and draggable image window.
     """
     ocr_requested = QtCore.pyqtSignal(object, object)  # pixmap, source_win
+    edit_requested = QtCore.pyqtSignal(object)  # pil_image
 
     def __init__(self, pil_image: Image.Image, logical_size: QtCore.QSize = None):
         super().__init__()
@@ -300,10 +301,13 @@ class PinnedImageWindow(QtWidgets.QWidget):
         menu.setGraphicsEffect(shadow)
         ocr_action = menu.addAction(ui_text(lang, "menu_ocr_recognize"))
         copy_action = menu.addAction(ui_text(lang, "pin_copy_image"))
+        edit_action = menu.addAction(ui_text(lang, "thumbnail_edit"))
         menu.addSeparator()
         desktop_action = menu.addAction(ui_text(lang, "thumbnail_save_to_desktop"))
         action = menu.exec(pos)
-        if action == copy_action:
+        if action == edit_action:
+            self.edit_requested.emit(self.pil_image)
+        elif action == copy_action:
             cb = QtWidgets.QApplication.clipboard()
             buffer = io.BytesIO(); self.pil_image.save(buffer, format="PNG")
             cb.setImage(QtGui.QImage.fromData(buffer.getvalue()))
@@ -327,6 +331,7 @@ class PinnedImageWindow(QtWidgets.QWidget):
 class PinnedImageManager(QtCore.QObject):
     """Manages multiple pinned image windows."""
     ocr_requested = QtCore.pyqtSignal(object, object)
+    edit_requested = QtCore.pyqtSignal(object)
 
     def __init__(self):
         super().__init__()
@@ -343,6 +348,7 @@ class PinnedImageManager(QtCore.QObject):
             win.move(x, y)
             win.set_morph_source(morph_pos, morph_size)
             win.ocr_requested.connect(self.ocr_requested.emit)
+            win.edit_requested.connect(self.edit_requested.emit)
             win.show()
             from .thumbnail import thumbnail_manager
             thumbnail_manager.dismiss_current()

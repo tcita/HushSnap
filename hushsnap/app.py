@@ -285,6 +285,7 @@ class Application(QtCore.QObject):
         thumbnail_manager.clicked.connect(self._handle_thumbnail_clicked)
         thumbnail_manager.save_to_desktop.connect(self._handle_save_to_desktop)
         thumbnail_manager.edit_requested.connect(self._handle_open_editor)
+        thumbnail_manager.copy_image.connect(self._handle_copy_image)
         thumbnail_manager.pin_requested.connect(
             lambda pil, pos, size: pinned_image_manager.pin_image(
                 pil, 
@@ -297,6 +298,7 @@ class Application(QtCore.QObject):
         pinned_image_manager.ocr_requested.connect(
             lambda pix, win: self.ocr_controller.copy_text_from_image(pix, win)
         )
+        pinned_image_manager.edit_requested.connect(self._handle_open_editor)
 
         # 6. Idle Memory Manager
         self.idle_manager = self._init_idle_manager(thumbnail_manager, pinned_image_manager)
@@ -417,6 +419,20 @@ class Application(QtCore.QObject):
         self._editor_windows = live_windows
         self._editor_window = self._last_visible_editor_window()
         return any_visible
+
+    def _handle_copy_image(self, pil_img):
+        """Copy the given PIL image to the system clipboard."""
+        try:
+            import io
+            from PyQt6 import QtGui
+            from .ui.toast import show_toast
+            cb = QtWidgets.QApplication.clipboard()
+            buffer = io.BytesIO()
+            pil_img.save(buffer, format="PNG")
+            cb.setImage(QtGui.QImage.fromData(buffer.getvalue()))
+            show_toast(self.translate("pin_image_copied"))
+        except Exception:
+            self.logger.exception("Failed to copy image to clipboard")
 
     def _handle_save_to_desktop(self, pil_img):
         try:
