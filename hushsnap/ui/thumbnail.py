@@ -89,18 +89,26 @@ class ThumbnailWindow(QtWidgets.QWidget):
         # 3. Blurred background: crop-to-fill → Gaussian blur → QPixmap
         self.blurred_bg = self._create_blurred_background(pil_image)
         
-        # 3. Action Pill (Pin + Close)
+        # 3. Action Pill (Edit + Pin + Close)
         self.action_pill = QtWidgets.QFrame(self)
         self.action_pill.setObjectName("actionPill")
-        # WA_TranslucentBackground makes the QFrame a transparent hit-test
-        # container only — its background is drawn by the parent paintEvent
-        # so Qt never gets a chance to pre-fill the bounding rect with white.
         self.action_pill.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.action_pill.setFixedSize(76, 28)
+        self.action_pill.setFixedSize(110, 28)
 
         pill_layout = QtWidgets.QHBoxLayout(self.action_pill)
         pill_layout.setContentsMargins(8, 0, 8, 0)
-        pill_layout.setSpacing(5)
+        pill_layout.setSpacing(4)
+
+        self.edit_btn = QtWidgets.QPushButton(self.action_pill)
+        self.edit_btn.setFixedSize(24, 24)
+        self.edit_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self.edit_btn.setToolTip("Edit Image")
+        self.edit_btn.setIcon(self._make_edit_icon())
+        self.edit_btn.setIconSize(QtCore.QSize(14, 14))
+        self.edit_btn.setStyleSheet(
+            "QPushButton { background: transparent; border: none; }"
+        )
+        self.edit_btn.clicked.connect(self.edit_requested_signal.emit)
 
         self.pin_btn = QtWidgets.QPushButton(self.action_pill)
         self.pin_btn.setFixedSize(24, 24)
@@ -130,15 +138,19 @@ class ThumbnailWindow(QtWidgets.QWidget):
         )
         self.close_btn.clicked.connect(self.close)
 
-        # Event filters for half-pill hover effect
+        # Event filters for pill hover effect
+        self.edit_btn.installEventFilter(self)
         self.pin_btn.installEventFilter(self)
         self.close_btn.installEventFilter(self)
         self._pill_hover_timer = QtCore.QTimer(self)
         self._pill_hover_timer.setSingleShot(True)
         self._pill_hover_timer.timeout.connect(self._restore_pill_style)
         
+        pill_layout.addWidget(self.edit_btn)
         pill_layout.addWidget(self.pin_btn)
+        pill_layout.addSpacing(2)
         pill_layout.addWidget(sep)
+        pill_layout.addSpacing(2)
         pill_layout.addWidget(self.close_btn)
         
         # Center the pill at the top of the card
@@ -185,7 +197,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self._loading = False
         self._loading_progress = 0.0
         self._loading_anim = None  # QVariantAnimation for pulsing bar
-        self._pill_state = 'none'  # 'none' | 'pin' | 'close' — drives paintEvent
+        self._pill_state = 'none'  # 'none' | 'edit' | 'pin' | 'close' — drives paintEvent
 
         # Countdown progress bar — thin line at card bottom that shrinks
         # over the display duration, so the user always knows how much
@@ -219,6 +231,10 @@ class ThumbnailWindow(QtWidgets.QWidget):
         icon.addPixmap(_render(normal_color), QtGui.QIcon.Mode.Normal)
         icon.addPixmap(_render(active_color), QtGui.QIcon.Mode.Active)
         return icon
+
+    @staticmethod
+    def _make_edit_icon():
+        return ThumbnailWindow._svg_icon("edit_brush", BRAND_GREEN, "#8ef0b6")
 
     @staticmethod
     def _make_pin_icon():
@@ -411,7 +427,14 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self.update()
 
     def eventFilter(self, obj, event):
-        if obj == self.pin_btn:
+        if obj == self.edit_btn:
+            if event.type() == QtCore.QEvent.Type.Enter:
+                self._pill_hover_timer.stop()
+                self._pill_state = 'edit'
+                self.update()
+            elif event.type() == QtCore.QEvent.Type.Leave:
+                self._pill_hover_timer.start(60)
+        elif obj == self.pin_btn:
             if event.type() == QtCore.QEvent.Type.Enter:
                 self._pill_hover_timer.stop()
                 self._pill_state = 'pin'
@@ -792,20 +815,29 @@ class ThumbnailWindow(QtWidgets.QWidget):
             painter.setBrush(QtGui.QColor(18, 18, 18, 185))
             painter.drawPath(pill_path)
 
-            # Soft colour wash on the hovered half — layered over base
-            if self._pill_state == 'pin':
+            # Soft colour wash on the hovered button — layered over base
+            if self._pill_state == 'edit':
                 grad = QtGui.QLinearGradient(pill_geom.left(), 0, pill_geom.right(), 0)
                 grad.setColorAt(0.00, QtGui.QColor(95, 201, 138, 58))
-                grad.setColorAt(0.36, QtGui.QColor(95, 201, 138, 16))
-                grad.setColorAt(0.52, QtGui.QColor(0, 0, 0, 0))
+                grad.setColorAt(0.28, QtGui.QColor(95, 201, 138, 16))
+                grad.setColorAt(0.42, QtGui.QColor(0, 0, 0, 0))
+                grad.setColorAt(1.00, QtGui.QColor(0, 0, 0, 0))
+                painter.setBrush(QtGui.QBrush(grad))
+                painter.drawPath(pill_path)
+            elif self._pill_state == 'pin':
+                grad = QtGui.QLinearGradient(pill_geom.left(), 0, pill_geom.right(), 0)
+                grad.setColorAt(0.00, QtGui.QColor(0, 0, 0, 0))
+                grad.setColorAt(0.15, QtGui.QColor(95, 201, 138, 10))
+                grad.setColorAt(0.35, QtGui.QColor(95, 201, 138, 48))
+                grad.setColorAt(0.55, QtGui.QColor(95, 201, 138, 10))
                 grad.setColorAt(1.00, QtGui.QColor(0, 0, 0, 0))
                 painter.setBrush(QtGui.QBrush(grad))
                 painter.drawPath(pill_path)
             elif self._pill_state == 'close':
                 grad = QtGui.QLinearGradient(pill_geom.left(), 0, pill_geom.right(), 0)
                 grad.setColorAt(0.00, QtGui.QColor(0, 0, 0, 0))
-                grad.setColorAt(0.48, QtGui.QColor(0, 0, 0, 0))
-                grad.setColorAt(0.62, QtGui.QColor(210, 50, 50, 36))
+                grad.setColorAt(0.60, QtGui.QColor(0, 0, 0, 0))
+                grad.setColorAt(0.75, QtGui.QColor(210, 50, 50, 36))
                 grad.setColorAt(1.00, QtGui.QColor(210, 50, 50, 78))
                 painter.setBrush(QtGui.QBrush(grad))
                 painter.drawPath(pill_path)
