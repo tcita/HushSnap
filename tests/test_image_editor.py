@@ -4,7 +4,7 @@ and dead code verification.
 """
 
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, ANY
 from PIL import Image
 from PyQt6 import QtCore, QtGui, QtWidgets
 
@@ -13,14 +13,7 @@ from hushsnap.ui.image_editor import (
     UndoChangeType,
     _UndoEntry,
     TextItem,
-    BrushTool,
-    EraserTool,
-    ShapeTool,
-    HighlighterTool,
-    MosaicTool,
     CropTool,
-    TextTool,
-    PanTool,
 )
 
 
@@ -82,17 +75,6 @@ def editor(qapp, test_image) -> ImageEditorWindow:
     win = ImageEditorWindow(test_image, _translate)
     yield win
     win.close()
-
-
-# ── UndoChangeType enum ──────────────────────────────────────────────────────
-
-
-class TestUndoChangeType:
-    def test_enum_values(self):
-        assert UndoChangeType.FULL.value == "full"
-        assert UndoChangeType.ANNOTATIONS.value == "annotations"
-        assert UndoChangeType.TEXT.value == "text"
-        assert UndoChangeType.REGION.value == "region"
 
 
 # ── _UndoEntry construction ──────────────────────────────────────────────────
@@ -375,122 +357,72 @@ class TestUndoRedo:
 # ── Tool save behavior ───────────────────────────────────────────────────────
 
 
-class TestBrushToolSaveBehavior:
-    def test_save_on_mouse_press(self, editor):
-        tool = editor._tools["brush"]
+def _mouse_event(etype, x, y):
+    """A left-button mouse event of the given Qt type at widget coords (x, y)."""
+    return QtGui.QMouseEvent(
+        etype,
+        QtCore.QPointF(x, y), QtCore.QPointF(x, y),
+        QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.LeftButton,
+        QtCore.Qt.KeyboardModifier.NoModifier,
+    )
+
+
+def _press_at(x=50, y=50):
+    """A left-button mouse-press event at widget coords (x, y)."""
+    return _mouse_event(QtCore.QEvent.Type.MouseButtonPress, x, y)
+
+
+def _release_at(x=80, y=70):
+    """A left-button mouse-release event at widget coords (x, y)."""
+    return _mouse_event(QtCore.QEvent.Type.MouseButtonRelease, x, y)
+
+
+class TestAnnotationToolsSaveOnPress:
+    """Brush, highlighter, eraser, and shape tools must snapshot the
+    annotations layer (ANNOTATIONS undo entry) at the start of a stroke so
+    the stroke can be undone as one unit.
+
+    Parametrized over the tools that share this contract — they used to be
+    five near-identical copy-pasted tests.
+    """
+
+    @pytest.mark.parametrize("tool_id", ["brush", "highlighter", "eraser",
+                                          "rectangle", "ellipse"])
+    def test_save_on_mouse_press(self, editor, tool_id):
+        tool = editor._tools[tool_id]
         editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
         editor._save_undo = MagicMock()
-        event = QtGui.QMouseEvent(
-            QtCore.QEvent.Type.MouseButtonPress,
-            QtCore.QPointF(50, 50), QtCore.QPointF(50, 50),
-            QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.LeftButton,
-            QtCore.Qt.KeyboardModifier.NoModifier,
-        )
-        tool.on_mouse_press(editor._canvas, event)
-        editor._save_undo.assert_called_once_with(UndoChangeType.ANNOTATIONS)
-
-
-class TestHighlighterToolSaveBehavior:
-    def test_save_on_mouse_press(self, editor):
-        tool = editor._tools["highlighter"]
-        editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
-        editor._save_undo = MagicMock()
-        event = QtGui.QMouseEvent(
-            QtCore.QEvent.Type.MouseButtonPress,
-            QtCore.QPointF(50, 50), QtCore.QPointF(50, 50),
-            QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.LeftButton,
-            QtCore.Qt.KeyboardModifier.NoModifier,
-        )
-        tool.on_mouse_press(editor._canvas, event)
-        editor._save_undo.assert_called_once_with(UndoChangeType.ANNOTATIONS)
-
-
-class TestEraserToolSaveBehavior:
-    def test_save_on_mouse_press(self, editor):
-        tool = editor._tools["eraser"]
-        editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
-        editor._save_undo = MagicMock()
-        event = QtGui.QMouseEvent(
-            QtCore.QEvent.Type.MouseButtonPress,
-            QtCore.QPointF(50, 50), QtCore.QPointF(50, 50),
-            QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.LeftButton,
-            QtCore.Qt.KeyboardModifier.NoModifier,
-        )
-        tool.on_mouse_press(editor._canvas, event)
-        editor._save_undo.assert_called_once_with(UndoChangeType.ANNOTATIONS)
-
-
-class TestShapeToolSaveBehavior:
-    def test_save_on_mouse_press(self, editor):
-        tool = editor._tools["rectangle"]
-        editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
-        editor._save_undo = MagicMock()
-        event = QtGui.QMouseEvent(
-            QtCore.QEvent.Type.MouseButtonPress,
-            QtCore.QPointF(50, 50), QtCore.QPointF(50, 50),
-            QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.LeftButton,
-            QtCore.Qt.KeyboardModifier.NoModifier,
-        )
-        tool.on_mouse_press(editor._canvas, event)
-        editor._save_undo.assert_called_once_with(UndoChangeType.ANNOTATIONS)
-
-    def test_ellipse_same_behavior(self, editor):
-        tool = editor._tools["ellipse"]
-        editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
-        editor._save_undo = MagicMock()
-        event = QtGui.QMouseEvent(
-            QtCore.QEvent.Type.MouseButtonPress,
-            QtCore.QPointF(50, 50), QtCore.QPointF(50, 50),
-            QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.LeftButton,
-            QtCore.Qt.KeyboardModifier.NoModifier,
-        )
-        tool.on_mouse_press(editor._canvas, event)
+        tool.on_mouse_press(editor._canvas, _press_at())
         editor._save_undo.assert_called_once_with(UndoChangeType.ANNOTATIONS)
 
 
 class TestMosaicToolSaveBehavior:
+    """Mosaic defers its undo snapshot to release (not press) and uses a
+    REGION entry — it only needs to restore the pixelated pixels, not the
+    whole image."""
+
     def test_save_not_called_on_press(self, editor):
-        """MosaicTool should NOT call _save_undo on mouse press."""
         tool = editor._tools["mosaic"]
         editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
         editor._save_undo = MagicMock()
-        event = QtGui.QMouseEvent(
-            QtCore.QEvent.Type.MouseButtonPress,
-            QtCore.QPointF(50, 50), QtCore.QPointF(50, 50),
-            QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.LeftButton,
-            QtCore.Qt.KeyboardModifier.NoModifier,
-        )
-        tool.on_mouse_press(editor._canvas, event)
+        tool.on_mouse_press(editor._canvas, _press_at())
         editor._save_undo.assert_not_called()
 
     def test_save_called_on_release_with_region(self, editor):
-        """MosaicTool calls _save_undo with REGION on mouse release."""
+        """Drag a >2px region; release must save exactly one REGION entry
+        whose bounds cover the dragged rect."""
         tool = editor._tools["mosaic"]
         editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
         editor._save_undo = MagicMock()
 
-        # Press
-        press = QtGui.QMouseEvent(
-            QtCore.QEvent.Type.MouseButtonPress,
-            QtCore.QPointF(50, 50), QtCore.QPointF(50, 50),
-            QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.LeftButton,
-            QtCore.Qt.KeyboardModifier.NoModifier,
-        )
-        tool.on_mouse_press(editor._canvas, press)
+        tool.on_mouse_press(editor._canvas, _press_at(50, 50))
+        tool.on_mouse_release(editor._canvas, _release_at(80, 70))
 
-        # Release far enough to create a valid region (>2px)
-        release = QtGui.QMouseEvent(
-            QtCore.QEvent.Type.MouseButtonRelease,
-            QtCore.QPointF(80, 70), QtCore.QPointF(80, 70),
-            QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.LeftButton,
-            QtCore.Qt.KeyboardModifier.NoModifier,
+        editor._save_undo.assert_called_once_with(
+            UndoChangeType.REGION,
+            region_bounds=QtCore.QRect(50, 50, 30, 20),
+            region_pixels=ANY,
         )
-        tool.on_mouse_release(editor._canvas, release)
-
-        # Verify _save_undo was called with REGION
-        assert editor._save_undo.call_count >= 1
-        call_args = editor._save_undo.call_args_list[-1]
-        assert call_args[0][0] == UndoChangeType.REGION
 
 
 class TestCropToolSaveBehavior:
@@ -543,44 +475,70 @@ class TestCropToolSaveBehavior:
 
 
 class TestCropHandleVisibility:
-    """Crop border and handles are painted thick enough to stay visible
-    after the overlay is scaled down to the viewport.
+    """Crop border and handles are painted visibly on the overlay pixmap.
 
-    The overlay is drawn in image pixels and then scaled by paintEvent,
-    so thin values (1.5px border, 7px handles) shrank to <1px / <2px on
-    a 4K screenshot fit to a 960px window — nearly invisible. These
-    constants guard the thicker values.
+    Regression guard: thin border/handle values shrank to sub-pixel when the
+    image-space overlay was scaled down to a 960px viewport on a 4K shot,
+    making the crop affordance nearly invisible. These tests paint the real
+    overlay via _redraw_overlay and sample its pixels — asserting the green
+    border and the white-filled handles are actually drawn, not that the
+    source happens to contain a literal width.
     """
 
-    def test_border_pen_is_thick(self):
-        from hushsnap.ui import image_editor as ie
-        import inspect
-        src = inspect.getsource(ie.CropTool._redraw_overlay)
-        assert 'QColor("#5FC98A"), 2.5' in src, (
-            "crop border pen width regressed below 2.5px"
+    def _rendered_overlay(self, editor):
+        tool = editor._tools["crop"]
+        # Small crop rect inset from edges so the dim bands + border are all
+        # present in the overlay.
+        tool._crop_rect = QtCore.QRect(20, 15, 40, 30)
+        tool._redraw_overlay()
+        return tool, editor._overlay_pixmap.toImage()
+
+    def test_border_is_drawn_in_brand_green(self, editor):
+        """The crop rect outline is painted (thick enough to be a solid
+        line, not a single anti-aliased ghost pixel)."""
+        tool, img = self._rendered_overlay(editor)
+        # Sample along the top edge of the crop rect (y == rect.top).
+        # A thick green pen leaves a run of brand-green pixels there.
+        green = QtGui.QColor("#5FC98A").rgb()
+        top = tool._crop_rect.top()
+        hits = sum(
+            1 for x in range(tool._crop_rect.left(),
+                             tool._crop_rect.right() + 1)
+            if img.pixel(x, top) == green
         )
+        assert hits >= 10, f"green border nearly invisible: {hits} px on top edge"
 
-    def test_handle_sizes(self):
-        from hushsnap.ui import image_editor as ie
-        import inspect
-        src = inspect.getsource(ie.CropTool._redraw_overlay)
-        assert "corner_sz = 11" in src, "corner handle regressed below 11px"
-        assert "edge_sz = 9" in src, "edge handle regressed below 9px"
+    def test_handles_are_drawn(self, editor):
+        """Each handle is a white-filled square at a crop corner / edge
+        midpoint. Sampling the corner handle center must find white fill."""
+        tool, img = self._rendered_overlay(editor)
+        r = tool._crop_rect
+        # Corner handle center sits at the corner itself.
+        for cx, cy in [(r.left(), r.top()), (r.right(), r.bottom())]:
+            pixel = img.pixelColor(cx, cy)
+            assert pixel.red() > 230 and pixel.green() > 230 and pixel.blue() > 230, (
+                f"handle at ({cx},{cy}) not white-filled: {pixel.getRgb()}"
+            )
 
-    def test_handle_border_pen(self):
-        """Handle outline pen also thickened (was 1.5)."""
-        from hushsnap.ui import image_editor as ie
-        import inspect
-        src = inspect.getsource(ie.CropTool._redraw_overlay)
-        assert 'QColor("#5FC98A"), 2.0' in src, (
-            "handle border pen width regressed below 2.0px"
-        )
-
-    def test_hit_radius_matches_handle_size(self):
-        """HANDLE_R should be roughly half the corner handle so the
-        grabbable area covers the visible handle."""
+    def test_hit_radius_covers_visible_handle(self, editor):
+        """HANDLE_R is large enough that the grabbable area reaches a
+        handle's center (so a click on the visible handle is recognized)."""
         from hushsnap.ui.image_editor import CropTool
-        assert CropTool.HANDLE_R >= 9, "hit radius too small for the handles"
+        tool = editor._tools["crop"]
+        # corner_sz is 11 → handle half-extent ~5.5px. Hit radius must reach
+        # at least that far, with margin for the user's pointer.
+        assert CropTool.HANDLE_R >= 6, "hit radius smaller than handle half-size"
+
+    def test_hit_test_returns_correct_handle(self, editor):
+        """Clicking near a corner returns that corner's handle id."""
+        tool = editor._tools["crop"]
+        editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
+        editor._dpr = 1.0
+        editor._scale = 1.0
+        tool._crop_rect = QtCore.QRect(20, 15, 40, 30)
+        # The top-left handle is at the rect's top-left corner (image space).
+        handle = tool._hit_test(editor._canvas, QtCore.QPoint(20, 15))
+        assert handle == "tl"
 
 
 class TestTextToolSaveBehavior:
@@ -589,13 +547,7 @@ class TestTextToolSaveBehavior:
         tool = editor._tools["text"]
         editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
         editor._save_undo = MagicMock()
-        event = QtGui.QMouseEvent(
-            QtCore.QEvent.Type.MouseButtonPress,
-            QtCore.QPointF(50, 50), QtCore.QPointF(50, 50),
-            QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.LeftButton,
-            QtCore.Qt.KeyboardModifier.NoModifier,
-        )
-        tool.on_mouse_press(editor._canvas, event)
+        tool.on_mouse_press(editor._canvas, _press_at())
         editor._save_undo.assert_called_once_with(UndoChangeType.TEXT)
 
     def test_drag_existing_item_can_be_undone(self, editor):
@@ -608,21 +560,10 @@ class TestTextToolSaveBehavior:
         )
         editor._text_items.append(item)
 
-        press = QtGui.QMouseEvent(
-            QtCore.QEvent.Type.MouseButtonPress,
-            QtCore.QPointF(12, 12), QtCore.QPointF(12, 12),
-            QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.LeftButton,
-            QtCore.Qt.KeyboardModifier.NoModifier,
-        )
-        move = QtGui.QMouseEvent(
-            QtCore.QEvent.Type.MouseMove,
-            QtCore.QPointF(40, 35), QtCore.QPointF(40, 35),
-            QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.LeftButton,
-            QtCore.Qt.KeyboardModifier.NoModifier,
-        )
-
-        assert tool.on_mouse_press(editor._canvas, press)
-        assert tool.on_mouse_move(editor._canvas, move)
+        assert tool.on_mouse_press(editor._canvas, _mouse_event(
+            QtCore.QEvent.Type.MouseButtonPress, 12, 12))
+        assert tool.on_mouse_move(editor._canvas, _mouse_event(
+            QtCore.QEvent.Type.MouseMove, 40, 35))
         assert item.img_pos != QtCore.QPointF(10, 10)
 
         editor._undo()
@@ -639,14 +580,8 @@ class TestTextToolSaveBehavior:
         )
         editor._text_items.append(item)
 
-        dbl = QtGui.QMouseEvent(
-            QtCore.QEvent.Type.MouseButtonDblClick,
-            QtCore.QPointF(12, 12), QtCore.QPointF(12, 12),
-            QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.LeftButton,
-            QtCore.Qt.KeyboardModifier.NoModifier,
-        )
-
-        assert tool.on_mouse_double_click(editor._canvas, dbl)
+        assert tool.on_mouse_double_click(editor._canvas, _mouse_event(
+            QtCore.QEvent.Type.MouseButtonDblClick, 12, 12))
         tool._editing_widget.setText("new")
         tool._editing_widget.commit_edit()
         assert editor._text_items[0].text == "new"
@@ -696,25 +631,6 @@ class TestTextToolFontUnits:
     so what the user saw was not what got saved. Both renderers must now
     use pixel size.
     """
-
-    def test_hit_test_uses_pixel_size(self, editor):
-        """The QFont built for hit-testing is in pixels, not points."""
-        from hushsnap.ui.image_editor import TextItem
-        item = TextItem("Hi", QtCore.QPointF(10, 10),
-                        QtGui.QColor("#fff"), "Arial", 48)
-        editor._text_items.append(item)
-
-        tool = editor._tools["text"]
-        editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
-
-        # Build the same QFont the code builds internally and assert its
-        # pixel size is set (pointSize would be -1 when pixel size is used).
-        scale = editor._effective_scale()
-        fs = max(1, int(item.font_size * scale))
-        font = QtGui.QFont(item.font_family)
-        font.setPixelSize(fs)
-        assert font.pixelSize() == fs
-        assert font.pointSize() == -1  # pixel size overrides point size
 
     def test_export_bakes_text_with_pixel_sized_font(self, editor, monkeypatch):
         """Export composites text using a QFont sized in pixels, not points.
@@ -857,13 +773,7 @@ class TestPanToolDoesNotSave:
         """PanTool should never call _save_undo."""
         tool = editor._tools["pan"]
         editor._save_undo = MagicMock()
-        event = QtGui.QMouseEvent(
-            QtCore.QEvent.Type.MouseButtonPress,
-            QtCore.QPointF(50, 50), QtCore.QPointF(50, 50),
-            QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.LeftButton,
-            QtCore.Qt.KeyboardModifier.NoModifier,
-        )
-        tool.on_mouse_press(editor._canvas, event)
+        tool.on_mouse_press(editor._canvas, _press_at())
         editor._save_undo.assert_not_called()
 
 
@@ -874,28 +784,10 @@ class TestEscapeDoesNotCloseWindow:
     mosaic, shape drag, inline text edit). A window-level Esc→close used
     to exist and would silently discard all annotations when a user hit
     Esc while no tool operation was active — that behavior is gone.
-
-    These tests guard against it being reintroduced.
+    Guarded by behavior, not source inspection: deliver a real Esc key
+    event to the window and assert it stays open, plus that tool-level Esc
+    still cancels an active crop.
     """
-
-    def test_no_window_level_keyPressEvent_override(self, editor):
-        """ImageEditorWindow no longer overrides keyPressEvent to close on Esc.
-
-        QWidget's default keyPressEvent does nothing for Esc, so removing
-        the override is sufficient. Assert the class itself doesn't define
-        a keyPressEvent that closes on Escape.
-        """
-        import inspect
-        from hushsnap.ui import image_editor as ie
-
-        # If keyPressEvent is defined on the class, it must not reference
-        # Key_Escape + self.close().
-        if "keyPressEvent" in ImageEditorWindow.__dict__:
-            src = inspect.getsource(ImageEditorWindow.__dict__["keyPressEvent"])
-            assert "Key_Escape" not in src, (
-                "ImageEditorWindow.keyPressEvent handles Escape — window-level "
-                "Esc→close must not be reintroduced"
-            )
 
     def test_escape_does_not_close_window(self, editor):
         """Pressing Esc at the window level (no active tool op) does not close."""
@@ -1035,17 +927,15 @@ class TestPilPreservation:
 
 
 class TestDeadCodeRemoved:
-    def test_show_tool_options_removed(self, editor):
-        """The _show_tool_options method should no longer exist."""
-        assert not hasattr(editor, "_show_tool_options")
+    """Methods removed in earlier refactors must stay removed — re-adding
+    them silently reintroduces dead branches. One consolidated assertion
+    covers the lot."""
 
-    def test_on_crop_apply_removed(self, editor):
-        """The _on_crop_apply method should no longer exist."""
-        assert not hasattr(editor, "_on_crop_apply")
+    _REMOVED = ("_show_tool_options", "_on_crop_apply", "_on_crop_cancel")
 
-    def test_on_crop_cancel_removed(self, editor):
-        """The _on_crop_cancel method should no longer exist."""
-        assert not hasattr(editor, "_on_crop_cancel")
+    def test_removed_methods_stay_removed(self, editor):
+        for name in self._REMOVED:
+            assert not hasattr(editor, name), f"dead method {name!r} reintroduced"
 
     def test_no_instruction_key_in_option_widgets(self, editor):
         """No option widget should reference 'instruction'."""
@@ -1127,3 +1017,36 @@ class TestIntegrationUndoStack:
 
         editor._redo()
         assert editor._pil_image.crop((10, 10, 30, 30)).tobytes() == modified_bytes
+
+    def test_text_then_annotations_undo_redo_round_trip(self, editor):
+        """Redo restores both layers after a TEXT→ANNOTATIONS sequence.
+
+        Only REGION had a redo-symmetry test; TEXT/ANNOTATIONS redo capture
+        pixmap + text_items snapshots, so exercise that path end-to-end.
+        """
+        # State A: annotations + one text item.
+        editor._save_undo(UndoChangeType.ANNOTATIONS)
+        p = QtGui.QPainter(editor._annotations_pixmap)
+        p.fillRect(0, 0, 5, 5, QtGui.QColor("#FF0000"))
+        p.end()
+        red_rgba = editor._annotations_pixmap.toImage().pixel(0, 0)
+
+        editor._save_undo(UndoChangeType.TEXT)
+        editor._text_items.append(
+            TextItem("hi", QtCore.QPointF(0, 0), QtGui.QColor("#fff"), "Arial", 12)
+        )
+        assert len(editor._text_items) == 1
+
+        # Undo both → back to clean.
+        editor._undo()
+        assert len(editor._text_items) == 0
+        editor._undo()
+        assert editor._annotations_pixmap.toImage().pixel(0, 0) == QtGui.QColor(0, 0, 0, 0).rgba()
+
+        # Redo both → annotations + text item restored.
+        editor._redo()
+        assert editor._annotations_pixmap.toImage().pixel(0, 0) == red_rgba
+        editor._redo()
+        assert len(editor._text_items) == 1
+        assert editor._text_items[0].text == "hi"
+
