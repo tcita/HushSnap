@@ -541,7 +541,11 @@ def update_auto_copy_ocr_result(enabled, config_path=None):
 
 
 def get_last_save_directory(config_path=None):
-    """Read 'last_save_directory' from config (default user's Pictures)."""
+    """Read 'last_save_directory' from config.
+
+    Falls back to the user's Desktop on first use (matching the
+    "Save to Desktop" pin action); ~/ is the last resort.
+    """
     if config_path is None:
         config_path = get_config_path()
     config_data = _load_config_data(config_path)
@@ -550,9 +554,9 @@ def get_last_save_directory(config_path=None):
         path = Path(raw.strip())
         if path.is_dir():
             return str(path)
-    pictures = Path.home() / "Pictures"
-    if pictures.is_dir():
-        return str(pictures)
+    desktop = Path.home() / "Desktop"
+    if desktop.is_dir():
+        return str(desktop)
     return str(Path.home())
 
 
