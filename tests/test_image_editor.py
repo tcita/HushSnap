@@ -598,6 +598,95 @@ class TestTextToolSaveBehavior:
         tool.on_mouse_press(editor._canvas, event)
         editor._save_undo.assert_called_once_with(UndoChangeType.TEXT)
 
+    def test_drag_existing_item_can_be_undone(self, editor):
+        """Moving an existing text item saves its previous position."""
+        tool = editor._tools["text"]
+        editor._dpr = 1.0
+        editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
+        item = TextItem(
+            "move me", QtCore.QPointF(10, 10), QtGui.QColor("#fff"), "Arial", 24
+        )
+        editor._text_items.append(item)
+
+        press = QtGui.QMouseEvent(
+            QtCore.QEvent.Type.MouseButtonPress,
+            QtCore.QPointF(12, 12), QtCore.QPointF(12, 12),
+            QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.LeftButton,
+            QtCore.Qt.KeyboardModifier.NoModifier,
+        )
+        move = QtGui.QMouseEvent(
+            QtCore.QEvent.Type.MouseMove,
+            QtCore.QPointF(40, 35), QtCore.QPointF(40, 35),
+            QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.LeftButton,
+            QtCore.Qt.KeyboardModifier.NoModifier,
+        )
+
+        assert tool.on_mouse_press(editor._canvas, press)
+        assert tool.on_mouse_move(editor._canvas, move)
+        assert item.img_pos != QtCore.QPointF(10, 10)
+
+        editor._undo()
+        assert len(editor._text_items) == 1
+        assert editor._text_items[0].img_pos == QtCore.QPointF(10, 10)
+
+    def test_edit_existing_item_can_be_undone(self, editor):
+        """Editing an existing text item saves the previous text."""
+        tool = editor._tools["text"]
+        editor._dpr = 1.0
+        editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
+        item = TextItem(
+            "old", QtCore.QPointF(10, 10), QtGui.QColor("#fff"), "Arial", 24
+        )
+        editor._text_items.append(item)
+
+        dbl = QtGui.QMouseEvent(
+            QtCore.QEvent.Type.MouseButtonDblClick,
+            QtCore.QPointF(12, 12), QtCore.QPointF(12, 12),
+            QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.LeftButton,
+            QtCore.Qt.KeyboardModifier.NoModifier,
+        )
+
+        assert tool.on_mouse_double_click(editor._canvas, dbl)
+        tool._editing_widget.setText("new")
+        tool._editing_widget.commit_edit()
+        assert editor._text_items[0].text == "new"
+
+        editor._undo()
+        assert len(editor._text_items) == 1
+        assert editor._text_items[0].text == "old"
+
+    def test_composite_commits_active_new_text(self, editor):
+        """Saving/copying commits newly typed inline text before export."""
+        tool = editor._tools["text"]
+        editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
+        item = TextItem("", QtCore.QPointF(10, 10), QtGui.QColor("#fff"), "Arial", 24)
+        editor._text_items.append(item)
+        tool._spawn_editor(editor._canvas, item)
+        tool._editing_widget.setText("live")
+
+        pixmap = editor._get_composite_pixmap()
+
+        assert not pixmap.isNull()
+        assert tool._editing_widget is None
+        assert len(editor._text_items) == 1
+        assert editor._text_items[0].text == "live"
+
+    def test_composite_commits_active_existing_text_edit(self, editor):
+        """Saving/copying exports the latest value when re-editing text."""
+        tool = editor._tools["text"]
+        editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
+        item = TextItem("old", QtCore.QPointF(10, 10), QtGui.QColor("#fff"), "Arial", 24)
+        editor._text_items.append(item)
+        tool._spawn_editor(editor._canvas, item)
+        tool._editing_widget.setText("new")
+
+        pixmap = editor._get_composite_pixmap()
+
+        assert not pixmap.isNull()
+        assert tool._editing_widget is None
+        assert len(editor._text_items) == 1
+        assert editor._text_items[0].text == "new"
+
 
 class TestTextToolFontUnits:
     """font_size is in image pixels throughout the editor.

@@ -168,7 +168,8 @@ class Application(QtCore.QObject):
         self.hotkey_manager = None
         self.settings_controller = None
         self.idle_manager = None
-        self._editor_window = None  # active image-editor reference
+        self._editor_window = None  # most recent visible image-editor reference
+        self._editor_windows = []  # all active image-editor references
 
     def run(self):
         """Execute the full application lifecycle."""
@@ -383,10 +384,39 @@ class Application(QtCore.QObject):
         try:
             from .ui.image_editor import show_image_editor
             win = show_image_editor(pil_img, self.translate)
+            self._editor_windows.append(win)
             self._editor_window = win
-            win.destroyed.connect(lambda: setattr(self, '_editor_window', None))
+            win.destroyed.connect(lambda _obj=None, w=win: self._untrack_editor_window(w))
         except Exception:
             self.logger.exception("Failed to open image editor")
+
+    def _untrack_editor_window(self, win):
+        self._editor_windows = [w for w in self._editor_windows if w is not win]
+        if self._editor_window is win:
+            self._editor_window = self._last_visible_editor_window()
+
+    def _last_visible_editor_window(self):
+        for win in reversed(self._editor_windows):
+            try:
+                if win.isVisible():
+                    return win
+            except RuntimeError:
+                continue
+        return None
+
+    def _has_visible_editor_window(self):
+        any_visible = False
+        live_windows = []
+        for win in self._editor_windows:
+            try:
+                if win.isVisible():
+                    any_visible = True
+                live_windows.append(win)
+            except RuntimeError:
+                continue
+        self._editor_windows = live_windows
+        self._editor_window = self._last_visible_editor_window()
+        return any_visible
 
     def _handle_save_to_desktop(self, pil_img):
         try:
@@ -450,10 +480,7 @@ class Application(QtCore.QObject):
                 self.check_timer.start(5000)
 
             def _is_truly_idle(self):
-                editor_active = (
-                    app_ref._editor_window is not None
-                    and app_ref._editor_window.isVisible()
-                )
+                editor_active = app_ref._has_visible_editor_window()
                 return (not self.tm._windows and not self.pm._windows
                         and not self.oc.is_busy() and not self.oc.has_visible_popups()
                         and not editor_active)

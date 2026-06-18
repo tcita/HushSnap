@@ -1593,6 +1593,7 @@ class TextTool(BaseTool):
         
         self._dragging_item: Optional[TextItem] = None
         self._drag_offset = QtCore.QPointF()
+        self._drag_undo_saved = False
         self._editing_widget: Optional[_InlineTextEditor] = None
 
     def tool_id(self) -> str:
@@ -1625,6 +1626,7 @@ class TextTool(BaseTool):
         if hit_idx != -1:
             # Found an item -> start dragging
             self._dragging_item = self._editor._text_items[hit_idx]
+            self._drag_undo_saved = False
             # Calculate offset in image space
             img_pos = self._to_image_coords(canvas, pos.toPoint())
             self._drag_offset = QtCore.QPointF(img_pos[0], img_pos[1]) - self._dragging_item.img_pos
@@ -1642,6 +1644,9 @@ class TextTool(BaseTool):
 
     def on_mouse_move(self, canvas, event) -> bool:
         if self._dragging_item and (event.buttons() & QtCore.Qt.MouseButton.LeftButton):
+            if not self._drag_undo_saved:
+                self._editor._save_undo(UndoChangeType.TEXT)
+                self._drag_undo_saved = True
             img_pt = self._to_image_coords(canvas, event.position().toPoint())
             self._dragging_item.img_pos = QtCore.QPointF(img_pt[0], img_pt[1]) - self._drag_offset
             self._editor._modified = True
@@ -1652,6 +1657,7 @@ class TextTool(BaseTool):
     def on_mouse_release(self, canvas, event) -> bool:
         if self._dragging_item:
             self._dragging_item = None
+            self._drag_undo_saved = False
             canvas.setCursor(QtCore.Qt.CursorShape.IBeamCursor)
             return True
         # Return True even if not dragging to prevent the canvas from
@@ -1669,7 +1675,9 @@ class TextTool(BaseTool):
             # The two presses that make up the double-click each started a
             # drag on this item; cancel that so the editor opens clean.
             self._dragging_item = None
+            self._drag_undo_saved = False
             canvas.setCursor(QtCore.Qt.CursorShape.IBeamCursor)
+            self._editor._save_undo(UndoChangeType.TEXT)
             self._spawn_editor(canvas, item)
             return True
         return False
@@ -3531,8 +3539,16 @@ class ImageEditorWindow(QtWidgets.QWidget):
 
     # ── Copy to clipboard ─────────────────────────────────────────────────
 
+    def _commit_active_text_edit(self) -> None:
+        """Commit inline text before exporting the composite image."""
+        text_tool = self._tools.get("text")
+        editing_widget = getattr(text_tool, "_editing_widget", None) if text_tool else None
+        if editing_widget:
+            editing_widget.commit_edit()
+
     def _get_composite_pixmap(self) -> QtGui.QPixmap:
         """Build a QPixmap of the image with all annotations baked in."""
+        self._commit_active_text_edit()
         save_img = self._pil_image.copy().convert("RGBA")
         # Composite annotations
         if self._annotations_pixmap and not self._annotations_pixmap.isNull():
