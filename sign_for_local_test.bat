@@ -50,7 +50,15 @@ powershell -ExecutionPolicy Bypass -Command ^
     "    Write-Host '';" ^
     "    Write-Host '[OK] Signed package saved to: dist-installer-test\HushSnap_Test_Signed.msix' -ForegroundColor Green;" ^
     "    Write-Host '[OK] Double-click the file above to install.' -ForegroundColor Green;" ^
-    "} else { Write-Host 'ERROR: signtool failed.' -ForegroundColor Red }"
+    "    exit 0" ^
+    "} else { Write-Host 'ERROR: signtool failed.' -ForegroundColor Red; exit 1 }"
 
+set SIGN_RC=%errorLevel%
 echo.
-pause
+if "%SIGN_RC%"=="0" (
+    echo Signing succeeded. This window will close in 3 seconds...
+    timeout /t 3 /nobreak >nul
+) else (
+    echo Signing FAILED ^(exit code %SIGN_RC%^). Press any key to close...
+    pause >nul
+)
