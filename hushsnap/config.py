@@ -447,9 +447,11 @@ def _write_state_data(state_data, state_path=None):
     font_size = state_data.get("ocr_font_size", DEFAULT_OCR_FONT_SIZE)
     if not isinstance(font_size, int):
         font_size = DEFAULT_OCR_FONT_SIZE
+    onboarding_shown = bool(state_data.get("onboarding_toast_shown", False))
     lines = [
         f'ocr_engine = "{engine}"',
         f'ocr_font_size = {font_size}',
+        f'onboarding_toast_shown = {"true" if onboarding_shown else "false"}',
     ]
     lines.append("")
     state_path.write_text("\n".join(lines), encoding="utf-8")
@@ -645,6 +647,35 @@ def update_ocr_font_size(font_size, state_path=None):
         _write_state_data(state_data, state_path)
     except Exception as e:
         logger.error(f"Failed to update OCR font size in state: {e}")
+
+
+def get_onboarding_toast_shown(state_path=None):
+    """Read whether the startup "ready" toast has already been shown once.
+
+    Persisted across launches/upgrades; reset only if the state file is
+    removed (e.g. uninstall or first run on a new machine). The toast is
+    shown exactly once per install.
+    """
+    if state_path is None:
+        state_path = STATE_PATH
+    _ensure_default_state_exists(state_path)
+    state_data = _load_state_data(state_path)
+    return bool(state_data.get("onboarding_toast_shown", False))
+
+
+def set_onboarding_toast_shown(state_path=None):
+    """Mark the startup "ready" toast as shown (idempotent, write-once)."""
+    if state_path is None:
+        state_path = STATE_PATH
+    _ensure_default_state_exists(state_path)
+    try:
+        state_data = _load_state_data(state_path)
+        if state_data.get("onboarding_toast_shown"):
+            return  # already recorded — skip the disk write
+        state_data["onboarding_toast_shown"] = True
+        _write_state_data(state_data, state_path)
+    except Exception as e:
+        logger.error(f"Failed to update onboarding_toast_shown in state: {e}")
 
 
 def load_hotkey_setting():

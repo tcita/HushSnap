@@ -14,12 +14,14 @@ from .config import (
     get_app_id,
     get_config_path,
     get_debug_enabled,
+    get_onboarding_toast_shown,
     get_user_data_dir,
     is_already_running,
     load_hotkey_setting,
     release_instance_lock,
     resolve_physical_path,
     resolve_ui_lang,
+    set_onboarding_toast_shown,
     ui_text,
 )
 from .ocr_controller import OcrController
@@ -190,16 +192,39 @@ class Application(QtCore.QObject):
         self._init_qt_app()
         self._init_logic_controllers()
         self._init_ui_shell()
-        
+
         # --- Final Polish ---
         self.startup_profiler.log_summary()
         QtCore.QTimer.singleShot(5000, self._initial_memory_trim)
+
+        # Show a one-time "ready" toast on the first launch after install so
+        # the user learns the capture hotkey. Never shown again afterwards.
+        # Wait for OCR warmup to finish (same signal that reveals the tray
+        # icon) so the toast appears after the app is fully ready, then add a
+        # short settle delay for the tray icon to render.
+        if not get_onboarding_toast_shown():
+            self.ocr_controller.bridge.warmup_finished.connect(
+                lambda: QtCore.QTimer.singleShot(300, self._show_startup_ready_toast)
+            )
         
         return self.qt_app.exec()
 
     def translate(self, key, **kwargs):
         """App-wide translation helper."""
         return ui_text(self.ui_language, key, **kwargs)
+
+    def _show_startup_ready_toast(self):
+        """One-time startup "ready" toast, shown on first launch after install."""
+        # Record immediately so a crash/quit right after showing won't replay it.
+        set_onboarding_toast_shown()
+        try:
+            hotkey_name = self.hotkey_manager.current_hotkey_name
+        except Exception:
+            hotkey_name = ""
+        show_toast(
+            self.translate("startup_ready_toast", hotkey=hotkey_name),
+            duration_ms=3000,
+        )
 
     def _purge_drag_cache(self):
         try:
