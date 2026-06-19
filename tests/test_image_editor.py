@@ -73,6 +73,7 @@ def _translate(key, **kwargs):
 @pytest.fixture
 def editor(qapp, test_image) -> ImageEditorWindow:
     win = ImageEditorWindow(test_image, _translate)
+    win._dpr = 1.0
     yield win
     win.close()
 

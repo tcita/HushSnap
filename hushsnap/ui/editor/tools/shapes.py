@@ -117,15 +117,48 @@ class ShapeTool(BaseTool):
             painter.drawEllipse(rect)
         elif self._shape == "line":
             # Lines look better with round caps; arrows are optional
+            has_arrow = self._arrow_end or self._double_arrow
+            dx, dy = x2 - x1, y2 - y1
+            line_len = math.hypot(dx, dy)
+            # Flat caps on arrow lines so the shaft meets the arrowhead
+            # flush; round caps would leave a bulb at the joint.
+            cap = (QtCore.Qt.PenCapStyle.FlatCap if has_arrow
+                   else QtCore.Qt.PenCapStyle.RoundCap)
             line_pen = QtGui.QPen(self._color, self._size,
                                   QtCore.Qt.PenStyle.SolidLine,
-                                  QtCore.Qt.PenCapStyle.RoundCap,
+                                  cap,
                                   QtCore.Qt.PenJoinStyle.RoundJoin)
             painter.setPen(line_pen)
             painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
-            painter.drawLine(QtCore.QPointF(x1, y1), QtCore.QPointF(x2, y2))
-            if self._arrow_end or self._double_arrow:
+            if has_arrow and line_len >= 1:
+                # Shorten the shaft so its tail stays INSIDE the head's
+                # shoulders — otherwise the shaft is wider than the head at
+                # the tip and pokes out past the shoulders ("一节超出箭头").
+                # The shoulders sit arrow_len back from the tip; their
+                # projection along the line is arrow_len*cos(spread). Keep
+                # the tail just inside that. _draw_arrowheads' base midpoint
+                # then overlaps the tail (same color) so no seam shows when
+                # zoomed in. Geometry must match _draw_arrowheads below.
+                angle = math.atan2(dy, dx)
+                arrow_len = max(10.0, self._size * 4.0)
+                spread = 0.45
+                shoulder_proj = arrow_len * math.cos(spread)
+                # Stop a bit short of the shoulders so the shaft never pokes
+                # out; the head's base midpoint covers the joint.
+                back = min(shoulder_proj * 0.5, line_len * 0.5)
+                sx1, sy1 = x1, y1
+                sx2, sy2 = x2, y2
+                if self._arrow_end or self._double_arrow:
+                    sx2 = x2 - back * math.cos(angle)
+                    sy2 = y2 - back * math.sin(angle)
+                if self._double_arrow:
+                    sx1 = x1 + back * math.cos(angle)
+                    sy1 = y1 + back * math.sin(angle)
+                painter.drawLine(QtCore.QPointF(sx1, sy1),
+                                 QtCore.QPointF(sx2, sy2))
                 self._draw_arrowheads(painter, x1, y1, x2, y2)
+            else:
+                painter.drawLine(QtCore.QPointF(x1, y1), QtCore.QPointF(x2, y2))
         painter.end()
 
     def _draw_arrowheads(
@@ -142,16 +175,25 @@ class ShapeTool(BaseTool):
         spread = 0.45  # radians (~26°)
 
         def _head(px2: float, py2: float, angle_dir: float) -> None:
+            # Two side points sit at the head's "shoulders".
             px = px2 - arrow_len * math.cos(angle_dir - spread)
             py = py2 - arrow_len * math.sin(angle_dir - spread)
             qx = px2 - arrow_len * math.cos(angle_dir + spread)
             qy = py2 - arrow_len * math.sin(angle_dir + spread)
+            # The base midpoint extends PAST the shoulders (arrow_len + overlap)
+            # back along the line, covering the shaft so no seam shows through
+            # when zoomed in. Same color → invisible overlap.
+            overlap = 4.0
+            base = arrow_len + overlap
+            bx = px2 - base * math.cos(angle_dir)
+            by = py2 - base * math.sin(angle_dir)
             painter.setPen(QtCore.Qt.PenStyle.NoPen)
             painter.setBrush(QtGui.QBrush(self._color))
             painter.drawPolygon(QtGui.QPolygonF([
-                QtCore.QPointF(px2, py2),
-                QtCore.QPointF(px, py),
-                QtCore.QPointF(qx, qy),
+                QtCore.QPointF(px2, py2),  # tip
+                QtCore.QPointF(px, py),    # shoulder 1
+                QtCore.QPointF(bx, by),    # base midpoint (overlaps shaft)
+                QtCore.QPointF(qx, qy),    # shoulder 2
             ]))
 
         _head(x2, y2, angle)
