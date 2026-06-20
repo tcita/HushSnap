@@ -14,7 +14,7 @@ class TextTool(BaseTool):
         ).family()
         self.font_size = 24
         self.color = QtGui.QColor("#FFFFFF")
-        
+
         self._dragging_item: Optional[TextItem] = None
         self._drag_offset = QtCore.QPointF()
         self._drag_undo_saved = False
@@ -34,7 +34,7 @@ class TextTool(BaseTool):
     def on_mouse_press(self, canvas, event) -> bool:
         if event.button() != QtCore.Qt.MouseButton.LeftButton:
             return False
-        
+
         canvas.setFocus()
 
         if self._editing_widget:
@@ -42,7 +42,7 @@ class TextTool(BaseTool):
 
         pos = event.position()
         hit_idx = self._hit_test(canvas, pos)
-        
+
         if hit_idx != -1:
             self._dragging_item = self._editor._text_items[hit_idx]
             self._drag_undo_saved = False
@@ -50,8 +50,31 @@ class TextTool(BaseTool):
             self._drag_offset = QtCore.QPointF(img_pos[0], img_pos[1]) - self._dragging_item.img_pos
             canvas.setCursor(QtCore.Qt.CursorShape.SizeAllCursor)
             return True
-        
-        img_pt = self._to_image_coords(canvas, pos.toPoint())
+
+        # Single-click on empty space is a no-op — it neither creates a new
+        # text box (use double-click for that) nor switches tool.
+        return True
+
+    def on_mouse_double_click(self, canvas, event) -> bool:
+        # Qt double-click events can report NoButton; the canvas caller
+        # already ensures this is a left-button double-click.
+
+        # Commit any in-progress edit first, same as on_mouse_press.
+        if self._editing_widget:
+            self._editing_widget.commit_edit()
+
+        hit_idx = self._hit_test(canvas, event.position())
+        if hit_idx != -1:
+            item = self._editor._text_items[hit_idx]
+            self._dragging_item = None
+            self._drag_undo_saved = False
+            canvas.setCursor(QtCore.Qt.CursorShape.IBeamCursor)
+            self._editor._save_undo(UndoChangeType.TEXT)
+            self._spawn_editor(canvas, item)
+            return True
+
+        # Double-click on empty space: create a new text box here.
+        img_pt = self._to_image_coords(canvas, event.position().toPoint())
         new_item = TextItem("", QtCore.QPointF(img_pt[0], img_pt[1]),
                             QtGui.QColor(self.color), self.font_family, self.font_size)
         self._editor._save_undo(UndoChangeType.TEXT)
@@ -78,21 +101,6 @@ class TextTool(BaseTool):
             canvas.setCursor(QtCore.Qt.CursorShape.IBeamCursor)
             return True
         return True
-
-    def on_mouse_double_click(self, canvas, event) -> bool:
-        if event.button() != QtCore.Qt.MouseButton.LeftButton:
-            return False
-
-        hit_idx = self._hit_test(canvas, event.position())
-        if hit_idx != -1:
-            item = self._editor._text_items[hit_idx]
-            self._dragging_item = None
-            self._drag_undo_saved = False
-            canvas.setCursor(QtCore.Qt.CursorShape.IBeamCursor)
-            self._editor._save_undo(UndoChangeType.TEXT)
-            self._spawn_editor(canvas, item)
-            return True
-        return False
 
     def _hit_test(self, canvas, screen_pos) -> int:
         """Return index of item at screen_pos, or -1."""

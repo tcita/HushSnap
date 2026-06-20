@@ -49,6 +49,8 @@ def _translate(key, **kwargs):
         "editor_crop_instruction": "Drag to crop",
         "editor_crop_confirm": "Crop",
         "editor_crop_cancel": "Cancel",
+        "editor_apply": "Apply",
+        "editor_text_instruction": "Double-click to place text",
         "editor_copy": "Copy",
         "editor_saved": "Saved",
         "editor_copied": "Copied",
@@ -544,11 +546,14 @@ class TestCropHandleVisibility:
 
 class TestTextToolSaveBehavior:
     def test_save_on_new_item(self, editor):
-        """Creating a new text item calls _save_undo with TEXT."""
+        """Double-clicking on empty space creates a new text item."""
         tool = editor._tools["text"]
         editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
         editor._save_undo = MagicMock()
-        tool.on_mouse_press(editor._canvas, _press_at())
+        tool.on_mouse_double_click(
+            editor._canvas,
+            _mouse_event(QtCore.QEvent.Type.MouseButtonDblClick, 50, 50),
+        )
         editor._save_undo.assert_called_once_with(UndoChangeType.TEXT)
 
     def test_drag_existing_item_can_be_undone(self, editor):
@@ -1050,4 +1055,135 @@ class TestIntegrationUndoStack:
         editor._redo()
         assert len(editor._text_items) == 1
         assert editor._text_items[0].text == "hi"
+
+
+class TestRotationAndResizeImprovements:
+    def test_session_based_rotation_prevents_compounding_growth(self, editor):
+        """Repeated rotations within the same session rotate the original base image,
+
+        preventing unbounded canvas size growth.
+        """
+        # Activate the rotate tool (begins the session)
+        editor._activate_tool("rotate")
+        assert editor._rotate_active is True
+        assert editor._rotate_base_image is not None
+        
+        orig_w, orig_h = editor._pil_image.size
+        
+        # Apply 15 degree rotation
+        editor._apply_rotation(15.0, True)
+        size_after_15 = editor._pil_image.size
+        assert size_after_15[0] > orig_w
+        
+        # Apply another rotation (total 30 degrees)
+        # It should rotate the *original* image by 30 degrees, not size_after_15 by 15.
+        editor._apply_rotation(30.0, True)
+        size_after_30 = editor._pil_image.size
+        
+        # Calculate size of original rotated directly by 30
+        expected_rotated = editor._rotate_base_image.rotate(-30.0, expand=True)
+        assert size_after_30 == expected_rotated.size
+        
+        # Deactivate tool (ends the session)
+        editor._activate_tool("pan")
+        assert editor._rotate_active is False
+        assert editor._rotate_base_image is None
+
+    def test_rotation_undo_redo(self, editor):
+        """A rotate session is a single atomic undo unit.
+
+        No undo entries are pushed mid-session (undo/redo are hidden then).
+        On deactivate, one FULL entry capturing the pre-rotation state is
+        pushed, so one undo in the main editor reverts the whole rotation and
+        one redo restores it.
+        """
+        editor._activate_tool("rotate")
+
+        # Mid-session: undo/redo buttons are hidden and no entries are pushed,
+        # even after several rotations.
+        editor._apply_rotation(15.0, True)
+        editor._apply_rotation(30.0, True)
+        assert editor._undo_btn.isHidden()
+        assert editor._redo_btn.isHidden()
+        assert len(editor._undo_stack) == 0
+        size_30 = editor._pil_image.size
+        assert size_30 != (100, 80)
+
+        # Leaving the tool commits one undo entry for the whole session.
+        editor._activate_tool("pan")
+        assert not editor._undo_btn.isHidden()
+        assert len(editor._undo_stack) == 1
+
+        # One undo reverts the entire rotation -> back to the original image.
+        editor._undo()
+        assert editor._pil_image.size == (100, 80)
+
+        # One redo restores the rotated image.
+        editor._redo()
+        assert editor._pil_image.size == size_30
+
+    def test_resize_preserves_and_scales_annotations(self, editor):
+        """Resizing scales annotation drawings and text items rather than clearing them."""
+        # Draw some annotations
+        p = QtGui.QPainter(editor._annotations_pixmap)
+        p.fillRect(0, 0, 10, 10, QtGui.QColor("#FF0000"))
+        p.end()
+        
+        # Add a text item
+        editor._text_items.append(
+            TextItem("ResizeTest", QtCore.QPointF(20, 20), QtGui.QColor("#fff"), "Arial", 16)
+        )
+        
+        orig_w, orig_h = editor._pil_image.size
+        new_w, new_h = orig_w * 2, orig_h * 2
+        
+        # Resize to double size
+        editor._apply_resize(new_w, new_h)
+        
+        # Verify PIL size
+        assert editor._pil_image.size == (new_w, new_h)
+        
+        # Verify annotations and overlay were scaled instead of cleared
+        assert editor._annotations_pixmap.size() == QtCore.QSize(new_w, new_h)
+        assert editor._overlay_pixmap.size() == QtCore.QSize(new_w, new_h)
+        
+        # Verify text item position and font size were scaled proportionally
+        assert len(editor._text_items) == 1
+        txt = editor._text_items[0]
+        assert txt.text == "ResizeTest"
+        assert txt.img_pos == QtCore.QPointF(40, 40)
+        assert txt.font_size == 32
+
+    def test_resize_session_resamples_from_base_no_quality_compound(self, editor):
+        """Repeated resize in a session resamples from the base each time, so
+        shrink-then-grow returns to the original sharp pixels instead of a
+        compounded-blurry result."""
+        orig_w, orig_h = editor._pil_image.size
+        orig_bytes = editor._pil_image.tobytes()
+
+        editor._activate_tool("resize")
+        assert editor._resize_active is True
+        assert editor._resize_base_image is not None
+        # undo/redo hidden mid-session
+        assert editor._undo_btn.isHidden()
+
+        # Shrink to half, then grow back to original size.
+        editor._apply_resize(orig_w // 2, orig_h // 2)
+        assert editor._pil_image.size == (orig_w // 2, orig_h // 2)
+        editor._apply_resize(orig_w, orig_h)
+        assert editor._pil_image.size == (orig_w, orig_h)
+
+        # Resampling the base at the original size reproduces the original
+        # pixels exactly — no compounded blur from the intermediate shrink.
+        assert editor._pil_image.tobytes() == orig_bytes
+
+        # Leaving the tool commits exactly one undo entry.
+        editor._activate_tool("pan")
+        assert not editor._undo_btn.isHidden()
+        assert len(editor._undo_stack) == 1
+
+        # One undo reverts the whole resize session.
+        editor._undo()
+        assert editor._pil_image.size == (orig_w, orig_h)
+        assert editor._pil_image.tobytes() == orig_bytes
 

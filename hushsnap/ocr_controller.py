@@ -144,6 +144,17 @@ class OcrController:
             show_toast(self.translate("pin_ocr_empty"), is_error=True)
 
     def schedule_ocr(self):
+        # Internal/debug-only hook: arms the "auto-OCR on next capture" flag.
+        # The normal capture flow does NOT call this — after a screenshot the
+        # user triggers OCR explicitly by clicking the thumbnail. This entry
+        # point exists for the debug interface (hushsnap.system.debug_interface)
+        # and tests so they can drive the auto-OCR path without going through
+        # the UI. It is intentionally not wired into production capture.
+        # Safety: setting needs_ocr=True alone does nothing harmful — it only
+        # causes handle_capture_completed() to run OCR on the *next* captured
+        # pixmap instead of ignoring it. No network, no persistence, local only.
+        # If this ever gets promoted to a real user-facing "auto-OCR" setting,
+        # gate it behind a config flag and re-audit the warmup/trim interactions.
         self.needs_ocr = True
 
     def _trim_current_engine(self):

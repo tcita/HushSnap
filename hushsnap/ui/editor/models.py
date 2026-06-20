@@ -30,6 +30,7 @@ class _UndoEntry:
         "text_items",          # FULL, ANNOTATIONS, TEXT
         "region_bounds",       # REGION only: QtCore.QRect
         "region_pixels",       # REGION only: bytes from PIL Image.tobytes()
+        "rotate_angle",        # FULL only (during rotation sessions)
     )
 
     def __init__(
@@ -40,6 +41,7 @@ class _UndoEntry:
         text_items: Optional[list[TextItem]] = None,
         region_bounds: Optional[QtCore.QRect] = None,
         region_pixels: Optional[bytes] = None,
+        rotate_angle: Optional[float] = None,
     ):
         self.change_type = change_type
         self.pil_image = pil_img.copy() if pil_img else None
@@ -52,3 +54,4 @@ class _UndoEntry:
         ] if text_items else []
         self.region_bounds = region_bounds
         self.region_pixels = region_pixels
+        self.rotate_angle = rotate_angle

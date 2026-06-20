@@ -18,9 +18,9 @@ class EditorCanvas(QtWidgets.QWidget):
 
     def _image_offset(self) -> QtCore.QPointF:
         """Offset to center the image within the canvas."""
-        if not self._editor._display_pixmap:
+        pm = self._editor._rendered_display_pixmap()
+        if not pm:
             return QtCore.QPointF(0, 0)
-        pm = self._editor._display_pixmap
         scale = self._editor._effective_scale()
         scaled_w = pm.width() * scale
         scaled_h = pm.height() * scale
@@ -38,26 +38,46 @@ class EditorCanvas(QtWidgets.QWidget):
         if scale < 1.0:
             self._draw_checkerboard(painter, event.rect())
 
-        pm = self._editor._display_pixmap
+        pm = self._editor._rendered_display_pixmap()
+        preview = self._editor._preview_active()
+        angle = self._editor._preview_angle
         if pm:
             scale = self._editor._effective_scale()
             offset = self._image_offset()
             painter.save()
             painter.translate(offset)
             painter.scale(scale, scale)
+            # Paint-time rotation: rotate the original display pixmap around its
+            # center. No pixmap allocation, no widget resize — just a transform
+            # on the existing draw, so dragging is flicker-free and the pivot
+            # (image center) is exact.
+            if angle is not None and angle != 0.0:
+                painter.setRenderHint(
+                    QtGui.QPainter.RenderHint.SmoothPixmapTransform, True
+                )
+                cx, cy = pm.width() / 2.0, pm.height() / 2.0
+                painter.translate(cx, cy)
+                painter.rotate(angle)
+                painter.translate(-cx, -cy)
             painter.drawPixmap(0, 0, pm)
-            if self._editor._annotations_pixmap:
-                painter.drawPixmap(0, 0, self._editor._annotations_pixmap)
-            tool = self._editor._active_tool
-            spm = getattr(tool, '_stroke_pixmap', None) if tool else None
-            if spm:
-                painter.drawPixmap(0, 0, spm)
-            if self._editor._overlay_pixmap:
-                painter.drawPixmap(0, 0, self._editor._overlay_pixmap)
+            # Annotations / strokes / overlay are laid out on the original image
+            # geometry, so they only make sense when not previewing a transform.
+            if not preview:
+                if self._editor._annotations_pixmap:
+                    painter.drawPixmap(0, 0, self._editor._annotations_pixmap)
+                tool = self._editor._active_tool
+                spm = getattr(tool, '_stroke_pixmap', None) if tool else None
+                if spm:
+                    painter.drawPixmap(0, 0, spm)
+                if self._editor._overlay_pixmap:
+                    painter.drawPixmap(0, 0, self._editor._overlay_pixmap)
             painter.restore()
 
-        self._render_text_items(painter)
+        if not preview:
+            self._render_text_items(painter)
 
+        # Tool decorations (handles, bounding boxes) are drawn in screen space,
+        # so they remain valid — and required — during a transform preview.
         tool = self._editor._active_tool
         if tool:
             tool.on_paint(self, painter)
@@ -101,7 +121,7 @@ class EditorCanvas(QtWidgets.QWidget):
     def _draw_checkerboard(self, painter: QtGui.QPainter,
                            clip_rect: QtCore.QRect) -> None:
         """Draw a subtle checkerboard pattern."""
-        pm = self._editor._display_pixmap
+        pm = self._editor._rendered_display_pixmap()
         if not pm:
             return
         scale = self._editor._effective_scale()
@@ -164,7 +184,7 @@ class EditorCanvas(QtWidgets.QWidget):
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:
         """Zoom in/out centered on cursor position."""
         editor = self._editor
-        if not editor._display_pixmap:
+        if not editor._rendered_display_pixmap():
             event.ignore()
             return
 
