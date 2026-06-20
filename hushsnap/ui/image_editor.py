@@ -1592,6 +1592,11 @@ class ImageEditorWindow(QtWidgets.QWidget):
         super().closeEvent(event)
 
     def _cleanup_resources(self) -> None:
+        # Commit/release any in-progress inline text editor first, so the
+        # widget↔tool reference cycle is broken and the widget is scheduled
+        # for deletion via the normal path rather than waiting on Qt parent
+        # destruction + cyclic GC.
+        self._commit_active_text_edit()
         self._active_tool = None
         self._undo_stack.clear()
         self._redo_stack.clear()
