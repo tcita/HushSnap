@@ -315,7 +315,7 @@ class PinnedImageWindow(QtWidgets.QWidget):
         elif action == desktop_action:
             try:
                 desktop = Path.home() / "Desktop"
-                timestamp = QtCore.QDateTime.currentDateTime().toString('yyyyMMdd_HHmmss')
+                timestamp = QtCore.QDateTime.currentDateTime().toString('yyyyMMdd_HHmmss_zzz')
                 base = f"HushSnap_{timestamp}"
                 file_path = desktop / f"{base}.png"
                 counter = 1

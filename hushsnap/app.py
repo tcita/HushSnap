@@ -463,7 +463,8 @@ class Application(QtCore.QObject):
         try:
             desktop = Path.home() / "Desktop"
             timestamp = time.strftime("%Y%m%d_%H%M%S")
-            base = f"HushSnap_{timestamp}"
+            ms = int(time.time() * 1000) % 1000
+            base = f"HushSnap_{timestamp}_{ms:03d}"
             file_path = desktop / f"{base}.png"
             counter = 1
             while file_path.exists():

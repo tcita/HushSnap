@@ -555,7 +555,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
         # Use filename sorting: drag_YYYYMMDD_HHMMSS_mmm.png sorts perfectly alphabetically
         try:
             existing_files = sorted(
-                [f for f in cache_dir_path.glob("drag_*.png") if f.is_file()],
+                [f for f in cache_dir_path.glob("HushSnap_*.png") if f.is_file()],
                 key=lambda x: x.name
             )
             
@@ -577,7 +577,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
 
         ts = time.strftime("%Y%m%d_%H%M%S")
         ms = int(time.time() * 1000) % 1000
-        temp_path_obj = cache_dir_path / f"drag_{ts}_{ms:03d}.png"
+        temp_path_obj = cache_dir_path / f"HushSnap_{ts}_{ms:03d}.png"
         temp_path = str(temp_path_obj)
 
         logger.debug(f"Saving drag cache to: {temp_path}")

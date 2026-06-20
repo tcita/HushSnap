@@ -1226,7 +1226,9 @@ class ImageEditorWindow(QtWidgets.QWidget):
         import time
         from ..config import get_last_save_directory, update_last_save_directory
         default_dir = get_last_save_directory(get_config_path())
-        default_name = f"HushSnap_{time.strftime('%Y%m%d_%H%M%S')}.png"
+        ts = time.strftime('%Y%m%d_%H%M%S')
+        ms = int(time.time() * 1000) % 1000
+        default_name = f"HushSnap_{ts}_{ms:03d}.png"
         file_path_str, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             self._tr("editor_save_as"),
