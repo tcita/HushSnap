@@ -74,11 +74,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
         # True while the rotate tool is active; _resize_canvas sizes the canvas
         # to the image diagonal so rotated corners stay visible.
         self._rotate_active = False
-        # Frozen canvas size for the rotate session. Computed once when the tool
-        # activates, then held constant across commits — so repeated rotations
-        # (each of which expand-grows the image) can't keep enlarging the canvas.
-        # Cleared on deactivate.
-        self._rotate_canvas_size: Optional[QtCore.QSize] = None
         # Session variables for rotation (keeps high quality & prevents compound growth)
         self._rotate_base_image: Optional[Image.Image] = None
         self._rotate_base_pixmap: Optional[QtGui.QPixmap] = None
@@ -773,8 +768,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
         color.setAlpha(tool.color.alpha())
         tool.color = color
         self._sync_options_from_tool(tool_id)
-        if tool_id == "text":
-            tool._sync_widgets()
 
     def _size_range_for(self, tool_id: str) -> tuple[int, int]:
         if tool_id == "mosaic":
@@ -871,8 +864,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
             c.setAlpha(value)
             tool.color = c
             self._sync_options_from_tool(tool_id)
-            if tool_id == "text":
-                tool._sync_widgets()
 
     def _on_double_arrow_changed(self, tool_id: str, checked: bool) -> None:
         tool = self._tools.get(tool_id)
@@ -941,16 +932,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
             return
         vw, vh = vp.width(), vp.height()
         scale = self._effective_scale()
-        if self._rotate_active:
-            # During a rotate session the canvas size is frozen at session start
-            # (see _begin_rotate_session) so repeated rotations can't grow it.
-            # If a frozen size exists, reapply it verbatim; otherwise (e.g. the
-            # window resized mid-session) recompute once from the *original*
-            # display pixmap — never from an expand-grown committed image.
-            if self._rotate_canvas_size is None:
-                self._rotate_canvas_size = self._compute_rotate_canvas_size()
-            self._apply_rotate_canvas_size()
-            return
         iw = int(pm.width() * scale)
         ih = int(pm.height() * scale)
         pad_w = vw * 0.9
@@ -1318,13 +1299,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._rotate_base_annotations = self._annotations_pixmap.copy() if self._annotations_pixmap else None
         self._rotate_base_overlay = self._overlay_pixmap.copy() if self._overlay_pixmap else None
         self._rotate_cumulative_angle = 0.0
-
-        # Freeze the canvas size ONCE, from the image as it is at session start.
-        self._rotate_canvas_size = self._compute_rotate_canvas_size()
-        self._apply_rotate_canvas_size()
-        # Let the scroll area lay out the enlarged canvas, then recenter so the
-        # image stays in view.
-        QtCore.QTimer.singleShot(0, self._center_image_on_canvas)
         self._canvas.update()
 
     def _end_rotate_session(self) -> None:
@@ -1356,33 +1330,9 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._rotate_pre_annot = None
         self._rotate_pre_text = []
         self._rotate_cumulative_angle = 0.0
-        self._rotate_canvas_size = None
         self._resize_canvas()
         self._center_image_on_canvas()
         self._canvas.update()
-
-    def _compute_rotate_canvas_size(self) -> QtCore.QSize:
-        """Canvas size for the rotate session: image diagonal + margin."""
-        import math as _math
-        vp = self._scroll_area.viewport()
-        vw, vh = (vp.width(), vp.height()) if vp else (0, 0)
-        pm = self._display_pixmap
-        if not pm:
-            return QtCore.QSize(max(vw, 1), max(vh, 1))
-        scale = self._effective_scale()
-        diag = _math.hypot(pm.width(), pm.height()) * scale
-        d = int(diag)
-        pad = min(vw, vh) * 0.5
-        cw = max(vw, int(d + pad * 2))
-        ch = max(vh, int(d + pad * 2))
-        return QtCore.QSize(cw, ch)
-
-    def _apply_rotate_canvas_size(self) -> None:
-        sz = self._rotate_canvas_size
-        if sz is None:
-            return
-        self._canvas.setMinimumSize(sz.width(), sz.height())
-        self._canvas.resize(sz.width(), sz.height())
 
     def _set_rotation_preview(self, angle: float) -> None:
         """Set the live rotation angle (degrees, clockwise). 0 = upright."""

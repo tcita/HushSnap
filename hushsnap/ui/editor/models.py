@@ -13,7 +13,8 @@ class UndoChangeType(Enum):
 class TextItem:
     """Data model for a single text annotation."""
     def __init__(self, text: str, img_pos: QtCore.QPointF,
-                 color: QtGui.QColor, font_family: str, font_size: int):
+                 color: QtGui.QColor = QtGui.QColor("#FFFFFF"),
+                 font_family: str = "Arial", font_size: int = 24):
         self.text = text
         self.img_pos = img_pos  # Image-space coordinates
         self.color = color

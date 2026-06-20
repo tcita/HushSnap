@@ -13,7 +13,6 @@ class TextTool(BaseTool):
             QtGui.QFontDatabase.SystemFont.GeneralFont
         ).family()
         self.font_size = 24
-        self.color = QtGui.QColor("#FFFFFF")
 
         self._dragging_item: Optional[TextItem] = None
         self._drag_offset = QtCore.QPointF()
@@ -69,6 +68,12 @@ class TextTool(BaseTool):
             self._dragging_item = None
             self._drag_undo_saved = False
             canvas.setCursor(QtCore.Qt.CursorShape.IBeamCursor)
+            # Adopt the item's formatting so the toolbar reflects what's being
+            # edited — otherwise the toolbar still shows the last-used
+            # settings, which may belong to a different annotation.
+            self.font_family = item.font_family
+            self.font_size = item.font_size
+            self._editor._sync_options_from_tool("text")
             self._editor._save_undo(UndoChangeType.TEXT)
             self._spawn_editor(canvas, item)
             return True
@@ -76,7 +81,7 @@ class TextTool(BaseTool):
         # Double-click on empty space: create a new text box here.
         img_pt = self._to_image_coords(canvas, event.position().toPoint())
         new_item = TextItem("", QtCore.QPointF(img_pt[0], img_pt[1]),
-                            QtGui.QColor(self.color), self.font_family, self.font_size)
+                            font_family=self.font_family, font_size=self.font_size)
         self._editor._save_undo(UndoChangeType.TEXT)
         self._editor._text_items.append(new_item)
         self._spawn_editor(canvas, new_item)
@@ -131,13 +136,15 @@ class TextTool(BaseTool):
         return -1
 
     def _spawn_editor(self, canvas, item: TextItem) -> None:
-        """Pop up the temporary QLineEdit for editing."""
+        """Pop up the temporary QLineEdit for editing.
+
+        The item keeps its existing font/size/color. For new items these were
+        already set from the toolbar at construction time; for existing items
+        they reflect the original annotation state. Changes made via the
+        toolbar while the editor is open are pushed through _sync_widgets.
+        """
         if self._editing_widget:
             self._editing_widget.commit_edit()
-
-        item.color = QtGui.QColor(self.color)
-        item.font_family = self.font_family
-        item.font_size = self.font_size
 
         self._editing_widget = _InlineTextEditor(canvas, self, item)
         self._editing_widget.show()
@@ -148,7 +155,6 @@ class TextTool(BaseTool):
         """Push current toolbar state to the active editor and refresh it."""
         if self._editing_widget:
             item = self._editing_widget._item
-            item.color = QtGui.QColor(self.color)
             item.font_family = self.font_family
             item.font_size = self.font_size
             self._editing_widget._apply_style()
