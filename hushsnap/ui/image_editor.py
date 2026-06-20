@@ -460,6 +460,9 @@ class ImageEditorWindow(QtWidgets.QWidget):
                 lbl.setObjectName("optionLabel")
                 layout.addWidget(lbl)
                 combo = _EditorFontComboBox()
+                combo.setFontFilters(
+                    QtWidgets.QFontComboBox.FontFilter.ScalableFonts
+                )
                 combo.setWritingSystem(QtGui.QFontDatabase.WritingSystem.Any)
                 sys_family = QtGui.QFontDatabase.systemFont(
                     QtGui.QFontDatabase.SystemFont.GeneralFont
@@ -890,6 +893,15 @@ class ImageEditorWindow(QtWidgets.QWidget):
         tool = self._tools.get(tool_id)
         if tool and hasattr(tool, "font_family"):
             tool.font_family = family
+            # Log if the selected font is non-scalable — these fonts
+            # (e.g. legacy .fon bitmap fonts) render at a fixed size
+            # regardless of the requested font_size.
+            if not QtGui.QFontDatabase.isSmoothlyScalable(family):
+                logger.debug(
+                    "Non-scalable font selected: %r (will not respond "
+                    "to font-size changes for glyphs it lacks)",
+                    family,
+                )
             if tool_id == "text":
                 tool._sync_widgets()
 

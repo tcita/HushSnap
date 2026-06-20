@@ -59,11 +59,15 @@ def _draw_outlined_text(
     path = QtGui.QPainterPath()
     path.addText(pos, font, text)
 
-    # Calculate outline width based on pixel size
-    ps = font.pixelSize()
+    # Calculate outline width based on actual rendered pixel size.
+    # QFont.pixelSize() returns the value we *set*, which may differ from
+    # the actual rendered size for non-scalable fonts (e.g. "Roman").
+    # QFontInfo.pixelSize() gives the true rendered size — use that so the
+    # outline stays proportional to the glyphs, not the request.
+    ps = QtGui.QFontInfo(font).pixelSize()
     if ps <= 0:
-        ps = QtGui.QFontInfo(font).pixelSize()
-    
+        ps = font.pixelSize()
+
     outline_w = max(1.0, ps * TEXT_OUTLINE_WIDTH)
     
     # 1. Draw the black outline

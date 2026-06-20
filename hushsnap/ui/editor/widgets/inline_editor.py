@@ -1,7 +1,11 @@
+import logging
+
 from typing import TYPE_CHECKING
 from PyQt6 import QtCore, QtGui, QtWidgets
 from ..constants import BRAND_GREEN, TEXT_OUTLINE_WIDTH
 from ..utils import _draw_outlined_text
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ..tools.text import TextTool
@@ -73,8 +77,20 @@ class _InlineTextEditor(QtWidgets.QWidget):
         mfont.setPixelSize(fs)
         fm = QtGui.QFontMetrics(mfont)
 
-        outline_w = max(1.0, fs * TEXT_OUTLINE_WIDTH)
-        
+        # Use actual rendered pixel size so geometry stays consistent
+        # with _draw_outlined_text — fonts like "Roman" have a fixed
+        # QFontInfo pixel size that differs from the requested fs.
+        actual = QtGui.QFontInfo(mfont).pixelSize()
+        if actual <= 0:
+            actual = fs
+        if actual != fs:
+            logger.debug(
+                "Non-scalable font %r in _update_geometry: "
+                "requested=%dpx  actual=%dpx  fm.height=%d",
+                self._item.font_family, fs, actual, fm.height(),
+            )
+        outline_w = max(1.0, actual * TEXT_OUTLINE_WIDTH)
+
         min_w = int(100 * scale)
         pad_w = max(8, int(20 * scale))
         pad_top = int(outline_w / 2) + 2
@@ -108,9 +124,18 @@ class _InlineTextEditor(QtWidgets.QWidget):
         font.setPixelSize(fs)
         fm = QtGui.QFontMetrics(font)
 
-        outline_w = max(1.0, fs * TEXT_OUTLINE_WIDTH)
+        actual = QtGui.QFontInfo(font).pixelSize()
+        if actual <= 0:
+            actual = fs
+        if actual != fs:
+            logger.debug(
+                "Non-scalable font %r in paintEvent: "
+                "requested=%dpx  actual=%dpx",
+                self._item.font_family, fs, actual,
+            )
+        outline_w = max(1.0, actual * TEXT_OUTLINE_WIDTH)
         pad_top = int(outline_w / 2) + 2
-        
+
         text = self._input.text()
         baseline = QtCore.QPointF(0, fm.ascent() + pad_top)
         if text:
