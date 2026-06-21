@@ -1786,38 +1786,35 @@ class ImageEditorWindow(QtWidgets.QWidget):
             if e & 2:
                 y = sg.bottom() - h + 1 if h > 0 else sg.y()
 
-            # Constrain to the screen the cursor is currently on.  Cross-
-            # screen DPR switches make globalPosition() jump discontinuously
-            # (different physical-pixel mappings per display), which used to
-            # blow the window up to thousands of pixels wide in one event.
-            # Clamping to the cursor screen's available geometry — a real,
-            # meaningful bound — prevents that without an arbitrary per-event
-            # delta cap, and still allows resizing across screens: the window
-            # just never extends past whatever display the pointer is on.
+            # Constrain the ENTIRE resulting rectangle to the screen the cursor
+            # is currently on.  Cross-screen DPR switches make globalPosition()
+            # jump discontinuously at screen boundaries (different physical-
+            # pixel mappings per display), so a raw delta can be thousands of
+            # pixels in one event.  Clamping only the dragged edge — as an
+            # earlier version did — still let the window grow to span both
+            # screens, because the anchored edge sat on the other display.
+            # Instead we shrink the rectangle on every side that escapes the
+            # cursor screen's available geometry, so the window can never be
+            # larger than, nor leave, the display the pointer is on.
             cur_screen = QtWidgets.QApplication.screenAt(gp)
             if cur_screen is not None:
                 avail = cur_screen.availableGeometry()
-                # Clamp the free-moving side (the edge being dragged); the
-                # opposite side is the anchor and stays put.
-                if e & 4:  # dragging right edge
-                    w = min(w, avail.right() - x + 1)
-                if e & 8:  # dragging bottom edge
-                    h = min(h, avail.bottom() - y + 1)
-                if e & 1:  # dragging left edge — anchor is the right side
-                    if x < avail.left():
-                        w -= (avail.left() - x)
-                        x = avail.left()
-                if e & 2:  # dragging top edge — anchor is the bottom side
-                    if y < avail.top():
-                        h -= (avail.top() - y)
-                        y = avail.top()
-                w = max(min_sz.width(), w)
-                h = max(min_sz.height(), h)
-
-            # Last-resort cap: never exceed the virtual-desktop bounding box.
-            desktop = QtWidgets.QApplication.primaryScreen().virtualGeometry()
-            w = min(w, desktop.width())
-            h = min(h, desktop.height())
+                # Right / bottom: shrink size to keep the edge on-screen.
+                if x + w > avail.right() + 1:
+                    w = avail.right() + 1 - x
+                if y + h > avail.bottom() + 1:
+                    h = avail.bottom() + 1 - y
+                # Left / top: slide the edge on-screen and shrink the size to
+                # match (the opposite edge is the anchor and must not move).
+                if x < avail.left():
+                    w -= (avail.left() - x)
+                    x = avail.left()
+                if y < avail.top():
+                    h -= (avail.top() - y)
+                    y = avail.top()
+                # The screen itself is the hard size ceiling.
+                w = max(min_sz.width(), min(w, avail.width()))
+                h = max(min_sz.height(), min(h, avail.height()))
 
             self.setGeometry(x, y, w, h)
             event.accept()

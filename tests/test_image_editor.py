@@ -1654,8 +1654,8 @@ class TestCrossScreenResizeClamp:
 
     def test_right_edge_resize_clamped_to_cursor_screen(self, qapp, test_image, monkeypatch):
         """Dragging the right edge with the cursor on a narrow secondary screen
-        never grows the window past that screen's right edge, even when the
-        global position jumps far (simulating a DPR discontinuity)."""
+        keeps the whole window inside that screen, even when the global
+        position jumps far (simulating a DPR discontinuity)."""
         from unittest.mock import MagicMock
         from PyQt6 import QtCore
 
@@ -1663,33 +1663,37 @@ class TestCrossScreenResizeClamp:
         win._dpr = 1.0
         win.show()
 
-        # Window starts with right edge at x=1000 (start_geo right=999).
+        # Window starts on the primary screen, right edge at x=999.
         start_geo = QtCore.QRect(200, 200, 800, 600)
         win.setGeometry(start_geo)
 
-        # Cursor is now on a secondary screen spanning x=[1920, 2720].
+        # Cursor jumps to a secondary screen spanning x=[1920, 2720] (800 wide).
         secondary = MagicMock()
-        secondary.availableGeometry.return_value = QtCore.QRect(1920, 0, 800, 1000)
+        avail = QtCore.QRect(1920, 0, 800, 1000)
+        secondary.availableGeometry.return_value = avail
         monkeypatch.setattr(
             QtWidgets.QApplication, "screenAt", lambda *a, **k: secondary)
 
-        # Right-edge resize (bitmask 4) where the cursor jumps to x=4000 —
-        # far past the secondary screen's right edge (2720). Without clamping
-        # this would set width = 800 + (4000 - 1000) = 3800, right = 3999.
+        # Right-edge resize (bitmask 4) with the cursor at x=4000 — far past
+        # the secondary screen's right edge (2720). Without clamping this
+        # would set width = 800 + (4000 - 1000) = 3800.
         win._resize_edge = 4  # right edge
         win._resize_start_geo = start_geo
         win._resize_start_global = QtCore.QPoint(1000, 500)
         self._move(win, QtCore.QPoint(4000, 500))
 
         g = win.geometry()
-        # Right edge must not exceed the secondary screen's right edge (2719).
-        assert g.right() <= 2719, f"window escaped cursor screen: right={g.right()}"
-        assert g.width() >= win.minimumWidth()
+        # The window must lie entirely within the secondary screen and be no
+        # wider than it — not merely have its dragged edge capped.
+        assert avail.contains(g), f"window escaped cursor screen: {g}"
+        assert g.width() <= avail.width(), f"window wider than screen: {g.width()}"
         win.close()
 
-    def test_left_edge_resize_anchored_to_right_stays_in_screen(self, qapp, test_image, monkeypatch):
-        """Dragging the left edge leftward is clamped so the left side never
-        leaves the cursor screen's available area (the right side is anchored)."""
+    def test_repeated_cross_screen_resize_does_not_inflate(self, qapp, test_image, monkeypatch):
+        """The reported bug: dragging the edge back and forth across screens
+        with different sizes made the window grow until it froze.  After each
+        move the window must stay bounded by whichever screen the cursor is on,
+        so repeated crossing cannot accumulate."""
         from unittest.mock import MagicMock
         from PyQt6 import QtCore
 
@@ -1697,26 +1701,40 @@ class TestCrossScreenResizeClamp:
         win._dpr = 1.0
         win.show()
 
-        # Window right edge anchored at x=1500, left at x=700 (width 800).
-        start_geo = QtCore.QRect(700, 200, 800, 600)
+        start_geo = QtCore.QRect(200, 200, 800, 600)
         win.setGeometry(start_geo)
 
+        primary = MagicMock()
+        primary.availableGeometry.return_value = QtCore.QRect(0, 0, 1920, 1080)
         secondary = MagicMock()
         secondary.availableGeometry.return_value = QtCore.QRect(1920, 0, 800, 1000)
-        monkeypatch.setattr(
-            QtWidgets.QApplication, "screenAt", lambda *a, **k: secondary)
 
-        # Left-edge resize (bitmask 1) with cursor jumping to x=1000 — the
-        # computed left (700 - (1000-700)=400) is off the secondary screen,
-        # whose left edge is 1920. The clamp must pull the left edge back.
-        win._resize_edge = 1  # left edge
+        def screen_at(_pos):
+            # Alternate which screen the cursor reports as "on".
+            return secondary if screen_at._on_secondary else primary
+        screen_at._on_secondary = True
+
+        monkeypatch.setattr(QtWidgets.QApplication, "screenAt", screen_at)
+
+        win._resize_edge = 4  # right edge, anchor at x=200
         win._resize_start_geo = start_geo
-        win._resize_start_global = QtCore.QPoint(700, 500)
-        self._move(win, QtCore.QPoint(1000, 500))
+        win._resize_start_global = QtCore.QPoint(1000, 500)
 
-        g = win.geometry()
-        # The left edge is clamped to the secondary screen's left (1920),
-        # so the window collapses to min width rather than extending off-screen.
-        assert g.left() >= 1920 - 1, f"left escaped cursor screen: left={g.left()}"
-        assert g.width() >= win.minimumWidth()
+        # Drag far right on the secondary (narrow) screen.
+        screen_at._on_secondary = True
+        self._move(win, QtCore.QPoint(3000, 500))
+        after_secondary = win.geometry()
+        assert after_secondary.width() <= 800, after_secondary.width()
+
+        # Snap back to the primary (wide) screen with a huge jump, then to
+        # the secondary again — repeat several times. The window must never
+        # exceed the screen the cursor currently reports.
+        for on_secondary in (False, True, False, True, False):
+            screen_at._on_secondary = on_secondary
+            self._move(win, QtCore.QPoint(3000, 500))
+            g = win.geometry()
+            expected = (800 if on_secondary else 1920)
+            assert g.width() <= expected, (
+                f"window inflated to {g.width()} on "
+                f"{'secondary' if on_secondary else 'primary'} (cap {expected})")
         win.close()
