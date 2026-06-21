@@ -1632,3 +1632,91 @@ class TestFitToViewport:
         from PyQt6.QtWidgets import QPushButton
         assert isinstance(editor._zoom_label, QPushButton)
         assert editor._zoom_label.cursor().shape() == Qt.CursorShape.PointingHandCursor
+
+
+class TestCrossScreenResizeClamp:
+    """Edge resize must not blow the window up when the cursor jumps across
+    screens with different DPR/resolution — globalPosition() is discontinuous
+    at screen boundaries.  The window is clamped to the cursor screen's
+    available geometry, a meaningful bound, instead of an arbitrary delta cap.
+    """
+
+    def _move(self, editor, gp):
+        """Deliver a window-level mouseMoveEvent at global point *gp*."""
+        from PyQt6 import QtCore, QtGui
+        evt = QtGui.QMouseEvent(
+            QtCore.QEvent.Type.MouseMove,
+            QtCore.QPointF(gp), QtCore.QPointF(gp),
+            QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.LeftButton,
+            QtCore.Qt.KeyboardModifier.NoModifier,
+        )
+        editor.mouseMoveEvent(evt)
+
+    def test_right_edge_resize_clamped_to_cursor_screen(self, qapp, test_image, monkeypatch):
+        """Dragging the right edge with the cursor on a narrow secondary screen
+        never grows the window past that screen's right edge, even when the
+        global position jumps far (simulating a DPR discontinuity)."""
+        from unittest.mock import MagicMock
+        from PyQt6 import QtCore
+
+        win = ImageEditorWindow(test_image, _translate)
+        win._dpr = 1.0
+        win.show()
+
+        # Window starts with right edge at x=1000 (start_geo right=999).
+        start_geo = QtCore.QRect(200, 200, 800, 600)
+        win.setGeometry(start_geo)
+
+        # Cursor is now on a secondary screen spanning x=[1920, 2720].
+        secondary = MagicMock()
+        secondary.availableGeometry.return_value = QtCore.QRect(1920, 0, 800, 1000)
+        monkeypatch.setattr(
+            QtWidgets.QApplication, "screenAt", lambda *a, **k: secondary)
+
+        # Right-edge resize (bitmask 4) where the cursor jumps to x=4000 —
+        # far past the secondary screen's right edge (2720). Without clamping
+        # this would set width = 800 + (4000 - 1000) = 3800, right = 3999.
+        win._resize_edge = 4  # right edge
+        win._resize_start_geo = start_geo
+        win._resize_start_global = QtCore.QPoint(1000, 500)
+        self._move(win, QtCore.QPoint(4000, 500))
+
+        g = win.geometry()
+        # Right edge must not exceed the secondary screen's right edge (2719).
+        assert g.right() <= 2719, f"window escaped cursor screen: right={g.right()}"
+        assert g.width() >= win.minimumWidth()
+        win.close()
+
+    def test_left_edge_resize_anchored_to_right_stays_in_screen(self, qapp, test_image, monkeypatch):
+        """Dragging the left edge leftward is clamped so the left side never
+        leaves the cursor screen's available area (the right side is anchored)."""
+        from unittest.mock import MagicMock
+        from PyQt6 import QtCore
+
+        win = ImageEditorWindow(test_image, _translate)
+        win._dpr = 1.0
+        win.show()
+
+        # Window right edge anchored at x=1500, left at x=700 (width 800).
+        start_geo = QtCore.QRect(700, 200, 800, 600)
+        win.setGeometry(start_geo)
+
+        secondary = MagicMock()
+        secondary.availableGeometry.return_value = QtCore.QRect(1920, 0, 800, 1000)
+        monkeypatch.setattr(
+            QtWidgets.QApplication, "screenAt", lambda *a, **k: secondary)
+
+        # Left-edge resize (bitmask 1) with cursor jumping to x=1000 — the
+        # computed left (700 - (1000-700)=400) is off the secondary screen,
+        # whose left edge is 1920. The clamp must pull the left edge back.
+        win._resize_edge = 1  # left edge
+        win._resize_start_geo = start_geo
+        win._resize_start_global = QtCore.QPoint(700, 500)
+        self._move(win, QtCore.QPoint(1000, 500))
+
+        g = win.geometry()
+        # The left edge is clamped to the secondary screen's left (1920),
+        # so the window collapses to min width rather than extending off-screen.
+        assert g.left() >= 1920 - 1, f"left escaped cursor screen: left={g.left()}"
+        assert g.width() >= win.minimumWidth()
+        win.close()
