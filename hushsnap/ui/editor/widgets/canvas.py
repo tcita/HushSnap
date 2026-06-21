@@ -62,7 +62,21 @@ class EditorCanvas(QtWidgets.QWidget):
             painter.drawPixmap(0, 0, pm)
             # Annotations / strokes / overlay are laid out on the original image
             # geometry, so they only make sense when not previewing a transform.
-            if not preview:
+            if angle is not None:
+                # Rotation preview: the painter is already rotated/translated
+                # above, so annotations (with text baked in by _flatten_text at
+                # session start) must be drawn inside the same transform to stay
+                # aligned with the rotated image. Use the session-base
+                # annotations (via _rendered_annotations_pixmap), NOT the
+                # mutated _annotations_pixmap — each release re-rotates from
+                # base, so the preview must too, or image and annotations would
+                # rotate on different origins and drift apart. Skip the live
+                # stroke/overlay layers — they belong to draw tools and have no
+                # meaning mid-rotation.
+                annot = self._editor._rendered_annotations_pixmap()
+                if annot:
+                    painter.drawPixmap(0, 0, annot)
+            elif not preview:
                 if self._editor._annotations_pixmap:
                     painter.drawPixmap(0, 0, self._editor._annotations_pixmap)
                 tool = self._editor._active_tool

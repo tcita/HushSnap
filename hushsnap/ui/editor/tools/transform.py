@@ -4,7 +4,7 @@ from typing import Optional
 from PIL import Image
 from PyQt6 import QtCore, QtGui, QtWidgets
 from .base import BaseTool
-from ..models import UndoChangeType, TextItem
+from ..models import UndoChangeType, TextItem, _UndoEntry
 
 logger = logging.getLogger(__name__)
 
@@ -309,38 +309,47 @@ class CropTool(BaseTool):
                 and r.y() + r.height() >= img_h):
             self._editor._activate_tool("pan")
             return
-        # Save editable text before baking, so undo can restore it.
+        # Snapshot the PRE-flatten state for the undo entry.  The undo entry
+        # must capture the image, annotations, AND editable text all from
+        # before _flatten_text bakes text into the annotations pixmap —
+        # otherwise undo restores annotations-with-baked-text alongside the
+        # editable text items, showing each annotation twice and making the
+        # baked text un-removable.
+        pre_pil = self._editor._pil_image.copy()
+        pre_annot = (
+            self._editor._annotations_pixmap.copy()
+            if self._editor._annotations_pixmap else None
+        )
         saved_text_items = [
             TextItem(t.text, QtCore.QPointF(t.img_pos), QtGui.QColor(t.color),
                      t.font_family, t.font_size)
             for t in self._editor._text_items
         ] if self._editor._text_items else []
-        self._editor._flatten_text()
-        self._editor._save_undo(UndoChangeType.FULL)
-        # Patch the undo entry with the pre-flatten text so undo restores
-        # editable text alongside the pre-crop image.
-        if self._editor._undo_stack:
-            self._editor._undo_stack[-1].text_items = saved_text_items
+
+        # Bake all annotations + text into the base image and clear the layer,
+        # so the crop operates on one merged image (text/strokes survive as
+        # pixels inside the cropped region).
+        self._editor._composite_annotations_into_image()
+
+        # Push the undo entry built from the pre-composite snapshot, so undo
+        # restores a consistent pre-crop / pre-bake state.
+        entry = _UndoEntry(
+            UndoChangeType.FULL,
+            pil_img=pre_pil,
+            annot_pxm=pre_annot,
+            text_items=saved_text_items if saved_text_items else None,
+        )
+        self._editor._undo_stack.append(entry)
+        self._editor._enforce_stack_limits(self._editor._undo_stack)
+        self._editor._redo_stack.clear()
+        self._editor._update_undo_buttons()
         try:
             cropped = self._editor._pil_image.crop(
                 (r.left(), r.top(), r.x() + r.width(), r.y() + r.height())
             )
             self._editor._pil_image = cropped
-            # Crop annotations and overlay to the same rect (not just clear
-            # them — text is now pixels in there and should stay in the crop).
-            if self._editor._annotations_pixmap:
-                self._editor._annotations_pixmap = (
-                    self._editor._annotations_pixmap.copy(
-                        QtCore.QRect(r.left(), r.top(), r.width(), r.height())
-                    )
-                )
-            if self._editor._overlay_pixmap:
-                self._editor._overlay_pixmap = (
-                    self._editor._overlay_pixmap.copy(
-                        QtCore.QRect(r.left(), r.top(), r.width(), r.height())
-                    )
-                )
-            self._editor._text_items.clear()
+            # Annotations were baked into the image above; _rebuild_display
+            # recreates an empty annotation/overlay layer at the cropped size.
             self._editor._rebuild_display()
             self._editor._resize_canvas()
             self._editor._center_image_on_canvas()
@@ -813,12 +822,15 @@ class RotateTool(BaseTool):
 
     def on_key_press(self, canvas, event) -> bool:
         if event.key() == QtCore.Qt.Key.Key_Escape:
-            # Abandon the whole session: restore the pre-rotation base state
-            # (image + annotations + editable text), no undo entry.
+            # Abandon the whole session: restore the PRE-composite state
+            # (clean image + editable annotations + text), no undo entry.
+            # Must use _rotate_pre_image (clean), NOT _rotate_base_image (which
+            # has annotations baked in) — otherwise restored annotations/text
+            # would duplicate the baked pixels.
             ed = self._editor
-            if ed._rotate_base_image:
-                ed._pil_image = ed._rotate_base_image.copy()
-                # Restore pre-flatten annotations so editable text comes back.
+            if ed._rotate_pre_image is not None:
+                ed._pil_image = ed._rotate_pre_image.copy()
+                # Restore pre-composite annotations so editable text comes back.
                 if ed._rotate_pre_annot is not None:
                     ed._annotations_pixmap = ed._rotate_pre_annot.copy()
                 if ed._rotate_base_overlay is not None:

@@ -430,13 +430,25 @@ class TestMosaicToolSaveBehavior:
 
 class TestCropToolSaveBehavior:
     def test_save_on_apply_crop(self, editor):
-        """CropTool.apply_crop calls _save_undo with FULL."""
+        """CropTool.apply_crop pushes one FULL undo entry from the pre-bake state.
+
+        The entry's annotations/text must reflect the PRE-flatten snapshot so
+        undo restores a consistent pre-crop state (no baked-text duplication).
+        """
+        from hushsnap.ui.editor.models import _UndoEntry
         tool = editor._tools["crop"]
-        editor._save_undo = MagicMock()
-        # Set up a crop rect that's not full size
+        stack_before = len(editor._undo_stack)
         tool._crop_rect = QtCore.QRect(10, 10, 50, 40)
         tool.apply_crop()
-        editor._save_undo.assert_called_once_with(UndoChangeType.FULL)
+
+        # Exactly one new entry pushed.
+        assert len(editor._undo_stack) - stack_before == 1
+        entry = editor._undo_stack[-1]
+        assert entry.change_type == UndoChangeType.FULL
+        assert entry.pil_image is not None
+        # Undo entry must carry the pre-bake annotations (no baked text), not
+        # the post-flatten one. A None text_items means "no text to restore".
+        assert entry.text_items is None or entry.text_items == []
 
     def test_full_image_crop_noop_skips_save(self, editor):
         """Crop rect covering the whole image is a no-op — no save."""
@@ -475,6 +487,46 @@ class TestCropToolSaveBehavior:
         cpx = editor._pil_image.load()
         assert cpx[49, 0] == (255, 0, 0, 255)
         assert cpx[0, 39] == (0, 255, 0, 255)
+
+    def test_crop_undo_restores_text_without_duplication(self, editor):
+        """After crop + undo, baked text must NOT persist and text stays editable.
+
+        Regression: the crop undo entry used to capture the post-flatten
+        annotations (with text baked in as pixels) while also restoring the
+        editable text items — so undo showed each annotation twice (once as
+        baked pixels, once as an editable text box) and the baked text could
+        never be removed. The entry must snapshot the PRE-flatten state.
+        """
+        tool = editor._tools["crop"]
+
+        # Place one editable text item.
+        editor._text_items.append(
+            TextItem("note", QtCore.QPointF(20, 20), QtGui.QColor("#ffffff"), "Arial", 24)
+        )
+        # Snapshot the pre-flatten annotations (no baked text) for comparison.
+        pre_flatten_annot = editor._annotations_pixmap.copy()
+
+        # Crop a sub-rect (bakes text into annotations during apply).
+        tool._crop_rect = QtCore.QRect(10, 10, 50, 40)
+        tool.apply_crop()
+
+        # Undo should restore the pre-crop / pre-bake state.
+        editor._undo()
+
+        # Editable text item is back, exactly one — not duplicated.
+        assert len(editor._text_items) == 1
+        assert editor._text_items[0].text == "note"
+
+        # Annotations must match the pre-flatten snapshot (no baked-text
+        # pixels). If they carried baked text, undo would render it alongside
+        # the restored editable item → duplication.
+        def _bytes(pm):
+            img = pm.toImage()
+            buf = img.constBits()
+            buf.setsize(img.sizeInBytes())
+            return bytes(buf)
+
+        assert _bytes(editor._annotations_pixmap) == _bytes(pre_flatten_annot)
 
 
 class TestCropHandleVisibility:
@@ -1122,37 +1174,182 @@ class TestRotationAndResizeImprovements:
         editor._redo()
         assert editor._pil_image.size == size_30
 
-    def test_resize_preserves_and_scales_annotations(self, editor):
-        """Resizing scales annotation drawings and text items rather than clearing them."""
-        # Draw some annotations
+    def test_rotate_session_bakes_annotations_into_base_image(self, editor):
+        """At rotate-session start, annotations are baked into the base image.
+
+        Under the merge model, the annotation layer is cleared and its content
+        composited into _pil_image (captured as _rotate_base_image / pixmap).
+        So during the session the annotation layer is empty and the rotation
+        base already contains the annotation pixels — image and annotations
+        rotate as one (no separate layer to drift).
+        """
+        # Put a recognizable mark in the annotations (distinct from the red base).
+        p = QtGui.QPainter(editor._annotations_pixmap)
+        p.fillRect(0, 0, 10, 10, QtGui.QColor("#00FF00"))
+        p.end()
+
+        clean_pil = editor._pil_image.copy()
+        clean_pil_bytes = clean_pil.tobytes()
+
+        editor._activate_tool("rotate")
+        # Base image is the MERGED image (annotations baked in).
+        assert editor._rotate_base_image is not None
+        assert editor._rotate_base_image.tobytes() != clean_pil_bytes
+        # Annotation layer is now empty.
+        assert editor._annotations_pixmap is not None
+
+        def _pm_bytes(pm):
+            img = pm.toImage()
+            buf = img.constBits()
+            buf.setsize(img.sizeInBytes())
+            return bytes(buf)
+
+        def _is_empty(pm):
+            # An all-transparent pixmap is all zero bytes.
+            return _pm_bytes(pm) == bytes(len(_pm_bytes(pm)))
+
+        assert _is_empty(editor._annotations_pixmap)
+
+        # Pre-composite clean image is preserved for undo/cancel.
+        assert editor._rotate_pre_image is not None
+        assert editor._rotate_pre_image.tobytes() == clean_pil_bytes
+
+        # Multiple releases keep the annotation layer empty (no drift source).
+        editor._apply_rotation(20.0, True)
+        assert _is_empty(editor._annotations_pixmap)
+        editor._apply_rotation(45.0, True)
+        assert _is_empty(editor._annotations_pixmap)
+
+        editor._activate_tool("pan")
+
+    def test_rotate_undo_restores_clean_image_and_editable_text(self, editor):
+        """Edit text → rotate (bakes text) → undo → clean image + editable text.
+
+        Regression for the user scenario: after a rotation bakes the text into
+        the image, one undo must return to the pre-rotation state — a clean
+        base image with the text still as an editable item, NOT baked pixels.
+        The undo entry snapshots the pre-flatten state, so this works without
+        needing the (unimplemented) merge approach.
+        """
+        from PIL import Image
+
+        # Start from a known-clean base image.
+        clean = Image.new("RGBA", (100, 80), (200, 200, 200, 255))
+        editor._pil_image = clean.copy()
+        editor._rebuild_display()
+        clean_bytes = clean.tobytes()
+
+        # Add an editable text item (not yet baked).
+        editor._text_items.append(
+            TextItem("hello", QtCore.QPointF(20, 20), QtGui.QColor("#fff"), "Arial", 16)
+        )
+        # Annotations should be empty (no baked text yet).
+        def _pm_bytes(pm):
+            img = pm.toImage()
+            buf = img.constBits()
+            buf.setsize(img.sizeInBytes())
+            return bytes(buf)
+        empty_annot_bytes = _pm_bytes(editor._annotations_pixmap)
+
+        # Rotate (bakes text into annotations, clears editable items).
+        editor._activate_tool("rotate")
+        editor._apply_rotation(30.0, True)
+        editor._activate_tool("pan")  # commit one undo entry
+
+        # Post-rotation: text is baked, no editable items.
+        assert editor._text_items == []
+
+        # Undo → must restore the clean base image + editable text + clean annotations.
+        editor._undo()
+        assert editor._pil_image.tobytes() == clean_bytes
+        assert len(editor._text_items) == 1
+        assert editor._text_items[0].text == "hello"
+        # Annotations back to their pre-flatten (text-free) state.
+        assert _pm_bytes(editor._annotations_pixmap) == empty_annot_bytes
+
+    def test_resize_session_bakes_annotations_into_image(self, editor):
+        """At resize-session start, annotations are baked into the base image.
+
+        Under the merge model, resizing operates on the merged image; the
+        annotation layer ends up empty at the new size (rebuilt by
+        _rebuild_display), and text items are cleared. The baked content
+        survives as pixels inside the resized image.
+        """
+        # Draw some annotations + a text item.
         p = QtGui.QPainter(editor._annotations_pixmap)
         p.fillRect(0, 0, 10, 10, QtGui.QColor("#FF0000"))
         p.end()
-        
-        # Add a text item
         editor._text_items.append(
             TextItem("ResizeTest", QtCore.QPointF(20, 20), QtGui.QColor("#fff"), "Arial", 16)
         )
-        
+
+        clean_bytes = editor._pil_image.tobytes()
         orig_w, orig_h = editor._pil_image.size
+
+        # Begin the resize session — this composites annotations into the image.
+        editor._activate_tool("resize")
+        # Base image is the MERGED image (differs from the clean original).
+        assert editor._resize_base_image is not None
+        assert editor._resize_base_image.tobytes() != clean_bytes
+        # Pre-composite clean image preserved for undo/cancel.
+        assert editor._resize_pre_image is not None
+        assert editor._resize_pre_image.tobytes() == clean_bytes
+        # Annotation layer + text cleared after composite.
+        assert editor._text_items == []
+
         new_w, new_h = orig_w * 2, orig_h * 2
-        
-        # Resize to double size
         editor._apply_resize(new_w, new_h)
-        
-        # Verify PIL size
+
         assert editor._pil_image.size == (new_w, new_h)
-        
-        # Verify annotations and overlay were scaled instead of cleared
+        # Annotation layer recreated empty at the new size.
         assert editor._annotations_pixmap.size() == QtCore.QSize(new_w, new_h)
         assert editor._overlay_pixmap.size() == QtCore.QSize(new_w, new_h)
-        
-        # Verify text item position and font size were scaled proportionally
+
+        editor._activate_tool("pan")  # commit
+
+        # Undo restores the clean image + editable annotations + text.
+        editor._undo()
+        assert editor._pil_image.tobytes() == clean_bytes
         assert len(editor._text_items) == 1
-        txt = editor._text_items[0]
-        assert txt.text == "ResizeTest"
-        assert txt.img_pos == QtCore.QPointF(40, 40)
-        assert txt.font_size == 32
+        assert editor._text_items[0].text == "ResizeTest"
+
+
+class TestCompositeAnnotationsIntoImage:
+    def test_bakes_strokes_and_text_then_clears_layers(self, editor):
+        """_composite_annotations_into_image bakes strokes + text into the base
+        image and leaves the annotation layer empty + text items cleared."""
+        clean_bytes = editor._pil_image.tobytes()
+
+        # A brush stroke on the annotation layer (distinct from the red base).
+        p = QtGui.QPainter(editor._annotations_pixmap)
+        p.fillRect(0, 0, 20, 20, QtGui.QColor(0, 255, 0, 255))
+        p.end()
+        # An editable text item.
+        editor._text_items.append(
+            TextItem("baked", QtCore.QPointF(5, 5), QtGui.QColor("#FFFFFF"), "Arial", 24)
+        )
+
+        editor._composite_annotations_into_image()
+
+        # Base image now differs from the clean original (content baked in).
+        assert editor._pil_image.tobytes() != clean_bytes
+        # Text items cleared.
+        assert editor._text_items == []
+        # Annotation layer empty (all-transparent).
+        def _pm_bytes(pm):
+            img = pm.toImage()
+            buf = img.constBits()
+            buf.setsize(img.sizeInBytes())
+            return bytes(buf)
+        empty = bytes(len(_pm_bytes(editor._annotations_pixmap)))
+        assert _pm_bytes(editor._annotations_pixmap) == empty
+
+    def test_noop_when_no_annotations(self, editor):
+        """With no strokes and no text, compositing is a no-op on the image."""
+        clean_bytes = editor._pil_image.tobytes()
+        editor._composite_annotations_into_image()
+        assert editor._pil_image.tobytes() == clean_bytes
+        assert editor._text_items == []
 
     def test_resize_session_resamples_from_base_no_quality_compound(self, editor):
         """Repeated resize in a session resamples from the base each time, so

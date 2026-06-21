@@ -77,10 +77,13 @@ class ImageEditorWindow(QtWidgets.QWidget):
         # Session variables for rotation (keeps high quality & prevents compound growth)
         self._rotate_base_image: Optional[Image.Image] = None
         self._rotate_base_pixmap: Optional[QtGui.QPixmap] = None
-        self._rotate_base_annotations: Optional[QtGui.QPixmap] = None
         self._rotate_base_overlay: Optional[QtGui.QPixmap] = None
         self._rotate_pre_annot: Optional[QtGui.QPixmap] = None
         self._rotate_pre_text: list[TextItem] = []
+        # Pre-composite snapshot of the clean base image (before annotations
+        # were baked in). Used by Esc-cancel and undo to restore the
+        # pre-session state without duplicating baked annotations.
+        self._rotate_pre_image: Optional[Image.Image] = None
         self._rotate_cumulative_angle = 0.0
         # Resize session: snapshot of the image when the resize tool activated.
         # Every resize during the session resamples from this base (not from the
@@ -88,10 +91,11 @@ class ImageEditorWindow(QtWidgets.QWidget):
         # quality loss. Committed as one undo entry on tool deactivate.
         self._resize_active = False
         self._resize_base_image: Optional[Image.Image] = None
-        self._resize_base_annotations: Optional[QtGui.QPixmap] = None
         self._resize_base_overlay: Optional[QtGui.QPixmap] = None
         self._resize_pre_annot: Optional[QtGui.QPixmap] = None
         self._resize_pre_text: list[TextItem] = []
+        # Pre-composite snapshot (see _rotate_pre_image).
+        self._resize_pre_image: Optional[Image.Image] = None
         self._resize_changed = False  # any resize committed this session
 
         # State
@@ -1021,6 +1025,32 @@ class ImageEditorWindow(QtWidgets.QWidget):
         painter.end()
         self._text_items.clear()
 
+    def _composite_annotations_into_image(self) -> None:
+        """Bake annotations + text into _pil_image, then clear annotation layers.
+
+        After this the base image holds all annotation pixel data and the
+        annotation layer is empty. Call at the start of a transform session
+        (rotate / resize / crop) so the transform operates on a single merged
+        image — no separate layer to keep in sync, no per-item coordinate
+        gymnastics, and baked text rotates/scales as pixels (sidestepping the
+        "which angle should an editable text box be?" problem).
+        """
+        self._flatten_text()  # text items → annotations_pixmap pixels
+        if self._annotations_pixmap and not self._annotations_pixmap.isNull():
+            pm = _pil_to_qpixmap(self._pil_image)
+            painter = QtGui.QPainter(pm)
+            painter.drawPixmap(0, 0, self._annotations_pixmap)
+            painter.end()
+            merged = _qpixmap_to_pil(pm)
+            merged.load()  # _qpixmap_to_pil returns a lazy Image.open() result
+            # _qpixmap_to_pil goes through PNG, which drops the alpha channel
+            # for fully-opaque images (returns RGB). Force RGBA so _pil_image
+            # keeps a consistent mode across the session and undo byte-compares.
+            if merged.mode != "RGBA":
+                merged = merged.convert("RGBA")
+            self._pil_image = merged
+            self._annotations_pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+
     # ── Undo / Redo ───────────────────────────────────────────────────────
 
     def _save_undo(
@@ -1271,6 +1301,16 @@ class ImageEditorWindow(QtWidgets.QWidget):
             return self._rotate_base_pixmap
         return self._preview_pixmap if self._preview_pixmap is not None else self._display_pixmap
 
+    def _rendered_annotations_pixmap(self) -> Optional[QtGui.QPixmap]:
+        """Annotations pixmap the canvas should render.
+
+        During a transform session the annotation layer is empty (annotations
+        were baked into the merged image at session start), so this just
+        returns the empty layer — a no-op when drawn. Kept as an indirection
+        so the canvas stays decoupled from session state.
+        """
+        return self._annotations_pixmap
+
     def _set_preview_pixmap(self, pm: Optional[QtGui.QPixmap]) -> None:
         """Swap the pixmap the canvas renders, or None to restore the real image.
 
@@ -1294,7 +1334,10 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._preview_angle = 0.0
         self._rotate_active = True
 
-        # Save pre-flatten state so undo can restore editable text.
+        # Snapshot the PRE-composite state so undo / Esc-cancel can restore a
+        # clean base image + editable annotations + text (without duplicating
+        # baked pixels). Captured BEFORE _composite_annotations_into_image.
+        self._rotate_pre_image = self._pil_image.copy()
         self._rotate_pre_annot = (
             self._annotations_pixmap.copy() if self._annotations_pixmap else None
         )
@@ -1304,25 +1347,28 @@ class ImageEditorWindow(QtWidgets.QWidget):
             for t in self._text_items
         ] if self._text_items else []
 
-        # Bake text into the annotations pixmap so rotation just moves pixels.
-        self._flatten_text()
+        # Bake all annotations + text into the base image and clear the
+        # annotation layer — from here the transform operates on one merged
+        # image, so image and annotations can't drift apart.
+        self._composite_annotations_into_image()
 
-        # Capture session base (annotations now include baked text as pixels).
+        # Session base = the merged image; rotation samples from this every
+        # release so repeated rotations don't compound. Annotations layer is
+        # empty now, so there is no separate annotation base to track.
         self._rotate_base_image = self._pil_image.copy()
         self._rotate_base_pixmap = _pil_to_qpixmap(self._rotate_base_image)
-        self._rotate_base_annotations = self._annotations_pixmap.copy() if self._annotations_pixmap else None
         self._rotate_base_overlay = self._overlay_pixmap.copy() if self._overlay_pixmap else None
         self._rotate_cumulative_angle = 0.0
         self._canvas.update()
 
     def _end_rotate_session(self) -> None:
         # The whole session is one atomic undo unit: push a FULL entry with the
-        # pre-flatten, pre-rotation state so one undo restores the image AND
-        # editable text.
+        # pre-composite (clean image + editable annotations + text) state, so
+        # one undo restores both the image AND the editable annotations.
         if self._rotate_base_image is not None and self._rotate_cumulative_angle != 0.0:
             entry = _UndoEntry(
                 UndoChangeType.FULL,
-                pil_img=self._rotate_base_image,
+                pil_img=self._rotate_pre_image,
                 annot_pxm=(self._rotate_pre_annot.copy() if self._rotate_pre_annot else None),
                 text_items=[
                     TextItem(t.text, QtCore.QPointF(t.img_pos), QtGui.QColor(t.color),
@@ -1339,8 +1385,8 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._rotate_active = False
         self._rotate_base_image = None
         self._rotate_base_pixmap = None
-        self._rotate_base_annotations = None
         self._rotate_base_overlay = None
+        self._rotate_pre_image = None
         self._rotate_pre_annot = None
         self._rotate_pre_text = []
         self._rotate_cumulative_angle = 0.0
@@ -1352,25 +1398,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
         """Set the live rotation angle (degrees, clockwise). 0 = upright."""
         self._preview_angle = angle
         self._canvas.update()
-
-    def _rotate_pixmap_helper(self, pixmap: Optional[QtGui.QPixmap], angle: float, old_size: QtCore.QSize, new_size: QtCore.QSize) -> Optional[QtGui.QPixmap]:
-        if not pixmap or pixmap.isNull():
-            res = QtGui.QPixmap(new_size)
-            res.fill(QtCore.Qt.GlobalColor.transparent)
-            return res
-        rotated = QtGui.QPixmap(new_size)
-        rotated.fill(QtCore.Qt.GlobalColor.transparent)
-        painter = QtGui.QPainter(rotated)
-        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-        painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform)
-        cx_new, cy_new = new_size.width() / 2.0, new_size.height() / 2.0
-        cx_old, cy_old = old_size.width() / 2.0, old_size.height() / 2.0
-        painter.translate(cx_new, cy_new)
-        painter.rotate(angle)
-        painter.translate(-cx_old, -cy_old)
-        painter.drawPixmap(0, 0, pixmap)
-        painter.end()
-        return rotated
 
     def _apply_rotation(self, angle: float, expand: bool) -> None:
         """Apply a rotation of *angle* degrees (cumulative from session base).
@@ -1385,23 +1412,13 @@ class ImageEditorWindow(QtWidgets.QWidget):
             img = self._rotate_base_image
             if img.mode != "RGBA":
                 img = img.convert("RGBA")
-            # Rotate PIL image
+            # Rotate the merged PIL image (annotations were baked in at session
+            # start). The annotation layer is empty, so there's nothing else to
+            # rotate — image and annotations stay locked as one.
             rotated = img.rotate(
                 -angle, expand=expand, resample=Image.BICUBIC, fillcolor=(0, 0, 0, 0)
             )
             self._pil_image = rotated
-
-            old_size = QtCore.QSize(*img.size)
-            new_size = QtCore.QSize(*rotated.size)
-
-            # Rotate the annotations and overlay pixmaps (text is already
-            # baked into them by _flatten_text at session start).
-            self._annotations_pixmap = self._rotate_pixmap_helper(
-                self._rotate_base_annotations, angle, old_size, new_size
-            )
-            self._overlay_pixmap = self._rotate_pixmap_helper(
-                self._rotate_base_overlay, angle, old_size, new_size
-            )
 
             self._rotate_cumulative_angle = angle
             self._rebuild_display()
@@ -1411,16 +1428,36 @@ class ImageEditorWindow(QtWidgets.QWidget):
             self._canvas.update()
 
     def _set_resize_preview(self, width: float, height: float) -> None:
-        """Live resize preview: a GPU-scaled copy of the display pixmap."""
+        """Live resize preview: a scaled copy of the image + annotations.
+
+        The preview pixmap is a *composite* of the scaled display pixmap and
+        the scaled annotations layer (text was baked into annotations by
+        _flatten_text at session start).  Because annotations are folded into
+        the preview pixmap, the canvas must NOT draw annotations again while
+        this preview is active — see the angle/preview branch in
+        EditorCanvas.paintEvent.
+        """
         pm = self._display_pixmap
         if not pm or pm.isNull() or width <= 0 or height <= 0:
             self._set_preview_pixmap(None)
             return
+        w, h = int(round(width)), int(round(height))
         scaled = pm.scaled(
-            int(round(width)), int(round(height)),
+            w, h,
             QtCore.Qt.AspectRatioMode.IgnoreAspectRatio,
             QtCore.Qt.TransformationMode.SmoothTransformation,
         )
+        annot = self._annotations_pixmap
+        if annot and not annot.isNull():
+            annot_scaled = annot.scaled(
+                w, h,
+                QtCore.Qt.AspectRatioMode.IgnoreAspectRatio,
+                QtCore.Qt.TransformationMode.SmoothTransformation,
+            )
+            painter = QtGui.QPainter(scaled)
+            painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform, True)
+            painter.drawPixmap(0, 0, annot_scaled)
+            painter.end()
         self._set_preview_pixmap(scaled)
 
     # ── Resize session (resample from base, no compound quality loss) ───────
@@ -1429,7 +1466,9 @@ class ImageEditorWindow(QtWidgets.QWidget):
         """Snapshot the image at session start; later resizes sample from it."""
         self._resize_active = True
 
-        # Save pre-flatten state so undo can restore editable text.
+        # Snapshot the PRE-composite state so undo / Esc-cancel can restore a
+        # clean base image + editable annotations + text.
+        self._resize_pre_image = self._pil_image.copy()
         self._resize_pre_annot = (
             self._annotations_pixmap.copy() if self._annotations_pixmap else None
         )
@@ -1439,13 +1478,11 @@ class ImageEditorWindow(QtWidgets.QWidget):
             for t in self._text_items
         ] if self._text_items else []
 
-        # Bake text into the annotations pixmap so resize just scales pixels.
-        self._flatten_text()
+        # Bake all annotations + text into the base image, clear the layer —
+        # resize then operates on one merged image.
+        self._composite_annotations_into_image()
 
         self._resize_base_image = self._pil_image.copy()
-        self._resize_base_annotations = (
-            self._annotations_pixmap.copy() if self._annotations_pixmap else None
-        )
         self._resize_base_overlay = (
             self._overlay_pixmap.copy() if self._overlay_pixmap else None
         )
@@ -1456,20 +1493,18 @@ class ImageEditorWindow(QtWidgets.QWidget):
     def _end_resize_session(self) -> None:
         """Commit one undo entry if the image was resized this session."""
         changed = self._resize_changed
-        base = self._resize_base_image
         self._resize_active = False
         self._resize_base_image = None
-        self._resize_base_annotations = None
         self._resize_base_overlay = None
         self._resize_changed = False
         self._set_preview_pixmap(None)
 
-        if changed and base is not None:
-            # One atomic undo entry capturing the pre-flatten, pre-resize state
-            # so undo restores the image AND editable text.
+        if changed and self._resize_pre_image is not None:
+            # One atomic undo entry capturing the pre-composite (clean image +
+            # editable annotations + text) state so undo restores both.
             entry = _UndoEntry(
                 UndoChangeType.FULL,
-                pil_img=base,
+                pil_img=self._resize_pre_image,
                 annot_pxm=(self._resize_pre_annot.copy() if self._resize_pre_annot else None),
                 text_items=[
                     TextItem(t.text, QtCore.QPointF(t.img_pos), QtGui.QColor(t.color),
@@ -1480,15 +1515,16 @@ class ImageEditorWindow(QtWidgets.QWidget):
             self._undo_stack.append(entry)
             self._enforce_stack_limits(self._undo_stack)
             self._redo_stack.clear()
+        self._resize_pre_image = None
         self._resize_pre_annot = None
         self._resize_pre_text = []
         self._update_undo_button_visibility()
 
     def _cancel_resize_session(self) -> None:
-        """Abandon: restore the pre-resize base state, no undo entry."""
-        if self._resize_base_image is not None:
-            self._pil_image = self._resize_base_image.copy()
-            # Restore pre-flatten state so editable text comes back.
+        """Abandon: restore the pre-composite state, no undo entry."""
+        if self._resize_pre_image is not None:
+            self._pil_image = self._resize_pre_image.copy()
+            # Restore pre-composite annotations so editable text comes back.
             if self._resize_pre_annot is not None:
                 self._annotations_pixmap = self._resize_pre_annot.copy()
             if self._resize_base_overlay is not None:
@@ -1502,8 +1538,8 @@ class ImageEditorWindow(QtWidgets.QWidget):
             self._resize_canvas()
         self._resize_active = False
         self._resize_base_image = None
-        self._resize_base_annotations = None
         self._resize_base_overlay = None
+        self._resize_pre_image = None
         self._resize_pre_annot = None
         self._resize_pre_text = []
         self._resize_changed = False
@@ -1516,6 +1552,10 @@ class ImageEditorWindow(QtWidgets.QWidget):
         time is what keeps repeated shrink/grow from compounding quality loss.
         No undo entry is pushed here — the whole resize session is one atomic
         undo unit, committed on tool deactivate (see _end_resize_session).
+
+        Annotations were baked into the base image at session start, so only
+        the PIL image is resampled; _rebuild_display recreates an empty
+        annotation layer at the new size.
         """
         if width <= 0 or height <= 0:
             return
@@ -1523,46 +1563,9 @@ class ImageEditorWindow(QtWidgets.QWidget):
         if base is None:
             return
         try:
-            base_w, base_h = base.size
-            scale_x = width / base_w if base_w else 1.0
-            scale_y = height / base_h if base_h else 1.0
-
-            # Resample the image from the high-quality base.
+            # Resample the merged image from the high-quality base.
             self._pil_image = base.resize((width, height), Image.LANCZOS)
             self._preview_pixmap = None
-
-            if self._resize_active:
-                # Text is already baked into annotations_pixmap by
-                # _flatten_text at session start — just scale the pixmap.
-                if self._resize_base_annotations and not self._resize_base_annotations.isNull():
-                    self._annotations_pixmap = self._resize_base_annotations.scaled(
-                        width, height,
-                        QtCore.Qt.AspectRatioMode.IgnoreAspectRatio,
-                        QtCore.Qt.TransformationMode.SmoothTransformation,
-                    )
-                if self._resize_base_overlay and not self._resize_base_overlay.isNull():
-                    self._overlay_pixmap = self._resize_base_overlay.scaled(
-                        width, height,
-                        QtCore.Qt.AspectRatioMode.IgnoreAspectRatio,
-                        QtCore.Qt.TransformationMode.SmoothTransformation,
-                    )
-            else:
-                # Non-session path (defensive; the tool always runs in a session).
-                if self._annotations_pixmap and not self._annotations_pixmap.isNull():
-                    self._annotations_pixmap = self._annotations_pixmap.scaled(
-                        width, height,
-                        QtCore.Qt.AspectRatioMode.IgnoreAspectRatio,
-                        QtCore.Qt.TransformationMode.SmoothTransformation,
-                    )
-                if self._overlay_pixmap and not self._overlay_pixmap.isNull():
-                    self._overlay_pixmap = self._overlay_pixmap.scaled(
-                        width, height,
-                        QtCore.Qt.AspectRatioMode.IgnoreAspectRatio,
-                        QtCore.Qt.TransformationMode.SmoothTransformation,
-                    )
-                for item in self._text_items:
-                    item.img_pos = QtCore.QPointF(item.img_pos.x() * scale_x, item.img_pos.y() * scale_y)
-                    item.font_size = int(round(item.font_size * (scale_x + scale_y) / 2.0))
 
             self._resize_changed = True
             self._rebuild_display()
@@ -1609,12 +1612,13 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._preview_pixmap = None
         self._preview_angle = None
         self._rotate_active = False
+        self._rotate_pre_image = None
         self._rotate_pre_annot = None
         self._rotate_pre_text = []
         self._resize_active = False
         self._resize_base_image = None
-        self._resize_base_annotations = None
         self._resize_base_overlay = None
+        self._resize_pre_image = None
         self._resize_pre_annot = None
         self._resize_pre_text = []
         self._resize_changed = False
