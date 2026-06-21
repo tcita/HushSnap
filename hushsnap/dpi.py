@@ -55,11 +55,19 @@ def physical_to_logical_size(
 # ── Pixmap helpers ───────────────────────────────────────────────────────────
 
 def grab_full_screen() -> QtGui.QPixmap | None:
-    """Grab the entire desktop and tag the pixmap with the current DPR.
+    """Grab the **screen under the cursor** and tag the pixmap with its DPR.
 
-    Returns ``None`` when no primary screen is available.
+    Multi-monitor aware: the capture is scoped to whichever monitor the
+    cursor currently sits on (falling back to the primary screen when the
+    cursor is outside any screen or no screen is available).  Only that one
+    screen is frozen — other monitors stay live.
+
+    Returns ``None`` when no screen is available.
     """
-    screen = QtWidgets.QApplication.primaryScreen()
+    screen = (
+        QtWidgets.QApplication.screenAt(QtGui.QCursor.pos())
+        or QtWidgets.QApplication.primaryScreen()
+    )
     if not screen:
         return None
     pixmap = screen.grabWindow(0)

@@ -19,14 +19,21 @@ class PinnedImageWindow(QtWidgets.QWidget):
     ocr_requested = QtCore.pyqtSignal(object, object)  # pixmap, source_win
     edit_requested = QtCore.pyqtSignal(object)  # pil_image
 
-    def __init__(self, pil_image: Image.Image, logical_size: QtCore.QSize = None):
+    def __init__(self, pil_image: Image.Image, logical_size: QtCore.QSize = None, screen=None):
         super().__init__()
         self.pil_image = pil_image
         self.pixmap = self._pil_to_qpixmap(pil_image)
         self.aspect_ratio = self.pixmap.width() / self.pixmap.height()
-        
-        # 1. Get real screen scaling
-        dpr = current_dpr()
+
+        # 1. Resolve the target screen (multi-monitor aware).  Defaults to the
+        #    screen under the cursor so the pinned window lands on the same
+        #    monitor the user is working on, not always the primary.
+        screen = (
+            screen
+            or QtWidgets.QApplication.screenAt(QtGui.QCursor.pos())
+            or QtWidgets.QApplication.primaryScreen()
+        )
+        dpr = screen.devicePixelRatio() if screen else current_dpr()
 
         # 2. Fix pixmap scaling for High-DPI rendering
         self.pixmap.setDevicePixelRatio(dpr)
@@ -54,11 +61,11 @@ class PinnedImageWindow(QtWidgets.QWidget):
             phys_w, phys_h = pil_image.size
             img_w, img_h = physical_to_logical_size(phys_w, phys_h, dpr=dpr)
 
-        screen = QtWidgets.QApplication.primaryScreen().availableGeometry()
+        screen_geo = screen.availableGeometry()
 
         # Limit initial size to 80% of screen
-        max_w = screen.width() * 0.8
-        max_h = screen.height() * 0.8
+        max_w = screen_geo.width() * 0.8
+        max_h = screen_geo.height() * 0.8
 
         if img_w > max_w or img_h > max_h:
             ratio = min(max_w / img_w, max_h / img_h)
@@ -74,14 +81,14 @@ class PinnedImageWindow(QtWidgets.QWidget):
 
         # The window size includes shadow padding
         self.resize(int(img_w + 2 * self.shadow_width), int(img_h + 2 * self.shadow_width))
-        
-        # Position on the right side, vertically centered
+
+        # Position on the right side, vertically centered on the target screen
         right_margin = 40
         self.move(
-            screen.x() + screen.width() - self.width() - right_margin,
-            screen.y() + (screen.height() - self.height()) // 2
+            screen_geo.x() + screen_geo.width() - self.width() - right_margin,
+            screen_geo.y() + (screen_geo.height() - self.height()) // 2
         )
-        
+
         # Drag and resize state
         self._is_resizing = False
         self._active_edge = None
@@ -339,12 +346,21 @@ class PinnedImageManager(QtCore.QObject):
         
     def pin_image(self, pil_image: Image.Image, morph_pos=None, morph_size=None, logical_size=None):
         try:
-            win = PinnedImageWindow(pil_image, logical_size=logical_size)
-            screen = QtWidgets.QApplication.primaryScreen().availableGeometry()
+            # Resolve the target screen from the morph origin (the thumbnail's
+            # global position), so the pinned window lands on the same monitor
+            # the screenshot came from.  Falls back to the cursor's screen,
+            # then the primary screen.
+            screen = (
+                (QtWidgets.QApplication.screenAt(morph_pos) if morph_pos is not None else None)
+                or QtWidgets.QApplication.screenAt(QtGui.QCursor.pos())
+                or QtWidgets.QApplication.primaryScreen()
+            )
+            win = PinnedImageWindow(pil_image, logical_size=logical_size, screen=screen)
+            avail = screen.availableGeometry()
             n = len(self._windows)
             x, y = win.x() + n * 30, win.y() + n * 30
-            if x + win.width() > screen.right(): x = screen.right() - win.width()
-            if y + win.height() > screen.bottom(): y = screen.bottom() - win.height()
+            if x + win.width() > avail.right(): x = avail.right() - win.width()
+            if y + win.height() > avail.bottom(): y = avail.bottom() - win.height()
             win.move(x, y)
             win.set_morph_source(morph_pos, morph_size)
             win.ocr_requested.connect(self.ocr_requested.emit)
