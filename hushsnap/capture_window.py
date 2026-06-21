@@ -153,9 +153,15 @@ class CaptureWindow(QtWidgets.QWidget):
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_NativeWindow, True)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, True)
 
-        # Fill primary screen.
+        # Fill the screen under the cursor (multi-monitor: only the cursor's
+        # screen is frozen; other monitors stay live).  This runs synchronously
+        # in the same call stack as grab_full_screen(), so the cursor hasn't
+        # moved — the screen here matches the one that was grabbed.
         self.setWindowState(QtCore.Qt.WindowState.WindowFullScreen)
-        screen = QtWidgets.QApplication.primaryScreen()
+        screen = (
+            QtWidgets.QApplication.screenAt(QtGui.QCursor.pos())
+            or QtWidgets.QApplication.primaryScreen()
+        )
         self.setGeometry(screen.geometry())
 
         # Initialize interaction state.
@@ -164,6 +170,16 @@ class CaptureWindow(QtWidgets.QWidget):
         self.start_pos = None
         self.curr_pos = None
         self.click_threshold = CAPTURE_CLICK_THRESHOLD_PX
+
+        # Capture happens on a single (frozen) screen; only that screen's
+        # pixels exist.  Clamp the selection cursor to this window's bounds so
+        # a drag that strays onto a neighbouring (live, un-frozen) monitor
+        # stops at the edge instead of silently selecting non-existent pixels.
+        # Use the LOCAL rect (0,0,w,h): event.position() is widget-local, and
+        # self.geometry() is global desktop coords — on a non-origin monitor
+        # (e.g. secondary at x=2560) mixing them would clamp every local point
+        # to the screen's global top-left, collapsing all drags into a click.
+        self._selection_bounds = self.rect()
 
         self._topmost_debug_seq = 0
 
@@ -398,18 +414,34 @@ class CaptureWindow(QtWidgets.QWidget):
                 painter.setPen(QtCore.Qt.GlobalColor.white)
                 painter.drawText(bg_rect, QtCore.Qt.AlignmentFlag.AlignCenter, size_text)
 
+    def _clamp_to_bounds(self, pos: QtCore.QPoint) -> QtCore.QPoint:
+        """Clamp a position to the frozen screen's window bounds.
+
+        A drag can stray past the window edge onto a neighbouring monitor
+        (Qt keeps delivering events via the implicit mouse grab); those
+        pixels were never captured, so we clamp the cursor here to keep the
+        selection — and its size label — honest.
+        """
+        b = self._selection_bounds
+        # QRect's right()/bottom() are the last valid pixel (inclusive), which
+        # is exactly the edge we want to clamp to.
+        return QtCore.QPoint(
+            max(b.left(), min(pos.x(), b.right())),
+            max(b.top(), min(pos.y(), b.bottom())),
+        )
+
     def mousePressEvent(self, event):
         """Mouse press: record start point or close window."""
         if event.button() == QtCore.Qt.MouseButton.RightButton:
             self.close()
         elif event.button() == QtCore.Qt.MouseButton.LeftButton:
-            self.start_pos = event.position().toPoint()
+            self.start_pos = self._clamp_to_bounds(event.position().toPoint())
             self.curr_pos = self.start_pos
 
     def mouseMoveEvent(self, event):
         """Mouse move: update selection and trigger repaint."""
         if self.start_pos:
-            self.curr_pos = event.position().toPoint()
+            self.curr_pos = self._clamp_to_bounds(event.position().toPoint())
             self.update()
 
     def mouseReleaseEvent(self, event):
@@ -420,7 +452,7 @@ class CaptureWindow(QtWidgets.QWidget):
                 self.start_pos = self.curr_pos = None
                 return
 
-            self.curr_pos = event.position().toPoint()
+            self.curr_pos = self._clamp_to_bounds(event.position().toPoint())
             rect = QtCore.QRect(self.start_pos, self.curr_pos).normalized()
             captured = None
             logical_size = None
