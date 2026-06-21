@@ -55,6 +55,7 @@ def _translate(key, **kwargs):
         "editor_saved": "Saved",
         "editor_copied": "Copied",
         "editor_zoom_label": "{zoom}%",
+        "editor_fit_tooltip": "Fit to window (Ctrl+0)",
         "tool_brush": "Brush",
         "tool_highlighter": "Highlighter",
         "tool_eraser": "Eraser",
@@ -1496,3 +1497,113 @@ class TestEditorMultiMonitorPlacement:
         assert g.height() == 700
         assert g.left() == 5000  # centered: (800-800)//2 = 0 offset from left
         win.close()
+
+
+class TestFitToViewport:
+    """Auto-fit, fit button, and Ctrl+0 shortcut tests."""
+
+    def test_fit_scales_down_large_image(self, editor):
+        """A 3000×2000 image in a 900×560 viewport → fit zooms below 50 %.
+
+        Photoshop-style: fit always shows the full image, even if the
+        resulting zoom is low (here ~25 %).  The 0.10 sanity floor
+        prevents absurdity.
+        """
+        from unittest.mock import MagicMock
+        mock_vp = MagicMock()
+        mock_vp.width.return_value = 900
+        mock_vp.height.return_value = 560
+        editor._scroll_area.viewport = MagicMock(return_value=mock_vp)
+
+        orig = editor._rendered_display_pixmap
+        mock_pm = MagicMock()
+        mock_pm.width.return_value = 3000
+        mock_pm.height.return_value = 2000
+        editor._rendered_display_pixmap = MagicMock(return_value=mock_pm)
+
+        editor._dpr = 1.0
+        editor._scale = 1.0
+        editor._fit_to_viewport()
+
+        # min(900*0.9/3000, 560*0.9/2000) = min(0.27, 0.252) = 0.252
+        assert editor._scale < 0.50
+        assert abs(editor._scale - 0.252) < 0.01
+        assert editor._effective_scale() < 0.50
+
+        editor._rendered_display_pixmap = orig
+
+    def test_fit_caps_small_image_at_one(self, editor):
+        """A 100×80 image fits in a 900×560 viewport → stays at 100%."""
+        from unittest.mock import MagicMock
+        mock_vp = MagicMock()
+        mock_vp.width.return_value = 900
+        mock_vp.height.return_value = 560
+        editor._scroll_area.viewport = MagicMock(return_value=mock_vp)
+
+        editor._dpr = 1.0
+        editor._scale = 1.0
+        editor._fit_to_viewport()
+
+        # Small image: effective scale capped at 1.0
+        assert editor._scale == 1.0
+        assert editor._effective_scale() == 1.0
+
+    def test_fit_with_dpr_adjusts_scale(self, editor):
+        """On a HiDPI screen (DPR=2.0), _scale is adjusted so effective=fit."""
+        from unittest.mock import MagicMock
+        mock_vp = MagicMock()
+        mock_vp.width.return_value = 1800  # logical
+        mock_vp.height.return_value = 1120
+        editor._scroll_area.viewport = MagicMock(return_value=mock_vp)
+        # 3000×2000 image
+        orig = editor._rendered_display_pixmap
+        mock_pm = MagicMock()
+        mock_pm.width.return_value = 3000
+        mock_pm.height.return_value = 2000
+        editor._rendered_display_pixmap = MagicMock(return_value=mock_pm)
+
+        editor._dpr = 2.0
+        editor._fit_to_viewport()
+
+        # fit_effective = min(1800*0.9/3000, 1120*0.9/2000) = min(0.54, 0.504) = 0.504
+        # 0.504 is above the 0.50 floor → not clamped
+        # _scale = clamp(0.504, 0.5, 5.0) * 2.0 = 1.008
+        assert abs(editor._scale - 1.008) < 0.01
+        assert abs(editor._effective_scale() - 0.504) < 0.01
+
+        editor._rendered_display_pixmap = orig
+
+    def test_fit_zero_viewport_is_safe(self, editor):
+        """Calling fit when the viewport is 0×0 does not crash."""
+        from unittest.mock import MagicMock
+        mock_vp = MagicMock()
+        mock_vp.width.return_value = 0
+        mock_vp.height.return_value = 0
+        editor._scroll_area.viewport = MagicMock(return_value=mock_vp)
+
+        old_scale = editor._scale
+        editor._fit_to_viewport()
+        # Scale unchanged (guard returned early)
+        assert editor._scale == old_scale
+
+    def test_fit_missing_pixmap_is_safe(self, editor):
+        """Calling fit with no display pixmap does not crash."""
+        orig = editor._rendered_display_pixmap
+        editor._rendered_display_pixmap = MagicMock(return_value=None)
+        old_scale = editor._scale
+        editor._fit_to_viewport()
+        assert editor._scale == old_scale
+        editor._rendered_display_pixmap = orig
+
+    def test_ctrl_0_shortcut_exists(self, editor):
+        """Ctrl+0 shortcut attribute exists on the editor."""
+        assert hasattr(editor, "_fit_shortcut")
+        from PyQt6 import QtGui
+        assert isinstance(editor._fit_shortcut, QtGui.QShortcut)
+
+    def test_zoom_label_is_clickable(self, editor):
+        """Zoom label is a QPushButton with pointing-hand cursor."""
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtWidgets import QPushButton
+        assert isinstance(editor._zoom_label, QPushButton)
+        assert editor._zoom_label.cursor().shape() == Qt.CursorShape.PointingHandCursor

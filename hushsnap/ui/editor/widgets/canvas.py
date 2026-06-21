@@ -216,7 +216,7 @@ class EditorCanvas(QtWidgets.QWidget):
 
         factor = 1.10 if delta > 0 else 1.0 / 1.10
         new_scale = editor._scale * factor
-        new_scale = max(0.50, min(new_scale, 5.0))
+        new_scale = max(0.10, min(new_scale, 5.0))
         if abs(new_scale - editor._scale) < 0.001:
             event.accept()
             return

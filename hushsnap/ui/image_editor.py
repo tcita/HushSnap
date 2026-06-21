@@ -200,6 +200,11 @@ class ImageEditorWindow(QtWidgets.QWidget):
         status = self._create_status_bar()
         main_layout.addWidget(status)
 
+        # Ctrl+0 = fit to viewport
+        self._fit_shortcut = QtGui.QShortcut(
+            QtGui.QKeySequence("Ctrl+0"), self, self._fit_to_viewport
+        )
+
     def _create_title_bar(self) -> QtWidgets.QWidget:
         bar = QtWidgets.QWidget()
         bar.setObjectName("titleBar")
@@ -640,9 +645,31 @@ class ImageEditorWindow(QtWidgets.QWidget):
         save_btn.clicked.connect(self._save_as)
         layout.addWidget(save_btn)
 
-        self._zoom_label = QtWidgets.QLabel()
+        self._zoom_label = QtWidgets.QPushButton()
         self._zoom_label.setObjectName("zoomLabel")
-        self._zoom_label.setStyleSheet("color: #999; font-size: 11px; padding: 4px 10px; background: transparent;")
+        self._zoom_label.setFlat(True)
+        self._zoom_label.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self._zoom_label.setToolTip(self._tr("editor_fit_tooltip"))
+        self._zoom_label.setStyleSheet("""
+            QPushButton#zoomLabel {
+                background: transparent;
+                border: 1px solid transparent;
+                border-radius: 10px;
+                color: #999;
+                font-size: 11px;
+                padding: 2px 10px;
+            }
+            QPushButton#zoomLabel:hover {
+                background: #2d2d2d;
+                border-color: #4a4a4a;
+                color: #ccc;
+            }
+            QPushButton#zoomLabel:pressed {
+                background: #222;
+                border-color: #5FC98A;
+            }
+        """)
+        self._zoom_label.clicked.connect(self._fit_to_viewport)
         layout.addWidget(self._zoom_label)
 
         # Frameless resize is handled by window-level mouse events
@@ -978,7 +1005,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._overlay_pixmap.fill(QtCore.Qt.GlobalColor.transparent)
         self._update_status()
         self._resize_canvas()
-        QtCore.QTimer.singleShot(10, self._center_image_on_canvas)
 
     def _resize_canvas(self) -> None:
         pm = self._rendered_display_pixmap()
@@ -988,11 +1014,13 @@ class ImageEditorWindow(QtWidgets.QWidget):
         if not vp:
             return
         vw, vh = vp.width(), vp.height()
+        if vw <= 0 or vh <= 0:
+            return
         scale = self._effective_scale()
         iw = int(pm.width() * scale)
         ih = int(pm.height() * scale)
-        pad_w = vw * 0.9
-        pad_h = vh * 0.9
+        pad_w = max(vw, iw) * 0.15
+        pad_h = max(vh, ih) * 0.15
         cw = max(vw, iw + pad_w * 2)
         ch = max(vh, ih + pad_h * 2)
         self._canvas.setMinimumSize(int(cw), int(ch))
@@ -1031,8 +1059,39 @@ class ImageEditorWindow(QtWidgets.QWidget):
     def _center_image_on_canvas(self) -> None:
         h_bar = self._scroll_area.horizontalScrollBar()
         v_bar = self._scroll_area.verticalScrollBar()
-        h_bar.setValue((h_bar.minimum() + h_bar.maximum()) // 2)
-        v_bar.setValue((v_bar.minimum() + v_bar.maximum()) // 2)
+        h_bar.setValue(round((h_bar.minimum() + h_bar.maximum()) / 2))
+        v_bar.setValue(round((v_bar.minimum() + v_bar.maximum()) / 2))
+
+    def _fit_to_viewport(self) -> None:
+        """Scale the image to fit within the viewport with 10% visual margin.
+
+        Small images are capped at effective 1.0 (no upscaling).
+        The canvas pasteboard (15 % padding per side in _resize_canvas)
+        ensures the Pan tool has scroll range even at fit zoom.
+        """
+        pm = self._rendered_display_pixmap()
+        if not pm:
+            return
+        vp = self._scroll_area.viewport()
+        if not vp:
+            return
+        vw, vh = vp.width(), vp.height()
+        if vw <= 0 or vh <= 0 or pm.width() <= 0 or pm.height() <= 0:
+            return
+        fit_effective = min(
+            vw * 0.90 / pm.width(),
+            vh * 0.90 / pm.height(),
+            1.0,  # don't upscale small images
+            # No lower clamp — Photoshop-style: fit always fits, even at
+            # 25 % for a 4K image on a small screen.  The wheelEvent
+            # minimum (0.10) prevents absurdity while keeping the zoom
+            # range usable from fit zoom upward.
+        )
+        self._scale = max(0.10, min(fit_effective, 5.0)) * self._dpr
+        self._resize_canvas()
+        self._center_image_on_canvas()
+        self._update_zoom_label()
+        self._canvas.update()
 
     def _rebuild_display(self) -> None:
         self._display_pixmap = _pil_to_qpixmap(self._pil_image)
@@ -1308,7 +1367,8 @@ class ImageEditorWindow(QtWidgets.QWidget):
 
     def _update_zoom_label(self) -> None:
         pct = round(self._scale * 100)
-        self._zoom_label.setText(self._tr("editor_zoom_label", zoom=pct))
+        label = self._tr("editor_zoom_label", zoom=pct)
+        self._zoom_label.setText(f"⊞  {label}")
 
     # ── Save / Close ──────────────────────────────────────────────────────
 
@@ -1836,6 +1896,9 @@ def show_image_editor(
         win.resize(w, h)
         win.move(x, y)
     win.show()
+    # Defer fit until the layout is settled — the viewport has zero
+    # dimensions during __init__ (before show()).
+    QtCore.QTimer.singleShot(0, win._fit_to_viewport)
     return win
 
 

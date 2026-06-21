@@ -178,6 +178,7 @@ UI_TEXT = {
         "editor_copied": "✓ Copied to clipboard",
         "editor_copy": "Copy",
         "editor_zoom_label": "{zoom}%",
+        "editor_fit_tooltip": "Fit to window (Ctrl+0)",
 
         "crash_title": "HushSnap - Critical Error",
         "crash_body": "An unexpected error occurred and the application must close.\n\n"
@@ -350,6 +351,7 @@ UI_TEXT = {
         "editor_copied": "✓ 已复制到剪贴板",
         "editor_copy": "复制",
         "editor_zoom_label": "{zoom}%",
+        "editor_fit_tooltip": "适应窗口 (Ctrl+0)",
 
         "crash_title": "HushSnap - 严重错误",
         "crash_body": "程序发生意外错误，即将关闭。\n\n日志文件位置：\n{log_path}",
@@ -521,6 +523,7 @@ UI_TEXT = {
         "editor_copied": "✓ 已複製到剪貼簿",
         "editor_copy": "複製",
         "editor_zoom_label": "{zoom}%",
+        "editor_fit_tooltip": "適應視窗 (Ctrl+0)",
 
         "crash_title": "HushSnap - 嚴重錯誤",
         "crash_body": "程式發生意外錯誤，即將關閉。\n\n記錄檔位置：\n{log_path}",
@@ -691,6 +694,7 @@ UI_TEXT = {
         "editor_copied": "✓ クリップボードにコピーしました",
         "editor_copy": "コピー",
         "editor_zoom_label": "{zoom}%",
+        "editor_fit_tooltip": "ウィンドウに合わせる (Ctrl+0)",
 
         "crash_title": "HushSnap - 重大なエラー",
         "crash_body": "予期しないエラーが発生したため、アプリケーションを終了します。\n\nログファイルの場所:\n{log_path}",
