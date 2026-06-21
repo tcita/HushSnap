@@ -150,41 +150,22 @@ class ImageEditorWindow(QtWidgets.QWidget):
 
     def _setup_ui(self) -> None:
         self.setObjectName("editorWindow")
-        self.setWindowFlags(
-            QtCore.Qt.WindowType.FramelessWindowHint
-            | QtCore.Qt.WindowType.Window
-        )
         self.setStyleSheet(EDITOR_WINDOW_STYLE)
         self.setWindowTitle(self._tr("editor_title"))
         self.setMinimumSize(_EDITOR_MIN_W, _EDITOR_MIN_H)
-        self.resize(960, 700)
-        self.setMouseTracking(True)
-        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_Hover, True)
+        self.resize(_EDITOR_DEFAULT_W, _EDITOR_DEFAULT_H)
 
-        # Margins expose bare window area at the edges for frameless resize
-        # detection. Top/bottom equal _EDGE_BORDER so the whole vertical
-        # resize zone sits on bare window (which receives mouseMove directly);
-        # otherwise the cursor set on the top edge would "stick" after moving
-        # onto the title bar / status bar, which swallow moves. Left/right
-        # stay narrow since they aren't covered by chrome there.
         main_layout = QtWidgets.QVBoxLayout(self)
-        main_layout.setContentsMargins(4, ImageEditorWindow._EDGE_BORDER,
-                                       4, ImageEditorWindow._EDGE_BORDER)
+        main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # ── Frameless edge resize state ────────────────────────────
-        self._resize_edge: int = 0  # bitmask: 1=left 2=top 4=right 8=bottom
-        self._resize_start_geo: QtCore.QRect | None = None
-        self._resize_start_global: QtCore.QPoint | None = None
-        # Debounce canvas relayout during window resize.
+        # Debounce canvas relayout during window resize — the system sends a
+        # flood of resize events while dragging the border; we only relayout
+        # once the user pauses, so the image doesn't flicker.
         self._resize_debounce = QtCore.QTimer(self)
         self._resize_debounce.setSingleShot(True)
         self._resize_debounce.setInterval(50)
         self._resize_debounce.timeout.connect(self._on_resize_settled)
-
-        # Title bar
-        title_bar = self._create_title_bar()
-        main_layout.addWidget(title_bar)
 
         # Toolbar row 1 — tools + transforms
         toolbar1 = self._create_toolbar_row1()
@@ -216,36 +197,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._fit_shortcut = QtGui.QShortcut(
             QtGui.QKeySequence("Ctrl+0"), self, self._fit_to_viewport
         )
-
-    def _create_title_bar(self) -> QtWidgets.QWidget:
-        bar = QtWidgets.QWidget()
-        bar.setObjectName("titleBar")
-        bar.setFixedHeight(36)
-        bar.setStyleSheet("background-color: #1e1e1e; border-bottom: 1px solid #333;")
-        layout = QtWidgets.QHBoxLayout(bar)
-        layout.setContentsMargins(10, 0, 4, 0)
-        layout.setSpacing(8)
-
-        title = QtWidgets.QLabel(self._tr("editor_title"))
-        title.setStyleSheet("color: #ccc; font-size: 13px; font-weight: 600; background: transparent; border: none;")
-        layout.addWidget(title)
-        layout.addStretch()
-
-        close_btn = QtWidgets.QPushButton("✕")
-        close_btn.setFixedSize(28, 28)
-        close_btn.setStyleSheet(
-            "QPushButton { background: transparent; border: none; color: #999; font-size: 14px; }"
-            "QPushButton:hover { background-color: rgba(255, 80, 80, 60); color: #fff; border-radius: 4px; }"
-            "QPushButton:pressed { background-color: rgba(255, 80, 80, 120); color: #fff; border-radius: 4px; }"
-        )
-        close_btn.clicked.connect(self.close)
-        layout.addWidget(close_btn)
-
-        # Make window draggable via title bar
-        bar.mousePressEvent = self._title_bar_mouse_press
-        bar.mouseMoveEvent = self._title_bar_mouse_move
-        self._drag_pos = None
-        return bar
 
     def _create_toolbar_row1(self) -> QtWidgets.QWidget:
         bar = QtWidgets.QWidget()
@@ -1042,14 +993,10 @@ class ImageEditorWindow(QtWidgets.QWidget):
 
     def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
         super().resizeEvent(event)
-        # During edge resize the window sends a flood of resize events;
-        # debounce the (expensive) canvas relayout so the image doesn't
-        # flicker and the canvas only settles when the user pauses.
-        if self._resize_edge:
-            self._resize_debounce.start()
-        else:
-            self._resize_canvas()
-            self._center_image_on_canvas()
+        # The system sends a flood of resize events while dragging the border;
+        # debounce the (expensive) canvas relayout so it only runs once the
+        # user pauses.
+        self._resize_debounce.start()
         # Keep the active transform tool's floating buttons pinned to the
         # viewport bottom on window resize.
         from .editor.tools.transform import _position_action_buttons
@@ -1714,134 +1661,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
             self._preview_pixmap = None
             self._canvas.update()
 
-    # ── Frameless resize (4 edges + 4 corners) ─────────────────────────
-
-    _EDGE_BORDER = 8  # px from window edge where resize is triggered
-
-    @staticmethod
-    def _hit_edge(win_geo: QtCore.QRect,
-                  global_pt: QtCore.QPoint) -> int:
-        """Return a bitmask of which window edges *global_pt* is near."""
-        edge = 0
-        lx = global_pt.x() - win_geo.left()
-        ly = global_pt.y() - win_geo.top()
-        border = ImageEditorWindow._EDGE_BORDER
-        if lx < border:
-            edge |= 1  # left
-        elif lx >= win_geo.width() - border:
-            edge |= 4  # right
-        if ly < border:
-            edge |= 2  # top
-        elif ly >= win_geo.height() - border:
-            edge |= 8  # bottom
-        return edge
-
-    def _set_resize_cursor(self, edge: int) -> None:
-        if edge in (1 | 2, 4 | 8):  # tl, br
-            self.setCursor(QtCore.Qt.CursorShape.SizeFDiagCursor)
-        elif edge in (1 | 8, 2 | 4):  # bl, tr
-            self.setCursor(QtCore.Qt.CursorShape.SizeBDiagCursor)
-        elif edge & (1 | 4):  # left or right
-            self.setCursor(QtCore.Qt.CursorShape.SizeHorCursor)
-        elif edge & (2 | 8):  # top or bottom
-            self.setCursor(QtCore.Qt.CursorShape.SizeVerCursor)
-        else:
-            self.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
-
-    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
-        if event.button() == QtCore.Qt.MouseButton.LeftButton:
-            gp = event.globalPosition().toPoint()
-            edge = self._hit_edge(self.geometry(), gp)
-            if edge:
-                # Start edge resize.
-                self._resize_edge = edge
-                self._resize_start_geo = self.geometry()
-                self._resize_start_global = gp
-                self.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
-                event.accept()
-                return
-            # Not on an edge → title bar drag.
-            self._drag_pos = gp - self.frameGeometry().topLeft()
-        super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
-        gp = event.globalPosition().toPoint()
-        if self._resize_edge:
-            delta = gp - self._resize_start_global
-            sg = self._resize_start_geo
-            min_sz = self.minimumSize()
-            e = self._resize_edge
-            x, y, w, h = sg.x(), sg.y(), sg.width(), sg.height()
-
-            # Width: start width +/- delta.x (depending on which edge).
-            if e & 1:  # left
-                w = max(min_sz.width(), sg.width() - delta.x())
-            elif e & 4:  # right
-                w = max(min_sz.width(), sg.width() + delta.x())
-
-            # Height: start height +/- delta.y.
-            if e & 2:  # top
-                h = max(min_sz.height(), sg.height() - delta.y())
-            elif e & 8:  # bottom
-                h = max(min_sz.height(), sg.height() + delta.y())
-
-            # Position: only move the left/top edge when dragging those.
-            if e & 1:
-                x = sg.right() - w + 1 if w > 0 else sg.x()
-            if e & 2:
-                y = sg.bottom() - h + 1 if h > 0 else sg.y()
-
-            # Hard size ceiling: the window may span screens (we don't special-
-            # case cross-screen editing, like Windows Terminal / Explorer), but
-            # it must never grow larger than the biggest single screen.  This
-            # bound is independent of the global coordinate system, so the
-            # discontinuous globalPosition() jumps that happen at screen
-            # boundaries under mixed-DPR setups can't inflate the window to the
-            # point of freezing — the original bug.  We deliberately do NOT
-            # clamp against screenAt(gp), whose return value is itself
-            # unreliable during those jumps.
-            screens = QtWidgets.QApplication.screens()
-            if screens:
-                max_w = max(s.geometry().width() for s in screens)
-                max_h = max(s.geometry().height() for s in screens)
-                w = min(w, max_w)
-                h = min(h, max_h)
-
-            self.setGeometry(x, y, w, h)
-            event.accept()
-            return
-        if self._drag_pos is not None and (event.buttons() & QtCore.Qt.MouseButton.LeftButton):
-            # Title bar drag.
-            self.move(gp - self._drag_pos)
-            event.accept()
-            return
-        # Not dragging — update cursor for edge proximity.
-        edge = self._hit_edge(self.geometry(), gp)
-        self._set_resize_cursor(edge)
-        super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
-        was_resizing = bool(self._resize_edge)
-        self._resize_edge = 0
-        self._resize_start_geo = None
-        self._resize_start_global = None
-        self._drag_pos = None
-        self.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
-        if was_resizing:
-            self._resize_debounce.stop()
-            self._resize_canvas()
-            self._center_image_on_canvas()
-        super().mouseReleaseEvent(event)
-
-    # ── Title bar (delegates to window-level mouse events) ────────────
-
-    def _title_bar_mouse_press(self, event: QtGui.QMouseEvent) -> None:
-        # Forward to the window-level handler so edge detection runs first.
-        self.mousePressEvent(event)
-
-    def _title_bar_mouse_move(self, event: QtGui.QMouseEvent) -> None:
-        self.mouseMoveEvent(event)
-
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         # Persist the window geometry so the next editor opens at the same
         # size/position (when on the same screen — see show_image_editor).
@@ -1930,8 +1749,7 @@ def show_image_editor(
             x = avail.x() + (avail.width() - w) // 2
             y = avail.y() + (avail.height() - h) // 2
         # Assign the target screen before show() — otherwise Windows may
-        # override our position and place the frameless window on the
-        # primary screen.
+        # place the window on the primary screen instead of the cursor's.
         _ = win.winId()
         wh = win.windowHandle()
         if wh is not None and target is not None:
