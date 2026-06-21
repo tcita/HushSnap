@@ -11,7 +11,7 @@ TEXT_OUTLINE_WIDTH = 0.18  # as a fraction of font pixel size
 
 EDITOR_WINDOW_STYLE = """
 QWidget#editorWindow {
-    background-color: #2d2d2d;
+    background-color: #1e1e1e;
     color: #e0e0e0;
     font-size: 12px;
 }

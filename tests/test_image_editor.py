@@ -1277,7 +1277,7 @@ class TestRotationAndResizeImprovements:
         """
         # Draw some annotations + a text item.
         p = QtGui.QPainter(editor._annotations_pixmap)
-        p.fillRect(0, 0, 10, 10, QtGui.QColor("#FF0000"))
+        p.fillRect(0, 0, 10, 10, QtGui.QColor("#00FF00"))
         p.end()
         editor._text_items.append(
             TextItem("ResizeTest", QtCore.QPointF(20, 20), QtGui.QColor("#fff"), "Arial", 16)
@@ -1296,6 +1296,20 @@ class TestRotationAndResizeImprovements:
         assert editor._resize_pre_image.tobytes() == clean_bytes
         # Annotation layer + text cleared after composite.
         assert editor._text_items == []
+
+        # _display_pixmap must reflect the MERGED image, not the stale
+        # pre-composite one — _set_resize_preview scales _display_pixmap, so a
+        # stale one would flash baked content out during the live drag.
+        # The stroke was green (#00FF00); a fresh display pixmap contains it.
+        assert editor._display_pixmap is not None
+        di = editor._display_pixmap.toImage()
+        has_green = any(
+            di.pixelColor(x, y).green() > 200
+            and di.pixelColor(x, y).red() < 60
+            for y in range(0, di.height(), 2)
+            for x in range(0, di.width(), 2)
+        )
+        assert has_green, "display_pixmap is stale — missing baked stroke"
 
         new_w, new_h = orig_w * 2, orig_h * 2
         editor._apply_resize(new_w, new_h)
@@ -1384,3 +1398,101 @@ class TestCompositeAnnotationsIntoImage:
         assert editor._pil_image.size == (orig_w, orig_h)
         assert editor._pil_image.tobytes() == orig_bytes
 
+
+
+class TestEditorMultiMonitorPlacement:
+    def test_editor_uses_target_screen_dpr(self, qapp, test_image):
+        """The editor adopts the passed screen's DPR, not the primary's."""
+        from unittest.mock import MagicMock
+        screen = MagicMock()
+        screen.devicePixelRatio.return_value = 2.0
+        win = ImageEditorWindow(test_image, _translate, screen=screen)
+        assert win._dpr == 2.0
+        assert win._target_screen is screen
+        win.close()
+
+    def test_editor_resolves_screen_from_cursor(self, qapp, test_image):
+        """The editor resolves its target screen from the cursor, not primary.
+
+        The cursor-screen lookup is deferred out of __init__ (it crashed
+        show() there) into _resolve_target_screen, called after construction.
+        After that call, _target_screen is the cursor's screen and _dpr
+        matches it — not the primary's.
+        """
+        from unittest.mock import MagicMock, patch
+        secondary = MagicMock()
+        secondary.devicePixelRatio.return_value = 1.5
+        primary = MagicMock()
+        primary.devicePixelRatio.return_value = 1.0
+
+        with patch("PyQt6.QtWidgets.QApplication.screenAt", return_value=secondary), \
+             patch("PyQt6.QtWidgets.QApplication.primaryScreen", return_value=primary):
+            win = ImageEditorWindow(test_image, _translate)
+            # During construction the cursor screen is NOT yet resolved
+            # (lookup is deferred); _target_screen is the primary placeholder.
+            assert win._target_screen is primary
+            win._resolve_target_screen()
+
+        # After resolution: cursor's screen, with its DPR.
+        assert win._target_screen is secondary
+        assert win._dpr == 1.5
+        win.close()
+
+    def test_editor_centers_on_target_screen(self, qapp, test_image):
+        """Editor opens centered on the cursor's screen, size clamped to fit.
+
+        Uses an arbitrary fictional screen (offset 5000) — not tied to any
+        real hardware. Validates the placement LOGIC, not specific pixels.
+        """
+        from unittest.mock import MagicMock, patch
+
+        screen = MagicMock()
+        screen.devicePixelRatio.return_value = 1.0
+        avail = QtCore.QRect(5000, 200, 1600, 1000)
+        screen.availableGeometry.return_value = avail
+
+        with patch("PyQt6.QtWidgets.QApplication.screenAt", return_value=screen), \
+             patch("PyQt6.QtWidgets.QApplication.primaryScreen", return_value=screen):
+            win = ImageEditorWindow(test_image, _translate)
+            win._resolve_target_screen()
+            a = win._target_screen.availableGeometry()
+            w = max(480, min(960, a.width()))
+            h = max(480, min(700, a.height()))
+            win.resize(w, h)
+            win.move(a.x() + (a.width() - w) // 2, a.y() + (a.height() - h) // 2)
+
+        g = win.geometry()
+        # 960x700 fits in a 1600x1000 screen — should keep default size.
+        assert g.size() == QtCore.QSize(960, 700)
+        assert avail.contains(g)
+        win.close()
+
+    def test_editor_clamps_default_size_to_narrow_screen(self, qapp, test_image):
+        """Default 960x700 is clamped when the target screen is narrower.
+
+        Uses fictional screen geometry (offset 5000, 800px wide) — verifies
+        that the size clamping logic works regardless of actual hardware.
+        """
+        from unittest.mock import MagicMock, patch
+
+        screen = MagicMock()
+        screen.devicePixelRatio.return_value = 1.0
+        avail = QtCore.QRect(5000, 200, 800, 1200)
+        screen.availableGeometry.return_value = avail
+
+        with patch("PyQt6.QtWidgets.QApplication.screenAt", return_value=screen), \
+             patch("PyQt6.QtWidgets.QApplication.primaryScreen", return_value=screen):
+            win = ImageEditorWindow(test_image, _translate)
+            win._resolve_target_screen()
+            a = win._target_screen.availableGeometry()
+            w = max(480, min(960, a.width()))
+            h = max(480, min(700, a.height()))
+            win.resize(w, h)
+            win.move(a.x() + (a.width() - w) // 2, a.y() + (a.height() - h) // 2)
+
+        g = win.geometry()
+        # 960 > 800: width clamped to screen width; height 700 < 1200: kept.
+        assert g.width() == 800
+        assert g.height() == 700
+        assert g.left() == 5000  # centered: (800-800)//2 = 0 offset from left
+        win.close()

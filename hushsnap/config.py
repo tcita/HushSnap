@@ -440,7 +440,12 @@ def _load_state_data(state_path=None):
 
 
 def _write_state_data(state_data, state_path=None):
-    """Write state data to disk as a minimal TOML file."""
+    """Write state data to disk as a minimal TOML file.
+
+    Preserves any extra keys (e.g. editor window geometry) present in
+    state_data so new state fields can be added without losing old ones —
+    the known scalar fields are normalized, the rest are passed through.
+    """
     if state_path is None:
         state_path = STATE_PATH
     engine = _normalize_ocr_engine(state_data.get("ocr_engine")) or OCR_ENGINE_PPOCR
@@ -448,13 +453,41 @@ def _write_state_data(state_data, state_path=None):
     if not isinstance(font_size, int):
         font_size = DEFAULT_OCR_FONT_SIZE
     onboarding_shown = bool(state_data.get("onboarding_toast_shown", False))
-    lines = [
-        f'ocr_engine = "{engine}"',
-        f'ocr_font_size = {font_size}',
-        f'onboarding_toast_shown = {"true" if onboarding_shown else "false"}',
-    ]
+
+    # Known scalar keys, written in a stable order.
+    out = {
+        "ocr_engine": f'"{engine}"',
+        "ocr_font_size": str(font_size),
+        "onboarding_toast_shown": "true" if onboarding_shown else "false",
+    }
+    # Pass through any other keys the caller included (e.g. editor window
+    # geometry: a TOML inline table). Skip the ones already handled above.
+    for key, val in state_data.items():
+        if key in out:
+            continue
+        if isinstance(val, dict):
+            # Render as a TOML inline table: key = { a = 1, b = 2 }
+            inner = ", ".join(f"{k} = {_toml_scalar(v)}" for k, v in val.items())
+            out[key] = "{" + inner + "}"
+        else:
+            out[key] = _toml_scalar(val)
+
+    lines = [f"{k} = {v}" for k, v in out.items()]
     lines.append("")
     state_path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def _toml_scalar(val):
+    """Render a Python scalar as a TOML scalar string."""
+    if isinstance(val, bool):
+        return "true" if val else "false"
+    if isinstance(val, (int, float)):
+        return str(val)
+    if isinstance(val, str):
+        escaped = val.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+    # Fallback: best-effort string.
+    return '"' + str(val).replace('"', '\\"') + '"'
 
 
 def _ensure_default_state_exists(state_path=None):
@@ -676,6 +709,49 @@ def set_onboarding_toast_shown(state_path=None):
         _write_state_data(state_data, state_path)
     except Exception as e:
         logger.error(f"Failed to update onboarding_toast_shown in state: {e}")
+
+
+# ── Editor window geometry persistence ─────────────────────────────────
+
+def get_editor_window_geometry(state_path=None):
+    """Read the last image-editor window geometry from state.
+
+    Returns a dict {x, y, w, h} or None when nothing is stored.
+    """
+    if state_path is None:
+        state_path = STATE_PATH
+    _ensure_default_state_exists(state_path)
+    state_data = _load_state_data(state_path)
+    geo = state_data.get("editor_window_geometry")
+    if not isinstance(geo, dict):
+        return None
+    try:
+        result = {
+            "x": int(geo["x"]),
+            "y": int(geo["y"]),
+            "w": int(geo["w"]),
+            "h": int(geo["h"]),
+        }
+        if result["w"] >= 320 and result["h"] >= 240:
+            return result
+    except (KeyError, TypeError, ValueError):
+        pass
+    return None
+
+
+def set_editor_window_geometry(x, y, w, h, state_path=None):
+    """Persist the image-editor window geometry to state."""
+    if state_path is None:
+        state_path = STATE_PATH
+    _ensure_default_state_exists(state_path)
+    try:
+        state_data = _load_state_data(state_path)
+        state_data["editor_window_geometry"] = {
+            "x": int(x), "y": int(y), "w": int(w), "h": int(h),
+        }
+        _write_state_data(state_data, state_path)
+    except Exception as e:
+        logger.error(f"Failed to update editor window geometry in state: {e}")
 
 
 def load_hotkey_setting():
