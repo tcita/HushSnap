@@ -161,10 +161,15 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self.setMouseTracking(True)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_Hover, True)
 
-        # Narrow margins expose window edges for frameless resize detection
-        # while blending visually with the window background (#1e1e1e).
+        # Margins expose bare window area at the edges for frameless resize
+        # detection. Top/bottom equal _EDGE_BORDER so the whole vertical
+        # resize zone sits on bare window (which receives mouseMove directly);
+        # otherwise the cursor set on the top edge would "stick" after moving
+        # onto the title bar / status bar, which swallow moves. Left/right
+        # stay narrow since they aren't covered by chrome there.
         main_layout = QtWidgets.QVBoxLayout(self)
-        main_layout.setContentsMargins(4, 4, 4, 4)
+        main_layout.setContentsMargins(4, ImageEditorWindow._EDGE_BORDER,
+                                       4, ImageEditorWindow._EDGE_BORDER)
         main_layout.setSpacing(0)
 
         # ── Frameless edge resize state ────────────────────────────
