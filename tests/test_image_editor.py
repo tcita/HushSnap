@@ -1637,8 +1637,11 @@ class TestFitToViewport:
 class TestCrossScreenResizeClamp:
     """Edge resize must not blow the window up when the cursor jumps across
     screens with different DPR/resolution — globalPosition() is discontinuous
-    at screen boundaries.  The window is clamped to the cursor screen's
-    available geometry, a meaningful bound, instead of an arbitrary delta cap.
+    at screen boundaries.  The window is capped to the largest single screen,
+    a bound independent of the (unreliable mid-jump) global coordinate system,
+    rather than to screenAt(gp).  We allow cross-screen windows (like Windows
+    Terminal / Explorer) and don't optimize editing for that state — we only
+    prevent the dangerous inflation bug.
     """
 
     def _move(self, editor, gp):
@@ -1652,89 +1655,68 @@ class TestCrossScreenResizeClamp:
         )
         editor.mouseMoveEvent(evt)
 
-    def test_right_edge_resize_clamped_to_cursor_screen(self, qapp, test_image, monkeypatch):
-        """Dragging the right edge with the cursor on a narrow secondary screen
-        keeps the whole window inside that screen, even when the global
-        position jumps far (simulating a DPR discontinuity)."""
+    def _two_screens(self, monkeypatch):
+        """Patch QApplication.screens() to report a 1920-wide primary and an
+        800-wide secondary (max single-screen width = 1920)."""
         from unittest.mock import MagicMock
         from PyQt6 import QtCore
+        primary = MagicMock()
+        primary.geometry.return_value = QtCore.QRect(0, 0, 1920, 1080)
+        secondary = MagicMock()
+        secondary.geometry.return_value = QtCore.QRect(1920, 0, 800, 1000)
+        monkeypatch.setattr(
+            QtWidgets.QApplication, "screens", lambda *a, **k: [primary, secondary])
+        return 1920, 1080
+
+    def test_right_edge_resize_capped_to_max_screen_width(self, qapp, test_image, monkeypatch):
+        """A discontinuous globalPosition() jump that would set width to
+        thousands of pixels is capped to the largest single screen's width."""
+        from PyQt6 import QtCore
+
+        max_w, _ = self._two_screens(monkeypatch)
 
         win = ImageEditorWindow(test_image, _translate)
         win._dpr = 1.0
         win.show()
-
-        # Window starts on the primary screen, right edge at x=999.
         start_geo = QtCore.QRect(200, 200, 800, 600)
         win.setGeometry(start_geo)
 
-        # Cursor jumps to a secondary screen spanning x=[1920, 2720] (800 wide).
-        secondary = MagicMock()
-        avail = QtCore.QRect(1920, 0, 800, 1000)
-        secondary.availableGeometry.return_value = avail
-        monkeypatch.setattr(
-            QtWidgets.QApplication, "screenAt", lambda *a, **k: secondary)
-
-        # Right-edge resize (bitmask 4) with the cursor at x=4000 — far past
-        # the secondary screen's right edge (2720). Without clamping this
-        # would set width = 800 + (4000 - 1000) = 3800.
+        # Right-edge resize with the cursor jumping to x=4000. Without the
+        # cap this sets width = 800 + (4000 - 1000) = 3800.
         win._resize_edge = 4  # right edge
         win._resize_start_geo = start_geo
         win._resize_start_global = QtCore.QPoint(1000, 500)
         self._move(win, QtCore.QPoint(4000, 500))
 
         g = win.geometry()
-        # The window must lie entirely within the secondary screen and be no
-        # wider than it — not merely have its dragged edge capped.
-        assert avail.contains(g), f"window escaped cursor screen: {g}"
-        assert g.width() <= avail.width(), f"window wider than screen: {g.width()}"
+        assert g.width() <= max_w, f"window inflated to {g.width()} (cap {max_w})"
+        assert g.width() >= win.minimumWidth()
         win.close()
 
     def test_repeated_cross_screen_resize_does_not_inflate(self, qapp, test_image, monkeypatch):
         """The reported bug: dragging the edge back and forth across screens
-        with different sizes made the window grow until it froze.  After each
-        move the window must stay bounded by whichever screen the cursor is on,
-        so repeated crossing cannot accumulate."""
-        from unittest.mock import MagicMock
+        made the window grow until it froze.  The max-single-screen cap is
+        independent of which screen the cursor reports, so repeated crossing
+        with huge jumps can never accumulate past it."""
         from PyQt6 import QtCore
+
+        max_w, _ = self._two_screens(monkeypatch)
 
         win = ImageEditorWindow(test_image, _translate)
         win._dpr = 1.0
         win.show()
-
         start_geo = QtCore.QRect(200, 200, 800, 600)
         win.setGeometry(start_geo)
-
-        primary = MagicMock()
-        primary.availableGeometry.return_value = QtCore.QRect(0, 0, 1920, 1080)
-        secondary = MagicMock()
-        secondary.availableGeometry.return_value = QtCore.QRect(1920, 0, 800, 1000)
-
-        def screen_at(_pos):
-            # Alternate which screen the cursor reports as "on".
-            return secondary if screen_at._on_secondary else primary
-        screen_at._on_secondary = True
-
-        monkeypatch.setattr(QtWidgets.QApplication, "screenAt", screen_at)
 
         win._resize_edge = 4  # right edge, anchor at x=200
         win._resize_start_geo = start_geo
         win._resize_start_global = QtCore.QPoint(1000, 500)
 
-        # Drag far right on the secondary (narrow) screen.
-        screen_at._on_secondary = True
-        self._move(win, QtCore.QPoint(3000, 500))
-        after_secondary = win.geometry()
-        assert after_secondary.width() <= 800, after_secondary.width()
-
-        # Snap back to the primary (wide) screen with a huge jump, then to
-        # the secondary again — repeat several times. The window must never
-        # exceed the screen the cursor currently reports.
-        for on_secondary in (False, True, False, True, False):
-            screen_at._on_secondary = on_secondary
-            self._move(win, QtCore.QPoint(3000, 500))
+        # Alternate huge jumps back and forth — each would push the raw
+        # width well past max_w. The cap must hold on every single move.
+        for gp_x in (4000, 1000, 5000, 800, 6000):
+            self._move(win, QtCore.QPoint(gp_x, 500))
             g = win.geometry()
-            expected = (800 if on_secondary else 1920)
-            assert g.width() <= expected, (
-                f"window inflated to {g.width()} on "
-                f"{'secondary' if on_secondary else 'primary'} (cap {expected})")
+            assert g.width() <= max_w, (
+                f"window inflated to {g.width()} after move to x={gp_x} (cap {max_w})")
         win.close()

@@ -1786,35 +1786,21 @@ class ImageEditorWindow(QtWidgets.QWidget):
             if e & 2:
                 y = sg.bottom() - h + 1 if h > 0 else sg.y()
 
-            # Constrain the ENTIRE resulting rectangle to the screen the cursor
-            # is currently on.  Cross-screen DPR switches make globalPosition()
-            # jump discontinuously at screen boundaries (different physical-
-            # pixel mappings per display), so a raw delta can be thousands of
-            # pixels in one event.  Clamping only the dragged edge — as an
-            # earlier version did — still let the window grow to span both
-            # screens, because the anchored edge sat on the other display.
-            # Instead we shrink the rectangle on every side that escapes the
-            # cursor screen's available geometry, so the window can never be
-            # larger than, nor leave, the display the pointer is on.
-            cur_screen = QtWidgets.QApplication.screenAt(gp)
-            if cur_screen is not None:
-                avail = cur_screen.availableGeometry()
-                # Right / bottom: shrink size to keep the edge on-screen.
-                if x + w > avail.right() + 1:
-                    w = avail.right() + 1 - x
-                if y + h > avail.bottom() + 1:
-                    h = avail.bottom() + 1 - y
-                # Left / top: slide the edge on-screen and shrink the size to
-                # match (the opposite edge is the anchor and must not move).
-                if x < avail.left():
-                    w -= (avail.left() - x)
-                    x = avail.left()
-                if y < avail.top():
-                    h -= (avail.top() - y)
-                    y = avail.top()
-                # The screen itself is the hard size ceiling.
-                w = max(min_sz.width(), min(w, avail.width()))
-                h = max(min_sz.height(), min(h, avail.height()))
+            # Hard size ceiling: the window may span screens (we don't special-
+            # case cross-screen editing, like Windows Terminal / Explorer), but
+            # it must never grow larger than the biggest single screen.  This
+            # bound is independent of the global coordinate system, so the
+            # discontinuous globalPosition() jumps that happen at screen
+            # boundaries under mixed-DPR setups can't inflate the window to the
+            # point of freezing — the original bug.  We deliberately do NOT
+            # clamp against screenAt(gp), whose return value is itself
+            # unreliable during those jumps.
+            screens = QtWidgets.QApplication.screens()
+            if screens:
+                max_w = max(s.geometry().width() for s in screens)
+                max_h = max(s.geometry().height() for s in screens)
+                w = min(w, max_w)
+                h = min(h, max_h)
 
             self.setGeometry(x, y, w, h)
             event.accept()
