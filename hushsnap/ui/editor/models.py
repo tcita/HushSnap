@@ -11,13 +11,18 @@ class UndoChangeType(Enum):
     REGION = "region"                # Only a rectangular region of PIL pixels (mosaic)
 
 class TextItem:
-    """Data model for a single text annotation."""
+    """Data model for a single text annotation.
+
+    Text is always rendered as a white fill with a black outline
+    (_draw_outlined_text) — there is no per-item color. A custom color was
+    tried and dropped: on unpredictable screenshot backgrounds an arbitrary
+    color is too often unreadable, so the high-contrast outline pair is fixed
+    by design. Don't re-add a color field without revisiting that trade-off.
+    """
     def __init__(self, text: str, img_pos: QtCore.QPointF,
-                 color: QtGui.QColor = QtGui.QColor("#FFFFFF"),
                  font_family: str = "Arial", font_size: int = 24):
         self.text = text
         self.img_pos = img_pos  # Image-space coordinates
-        self.color = color
         self.font_family = font_family
         self.font_size = font_size
 
@@ -49,7 +54,7 @@ class _UndoEntry:
         self.annotations_pixmap = annot_pxm.copy() if annot_pxm else None
         # Deep copy text items
         self.text_items = [
-            TextItem(t.text, QtCore.QPointF(t.img_pos), QtGui.QColor(t.color),
+            TextItem(t.text, QtCore.QPointF(t.img_pos),
                      t.font_family, t.font_size)
             for t in text_items
         ] if text_items else []

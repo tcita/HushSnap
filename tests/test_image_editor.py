@@ -89,7 +89,7 @@ class TestUndoEntry:
         """FULL type captures PIL copy, pixmap copy, and text items."""
         pm = QtGui.QPixmap(100, 80)
         pm.fill(QtCore.Qt.GlobalColor.transparent)
-        items = [TextItem("hello", QtCore.QPointF(10, 10), QtGui.QColor("#fff"), "Arial", 24)]
+        items = [TextItem("hello", QtCore.QPointF(10, 10), "Arial", 24)]
         entry = _UndoEntry(UndoChangeType.FULL, pil_img=test_image, annot_pxm=pm, text_items=items)
         assert entry.change_type == UndoChangeType.FULL
         assert entry.pil_image is not None
@@ -116,7 +116,7 @@ class TestUndoEntry:
 
     def test_text_entry_only_items(self, qapp):
         """TEXT type only stores text items."""
-        items = [TextItem("a", QtCore.QPointF(0, 0), QtGui.QColor("#000"), "Arial", 12)]
+        items = [TextItem("a", QtCore.QPointF(0, 0), "Arial", 12)]
         entry = _UndoEntry(UndoChangeType.TEXT, text_items=items)
         assert entry.change_type == UndoChangeType.TEXT
         assert entry.pil_image is None
@@ -137,7 +137,7 @@ class TestUndoEntry:
 
     def test_text_items_deep_copy(self, qapp):
         """Text items are deep-copied in the undo entry."""
-        original = TextItem("orig", QtCore.QPointF(0, 0), QtGui.QColor("#fff"), "Arial", 12)
+        original = TextItem("orig", QtCore.QPointF(0, 0), "Arial", 12)
         entry = _UndoEntry(UndoChangeType.TEXT, text_items=[original])
         # Mutate original — entry should be unaffected
         original.text = "changed"
@@ -253,7 +253,7 @@ class TestUndoRedo:
         """Undoing a text entry restores old text items."""
         editor._save_undo(UndoChangeType.TEXT)
         editor._text_items.append(
-            TextItem("new", QtCore.QPointF(0, 0), QtGui.QColor("#fff"), "Arial", 12)
+            TextItem("new", QtCore.QPointF(0, 0), "Arial", 12)
         )
         assert len(editor._text_items) == 1
         editor._undo()
@@ -279,7 +279,7 @@ class TestUndoRedo:
         editor._save_undo(UndoChangeType.FULL)
         editor._pil_image.paste(Image.new("RGBA", (50, 50), (0, 255, 0, 255)), (0, 0))
         editor._text_items.append(
-            TextItem("x", QtCore.QPointF(0, 0), QtGui.QColor("#fff"), "Arial", 12)
+            TextItem("x", QtCore.QPointF(0, 0), "Arial", 12)
         )
         editor._undo()
         assert editor._pil_image.tobytes() == old_pil.tobytes()
@@ -297,7 +297,7 @@ class TestUndoRedo:
         """Redo restores the state that was undone."""
         editor._save_undo(UndoChangeType.TEXT)
         editor._text_items.append(
-            TextItem("a", QtCore.QPointF(0, 0), QtGui.QColor("#fff"), "Arial", 12)
+            TextItem("a", QtCore.QPointF(0, 0), "Arial", 12)
         )
         editor._undo()
         assert len(editor._text_items) == 0
@@ -341,7 +341,7 @@ class TestUndoRedo:
         editor._modified = False
         editor._save_undo(UndoChangeType.TEXT)
         editor._text_items.append(
-            TextItem("x", QtCore.QPointF(0, 0), QtGui.QColor("#fff"), "Arial", 12)
+            TextItem("x", QtCore.QPointF(0, 0), "Arial", 12)
         )
         editor._undo()
         assert editor._modified is True
@@ -350,7 +350,7 @@ class TestUndoRedo:
         """Redo marks the editor as modified."""
         editor._save_undo(UndoChangeType.TEXT)
         editor._text_items.append(
-            TextItem("x", QtCore.QPointF(0, 0), QtGui.QColor("#fff"), "Arial", 12)
+            TextItem("x", QtCore.QPointF(0, 0), "Arial", 12)
         )
         editor._undo()
         editor._modified = False
@@ -427,6 +427,22 @@ class TestMosaicToolSaveBehavior:
             region_bounds=QtCore.QRect(50, 50, 30, 20),
             region_pixels=ANY,
         )
+
+    def test_tiny_region_is_noop(self, editor):
+        """A drag smaller than 3px on either axis applies no mosaic and saves
+        no undo — the w>2 and h>2 guard skips sub-pixel drags so a stray
+        click doesn't push a pointless REGION entry or alter pixels."""
+        tool = editor._tools["mosaic"]
+        editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
+        editor._save_undo = MagicMock()
+        orig_bytes = editor._pil_image.tobytes()
+
+        # 2x1 drag — below the 3px threshold on both axes.
+        tool.on_mouse_press(editor._canvas, _press_at(50, 50))
+        tool.on_mouse_release(editor._canvas, _release_at(52, 51))
+
+        editor._save_undo.assert_not_called()
+        assert editor._pil_image.tobytes() == orig_bytes  # image untouched
 
 
 class TestCropToolSaveBehavior:
@@ -507,7 +523,7 @@ class TestCropToolSaveBehavior:
 
         # Place one editable text item.
         editor._text_items.append(
-            TextItem("note", QtCore.QPointF(20, 20), QtGui.QColor("#ffffff"), "Arial", 24)
+            TextItem("note", QtCore.QPointF(20, 20), "Arial", 24)
         )
         # Snapshot the pre-flatten annotations (no baked text) for comparison.
         pre_flatten_annot = editor._annotations_pixmap.copy()
@@ -617,13 +633,32 @@ class TestTextToolSaveBehavior:
         )
         editor._save_undo.assert_called_once_with(UndoChangeType.TEXT)
 
+    def test_single_click_empty_space_does_not_create(self, editor):
+        """A single click on empty space neither creates a text item nor
+        switches tools — creation requires a double-click. This is the
+        documented UX: single-click is a no-op so users don't spawn empty
+        boxes by accident while positioning the cursor."""
+        tool = editor._tools["text"]
+        editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
+        editor._save_undo = MagicMock()
+        editor._activate_tool("text")
+        n_before = len(editor._text_items)
+
+        handled = tool.on_mouse_press(editor._canvas, _press_at(50, 50))
+
+        assert handled is True  # event consumed (no fallthrough)...
+        assert len(editor._text_items) == n_before  # ...but nothing created
+        editor._save_undo.assert_not_called()
+        # Still on the text tool — single click didn't switch away.
+        assert editor._active_tool is tool
+
     def test_drag_existing_item_can_be_undone(self, editor):
         """Moving an existing text item saves its previous position."""
         tool = editor._tools["text"]
         editor._dpr = 1.0
         editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
         item = TextItem(
-            "move me", QtCore.QPointF(10, 10), QtGui.QColor("#fff"), "Arial", 24
+            "move me", QtCore.QPointF(10, 10), "Arial", 24
         )
         editor._text_items.append(item)
 
@@ -643,7 +678,7 @@ class TestTextToolSaveBehavior:
         editor._dpr = 1.0
         editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
         item = TextItem(
-            "old", QtCore.QPointF(10, 10), QtGui.QColor("#fff"), "Arial", 24
+            "old", QtCore.QPointF(10, 10), "Arial", 24
         )
         editor._text_items.append(item)
 
@@ -661,7 +696,7 @@ class TestTextToolSaveBehavior:
         """Saving/copying commits newly typed inline text before export."""
         tool = editor._tools["text"]
         editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
-        item = TextItem("", QtCore.QPointF(10, 10), QtGui.QColor("#fff"), "Arial", 24)
+        item = TextItem("", QtCore.QPointF(10, 10), "Arial", 24)
         editor._text_items.append(item)
         tool._spawn_editor(editor._canvas, item)
         tool._editing_widget.setText("live")
@@ -677,7 +712,7 @@ class TestTextToolSaveBehavior:
         """Saving/copying exports the latest value when re-editing text."""
         tool = editor._tools["text"]
         editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
-        item = TextItem("old", QtCore.QPointF(10, 10), QtGui.QColor("#fff"), "Arial", 24)
+        item = TextItem("old", QtCore.QPointF(10, 10), "Arial", 24)
         editor._text_items.append(item)
         tool._spawn_editor(editor._canvas, item)
         tool._editing_widget.setText("new")
@@ -719,8 +754,7 @@ class TestTextToolFontUnits:
 
         monkeypatch.setattr(ie, "_draw_outlined_text", _capture)
 
-        item = TextItem("Hg", QtCore.QPointF(10, 10),
-                        QtGui.QColor("#fff"), "Arial", 48)
+        item = TextItem("Hg", QtCore.QPointF(10, 10), "Arial", 48)
         editor._text_items.append(item)
 
         editor._get_composite_pixmap()
@@ -793,11 +827,10 @@ class TestInlineEditorSpawnSize:
         tool = editor._tools["text"]
         tool.font_size = font_size
         tool.font_family = "Arial"
-        tool.color = QtGui.QColor("#000000")
         editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
 
         item = TextItem("", QtCore.QPointF(50, 50),
-                        QtGui.QColor(tool.color), tool.font_family, tool.font_size)
+                        tool.font_family, tool.font_size)
         editor._text_items.append(item)
         tool._spawn_editor(editor._canvas, item)
         h = tool._editing_widget.geometry().height()
@@ -817,11 +850,10 @@ class TestInlineEditorSpawnSize:
         tool = editor._tools["text"]
         tool.font_size = 200
         tool.font_family = "Arial"
-        tool.color = QtGui.QColor("#000000")
         editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
 
         item = TextItem("", QtCore.QPointF(50, 50),
-                        QtGui.QColor(tool.color), tool.font_family, tool.font_size)
+                        tool.font_family, tool.font_size)
         editor._text_items.append(item)
         tool._spawn_editor(editor._canvas, item)
         spawn_h = tool._editing_widget.geometry().height()
@@ -974,7 +1006,7 @@ class TestPilPreservation:
         original_pil = editor._pil_image.copy()
         editor._save_undo(UndoChangeType.TEXT)
         editor._text_items.append(
-            TextItem("test", QtCore.QPointF(0, 0), QtGui.QColor("#fff"), "Arial", 12)
+            TextItem("test", QtCore.QPointF(0, 0), "Arial", 12)
         )
         editor._undo()
         assert editor._pil_image.tobytes() == original_pil.tobytes()
@@ -998,7 +1030,13 @@ class TestDeadCodeRemoved:
     them silently reintroduces dead branches. One consolidated assertion
     covers the lot."""
 
-    _REMOVED = ("_show_tool_options", "_on_crop_apply", "_on_crop_cancel")
+    _REMOVED = (
+        "_show_tool_options", "_on_crop_apply", "_on_crop_cancel",
+        # Size-step helpers never wired to shortcuts ([ / ]); and the line-with-
+        # arrow entry point never bound. Removed as dead code — re-adding them
+        # silently reintroduces unreachable branches.
+        "_increase_size", "_decrease_size", "_activate_line_with_arrow",
+    )
 
     def test_removed_methods_stay_removed(self, editor):
         for name in self._REMOVED:
@@ -1050,7 +1088,7 @@ class TestIntegrationUndoStack:
         # Text
         editor._save_undo(UndoChangeType.TEXT)
         editor._text_items.append(
-            TextItem("z", QtCore.QPointF(0, 0), QtGui.QColor("#fff"), "Arial", 12)
+            TextItem("z", QtCore.QPointF(0, 0), "Arial", 12)
         )
 
         # Undo text
@@ -1100,7 +1138,7 @@ class TestIntegrationUndoStack:
 
         editor._save_undo(UndoChangeType.TEXT)
         editor._text_items.append(
-            TextItem("hi", QtCore.QPointF(0, 0), QtGui.QColor("#fff"), "Arial", 12)
+            TextItem("hi", QtCore.QPointF(0, 0), "Arial", 12)
         )
         assert len(editor._text_items) == 1
 
@@ -1252,7 +1290,7 @@ class TestRotationAndResizeImprovements:
 
         # Add an editable text item (not yet baked).
         editor._text_items.append(
-            TextItem("hello", QtCore.QPointF(20, 20), QtGui.QColor("#fff"), "Arial", 16)
+            TextItem("hello", QtCore.QPointF(20, 20), "Arial", 16)
         )
         # Annotations should be empty (no baked text yet).
         def _pm_bytes(pm):
@@ -1291,7 +1329,7 @@ class TestRotationAndResizeImprovements:
         p.fillRect(0, 0, 10, 10, QtGui.QColor("#00FF00"))
         p.end()
         editor._text_items.append(
-            TextItem("ResizeTest", QtCore.QPointF(20, 20), QtGui.QColor("#fff"), "Arial", 16)
+            TextItem("ResizeTest", QtCore.QPointF(20, 20), "Arial", 16)
         )
 
         clean_bytes = editor._pil_image.tobytes()
@@ -1353,7 +1391,7 @@ class TestCompositeAnnotationsIntoImage:
         p.end()
         # An editable text item.
         editor._text_items.append(
-            TextItem("baked", QtCore.QPointF(5, 5), QtGui.QColor("#FFFFFF"), "Arial", 24)
+            TextItem("baked", QtCore.QPointF(5, 5), "Arial", 24)
         )
 
         editor._composite_annotations_into_image()
@@ -1644,4 +1682,321 @@ class TestFitToViewport:
         from PyQt6.QtWidgets import QPushButton
         assert isinstance(editor._zoom_label, QPushButton)
         assert editor._zoom_label.cursor().shape() == Qt.CursorShape.PointingHandCursor
+
+
+class TestInlineEditorFocus:
+    """The inline text editor's commit policy is explicit-only.
+
+    Regression guard for the focus-management refactor: focus loss must NEVER
+    auto-commit, because the editor has to stay alive while the user adjusts
+    font / size in the toolbar (those controls take focus from the inner line
+    edit). The design relies on two invariants:
+
+      1. The outer _InlineTextEditor sets the hidden _HiddenLineEdit as its
+         focus proxy — so setFocus() on the outer lands on the inner, and the
+         outer never itself becomes the focus widget in steady state.
+      2. No focusOutEvent on the outer drives commit_edit; commit happens only
+         via explicit calls (tool deactivate, canvas click, Enter, Esc, save,
+         window close).
+
+    These tests pin both invariants so a future change can't silently
+    reintroduce the old focusOutEvent→commit path (which made toolbar font /
+    size changes commit-and-close the editor).
+    """
+
+    def _spawn(self, editor):
+        tool = editor._tools["text"]
+        editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
+        item = TextItem("", QtCore.QPointF(10, 10), "Arial", 24)
+        editor._text_items.append(item)
+        tool._spawn_editor(editor._canvas, item)
+        return tool, item
+
+    def test_outer_widget_uses_line_edit_as_focus_proxy(self, editor):
+        """setFocusProxy is wired so focus delegates to the hidden line edit."""
+        tool, _ = self._spawn(editor)
+        assert tool._editing_widget is not None
+        assert tool._editing_widget.focusProxy() is tool._editing_widget._input
+        tool._editing_widget.commit_edit()
+
+    def test_outer_has_no_focus_out_commit_logic(self, editor):
+        """The outer widget's focusOutEvent must NOT call commit_edit.
+
+        We can't easily assert 'no code path' by behavior alone, but we can
+        verify the contract: firing a FocusOut event at the outer widget
+        (simulating it losing focus directly) must leave the editor alive and
+        the editing widget intact. If focusOutEvent auto-committed, the
+        editing widget would be torn down (tool._editing_widget becomes None).
+        """
+        tool, _ = self._spawn(editor)
+        widget = tool._editing_widget
+        assert widget is not None
+
+        fe = QtGui.QFocusEvent(QtCore.QEvent.Type.FocusOut, QtCore.Qt.FocusReason.OtherFocusReason)
+        widget.focusOutEvent(fe)
+
+        # Editor survived — no auto-commit on focus loss.
+        assert tool._editing_widget is widget
+        widget.commit_edit()
+
+    def test_focus_loss_does_not_commit_text(self, editor):
+        """Losing focus mid-edit preserves the in-progress (uncommitted) text.
+
+        Simulate: spawn editor, type text but DON'T commit, then deliver a
+        FocusOut. The item must still hold its pre-edit text (the typed value
+        is only in the line edit, not yet pushed to the item), and the editor
+        must still be open — proving no auto-commit fired.
+        """
+        tool, item = self._spawn(editor)
+        widget = tool._editing_widget
+        widget.setText("draft")
+        assert item.text == ""  # not committed yet
+
+        fe = QtGui.QFocusEvent(QtCore.QEvent.Type.FocusOut, QtCore.Qt.FocusReason.MouseFocusReason)
+        widget.focusOutEvent(fe)
+
+        # No commit happened: editor alive, item still empty.
+        assert tool._editing_widget is widget
+        assert item.text == ""
+        widget.commit_edit()
+        assert item.text == "draft"  # explicit commit still works
+
+    def test_font_size_change_does_not_commit(self, editor):
+        """Changing font size via the toolbar while editing must not commit.
+
+        This is the user-facing behavior the refactor preserves: with focus
+        loss no longer a commit trigger, the toolbar's font-size control can
+        take focus from the inner line edit without closing the editor. The
+        editor stays open and adopts the new size live.
+        """
+        tool, item = self._spawn(editor)
+        widget = tool._editing_widget
+        widget.setText("hello")
+        assert item.text == ""
+
+        # Toolbar-driven font size change (the control took focus, then this
+        # handler ran — mirroring real interaction).
+        editor._on_font_size_text_changed("text", "48")
+
+        # Editor survived; the item picked up the new size via _sync_widgets
+        # but its text is still uncommitted.
+        assert tool._editing_widget is widget
+        assert item.font_size == 48
+        assert item.text == ""
+        widget.commit_edit()
+
+    def test_escape_reverts_and_commits(self, editor):
+        """Escape reverts to the pre-edit text and commits (closes editor)."""
+        tool, item = self._spawn(editor)
+        item.text = "original"
+        widget = tool._editing_widget
+        widget._before_edit_text = "original"
+        widget.setText("changed")
+
+        ke = QtGui.QKeyEvent(
+            QtCore.QEvent.Type.KeyPress,
+            QtCore.Qt.Key.Key_Escape,
+            QtCore.Qt.KeyboardModifier.NoModifier,
+        )
+        widget.keyPressEvent(ke)
+
+        assert tool._editing_widget is None  # committed + torn down
+        assert item.text == "original"  # reverted
+
+    def test_enter_commits(self, editor):
+        """Enter / Return commits the typed text and closes the editor."""
+        tool, item = self._spawn(editor)
+        widget = tool._editing_widget
+        widget.setText("done")
+
+        ke = QtGui.QKeyEvent(
+            QtCore.QEvent.Type.KeyPress,
+            QtCore.Qt.Key.Key_Return,
+            QtCore.Qt.KeyboardModifier.NoModifier,
+        )
+        # returnPressed is emitted by the line edit on Enter; simulate it.
+        widget._input.returnPressed.emit()
+        assert tool._editing_widget is None
+        assert item.text == "done"
+
+
+class TestInlineEditorClickToCaret:
+    """Clicking inside the editor box moves the caret — it does NOT commit.
+
+    Standard text-control feel: a click in the box repositions the caret so
+    the user can adjust mid-edit; only clicks OUTSIDE the box (on the canvas)
+    reach TextTool.on_mouse_press and commit. Guards against regressing to
+    "click in box = swallowed, caret stuck" or "click in box = commit".
+    """
+
+    def _spawn(self, editor, text="hello"):
+        tool = editor._tools["text"]
+        editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
+        item = TextItem(text, QtCore.QPointF(10, 10), "Arial", 24)
+        editor._text_items.append(item)
+        tool._spawn_editor(editor._canvas, item)
+        return tool, item
+
+    def _click(self, widget, x):
+        e = QtGui.QMouseEvent(
+            QtCore.QEvent.Type.MouseButtonPress,
+            QtCore.QPointF(x, 5), QtCore.QPointF(x, 5),
+            QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.LeftButton,
+            QtCore.Qt.KeyboardModifier.NoModifier,
+        )
+        widget.mousePressEvent(e)
+
+    def test_click_in_box_does_not_commit(self, editor):
+        tool, item = self._spawn(editor, "hello")
+        widget = tool._editing_widget
+        self._click(widget, 4)
+        # Editor survived; item text unchanged (still uncommitted "hello").
+        assert tool._editing_widget is widget
+        assert item.text == "hello"
+        widget.commit_edit()
+
+    def test_click_moves_caret_toward_click(self, editor):
+        """Clicking near the start vs near the end yields different caret
+        positions — proving the caret follows the click."""
+        tool, _ = self._spawn(editor, "hello world")
+        widget = tool._editing_widget
+        # Click far left → caret near the start.
+        self._click(widget, 1)
+        start_pos = tool._editing_widget._input.cursorPosition()
+        # Click far right → caret near the end.
+        self._click(widget, 400)
+        end_pos = tool._editing_widget._input.cursorPosition()
+        assert end_pos > start_pos, f"caret did not follow click: {start_pos}→{end_pos}"
+        widget.commit_edit()
+
+    def test_right_click_does_not_move_caret_or_commit(self, editor):
+        """Right-button click inside the box is ignored (no caret move, no
+        commit) — only left click repositions."""
+        tool, item = self._spawn(editor, "hello")
+        widget = tool._editing_widget
+        before = widget._input.cursorPosition()
+        e = QtGui.QMouseEvent(
+            QtCore.QEvent.Type.MouseButtonPress,
+            QtCore.QPointF(4, 5), QtCore.QPointF(4, 5),
+            QtCore.Qt.MouseButton.RightButton, QtCore.Qt.MouseButton.RightButton,
+            QtCore.Qt.KeyboardModifier.NoModifier,
+        )
+        widget.mousePressEvent(e)
+        assert tool._editing_widget is widget
+        assert widget._input.cursorPosition() == before
+        widget.commit_edit()
+
+
+class TestInlineEditorCommitBranches:
+    """commit_edit has three branches keyed on (typed text, pre-edit text):
+
+      1. typed non-empty  → write it to the item
+      2. typed empty + was empty (new item, user typed nothing) → remove the
+         empty item so double-click-and-Esc doesn't leave a blank annotation
+      3. typed empty + was non-empty (user cleared an existing item) → revert
+         to the original so clearing doesn't delete via the back door
+
+    The first branch is exercised all over the suite; branches 2 and 3 were
+    uncovered — a regression in either would silently leave orphan empty items
+    or silently delete content. Pin them here.
+    """
+
+    def _spawn_empty(self, editor, before_text=""):
+        tool = editor._tools["text"]
+        editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
+        item = TextItem(before_text, QtCore.QPointF(10, 10), "Arial", 24)
+        editor._text_items.append(item)
+        tool._spawn_editor(editor._canvas, item)
+        return tool, item
+
+    def test_commit_empty_new_item_removes_it(self, editor):
+        """Branch 2: a freshly-created item (before_text="") that the user
+        commits with no input is removed from the item list — no orphan."""
+        tool, item = self._spawn_empty(editor, before_text="")
+        assert item in editor._text_items
+        # User types nothing, just commits (e.g. presses Enter on empty box).
+        tool._editing_widget.commit_edit()
+        assert item not in editor._text_items
+        assert len(editor._text_items) == 0
+
+    def test_commit_empty_clears_back_to_original(self, editor):
+        """Branch 3: clearing an existing item's text and committing reverts
+        to the original — clearing via the editor must NOT delete the item."""
+        tool, item = self._spawn_empty(editor, before_text="keep me")
+        widget = tool._editing_widget
+        widget._input.setText("")  # user deleted all text
+        widget.commit_edit()
+        # Item survived, text restored.
+        assert item in editor._text_items
+        assert item.text == "keep me"
+
+    def test_commit_strips_whitespace(self, editor):
+        """Leading/trailing whitespace is stripped on commit — typing spaces
+        alone is treated as empty (falls into branch 2 for a new item)."""
+        tool, item = self._spawn_empty(editor, before_text="")
+        tool._editing_widget.setText("   ")
+        tool._editing_widget.commit_edit()
+        assert item not in editor._text_items  # whitespace-only → removed
+
+    def test_commit_is_idempotent(self, editor):
+        """Calling commit_edit twice is safe — the second is a no-op (the
+        widget is already torn down). Guards against double-commit from
+        overlapping close paths (deactivate + window close)."""
+        tool, item = self._spawn_empty(editor, before_text="")
+        widget = tool._editing_widget
+        widget.setText("x")
+        widget.commit_edit()
+        assert item.text == "x"
+        # Second commit must not raise (widget already deleteLater'd).
+        widget.commit_edit()
+        assert item.text == "x"
+
+
+class TestCharIndexAt:
+    """_char_index_at maps a widget-local x to the nearest character index.
+    Boundary cases: empty text, click before first glyph, click after last."""
+
+    def _spawn(self, editor, text="hello"):
+        tool = editor._tools["text"]
+        editor._canvas._image_offset = MagicMock(return_value=QtCore.QPointF(0, 0))
+        item = TextItem(text, QtCore.QPointF(10, 10), "Arial", 24)
+        editor._text_items.append(item)
+        tool._spawn_editor(editor._canvas, item)
+        return tool
+
+    def test_empty_text_returns_zero(self, editor):
+        """Clicking in an empty editor never crashes and yields index 0."""
+        tool = self._spawn(editor, "")
+        widget = tool._editing_widget
+        assert widget._char_index_at(5) == 0
+        assert widget._char_index_at(0) == 0
+        widget.commit_edit()
+
+    def test_click_left_of_text_is_zero(self, editor):
+        """Clicking at x=0 (or negative) places the caret before the first
+        glyph — index 0."""
+        tool = self._spawn(editor, "hello")
+        widget = tool._editing_widget
+        assert widget._char_index_at(0) == 0
+        widget.commit_edit()
+
+    def test_click_far_right_is_end(self, editor):
+        """Clicking well past the last glyph places the caret at the end."""
+        tool = self._spawn(editor, "hello")
+        widget = tool._editing_widget
+        n = len("hello")
+        assert widget._char_index_at(10000) == n
+        widget.commit_edit()
+
+    def test_index_is_monotonic_with_x(self, editor):
+        """As the click x increases, the returned index is non-decreasing —
+        the caret never jumps backward as you click further right."""
+        tool = self._spawn(editor, "hello world")
+        widget = tool._editing_widget
+        prev = -1
+        for x in range(0, 400, 8):
+            idx = widget._char_index_at(x)
+            assert idx >= prev, f"x={x}: index went {prev}→{idx}"
+            prev = idx
+        widget.commit_edit()
 

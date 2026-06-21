@@ -629,20 +629,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
         # dedicated corner grip needed.
         return bar
 
-    def _increase_size(self) -> None:
-        if not self._active_tool: return
-        slider = self._option_widgets.get((self._active_tool.tool_id(), "sizeSlider"))
-        if slider:
-            step = 5 if self._active_tool.tool_id() in ("eraser", "highlighter", "mosaic") else 1
-            slider.setValue(slider.value() + step)
-
-    def _decrease_size(self) -> None:
-        if not self._active_tool: return
-        slider = self._option_widgets.get((self._active_tool.tool_id(), "sizeSlider"))
-        if slider:
-            step = 5 if self._active_tool.tool_id() in ("eraser", "highlighter", "mosaic") else 1
-            slider.setValue(slider.value() - step)
-
     def _reset_image(self) -> None:
         if not self._modified and not self._text_items and (
             not self._annotations_pixmap or self._annotations_pixmap.isNull()
@@ -714,13 +700,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
             # Re-sync enabled state with the actual stacks now that the
             # buttons are visible again.
             self._update_undo_buttons()
-
-    def _activate_line_with_arrow(self) -> None:
-        self._activate_tool("line")
-        tool = self._tools.get("line")
-        if tool and hasattr(tool, "arrow_end") and not tool.arrow_end:
-            tool.arrow_end = True
-            self._sync_options_from_tool("line")
 
     def _effective_scale(self) -> float:
         return self._scale / self._dpr

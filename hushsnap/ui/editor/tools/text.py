@@ -138,16 +138,21 @@ class TextTool(BaseTool):
     def _spawn_editor(self, canvas, item: TextItem) -> None:
         """Pop up the temporary QLineEdit for editing.
 
-        The item keeps its existing font/size/color. For new items these were
+        The item keeps its existing font/size. For new items these were
         already set from the toolbar at construction time; for existing items
         they reflect the original annotation state. Changes made via the
         toolbar while the editor is open are pushed through _sync_widgets.
+        (Text color is fixed — white fill, black outline — see TextItem.)
         """
         if self._editing_widget:
             self._editing_widget.commit_edit()
 
         self._editing_widget = _InlineTextEditor(canvas, self, item)
         self._editing_widget.show()
+        # Defer focus until the widget is on screen. The editor has the hidden
+        # line edit as its focus proxy, so setFocus lands on the line edit
+        # (the real input engine) — the outer editor never itself holds focus
+        # in steady state, which is why focus loss is not a commit trigger.
         QtCore.QTimer.singleShot(0, self._editing_widget.setFocus)
         canvas.update()
 
