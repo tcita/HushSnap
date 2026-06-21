@@ -119,7 +119,8 @@ class CropTool(BaseTool):
         self._dragging: Optional[str] = None
         self._drag_start_rect: Optional[QtCore.QRect] = None
         self._drag_start_img: Optional[tuple[int, int]] = None
-        # Floating action buttons (children of the canvas)
+        # Action buttons are created by the shared _create_action_buttons
+        # (parented on the viewport so they stay pinned to the window edge).
         self._action_cancel: Optional[QtWidgets.QPushButton] = None
         self._action_apply: Optional[QtWidgets.QPushButton] = None
 
@@ -130,93 +131,16 @@ class CropTool(BaseTool):
         img_w, img_h = self._editor._pil_image.size
         self._crop_rect = QtCore.QRect(0, 0, img_w, img_h)
         self._editor._canvas.setCursor(QtCore.Qt.CursorShape.OpenHandCursor)
-        self._create_action_buttons()
+        _create_action_buttons(self, self.apply_crop, self.cancel_crop)
         self._redraw_overlay()
         self._editor._canvas.update()
 
     def on_deactivate(self) -> None:
         self._crop_rect = None
         self._dragging = None
-        self._destroy_action_buttons()
+        _destroy_action_buttons(self)
         self._editor._overlay_pixmap.fill(QtCore.Qt.GlobalColor.transparent)
         self._editor._canvas.update()
-
-    def _create_action_buttons(self) -> None:
-        canvas = self._editor._canvas
-        t = self._editor._tr
-
-        self._action_cancel = QtWidgets.QPushButton(t("editor_crop_cancel"), canvas)
-        self._action_cancel.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-        self._action_cancel.setStyleSheet(f"""
-            QPushButton {{
-                background: rgba(40,40,40,200);
-                border: 1px solid rgba(255,255,255,20);
-                border-radius: 11px;
-                padding: 4px 14px;
-                color: #ccc;
-                font-size: 12px;
-            }}
-            QPushButton:hover {{
-                background: rgba(60,60,60,220);
-                border-color: rgba(255,255,255,35);
-                color: #fff;
-            }}
-            QPushButton:pressed {{
-                background: rgba(28,28,28,235);
-                border-color: rgba(255,255,255,20);
-            }}
-        """)
-        self._action_cancel.clicked.connect(self.cancel_crop)
-
-        self._action_apply = QtWidgets.QPushButton(t("editor_apply"), canvas)
-        self._action_apply.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-        self._action_apply.setStyleSheet(f"""
-            QPushButton {{
-                background: #5FC98A;
-                border: none;
-                border-radius: 11px;
-                padding: 4px 16px;
-                color: #fff;
-                font-size: 12px;
-                font-weight: 600;
-            }}
-            QPushButton:hover {{
-                background: #6fd99d;
-            }}
-            QPushButton:pressed {{
-                background: #4ab87a;
-            }}
-        """)
-        self._action_apply.clicked.connect(self.apply_crop)
-
-        self._position_action_buttons()
-
-    def _destroy_action_buttons(self) -> None:
-        for b in (self._action_cancel, self._action_apply):
-            if b:
-                b.deleteLater()
-        self._action_cancel = None
-        self._action_apply = None
-
-    def _position_action_buttons(self) -> None:
-        """Place the two floating buttons centred just below the crop rect."""
-        r = self._crop_rect
-        canvas = self._editor._canvas
-        if r is None or not self._action_apply:
-            return
-        scale = self._editor._effective_scale()
-        offset = canvas._image_offset()
-        cx = r.center().x() * scale + offset.x()
-        cy = r.bottom() * scale + offset.y() + 8
-        cancel_w = self._action_cancel.sizeHint().width()
-        apply_w = self._action_apply.sizeHint().width()
-        gap = 8
-        total_w = cancel_w + apply_w + gap
-        left = int(cx - total_w / 2)
-        self._action_cancel.move(left, int(cy))
-        self._action_apply.move(left + cancel_w + gap, int(cy))
-        self._action_cancel.show()
-        self._action_apply.show()
 
     def on_mouse_press(self, canvas, event) -> bool:
         if event.button() != QtCore.Qt.MouseButton.LeftButton:
@@ -492,7 +416,7 @@ class CropTool(BaseTool):
                          QtCore.Qt.AlignmentFlag.AlignCenter, dim_text)
 
         painter.end()
-        self._position_action_buttons()
+        _position_action_buttons(self)
 
 
 class SequenceTool(BaseTool):
