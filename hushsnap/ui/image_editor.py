@@ -14,7 +14,7 @@ from typing import Optional, Callable
 from PIL import Image
 from PyQt6 import QtCore, QtGui, QtWidgets
 
-from ..config import get_config_path
+from ..config import get_config_path, get_editor_window_geometry, set_editor_window_geometry
 from ..dpi import current_dpr
 
 # Modularized imports
@@ -1826,6 +1826,14 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self.mouseMoveEvent(event)
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        # Persist the window geometry so the next editor opens at the same
+        # size/position (when on the same screen — see show_image_editor).
+        try:
+            g = self.geometry()
+            set_editor_window_geometry(g.x(), g.y(), g.width(), g.height(),
+                                       get_config_path())
+        except Exception:
+            logger.exception("Failed to persist editor window geometry")
         self._cleanup_resources()
         event.accept()
         super().closeEvent(event)
@@ -1870,19 +1878,33 @@ def show_image_editor(
 ) -> ImageEditorWindow:
     """Create and show the image editor window for the given PIL image.
 
-    Opens centered on the screen under the cursor (where the user clicked
-    Edit), with the default size clamped to that screen's available geometry.
+    Opens on the screen under the cursor. Geometry (size + position) is
+    restored from the last session when the stored window lies on the
+    cursor's screen; otherwise the remembered size is reused but the
+    window is centered on the current screen (the standard multi-monitor
+    editor behavior — never pop a window onto a screen the user isn't on).
     """
     win = ImageEditorWindow(pil_image, translate_fn)
     win.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
     win._resolve_target_screen()
     target = win._target_screen
+
+    remembered = get_editor_window_geometry(get_config_path())
+
     if target is not None:
         avail = target.availableGeometry()
-        w = max(480, min(960, avail.width()))
-        h = max(360, min(700, avail.height()))
-        x = avail.x() + (avail.width() - w) // 2
-        y = avail.y() + (avail.height() - h) // 2
+        if remembered is not None and avail.contains(
+            QtCore.QPoint(remembered["x"], remembered["y"])
+        ):
+            # Last session's window is on the cursor's screen → full restore.
+            w, h = remembered["w"], remembered["h"]
+            x, y = remembered["x"], remembered["y"]
+        else:
+            # Reuse remembered size (clamped to this screen), center here.
+            w = max(480, min(remembered["w"] if remembered else 960, avail.width()))
+            h = max(360, min(remembered["h"] if remembered else 700, avail.height()))
+            x = avail.x() + (avail.width() - w) // 2
+            y = avail.y() + (avail.height() - h) // 2
         # Assign the target screen before show() — otherwise Windows may
         # override our position and place the frameless window on the
         # primary screen.
