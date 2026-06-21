@@ -90,32 +90,21 @@ class ImageEditorWindow(QtWidgets.QWidget):
         # paintEvent — no pixmap allocation or widget resize per frame, so no
         # flicker and a stable pivot. Used by the rotate tool.
         self._preview_angle: Optional[float] = None
-        # True while the rotate tool is active; _resize_canvas sizes the canvas
-        # to the image diagonal so rotated corners stay visible.
-        self._rotate_active = False
-        # Session variables for rotation (keeps high quality & prevents compound growth)
+        # ── Transform session (shared by crop / rotate / resize) ───────────
+        # Entering any image transform bakes annotations + text into the base
+        # image once (text becomes non-editable pixels for the duration). The
+        # pre-composite snapshot below lets undo / Esc-cancel restore the clean
+        # base image + editable annotations + text. The whole session is one
+        # atomic undo unit, committed on tool deactivate. See
+        # _begin/_commit/_cancel_transform_session.
+        self._transform_active = False
+        # Tool-local resampling bases (only the active tool uses its own):
+        # rotate samples from _rotate_base_image every release so repeated
+        # rotations don't compound; resize does the same with _resize_base_image.
         self._rotate_base_image: Optional[Image.Image] = None
         self._rotate_base_pixmap: Optional[QtGui.QPixmap] = None
-        self._rotate_base_overlay: Optional[QtGui.QPixmap] = None
-        self._rotate_pre_annot: Optional[QtGui.QPixmap] = None
-        self._rotate_pre_text: list[TextItem] = []
-        # Pre-composite snapshot of the clean base image (before annotations
-        # were baked in). Used by Esc-cancel and undo to restore the
-        # pre-session state without duplicating baked annotations.
-        self._rotate_pre_image: Optional[Image.Image] = None
         self._rotate_cumulative_angle = 0.0
-        # Resize session: snapshot of the image when the resize tool activated.
-        # Every resize during the session resamples from this base (not from the
-        # already-resized _pil_image), so repeated shrink/grow doesn't compound
-        # quality loss. Committed as one undo entry on tool deactivate.
-        self._resize_active = False
         self._resize_base_image: Optional[Image.Image] = None
-        self._resize_base_overlay: Optional[QtGui.QPixmap] = None
-        self._resize_pre_annot: Optional[QtGui.QPixmap] = None
-        self._resize_pre_text: list[TextItem] = []
-        # Pre-composite snapshot (see _rotate_pre_image).
-        self._resize_pre_image: Optional[Image.Image] = None
-        self._resize_changed = False  # any resize committed this session
 
         # State
         self._scale = 1.0
@@ -713,7 +702,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
         so mid-session undo/redo are disabled (Esc abandons instead). Hiding
         the buttons communicates that: visible = usable.
         """
-        hide = self._rotate_active or self._resize_active
+        hide = self._transform_active
         for w in (self._undo_btn, self._redo_btn):
             w.setVisible(not hide)
         if hide:
@@ -1000,14 +989,8 @@ class ImageEditorWindow(QtWidgets.QWidget):
         # Keep the active transform tool's floating buttons pinned to the
         # viewport bottom on window resize.
         from .editor.tools.transform import _position_action_buttons
-        if self._rotate_active:
-            tool = self._tools.get("rotate")
-            if tool:
-                _position_action_buttons(tool)
-        elif self._resize_active:
-            tool = self._tools.get("resize")
-            if tool:
-                _position_action_buttons(tool)
+        if self._transform_active and self._active_tool is not None:
+            _position_action_buttons(self._active_tool)
 
     def _on_resize_settled(self) -> None:
         """Called 50 ms after the last resize event — relayout the canvas."""
@@ -1183,7 +1166,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
             self._redo_stack.append(_UndoEntry(
                 UndoChangeType.FULL, pil_img=self._pil_image,
                 annot_pxm=annot_copy, text_items=self._text_items,
-                rotate_angle=self._rotate_cumulative_angle if self._rotate_active else None
+                rotate_angle=self._rotate_cumulative_angle if self._transform_active else None
             ))
         elif ct == UndoChangeType.ANNOTATIONS:
             annot_copy = self._annotations_pixmap.copy() if self._annotations_pixmap else None
@@ -1213,7 +1196,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
             self._undo_stack.append(_UndoEntry(
                 UndoChangeType.FULL, pil_img=self._pil_image,
                 annot_pxm=annot_copy, text_items=self._text_items,
-                rotate_angle=self._rotate_cumulative_angle if self._rotate_active else None
+                rotate_angle=self._rotate_cumulative_angle if self._transform_active else None
             ))
         elif ct == UndoChangeType.ANNOTATIONS:
             annot_copy = self._annotations_pixmap.copy() if self._annotations_pixmap else None
@@ -1265,9 +1248,9 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._modified = True
 
     def _update_undo_buttons(self) -> None:
-        # During a rotate/resize session undo/redo are hidden (see
+        # During a transform session undo/redo are hidden (see
         # _update_undo_button_visibility); don't fight that here.
-        if self._rotate_active or self._resize_active:
+        if self._transform_active:
             return
         can_undo = len(self._undo_stack) > 0
         can_redo = len(self._redo_stack) > 0
@@ -1373,7 +1356,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
         rotation preview (paint-time) the original is returned and the canvas
         applies the angle itself.
         """
-        if self._rotate_active and self._rotate_base_pixmap is not None:
+        if self._transform_active and self._rotate_base_pixmap is not None:
             return self._rotate_base_pixmap
         return self._preview_pixmap if self._preview_pixmap is not None else self._display_pixmap
 
@@ -1406,66 +1389,90 @@ class ImageEditorWindow(QtWidgets.QWidget):
     # diagonal for the duration of the session (see _resize_canvas) so rotated
     # corners stay visible.
 
-    def _begin_rotate_session(self) -> None:
-        self._preview_angle = 0.0
-        self._rotate_active = True
+    # ── Transform session (shared by crop / rotate / resize) ────────────────
+    #
+    # Every image transform bakes annotations + text into the base image once
+    # on enter (text becomes non-editable pixels for the duration). The session
+    # is one atomic undo unit: a FULL undo entry is pushed at session start
+    # (pre-bake state — clean image + editable annotations + text).  On commit
+    # the entry stays on the stack (one undo restores the pre-transform state);
+    # on cancel it is popped and applied directly (no redo — the session never
+    # "happened").  The undo stack itself holds the snapshot, so we don't carry
+    # separate pre-state fields.
 
-        # Snapshot the PRE-composite state so undo / Esc-cancel can restore a
-        # clean base image + editable annotations + text (without duplicating
-        # baked pixels). Captured BEFORE _composite_annotations_into_image.
-        self._rotate_pre_image = self._pil_image.copy()
-        self._rotate_pre_annot = (
-            self._annotations_pixmap.copy() if self._annotations_pixmap else None
-        )
-        self._rotate_pre_text = [
-            TextItem(t.text, QtCore.QPointF(t.img_pos), QtGui.QColor(t.color),
-                     t.font_family, t.font_size)
-            for t in self._text_items
-        ] if self._text_items else []
+    def _begin_transform_session(self) -> None:
+        """Push a FULL undo entry, then bake annotations + text.
 
-        # Bake all annotations + text into the base image and clear the
-        # annotation layer — from here the transform operates on one merged
-        # image, so image and annotations can't drift apart.
+        Called by every transform tool's on_activate. The undo entry captures
+        the pre-bake state (clean image + editable annotations + text). After
+        this the image holds all annotation pixels and the annotation/text
+        layers are empty, so the transform operates on one merged image.
+        """
+        # Push BEFORE baking — this records the clean, editable pre-state.
+        self._save_undo()  # defaults to FULL
         self._composite_annotations_into_image()
+        self._transform_active = True
+        self._update_undo_button_visibility()
 
-        # Session base = the merged image; rotation samples from this every
-        # release so repeated rotations don't compound. Annotations layer is
-        # empty now, so there is no separate annotation base to track.
+    def _commit_transform_session(self) -> None:
+        """End the session, leaving the undo entry on the stack.
+
+        The entry that _begin_transform_session pushed stays — one undo
+        restores the editable pre-transform state.  No-op if the session was
+        already cancelled.
+        """
+        if not self._transform_active:
+            return
+        self._transform_active = False
+        self._update_undo_button_visibility()
+
+    def _cancel_transform_session(self) -> None:
+        """Pop the pre-bake undo entry and apply it; no redo.
+
+        Restores the state from before the session started (clean image +
+        editable annotations + text) as if nothing happened.  The popped entry
+        is NOT pushed to the redo stack — the session never "happened".
+        """
+        if not self._transform_active:
+            return
+        if self._undo_stack:
+            entry = self._undo_stack.pop()
+            self._apply_undo_entry(entry)
+        self._transform_active = False
+        self._update_undo_button_visibility()
+
+    # ── Rotation (paint-time preview) ──────────────────────────────────────
+
+    def _begin_rotate_session(self) -> None:
+        """Bake + capture a rotation resampling base (cumulative, no compound)."""
+        self._preview_angle = 0.0
+        self._begin_transform_session()
+        # Rotate samples from this merged base every release so repeated
+        # rotations don't compound. Annotations are baked in above, so there's
+        # no separate annotation base to track.
         self._rotate_base_image = self._pil_image.copy()
         self._rotate_base_pixmap = _pil_to_qpixmap(self._rotate_base_image)
-        self._rotate_base_overlay = self._overlay_pixmap.copy() if self._overlay_pixmap else None
         self._rotate_cumulative_angle = 0.0
         self._canvas.update()
 
     def _end_rotate_session(self) -> None:
-        # The whole session is one atomic undo unit: push a FULL entry with the
-        # pre-composite (clean image + editable annotations + text) state, so
-        # one undo restores both the image AND the editable annotations.
-        if self._rotate_base_image is not None and self._rotate_cumulative_angle != 0.0:
-            entry = _UndoEntry(
-                UndoChangeType.FULL,
-                pil_img=self._rotate_pre_image,
-                annot_pxm=(self._rotate_pre_annot.copy() if self._rotate_pre_annot else None),
-                text_items=[
-                    TextItem(t.text, QtCore.QPointF(t.img_pos), QtGui.QColor(t.color),
-                             t.font_family, t.font_size)
-                    for t in self._rotate_pre_text
-                ] if self._rotate_pre_text else None,
-            )
-            self._undo_stack.append(entry)
-            self._enforce_stack_limits(self._undo_stack)
-            self._redo_stack.clear()
-            self._update_undo_buttons()
-
-        self._preview_angle = None
-        self._rotate_active = False
+        """Clear rotate-local state; the undo entry stays on the stack."""
         self._rotate_base_image = None
         self._rotate_base_pixmap = None
-        self._rotate_base_overlay = None
-        self._rotate_pre_image = None
-        self._rotate_pre_annot = None
-        self._rotate_pre_text = []
         self._rotate_cumulative_angle = 0.0
+        self._preview_angle = None
+        self._commit_transform_session()
+        self._resize_canvas()
+        self._center_image_on_canvas()
+        self._canvas.update()
+
+    def _cancel_rotate_session(self) -> None:
+        """Esc: clear rotate-local state, then restore pre-state via shared cancel."""
+        self._rotate_base_image = None
+        self._rotate_base_pixmap = None
+        self._rotate_cumulative_angle = 0.0
+        self._preview_angle = None
+        self._cancel_transform_session()
         self._resize_canvas()
         self._center_image_on_canvas()
         self._canvas.update()
@@ -1503,6 +1510,31 @@ class ImageEditorWindow(QtWidgets.QWidget):
             logger.exception("Failed to apply rotation")
             self._canvas.update()
 
+    # ── Resize (resample from base, no compound quality loss) ───────────────
+
+    def _begin_resize_session(self) -> None:
+        """Bake + capture a resize resampling base (no compound quality loss)."""
+        self._begin_transform_session()
+        # _set_resize_preview scales _display_pixmap, which still holds the
+        # pre-composite image (no baked text). Refresh it from the now-merged
+        # _pil_image so the live preview shows the baked content instead of
+        # flashing text out (visible) → gone (stale preview) → back (commit).
+        self._rebuild_display()
+        self._resize_base_image = self._pil_image.copy()
+        self._set_preview_pixmap(None)
+
+    def _end_resize_session(self) -> None:
+        """Commit one undo entry if resized; clear resize-local state."""
+        self._resize_base_image = None
+        self._set_preview_pixmap(None)
+        self._commit_transform_session()
+
+    def _cancel_resize_session(self) -> None:
+        """Esc: restore pre-resize state via the shared cancel."""
+        self._resize_base_image = None
+        self._set_preview_pixmap(None)
+        self._cancel_transform_session()
+
     def _set_resize_preview(self, width: float, height: float) -> None:
         """Live resize preview: a scaled copy of the image + annotations.
 
@@ -1536,97 +1568,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
             painter.end()
         self._set_preview_pixmap(scaled)
 
-    # ── Resize session (resample from base, no compound quality loss) ───────
-
-    def _begin_resize_session(self) -> None:
-        """Snapshot the image at session start; later resizes sample from it."""
-        self._resize_active = True
-
-        # Snapshot the PRE-composite state so undo / Esc-cancel can restore a
-        # clean base image + editable annotations + text.
-        self._resize_pre_image = self._pil_image.copy()
-        self._resize_pre_annot = (
-            self._annotations_pixmap.copy() if self._annotations_pixmap else None
-        )
-        self._resize_pre_text = [
-            TextItem(t.text, QtCore.QPointF(t.img_pos), QtGui.QColor(t.color),
-                     t.font_family, t.font_size)
-            for t in self._text_items
-        ] if self._text_items else []
-
-        # Bake all annotations + text into the base image, clear the layer —
-        # resize then operates on one merged image.
-        self._composite_annotations_into_image()
-
-        # _set_resize_preview scales _display_pixmap, which still holds the
-        # pre-composite image (no baked text). Refresh it from the now-merged
-        # _pil_image so the live preview shows the baked content instead of
-        # flashing text out (visible) → gone (stale preview) → back (commit).
-        self._rebuild_display()
-
-        self._resize_base_image = self._pil_image.copy()
-        self._resize_base_overlay = (
-            self._overlay_pixmap.copy() if self._overlay_pixmap else None
-        )
-        self._resize_changed = False
-        self._set_preview_pixmap(None)
-        self._update_undo_button_visibility()
-
-    def _end_resize_session(self) -> None:
-        """Commit one undo entry if the image was resized this session."""
-        changed = self._resize_changed
-        self._resize_active = False
-        self._resize_base_image = None
-        self._resize_base_overlay = None
-        self._resize_changed = False
-        self._set_preview_pixmap(None)
-
-        if changed and self._resize_pre_image is not None:
-            # One atomic undo entry capturing the pre-composite (clean image +
-            # editable annotations + text) state so undo restores both.
-            entry = _UndoEntry(
-                UndoChangeType.FULL,
-                pil_img=self._resize_pre_image,
-                annot_pxm=(self._resize_pre_annot.copy() if self._resize_pre_annot else None),
-                text_items=[
-                    TextItem(t.text, QtCore.QPointF(t.img_pos), QtGui.QColor(t.color),
-                             t.font_family, t.font_size)
-                    for t in self._resize_pre_text
-                ] if self._resize_pre_text else None,
-            )
-            self._undo_stack.append(entry)
-            self._enforce_stack_limits(self._undo_stack)
-            self._redo_stack.clear()
-        self._resize_pre_image = None
-        self._resize_pre_annot = None
-        self._resize_pre_text = []
-        self._update_undo_button_visibility()
-
-    def _cancel_resize_session(self) -> None:
-        """Abandon: restore the pre-composite state, no undo entry."""
-        if self._resize_pre_image is not None:
-            self._pil_image = self._resize_pre_image.copy()
-            # Restore pre-composite annotations so editable text comes back.
-            if self._resize_pre_annot is not None:
-                self._annotations_pixmap = self._resize_pre_annot.copy()
-            if self._resize_base_overlay is not None:
-                self._overlay_pixmap = self._resize_base_overlay.copy()
-            self._text_items = [
-                TextItem(t.text, QtCore.QPointF(t.img_pos), QtGui.QColor(t.color),
-                         t.font_family, t.font_size)
-                for t in self._resize_pre_text
-            ] if self._resize_pre_text else []
-            self._rebuild_display()
-            self._resize_canvas()
-        self._resize_active = False
-        self._resize_base_image = None
-        self._resize_base_overlay = None
-        self._resize_pre_image = None
-        self._resize_pre_annot = None
-        self._resize_pre_text = []
-        self._resize_changed = False
-        self._set_preview_pixmap(None)
-
     def _apply_resize(self, width: int, height: int) -> None:
         """Resize to *width* × *height*, resampling from the session base image.
 
@@ -1641,7 +1582,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
         """
         if width <= 0 or height <= 0:
             return
-        base = self._resize_base_image if self._resize_active else self._pil_image
+        base = self._resize_base_image if self._transform_active else self._pil_image
         if base is None:
             return
         try:
@@ -1649,7 +1590,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
             self._pil_image = base.resize((width, height), Image.LANCZOS)
             self._preview_pixmap = None
 
-            self._resize_changed = True
             self._rebuild_display()
             self._resize_canvas()
             # Don't hard-recenter: keep the image where it is so the view doesn't
@@ -1689,17 +1629,11 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._overlay_pixmap = None
         self._preview_pixmap = None
         self._preview_angle = None
-        self._rotate_active = False
-        self._rotate_pre_image = None
-        self._rotate_pre_annot = None
-        self._rotate_pre_text = []
-        self._resize_active = False
+        self._transform_active = False
+        self._rotate_base_image = None
+        self._rotate_base_pixmap = None
+        self._rotate_cumulative_angle = 0.0
         self._resize_base_image = None
-        self._resize_base_overlay = None
-        self._resize_pre_image = None
-        self._resize_pre_annot = None
-        self._resize_pre_text = []
-        self._resize_changed = False
         self._pil_image = None
         self._original_pil = None
         if self._tools:

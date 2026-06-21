@@ -4,7 +4,7 @@ from typing import Optional
 from PIL import Image
 from PyQt6 import QtCore, QtGui, QtWidgets
 from .base import BaseTool
-from ..models import UndoChangeType, TextItem, _UndoEntry
+from ..models import UndoChangeType
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +128,10 @@ class CropTool(BaseTool):
         return "crop"
 
     def on_activate(self) -> None:
+        # Bake annotations + text into the base image on enter (shared transform
+        # contract): text becomes non-editable pixels for the crop session, and
+        # one undo / Esc restores the pre-bake editable state.
+        self._editor._begin_transform_session()
         img_w, img_h = self._editor._pil_image.size
         self._crop_rect = QtCore.QRect(0, 0, img_w, img_h)
         self._editor._canvas.setCursor(QtCore.Qt.CursorShape.OpenHandCursor)
@@ -140,6 +144,9 @@ class CropTool(BaseTool):
         self._dragging = None
         _destroy_action_buttons(self)
         self._editor._overlay_pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+        # Commit the transform session: pushes one FULL undo entry (capturing
+        # the pre-bake state) iff the image actually changed this session.
+        self._editor._commit_transform_session()
         self._editor._canvas.update()
 
     def on_mouse_press(self, canvas, event) -> bool:
@@ -231,49 +238,20 @@ class CropTool(BaseTool):
         if (r.left() <= 0 and r.top() <= 0
                 and r.x() + r.width() >= img_w
                 and r.y() + r.height() >= img_h):
-            self._editor._activate_tool("pan")
+            # Full-image crop is a no-op: revert the bake-on-enter and leave,
+            # same as cancel.
+            self.cancel_crop()
             return
-        # Snapshot the PRE-flatten state for the undo entry.  The undo entry
-        # must capture the image, annotations, AND editable text all from
-        # before _flatten_text bakes text into the annotations pixmap —
-        # otherwise undo restores annotations-with-baked-text alongside the
-        # editable text items, showing each annotation twice and making the
-        # baked text un-removable.
-        pre_pil = self._editor._pil_image.copy()
-        pre_annot = (
-            self._editor._annotations_pixmap.copy()
-            if self._editor._annotations_pixmap else None
-        )
-        saved_text_items = [
-            TextItem(t.text, QtCore.QPointF(t.img_pos), QtGui.QColor(t.color),
-                     t.font_family, t.font_size)
-            for t in self._editor._text_items
-        ] if self._editor._text_items else []
-
-        # Bake all annotations + text into the base image and clear the layer,
-        # so the crop operates on one merged image (text/strokes survive as
-        # pixels inside the cropped region).
-        self._editor._composite_annotations_into_image()
-
-        # Push the undo entry built from the pre-composite snapshot, so undo
-        # restores a consistent pre-crop / pre-bake state.
-        entry = _UndoEntry(
-            UndoChangeType.FULL,
-            pil_img=pre_pil,
-            annot_pxm=pre_annot,
-            text_items=saved_text_items if saved_text_items else None,
-        )
-        self._editor._undo_stack.append(entry)
-        self._editor._enforce_stack_limits(self._editor._undo_stack)
-        self._editor._redo_stack.clear()
-        self._editor._update_undo_buttons()
+        # The session already baked annotations + text into _pil_image on enter,
+        # so crop operates on the merged image. The pre-bake snapshot for undo
+        # is held by the session and committed on deactivate.
         try:
             cropped = self._editor._pil_image.crop(
                 (r.left(), r.top(), r.x() + r.width(), r.y() + r.height())
             )
             self._editor._pil_image = cropped
-            # Annotations were baked into the image above; _rebuild_display
-            # recreates an empty annotation/overlay layer at the cropped size.
+            # _rebuild_display recreates an empty annotation/overlay layer at
+            # the cropped size (annotations were baked in on enter).
             self._editor._rebuild_display()
             self._editor._resize_canvas()
             self._editor._center_image_on_canvas()
@@ -283,6 +261,10 @@ class CropTool(BaseTool):
         self._editor._activate_tool("pan")
 
     def cancel_crop(self) -> None:
+        # Restore the pre-bake state (the bake happened on enter); no undo.
+        # _activate_tool triggers on_deactivate, whose _commit_transform_session
+        # is a no-op because cancel already cleared _transform_active.
+        self._editor._cancel_transform_session()
         self._editor._activate_tool("pan")
 
     _HANDLES = {
@@ -746,28 +728,11 @@ class RotateTool(BaseTool):
 
     def on_key_press(self, canvas, event) -> bool:
         if event.key() == QtCore.Qt.Key.Key_Escape:
-            # Abandon the whole session: restore the PRE-composite state
-            # (clean image + editable annotations + text), no undo entry.
-            # Must use _rotate_pre_image (clean), NOT _rotate_base_image (which
-            # has annotations baked in) — otherwise restored annotations/text
-            # would duplicate the baked pixels.
+            # Abandon: restore the pre-composite state (clean image + editable
+            # annotations + text) via the shared session cancel, no undo entry.
             ed = self._editor
-            if ed._rotate_pre_image is not None:
-                ed._pil_image = ed._rotate_pre_image.copy()
-                # Restore pre-composite annotations so editable text comes back.
-                if ed._rotate_pre_annot is not None:
-                    ed._annotations_pixmap = ed._rotate_pre_annot.copy()
-                if ed._rotate_base_overlay is not None:
-                    ed._overlay_pixmap = ed._rotate_base_overlay.copy()
-                ed._text_items = [
-                    TextItem(t.text, QtCore.QPointF(t.img_pos), QtGui.QColor(t.color),
-                             t.font_family, t.font_size)
-                    for t in ed._rotate_pre_text
-                ] if ed._rotate_pre_text else []
-                ed._rebuild_display()
-            ed._rotate_cumulative_angle = 0.0
             ed._set_rotation_preview(0.0)
-            ed._end_rotate_session()
+            ed._cancel_rotate_session()
             ed._activate_tool("pan")
             return True
         return False

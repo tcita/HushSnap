@@ -431,34 +431,39 @@ class TestMosaicToolSaveBehavior:
 
 class TestCropToolSaveBehavior:
     def test_save_on_apply_crop(self, editor):
-        """CropTool.apply_crop pushes one FULL undo entry from the pre-bake state.
+        """Activating crop pushes one FULL undo entry (pre-bake state).
 
-        The entry's annotations/text must reflect the PRE-flatten snapshot so
-        undo restores a consistent pre-crop state (no baked-text duplication).
+        The bake-on-enter contract means the undo entry is pushed by
+        _begin_transform_session (before the bake), so one undo restores
+        the editable pre-crop state. Applying the crop keeps the entry on
+        the stack; no additional entry is pushed.
         """
         from hushsnap.ui.editor.models import _UndoEntry
+        stack_before = len(editor._undo_stack)  # 0
         tool = editor._tools["crop"]
-        stack_before = len(editor._undo_stack)
-        tool._crop_rect = QtCore.QRect(10, 10, 50, 40)
-        tool.apply_crop()
-
-        # Exactly one new entry pushed.
+        editor._activate_tool("crop")  # pushes undo + bakes
         assert len(editor._undo_stack) - stack_before == 1
         entry = editor._undo_stack[-1]
         assert entry.change_type == UndoChangeType.FULL
         assert entry.pil_image is not None
-        # Undo entry must carry the pre-bake annotations (no baked text), not
-        # the post-flatten one. A None text_items means "no text to restore".
         assert entry.text_items is None or entry.text_items == []
 
+        # Applying crop: no additional undo entry (the pre-bake one stays).
+        tool._crop_rect = QtCore.QRect(10, 10, 50, 40)
+        tool.apply_crop()
+        assert len(editor._undo_stack) - stack_before == 1  # still just the one
+
     def test_full_image_crop_noop_skips_save(self, editor):
-        """Crop rect covering the whole image is a no-op — no save."""
+        """Full-image crop is a no-op: cancel restores pre-bake state."""
         tool = editor._tools["crop"]
-        editor._save_undo = MagicMock()
+        editor._activate_tool("crop")  # pushes 1 undo entry
+        stack_before = len(editor._undo_stack)
         img_w, img_h = editor._pil_image.size
         tool._crop_rect = QtCore.QRect(0, 0, img_w, img_h)
         tool.apply_crop()
-        editor._save_undo.assert_not_called()
+        # Full-image crop → cancel → the entry is popped (no undo remains from
+        # the session, and no redo was pushed).
+        assert len(editor._undo_stack) == stack_before - 1
 
     def test_apply_crop_preserves_exact_dimensions(self, editor):
         """Cropping keeps the full crop-rect width/height (no off-by-one).
@@ -507,7 +512,10 @@ class TestCropToolSaveBehavior:
         # Snapshot the pre-flatten annotations (no baked text) for comparison.
         pre_flatten_annot = editor._annotations_pixmap.copy()
 
-        # Crop a sub-rect (bakes text into annotations during apply).
+        # Activating crop bakes text into the image (shared transform contract);
+        # the pre-bake snapshot is held for undo.
+        editor._activate_tool("crop")
+        # Crop a sub-rect and apply.
         tool._crop_rect = QtCore.QRect(10, 10, 50, 40)
         tool.apply_crop()
 
@@ -1118,7 +1126,7 @@ class TestRotationAndResizeImprovements:
         """
         # Activate the rotate tool (begins the session)
         editor._activate_tool("rotate")
-        assert editor._rotate_active is True
+        assert editor._transform_active is True
         assert editor._rotate_base_image is not None
         
         orig_w, orig_h = editor._pil_image.size
@@ -1139,30 +1147,29 @@ class TestRotationAndResizeImprovements:
         
         # Deactivate tool (ends the session)
         editor._activate_tool("pan")
-        assert editor._rotate_active is False
+        assert editor._transform_active is False
         assert editor._rotate_base_image is None
 
     def test_rotation_undo_redo(self, editor):
         """A rotate session is a single atomic undo unit.
 
-        No undo entries are pushed mid-session (undo/redo are hidden then).
-        On deactivate, one FULL entry capturing the pre-rotation state is
-        pushed, so one undo in the main editor reverts the whole rotation and
-        one redo restores it.
+        The undo entry is pushed at session start (pre-bake state) and stays
+        on the stack at commit. One undo restores the pre-rotate state; one
+        redo brings back the rotation.
         """
         editor._activate_tool("rotate")
 
-        # Mid-session: undo/redo buttons are hidden and no entries are pushed,
-        # even after several rotations.
+        # Mid-session: undo/redo buttons are hidden. The entry pushed on
+        # enter (pre-bake snapshot) sits on the stack.
         editor._apply_rotation(15.0, True)
         editor._apply_rotation(30.0, True)
         assert editor._undo_btn.isHidden()
         assert editor._redo_btn.isHidden()
-        assert len(editor._undo_stack) == 0
+        assert len(editor._undo_stack) == 1  # pushed at session start
         size_30 = editor._pil_image.size
         assert size_30 != (100, 80)
 
-        # Leaving the tool commits one undo entry for the whole session.
+        # Leaving the tool: the entry stays (no new push on commit).
         editor._activate_tool("pan")
         assert not editor._undo_btn.isHidden()
         assert len(editor._undo_stack) == 1
@@ -1211,9 +1218,12 @@ class TestRotationAndResizeImprovements:
 
         assert _is_empty(editor._annotations_pixmap)
 
-        # Pre-composite clean image is preserved for undo/cancel.
-        assert editor._rotate_pre_image is not None
-        assert editor._rotate_pre_image.tobytes() == clean_pil_bytes
+        # Pre-composite clean image is preserved on the undo stack (pushed
+        # by _begin_transform_session before the bake).
+        top = editor._undo_stack[-1]
+        assert top.change_type == UndoChangeType.FULL
+        assert top.pil_image is not None
+        assert top.pil_image.tobytes() == clean_pil_bytes
 
         # Multiple releases keep the annotation layer empty (no drift source).
         editor._apply_rotation(20.0, True)
@@ -1292,9 +1302,11 @@ class TestRotationAndResizeImprovements:
         # Base image is the MERGED image (differs from the clean original).
         assert editor._resize_base_image is not None
         assert editor._resize_base_image.tobytes() != clean_bytes
-        # Pre-composite clean image preserved for undo/cancel.
-        assert editor._resize_pre_image is not None
-        assert editor._resize_pre_image.tobytes() == clean_bytes
+        # Pre-composite clean image preserved on the undo stack.
+        top = editor._undo_stack[-1]
+        assert top.change_type == UndoChangeType.FULL
+        assert top.pil_image is not None
+        assert top.pil_image.tobytes() == clean_bytes
         # Annotation layer + text cleared after composite.
         assert editor._text_items == []
 
@@ -1374,7 +1386,7 @@ class TestCompositeAnnotationsIntoImage:
         orig_bytes = editor._pil_image.tobytes()
 
         editor._activate_tool("resize")
-        assert editor._resize_active is True
+        assert editor._transform_active is True
         assert editor._resize_base_image is not None
         # undo/redo hidden mid-session
         assert editor._undo_btn.isHidden()
