@@ -29,10 +29,10 @@ QToolButton {
     background-color: transparent;
     border: 1px solid rgba(255, 255, 255, 25);
     border-radius: 6px;
-    padding: 5px 10px;
+    padding: 5px 4px;
     color: #ccc;
     font-size: 12px;
-    min-width: 28px;
+    min-width: 20px;
     min-height: 28px;
 }
 QToolButton:hover {
