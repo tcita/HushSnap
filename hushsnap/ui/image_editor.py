@@ -1021,10 +1021,9 @@ class ImageEditorWindow(QtWidgets.QWidget):
         ih = int(pm.height() * scale)
         pad_w = max(vw, iw) * 0.15
         pad_h = max(vh, ih) * 0.15
-        cw = max(vw, iw + pad_w * 2)
-        ch = max(vh, ih + pad_h * 2)
-        self._canvas.setMinimumSize(int(cw), int(ch))
-        self._canvas.resize(int(cw), int(ch))
+        cw = max(int(vw * 1.05), iw + int(pad_w) * 2)
+        ch = max(int(vh * 1.05), ih + int(pad_h) * 2)
+        self._canvas.resize(cw, ch)
         text_tool = self._tools.get("text")
         if text_tool:
             text_tool._sync_widgets()
@@ -1082,12 +1081,10 @@ class ImageEditorWindow(QtWidgets.QWidget):
             vw * 0.90 / pm.width(),
             vh * 0.90 / pm.height(),
             1.0,  # don't upscale small images
-            # No lower clamp — Photoshop-style: fit always fits, even at
-            # 25 % for a 4K image on a small screen.  The wheelEvent
-            # minimum (0.10) prevents absurdity while keeping the zoom
-            # range usable from fit zoom upward.
         )
-        self._scale = max(0.10, min(fit_effective, 5.0)) * self._dpr
+        # Effective range [0.10 … 5.0], DPR-adjusted so the user sees the
+        # same limits regardless of screen density.
+        self._scale = max(0.10, fit_effective) * self._dpr
         self._resize_canvas()
         self._center_image_on_canvas()
         self._update_zoom_label()
@@ -1366,7 +1363,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._update_zoom_label()
 
     def _update_zoom_label(self) -> None:
-        pct = round(self._scale * 100)
+        pct = round(self._effective_scale() * 100)
         label = self._tr("editor_zoom_label", zoom=pct)
         self._zoom_label.setText(f"⊞  {label}")
 

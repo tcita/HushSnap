@@ -1565,13 +1565,27 @@ class TestFitToViewport:
         editor._dpr = 2.0
         editor._fit_to_viewport()
 
-        # fit_effective = min(1800*0.9/3000, 1120*0.9/2000) = min(0.54, 0.504) = 0.504
-        # 0.504 is above the 0.50 floor → not clamped
-        # _scale = clamp(0.504, 0.5, 5.0) * 2.0 = 1.008
+        # fit_effective = min(1800*0.9/3000, 1120*0.9/2000) = 0.504
+        # _scale = max(0.10, 0.504) * 2.0 = 1.008
         assert abs(editor._scale - 1.008) < 0.01
         assert abs(editor._effective_scale() - 0.504) < 0.01
 
         editor._rendered_display_pixmap = orig
+
+    def test_zoom_label_shows_effective_scale(self, editor):
+        """Percentage in the zoom label is based on effective (visible) scale,
+        not the DPR-inflated _scale."""
+        editor._dpr = 2.0
+        editor._scale = 1.0  # effective = 0.5 → 50 %
+        editor._update_zoom_label()
+        text = editor._zoom_label.text()
+        assert "50" in text, f"expected 50% on HiDPI, got: {text}"
+
+        editor._dpr = 1.0
+        editor._scale = 2.0
+        editor._update_zoom_label()
+        text = editor._zoom_label.text()
+        assert "200" in text, f"expected 200%, got: {text}"
 
     def test_fit_zero_viewport_is_safe(self, editor):
         """Calling fit when the viewport is 0×0 does not crash."""
