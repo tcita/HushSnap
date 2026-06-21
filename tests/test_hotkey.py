@@ -48,6 +48,9 @@ def test_hotkey_filter_handle_wm_hotkey(mock_from_address, mock_app):
     mock_pixmap = MagicMock()
     mock_screen.grabWindow.return_value = mock_pixmap
     mock_screen.devicePixelRatio.return_value = 1.0
+    # grab_full_screen() resolves the screen under the cursor first, falling
+    # back to the primary screen.
+    mock_app.screenAt.return_value = mock_screen
     mock_app.primaryScreen.return_value = mock_screen
     
     # Simulate WM_HOTKEY
