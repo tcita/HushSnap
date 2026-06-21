@@ -43,6 +43,13 @@ logger = logging.getLogger(__name__)
 
 # ── Editor Window ────────────────────────────────────────────────────────────
 
+# Window sizing. The minimum leaves enough vertical room for the title bar,
+# two toolbar rows, and the status bar (~162 px of chrome) plus a usable
+# canvas (~250 px); narrower than this and the tool buttons crowd together.
+_EDITOR_MIN_W, _EDITOR_MIN_H = 640, 520
+_EDITOR_DEFAULT_W, _EDITOR_DEFAULT_H = 960, 700
+
+
 class ImageEditorWindow(QtWidgets.QWidget):
     """Main editor window with toolbar, canvas, and controls."""
 
@@ -149,7 +156,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
         )
         self.setStyleSheet(EDITOR_WINDOW_STYLE)
         self.setWindowTitle(self._tr("editor_title"))
-        self.setMinimumSize(480, 360)
+        self.setMinimumSize(_EDITOR_MIN_W, _EDITOR_MIN_H)
         self.resize(960, 700)
         self.setMouseTracking(True)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_Hover, True)
@@ -1896,13 +1903,20 @@ def show_image_editor(
         if remembered is not None and avail.contains(
             QtCore.QPoint(remembered["x"], remembered["y"])
         ):
-            # Last session's window is on the cursor's screen → full restore.
-            w, h = remembered["w"], remembered["h"]
-            x, y = remembered["x"], remembered["y"]
+            # Last session's window is on the cursor's screen → full restore,
+            # but still respect the minimum size and the screen's available area
+            # (a stale entry could be smaller than the current minimum or poke
+            # past the right/bottom edge on a since-shrunk display).
+            w = max(_EDITOR_MIN_W, min(remembered["w"], avail.width()))
+            h = max(_EDITOR_MIN_H, min(remembered["h"], avail.height()))
+            x = min(remembered["x"], avail.x() + avail.width() - w)
+            y = min(remembered["y"], avail.y() + avail.height() - h)
         else:
             # Reuse remembered size (clamped to this screen), center here.
-            w = max(480, min(remembered["w"] if remembered else 960, avail.width()))
-            h = max(360, min(remembered["h"] if remembered else 700, avail.height()))
+            w = max(_EDITOR_MIN_W, min(
+                remembered["w"] if remembered else _EDITOR_DEFAULT_W, avail.width()))
+            h = max(_EDITOR_MIN_H, min(
+                remembered["h"] if remembered else _EDITOR_DEFAULT_H, avail.height()))
             x = avail.x() + (avail.width() - w) // 2
             y = avail.y() + (avail.height() - h) // 2
         # Assign the target screen before show() — otherwise Windows may

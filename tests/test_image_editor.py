@@ -1457,8 +1457,8 @@ class TestEditorMultiMonitorPlacement:
             win = ImageEditorWindow(test_image, _translate)
             win._resolve_target_screen()
             a = win._target_screen.availableGeometry()
-            w = max(480, min(960, a.width()))
-            h = max(480, min(700, a.height()))
+            w = max(640, min(960, a.width()))
+            h = max(520, min(700, a.height()))
             win.resize(w, h)
             win.move(a.x() + (a.width() - w) // 2, a.y() + (a.height() - h) // 2)
 
@@ -1486,8 +1486,8 @@ class TestEditorMultiMonitorPlacement:
             win = ImageEditorWindow(test_image, _translate)
             win._resolve_target_screen()
             a = win._target_screen.availableGeometry()
-            w = max(480, min(960, a.width()))
-            h = max(480, min(700, a.height()))
+            w = max(640, min(960, a.width()))
+            h = max(520, min(700, a.height()))
             win.resize(w, h)
             win.move(a.x() + (a.width() - w) // 2, a.y() + (a.height() - h) // 2)
 
@@ -1496,6 +1496,17 @@ class TestEditorMultiMonitorPlacement:
         assert g.width() == 800
         assert g.height() == 700
         assert g.left() == 5000  # centered: (800-800)//2 = 0 offset from left
+        win.close()
+
+    def test_editor_enforces_usable_minimum_size(self, qapp, test_image):
+        """The window's hard minimum is large enough that the toolbar rows and
+        status bar don't crowd together (chrome ≈ 162 px → canvas ≥ ~250 px)."""
+        from hushsnap.ui.image_editor import _EDITOR_MIN_W, _EDITOR_MIN_H
+        assert _EDITOR_MIN_W >= 640
+        assert _EDITOR_MIN_H >= 520
+        win = ImageEditorWindow(test_image, _translate)
+        assert win.minimumWidth() == _EDITOR_MIN_W
+        assert win.minimumHeight() == _EDITOR_MIN_H
         win.close()
 
 
