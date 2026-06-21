@@ -1411,6 +1411,10 @@ class ImageEditorWindow(QtWidgets.QWidget):
         # Push BEFORE baking — this records the clean, editable pre-state.
         self._save_undo()  # defaults to FULL
         self._composite_annotations_into_image()
+        # Rebuild _display_pixmap from the now-merged PIL image — otherwise
+        # the canvas still shows the pre-bake pixmap and text/strokes appear
+        # to vanish (the crop-on-enter bug).
+        self._rebuild_display()
         self._transform_active = True
         self._update_undo_button_visibility()
 
@@ -1514,12 +1518,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
 
     def _begin_resize_session(self) -> None:
         """Bake + capture a resize resampling base (no compound quality loss)."""
-        self._begin_transform_session()
-        # _set_resize_preview scales _display_pixmap, which still holds the
-        # pre-composite image (no baked text). Refresh it from the now-merged
-        # _pil_image so the live preview shows the baked content instead of
-        # flashing text out (visible) → gone (stale preview) → back (commit).
-        self._rebuild_display()
+        self._begin_transform_session()  # already rebuilds _display_pixmap
         self._resize_base_image = self._pil_image.copy()
         self._set_preview_pixmap(None)
 
