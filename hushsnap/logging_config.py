@@ -61,6 +61,9 @@ def setup_logging(log_file_path: Path, force_level=None):
             force=True
         )
         
+        # Suppress noisy DEBUG logs from third-party libraries
+        logging.getLogger('PIL').setLevel(logging.WARNING)
+
         logging.info(f"{SESSION_START_MARKER} {logging.getLevelName(level)}, Path: {log_file_path}")
     
     # Fallback: if logging initialization fails, write to a fallback file.
