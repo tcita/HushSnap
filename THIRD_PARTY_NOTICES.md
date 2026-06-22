@@ -38,15 +38,16 @@ portions.
 - Project: [ShareX](https://github.com/ShareX/ShareX)
 - Copyright: © 2007-2026 ShareX Team
 - License: GNU General Public License v3.0
-- Usage in HushSnap: The cross-monitor screen-capture behavior (whole
-  virtual-desktop canvas, frameless overlay spanning all monitors, click
-  captures the monitor under the cursor) was modeled on ShareX's
-  `Screenshot` / `CaptureHelpers` virtual-screen approach. ShareX's source
-  was consulted as a design reference during development; no ShareX source
-  code is bundled with or distributed by HushSnap. The corresponding
-  HushSnap implementation is independently written in Python/Qt and lives
-  in `hushsnap/dpi.py` (`grab_full_screen`) and
-  `hushsnap/capture_window.py` (`CaptureWindow`).
+- Usage in HushSnap: ShareX is used as a general design reference for the
+  screen-capture workflow — including cross-monitor region selection
+  (whole virtual-desktop canvas, frameless overlay spanning all monitors,
+  click captures the monitor under the cursor), the capture overlay's
+  window-focus/topmost handling, and the frozen-background selection
+  interaction. ShareX's source was consulted as a design reference during
+  development; no ShareX source code is bundled with or distributed by
+  HushSnap. The corresponding HushSnap implementation is independently
+  written in Python/Qt and lives in `hushsnap/dpi.py`,
+  `hushsnap/capture_window.py`, and `hushsnap/capture_session.py`.
 
 ### Compliance Note
 
