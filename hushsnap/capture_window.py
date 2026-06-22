@@ -6,6 +6,7 @@ Handles fullscreen overlay display, drag-to-select drawing, final crop, and clip
 import ctypes
 import logging
 import sys
+import time
 import traceback
 from ctypes import wintypes
 
@@ -370,11 +371,16 @@ class CaptureWindow(QtWidgets.QWidget):
         self.on_captured = on_captured
         self.on_closed = on_closed
         self.session = None
+        # Short id for thumb_timing log correlation (TEMP instrumentation).
+        self._cap_id = f"cap{id(self) & 0xffff:x}"
         # The QScreen this overlay was bound to. Compared by CaptureSession to
         # decide which overlay is "primary" (the cursor's screen — the only one
         # that claims foreground). Stored separately because QWidget.screen()
         # is a method, not the bound screen attribute.
         self._bound_screen = screen
+        # Monotonic timestamp when this overlay was constructed; the
+        # close/destroy logs report latency relative to this. TEMP.
+        self._cap_t_construct = time.perf_counter()
 
         # Configure window attributes: tool style, frameless, initially topmost.
         self.setWindowFlags(
@@ -851,6 +857,10 @@ class CaptureWindow(QtWidgets.QWidget):
         if self.on_captured is None:
             return
         try:
+            logger.info(
+                f"thumb_timing | id={self._cap_id} stage=Tn_notify "
+                f"age_since_construct_ms={(time.perf_counter()-self._cap_t_construct)*1000:.2f}"
+            )
             # signature: on_captured(pixmap, logical_size)
             self.on_captured(pixmap, logical_size)
         except Exception:
@@ -858,6 +868,10 @@ class CaptureWindow(QtWidgets.QWidget):
 
     def closeEvent(self, event):
         """Immediately release raw background screenshot reference on close."""
+        logger.info(
+            f"thumb_timing | id={self._cap_id} stage=T3_closeEvent "
+            f"age_since_construct_ms={(time.perf_counter()-self._cap_t_construct)*1000:.2f}"
+        )
         self.pixmap = None
         if hasattr(self, 'on_closed') and self.on_closed:
             cb = self.on_closed
@@ -867,4 +881,16 @@ class CaptureWindow(QtWidgets.QWidget):
             except Exception:
                 pass
         super().closeEvent(event)
+        # destroyed fires after WA_DeleteOnClose teardown; connect lazily once
+        # so we can stamp when the native window is actually gone. TEMP.
+        try:
+            self.destroyed.connect(self._on_destroyed_timing)
+        except Exception:
+            pass
+
+    def _on_destroyed_timing(self, *_args):
+        logger.info(
+            f"thumb_timing | id={self._cap_id} stage=T4_destroyed "
+            f"age_since_construct_ms={(time.perf_counter()-self._cap_t_construct)*1000:.2f}"
+        )
 

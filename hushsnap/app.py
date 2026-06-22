@@ -163,6 +163,11 @@ class Application(QtCore.QObject):
         self.ui_language = "en"
         self.tray_icon = None
         self.native_hotkey_filter = None
+        # Monotonic counter tagging each screenshot→thumbnail cycle, so the
+        # timing logs emitted across app.py / capture_window.py / thumbnail.py
+        # for one capture can be correlated. TEMP instrumentation for
+        # validating the 50ms singleShot in _on_capture_completed.
+        self._thumb_seq = 0
         
         # Components
         self.ocr_controller = None
@@ -368,10 +373,33 @@ class Application(QtCore.QObject):
         """Callback after screenshot is copied to clipboard."""
         if not self.ocr_controller.needs_ocr:
             try:
+                seq = self._thumb_seq = self._thumb_seq + 1
+                t0 = time.perf_counter()
+                # TEMP (info-level so it lands in default logs): timing the
+                # 50ms singleShot vs CaptureWindow teardown vs thumbnail show.
+                self.logger.info(
+                    f"thumb_timing | seq={seq} stage=T0_convert_start "
+                    f"pix={captured_pixmap.width()}x{captured_pixmap.height()} "
+                    f"dpr={captured_pixmap.devicePixelRatio()}"
+                )
                 pil_img = qpixmap_to_pil(captured_pixmap)
+                t1 = time.perf_counter()
                 # Store selection-based logical size as source of truth
                 pil_img.info["logical_size"] = logical_size
-                QtCore.QTimer.singleShot(50, lambda img=pil_img: show_thumbnail(img))
+                # Tag the cycle so thumbnail.py logs correlate with this seq.
+                pil_img.info["_thumb_seq"] = seq
+                self.logger.info(
+                    f"thumb_timing | seq={seq} stage=T1_convert_done "
+                    f"convert_ms={(t1-t0)*1000:.2f} pil={pil_img.size[0]}x{pil_img.size[1]}"
+                )
+                def _show(img=pil_img, s=seq, schedule_t=t1):
+                    t2 = time.perf_counter()
+                    self.logger.info(
+                        f"thumb_timing | seq={s} stage=T2_singleshot_fired "
+                        f"scheduled_to_show_ms={(t2-schedule_t)*1000:.2f}"
+                    )
+                    show_thumbnail(img)
+                QtCore.QTimer.singleShot(50, _show)
             except Exception:
                 self.logger.exception("Failed to show thumbnail")
 

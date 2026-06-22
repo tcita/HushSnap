@@ -36,6 +36,13 @@ class ThumbnailWindow(QtWidgets.QWidget):
     def __init__(self, pil_image: Image.Image):
         super().__init__()
         self.pil_image = pil_image
+        # TEMP instrumentation for validating the 50ms singleShot. seq
+        # correlates with app.py's T0/T1/T2; _t_show stamps when showEvent
+        # fired so closeEvent can report visible lifetime (a near-zero
+        # lifetime is the DWM focus-race "flash-dismiss" signature).
+        self._thumb_seq = pil_image.info.get("_thumb_seq")
+        self._t_construct = time.perf_counter()
+        self._t_show = None
 
         # 1. Convert PIL to QPixmap for display
         self.pixmap = self._pil_to_qpixmap(pil_image)
@@ -423,10 +430,47 @@ class ThumbnailWindow(QtWidgets.QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
+        self._t_show = time.perf_counter()
+        # Focus state at show time — the DWM race manifests as the thumbnail
+        # not holding foreground (another window steals it → it dismisses).
+        fg_info = "n/a"
+        try:
+            import sys as _sys
+            if _sys.platform == "win32":
+                import ctypes
+                fg = ctypes.windll.user32.GetForegroundWindow()
+                self_hwnd = int(self.winId()) if self.winId() else 0
+                fg_info = f"fg=0x{fg & 0xffffffff:x} self=0x{self_hwnd & 0xffffffff:x} is_fg={fg==self_hwnd}"
+        except Exception:
+            pass
+        logger.info(
+            f"thumb_timing | seq={self._thumb_seq} stage=T5_thumb_show "
+            f"construct_to_show_ms={(self._t_show-self._t_construct)*1000:.2f} {fg_info}"
+        )
         self.pos_anim.start()
         self.fade_in_anim.start()
         self._start_timer()
         self._start_countdown()
+
+    def closeEvent(self, event):
+        """TEMP instrumentation: report thumbnail visible lifetime.
+
+        A near-zero lifetime (< ~100ms) is the signature of the DWM focus-race
+        'flash-dismiss' the 50ms singleShot guards against; a normal lifetime
+        is the auto-dismiss timer (seconds) or user action.
+        """
+        now = time.perf_counter()
+        if self._t_show is not None:
+            logger.info(
+                f"thumb_timing | seq={self._thumb_seq} stage=T6_thumb_close "
+                f"visible_lifetime_ms={(now-self._t_show)*1000:.2f}"
+            )
+        else:
+            logger.info(
+                f"thumb_timing | seq={self._thumb_seq} stage=T6_thumb_close "
+                f"visible_lifetime_ms=never_shown"
+            )
+        super().closeEvent(event)
 
     def enterEvent(self, event):
         """Pause timer on hover, activate visual feedback, and show buttons."""
