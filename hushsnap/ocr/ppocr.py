@@ -742,6 +742,20 @@ def recognize_ppocr_qimage(image_or_result, language_tag: str = "") -> OcrRecogn
     if image.isNull():
         return OcrRecognition(engine_type=OCR_ENGINE_PPOCR)
 
+    # Defense: the buffer math below assumes devicePixelRatio == 1.0.
+    # image.width()/height() return *logical* dimensions, while image.bits()
+    # is the *physical* pixel buffer — at DPR 2.0 a 960x540 logical QImage
+    # has a 1920x1080 buffer, and the reshape((height, width, 4)) would read
+    # only a quarter of it, silently corrupting OCR. The normal pipeline
+    # (run_minimal_pipeline → prepare_ocr_image) normalizes DPR to 1.0, but
+    # this is a public entry point; a caller passing a raw high-DPR QImage
+    # would hit the mismatch. Normalize here when needed. convertToFormat is
+    # only called in the off-normal case, so the happy path pays no copy.
+    if image.devicePixelRatio() != 1.0:
+        image = image.convertToFormat(QtGui.QImage.Format.Format_RGB32)
+        image.setDevicePixelRatio(1.0)
+        original_size = image.size()
+
     # Pre-declare to ensure cleanup in 'finally' doesn't fail
     result = None
     json_data = None
