@@ -63,6 +63,12 @@ def setup_logging(log_file_path: Path, force_level=None):
         
         # Suppress noisy DEBUG logs from third-party libraries
         logging.getLogger('PIL').setLevel(logging.WARNING)
+        # RapidOCR prints INFO chatter (model load steps, per-image timing)
+        # via its own console handler with propagate=False, so it never
+        # reaches our file handler — gate the logger itself to keep the
+        # console readable. Real failures still surface via ocr_controller's
+        # own error logging with tracebacks.
+        logging.getLogger('RapidOCR').setLevel(logging.WARNING)
 
         logging.info(f"{SESSION_START_MARKER} {logging.getLevelName(level)}, Path: {log_file_path}")
     
