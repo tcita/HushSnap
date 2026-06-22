@@ -232,11 +232,14 @@ def claim_foreground(widget, *, primary: bool = True):
                 logger.debug("topmost_audit | light path succeeded")
             return
         # Light path failed (e.g. fullscreen app holds foreground). Escalate.
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("topmost_audit | light path failed, escalating")
+        # Logged at INFO (not DEBUG) so the fallback trigger rate is visible
+        # in normal runs — this is the signal for whether the ShareX-style
+        # light path is sufficient in practice or escalation is frequently
+        # needed. If this fires often, the light path is not enough and the
+        # delay/strategy may need tuning.
+        logger.info("topmost_fallback | light path did not win foreground; escalating to hard path")
         if _force_topmost_hard(hwnd, old_fg):
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug("topmost_audit | hard fallback succeeded")
+            logger.info("topmost_fallback | hard path succeeded")
         else:
             logger.warning(
                 "topmost_warn | foreground claim failed after escalation; "
