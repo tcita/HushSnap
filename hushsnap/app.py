@@ -371,7 +371,18 @@ class Application(QtCore.QObject):
                 pil_img = qpixmap_to_pil(captured_pixmap)
                 # Store selection-based logical size as source of truth
                 pil_img.info["logical_size"] = logical_size
-                QtCore.QTimer.singleShot(50, lambda img=pil_img: show_thumbnail(img))
+                # No deferred show: a previous revision deferred show_thumbnail
+                # by 50ms "so CaptureWindow is fully destroyed before the
+                # thumbnail is shown" (commit 03cb8ea, avoiding an MSIX DWM
+                # focus race that flashed-then-dismissed the thumbnail). That
+                # race is prevented by ThumbnailWindow's
+                # WA_ShowWithoutActivating + WA_NativeWindow attributes (added
+                # in the same commit), not by the delay: a 300-cycle MSIX
+                # stress test (high-pressure + clean) showed the CaptureWindow
+                # destroyed() signal never fires within the 50ms window, and
+                # zero flash-dismiss events. The 50ms only added ~57ms of
+                # thumbnail-appear latency, so it is removed.
+                show_thumbnail(pil_img)
             except Exception:
                 self.logger.exception("Failed to show thumbnail")
 
