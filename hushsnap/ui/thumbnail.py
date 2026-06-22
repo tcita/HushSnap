@@ -169,17 +169,44 @@ class ThumbnailWindow(QtWidgets.QWidget):
         screen = active_screen.availableGeometry()
         self.end_x = screen.x() + screen.width() - self.display_width - THUMBNAIL_MARGIN + self.shadow_padding
         self.end_y = screen.y() + screen.height() - self.display_height - THUMBNAIL_MARGIN + self.shadow_padding
-        self.start_x = screen.x() + screen.width()
-        
+        # Slide-in start point. Previously this was ``screen.x() + screen.width()``
+        # — the screen's right edge, which is also the *neighbour* screen's
+        # left edge. The window was therefore born straddling the monitor
+        # boundary, and Qt re-associated it between the two screens (different
+        # DPRs ⇒ different logical coord spaces) as the slide animation pulled
+        # it inward, producing the visible "pop to the wrong spot then snap
+        # back" jitter on the first frames. Keeping the start point inside the
+        # target screen (clamped so the full window fits) means the window
+        # never crosses the boundary during the slide, so no screen
+        # re-association and no jitter.
+        slide = THUMBNAIL_MARGIN - self.shadow_padding
+        if slide < 4:
+            slide = 4
+        self.start_x = min(self.end_x + slide,
+                           screen.x() + screen.width() - self.display_width)
+
         self.move(self.start_x, self.end_y)
-        
+
         # Slide-in animation
         self.pos_anim = QtCore.QPropertyAnimation(self, b"pos")
         self.pos_anim.setDuration(THUMBNAIL_ANIM_MS)
         self.pos_anim.setStartValue(QtCore.QPoint(self.start_x, self.end_y))
         self.pos_anim.setEndValue(QtCore.QPoint(self.end_x, self.end_y))
         self.pos_anim.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
-        
+
+        # Fade-in animation. The slide distance is intentionally short (the
+        # start point is clamped inside the target screen to avoid the
+        # cross-monitor jitter), so the slide alone no longer reads as
+        # motion. Layering an opacity 0→1 fade-in on top restores the
+        # "appears" feel without crossing the screen boundary. Starts at 0
+        # so the window doesn't flash fully opaque on the first frame.
+        self.setWindowOpacity(0.0)
+        self.fade_in_anim = QtCore.QPropertyAnimation(self, b"windowOpacity")
+        self.fade_in_anim.setDuration(THUMBNAIL_ANIM_MS)
+        self.fade_in_anim.setStartValue(0.0)
+        self.fade_in_anim.setEndValue(1.0)
+        self.fade_in_anim.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
+
         # Fade-out animation
         self.fade_anim = QtCore.QPropertyAnimation(self, b"windowOpacity")
         self.fade_anim.setDuration(THUMBNAIL_ANIM_MS)
@@ -334,6 +361,8 @@ class ThumbnailWindow(QtWidgets.QWidget):
     def _on_auto_dismiss(self):
         """Timer fired — stop the countdown bar and begin fade-out."""
         self._stop_countdown()
+        self.fade_in_anim.stop()
+        self.setWindowOpacity(1.0)
         self.fade_anim.start()
 
     # ── Countdown progress bar ──────────────────────────────────────────
@@ -395,6 +424,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
     def showEvent(self, event):
         super().showEvent(event)
         self.pos_anim.start()
+        self.fade_in_anim.start()
         self._start_timer()
         self._start_countdown()
 
