@@ -35,8 +35,7 @@ class EditorCanvas(QtWidgets.QWidget):
             painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform)
         painter.fillRect(self.rect(), QtGui.QColor("#1a1a1a"))
 
-        if scale < 1.0:
-            self._draw_checkerboard(painter, event.rect())
+        self._draw_checkerboard(painter, event.rect())
 
         pm = self._editor._rendered_display_pixmap()
         preview = self._editor._preview_active()
@@ -132,40 +131,62 @@ class EditorCanvas(QtWidgets.QWidget):
 
         painter.restore()
 
-    def _draw_checkerboard(self, painter: QtGui.QPainter,
-                           clip_rect: QtCore.QRect) -> None:
-        """Draw a subtle checkerboard pattern."""
-        pm = self._editor._rendered_display_pixmap()
-        if not pm:
-            return
-        scale = self._editor._effective_scale()
-        offset = self._image_offset()
-        scaled_w = pm.width() * scale
-        scaled_h = pm.height() * scale
-        img_rect = QtCore.QRectF(offset.x(), offset.y(), scaled_w, scaled_h)
+    def _checkerboard_brush(self) -> QtGui.QBrush:
+        """A cached tileable checkerboard brush, built once per canvas.
+
+        One 2*cs pixmap is generated and let Qt tile it via QBrush — far
+        cheaper than the prior per-cell fillRect loop, which at high zoom
+        redrew thousands of cells per repaint.
+        """
+        brush = getattr(self, "_checker_brush", None)
+        if brush is not None:
+            return brush
 
         cs = 8
         light = QtGui.QColor("#2a2a2a")
         dark = QtGui.QColor("#222222")
+        tile = QtGui.QPixmap(cs * 2, cs * 2)
+        tile.fill(light)
+        p = QtGui.QPainter(tile)
+        p.fillRect(QtCore.QRect(0, 0, cs, cs), dark)
+        p.fillRect(QtCore.QRect(cs, cs, cs, cs), dark)
+        p.end()
+        brush = QtGui.QBrush(tile)
+        self._checker_brush = brush
+        return brush
 
-        x_start = max(int(clip_rect.x() / cs) * cs,
-                      int(img_rect.x() / cs) * cs)
-        y_start = max(int(clip_rect.y() / cs) * cs,
-                      int(img_rect.y() / cs) * cs)
-        x_end = min(int(clip_rect.right()), int(img_rect.right()))
-        y_end = min(int(clip_rect.bottom()), int(img_rect.bottom()))
+    def _draw_checkerboard(self, painter: QtGui.QPainter,
+                           clip_rect: QtCore.QRect) -> None:
+        """Draw a subtle checkerboard pattern over the image's visible area.
 
-        for y in range(y_start, y_end, cs):
-            for x in range(x_start, x_end, cs):
-                if ((x // cs) + (y // cs)) % 2 == 0:
-                    c = light
-                else:
-                    c = dark
-                rx = max(x, img_rect.x())
-                ry = max(y, img_rect.y())
-                rw = min(x + cs, x_end) - rx
-                rh = min(y + cs, y_end) - ry
-                painter.fillRect(QtCore.QRectF(rx, ry, rw, rh), c)
+        Always drawn, regardless of zoom — transparency should read as
+        transparency at every scale, not flip to the canvas background past
+        100%.
+        """
+        pm = self._editor._rendered_display_pixmap()
+        if not pm:
+            return
+        scale = self._editor._effective_scale()
+        angle = self._editor._preview_angle
+        offset = self._image_offset()
+
+        if angle is not None and angle != 0.0:
+            # During a rotation preview the painted image is a rotated copy of
+            # the display pixmap; its axis-aligned bounding box in widget
+            # space is what we want to fill behind the transparent corners.
+            w, h = pm.width() * scale, pm.height() * scale
+            cx = offset.x() + w / 2.0
+            cy = offset.y() + h / 2.0
+            rad = ((w / 2.0) ** 2 + (h / 2.0) ** 2) ** 0.5
+            img_rect = QtCore.QRectF(cx - rad, cy - rad, rad * 2, rad * 2)
+        else:
+            img_rect = QtCore.QRectF(
+                offset.x(), offset.y(),
+                pm.width() * scale, pm.height() * scale,
+            )
+
+        painter.fillRect(clip_rect & img_rect.toRect(),
+                         self._checkerboard_brush())
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
         tool = self._editor._active_tool
