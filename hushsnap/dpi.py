@@ -55,21 +55,63 @@ def physical_to_logical_size(
 # ── Pixmap helpers ───────────────────────────────────────────────────────────
 
 def grab_full_screen() -> QtGui.QPixmap | None:
-    """Grab the **screen under the cursor** and tag the pixmap with its DPR.
+    """Grab the **entire virtual desktop** (all monitors) as one composite pixmap.
 
-    Multi-monitor aware: the capture is scoped to whichever monitor the
-    cursor currently sits on (falling back to the primary screen when the
-    cursor is outside any screen or no screen is available).  Only that one
-    screen is frozen — other monitors stay live.
+    Each screen is captured at its native resolution and composited onto a
+    single canvas laid out in virtual-desktop logical space, scaled into
+    physical pixels by the **highest DPR** among the screens. Using the max
+    DPR (rather than the primary's) means lower-DPR monitors are at worst
+    upscaled — never downsampled — so no captured detail is lost. The
+    composite's devicePixelRatio is set to that max DPR, which keeps the
+    selection → physical-pixel crop math uniform regardless of which monitor
+    a region falls on.
+
+    A single-monitor setup degenerates to the native grab (max DPR equals
+    that screen's DPR, scale 1:1).
 
     Returns ``None`` when no screen is available.
     """
-    screen = (
-        QtWidgets.QApplication.screenAt(QtGui.QCursor.pos())
-        or QtWidgets.QApplication.primaryScreen()
-    )
-    if not screen:
+    screens = QtGui.QGuiApplication.screens()
+    if not screens:
         return None
-    pixmap = screen.grabWindow(0)
-    pixmap.setDevicePixelRatio(screen.devicePixelRatio())
-    return pixmap
+
+    primary = QtGui.QGuiApplication.primaryScreen()
+    if primary is None:
+        return None
+    virtual = primary.virtualGeometry()
+    if virtual.isNull() or virtual.width() <= 0 or virtual.height() <= 0:
+        return None
+
+    max_dpr = max(max(s.devicePixelRatio() for s in screens), 1.0)
+    ox, oy = virtual.x(), virtual.y()
+    canvas_w = int(round(virtual.width() * max_dpr))
+    canvas_h = int(round(virtual.height() * max_dpr))
+
+    # Paint in physical pixels with DPR left at 1 — setting devicePixelRatio
+    # before painting would make QPainter treat coords as logical and
+    # double-scale them. DPR is stamped on at the very end.
+    canvas = QtGui.QPixmap(canvas_w, canvas_h)
+    if canvas.isNull():
+        return None
+    canvas.fill(QtCore.Qt.GlobalColor.black)
+
+    painter = QtGui.QPainter(canvas)
+    painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform)
+    for screen in screens:
+        grab = screen.grabWindow(0)
+        if grab.isNull():
+            continue
+        g = screen.geometry()
+        target = QtCore.QRectF(
+            (g.x() - ox) * max_dpr,
+            (g.y() - oy) * max_dpr,
+            g.width() * max_dpr,
+            g.height() * max_dpr,
+        )
+        painter.drawPixmap(
+            target, grab, QtCore.QRectF(0, 0, grab.width(), grab.height())
+        )
+    painter.end()
+
+    canvas.setDevicePixelRatio(max_dpr)
+    return canvas

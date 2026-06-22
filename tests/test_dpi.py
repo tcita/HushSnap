@@ -110,69 +110,59 @@ class TestPhysicalToLogicalSize:
 
 class TestGrabFullScreen:
     def test_returns_none_when_no_screen(self):
-        # Both the cursor screen lookup and the primary fallback must be None.
-        with patch("PyQt6.QtWidgets.QApplication.screenAt", return_value=None), \
-             patch("PyQt6.QtWidgets.QApplication.primaryScreen", return_value=None):
+        with patch("PyQt6.QtGui.QGuiApplication.screens", return_value=[]):
             assert grab_full_screen() is None
 
-    def test_grabs_and_tags_pixmap(self, qapp):
+    def test_composites_all_screens_at_max_dpr(self, qapp):
+        """The composite spans the virtual desktop and carries the max DPR."""
         pixmap = grab_full_screen()
         assert pixmap is not None
         assert isinstance(pixmap, QtGui.QPixmap)
-        # Must be tagged with the DPR of the screen that was actually grabbed
-        # (the one under the cursor — may differ from the primary on mixed-DPR
-        # multi-monitor setups).
-        grabbed_screen = (
-            QtWidgets.QApplication.screenAt(QtGui.QCursor.pos())
-            or QtWidgets.QApplication.primaryScreen()
-        )
-        assert pixmap.devicePixelRatio() == grabbed_screen.devicePixelRatio()
 
-    def test_grabs_screen_under_cursor(self, qapp):
-        """Multi-monitor: the screen returned by screenAt(cursor) is the one grabbed."""
-        cursor_screen = MagicMock()
-        cursor_pixmap = QtGui.QPixmap(100, 100)
-        cursor_screen.grabWindow.return_value = cursor_pixmap
-        cursor_screen.devicePixelRatio.return_value = 2.0
+        screens = QtGui.QGuiApplication.screens()
+        max_dpr = max(s.devicePixelRatio() for s in screens)
+        virtual = QtGui.QGuiApplication.primaryScreen().virtualGeometry()
+        assert pixmap.devicePixelRatio() == max_dpr
+        assert pixmap.width() == int(round(virtual.width() * max_dpr))
+        assert pixmap.height() == int(round(virtual.height() * max_dpr))
 
-        primary_screen = MagicMock()
-        primary_screen.grabWindow.return_value = QtGui.QPixmap(50, 50)
-        primary_screen.devicePixelRatio.return_value = 1.0
+    def _make_screen(self, geometry, dpr, pm_size):
+        screen = MagicMock()
+        screen.geometry.return_value = geometry
+        screen.devicePixelRatio.return_value = dpr
+        screen.grabWindow.return_value = QtGui.QPixmap(*pm_size)
+        return screen
 
-        with patch("PyQt6.QtWidgets.QApplication.screenAt", return_value=cursor_screen), \
-             patch("PyQt6.QtWidgets.QApplication.primaryScreen", return_value=primary_screen):
+    def test_two_screens_composited_and_both_grabbed(self, qapp):
+        """Two side-by-side screens are tiled onto one canvas at the max DPR."""
+        s1 = self._make_screen(QtCore.QRect(0, 0, 1920, 1080), 1.0, (1920, 1080))
+        s2 = self._make_screen(QtCore.QRect(1920, 0, 1280, 720), 2.0, (2560, 1440))
+        primary = s1
+        primary.virtualGeometry.return_value = QtCore.QRect(0, 0, 3200, 1080)
+
+        with patch("PyQt6.QtGui.QGuiApplication.screens", return_value=[s1, s2]), \
+             patch("PyQt6.QtGui.QGuiApplication.primaryScreen", return_value=primary):
             result = grab_full_screen()
 
-        assert result is cursor_pixmap
-        cursor_screen.grabWindow.assert_called_once_with(0)
-        # Primary screen must never be touched when screenAt() resolved a screen.
-        primary_screen.grabWindow.assert_not_called()
+        assert result is not None
+        # max DPR is 2.0; canvas = virtual logical (3200x1080) × 2.0
+        assert result.devicePixelRatio() == 2.0
+        assert result.width() == 6400
+        assert result.height() == 2160
+        s1.grabWindow.assert_called_once_with(0)
+        s2.grabWindow.assert_called_once_with(0)
 
-    def test_falls_back_to_primary_when_cursor_offscreen(self, qapp):
-        """When the cursor is outside any screen, fall back to the primary screen."""
-        primary_screen = MagicMock()
-        primary_pixmap = QtGui.QPixmap(80, 80)
-        primary_screen.grabWindow.return_value = primary_pixmap
-        primary_screen.devicePixelRatio.return_value = 1.5
+    def test_single_screen_native_resolution_preserved(self, qapp):
+        """A single screen at DPR 2.0 yields a 1:1 native composite."""
+        screen = self._make_screen(QtCore.QRect(0, 0, 1000, 800), 2.0, (2000, 1600))
+        screen.virtualGeometry.return_value = QtCore.QRect(0, 0, 1000, 800)
 
-        with patch("PyQt6.QtWidgets.QApplication.screenAt", return_value=None), \
-             patch("PyQt6.QtWidgets.QApplication.primaryScreen", return_value=primary_screen):
+        with patch("PyQt6.QtGui.QGuiApplication.screens", return_value=[screen]), \
+             patch("PyQt6.QtGui.QGuiApplication.primaryScreen", return_value=screen):
             result = grab_full_screen()
 
-        assert result is primary_pixmap
-        assert result.devicePixelRatio() == 1.5
-        primary_screen.grabWindow.assert_called_once_with(0)
-
-    def test_mocked_screen_dpr_propagation(self, qapp):
-        """When the screen reports DPR=2.0 the result pixmap must carry 2.0."""
-        mock_screen = MagicMock()
-        mock_pixmap = QtGui.QPixmap(100, 100)
-        mock_screen.grabWindow.return_value = mock_pixmap
-        mock_screen.devicePixelRatio.return_value = 2.0
-
-        with patch("PyQt6.QtWidgets.QApplication.screenAt", return_value=mock_screen), \
-             patch("PyQt6.QtWidgets.QApplication.primaryScreen", return_value=mock_screen):
-            result = grab_full_screen()
-            assert result is not None
-            assert result.devicePixelRatio() == 2.0
-            mock_screen.grabWindow.assert_called_once_with(0)
+        assert result is not None
+        assert result.devicePixelRatio() == 2.0
+        assert result.width() == 2000
+        assert result.height() == 1600
+        screen.grabWindow.assert_called_once_with(0)

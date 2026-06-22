@@ -153,16 +153,19 @@ class CaptureWindow(QtWidgets.QWidget):
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_NativeWindow, True)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, True)
 
-        # Fill the screen under the cursor (multi-monitor: only the cursor's
-        # screen is frozen; other monitors stay live).  This runs synchronously
-        # in the same call stack as grab_full_screen(), so the cursor hasn't
-        # moved — the screen here matches the one that was grabbed.
-        self.setWindowState(QtCore.Qt.WindowState.WindowFullScreen)
-        screen = (
-            QtWidgets.QApplication.screenAt(QtGui.QCursor.pos())
-            or QtWidgets.QApplication.primaryScreen()
-        )
-        self.setGeometry(screen.geometry())
+        # Span the entire virtual desktop so a selection can cross monitors.
+        # grab_full_screen() already composited every screen into self.pixmap,
+        # laid out in virtual-desktop space with origin at virtual.topLeft().
+        # The overlay window mirrors that: its geometry is the whole virtual
+        # desktop, so widget-local coords map 1:1 onto the composite (× its
+        # DPR for physical pixels). Frameless + StaysOnTop over the full
+        # virtual geometry covers the taskbar on every monitor, so WindowFullScreen
+        # (which some platforms clamp to a single screen) is not used.
+        primary = QtWidgets.QApplication.primaryScreen()
+        virtual = primary.virtualGeometry() if primary else None
+        if virtual is None or virtual.isNull():
+            virtual = self.rect()
+        self.setGeometry(virtual)
 
         # Initialize interaction state.
         self.setCursor(QtCore.Qt.CursorShape.CrossCursor)
@@ -171,14 +174,12 @@ class CaptureWindow(QtWidgets.QWidget):
         self.curr_pos = None
         self.click_threshold = CAPTURE_CLICK_THRESHOLD_PX
 
-        # Capture happens on a single (frozen) screen; only that screen's
-        # pixels exist.  Clamp the selection cursor to this window's bounds so
-        # a drag that strays onto a neighbouring (live, un-frozen) monitor
-        # stops at the edge instead of silently selecting non-existent pixels.
+        # Clamp the selection cursor to the virtual-desktop bounds. Cross-
+        # monitor drags are allowed (the whole desktop was captured); the
+        # clamp only stops a drag from running off the edge of the desktop.
         # Use the LOCAL rect (0,0,w,h): event.position() is widget-local, and
-        # self.geometry() is global desktop coords — on a non-origin monitor
-        # (e.g. secondary at x=2560) mixing them would clamp every local point
-        # to the screen's global top-left, collapsing all drags into a click.
+        # self.geometry() is global desktop coords — mixing them would clamp
+        # every local point to the desktop's global top-left.
         self._selection_bounds = self.rect()
 
         self._topmost_debug_seq = 0
@@ -415,12 +416,12 @@ class CaptureWindow(QtWidgets.QWidget):
                 painter.drawText(bg_rect, QtCore.Qt.AlignmentFlag.AlignCenter, size_text)
 
     def _clamp_to_bounds(self, pos: QtCore.QPoint) -> QtCore.QPoint:
-        """Clamp a position to the frozen screen's window bounds.
+        """Clamp a position to the virtual-desktop window bounds.
 
-        A drag can stray past the window edge onto a neighbouring monitor
-        (Qt keeps delivering events via the implicit mouse grab); those
-        pixels were never captured, so we clamp the cursor here to keep the
-        selection — and its size label — honest.
+        A drag that runs off the edge of the desktop has no captured pixels
+        beyond it, so clamp the cursor there to keep the selection — and its
+        size label — honest. Cross-monitor drags are fine: the whole desktop
+        was captured, so the bounds are the full virtual geometry.
         """
         b = self._selection_bounds
         # QRect's right()/bottom() are the last valid pixel (inclusive), which
@@ -457,15 +458,35 @@ class CaptureWindow(QtWidgets.QWidget):
             captured = None
             logical_size = None
 
-            # If movement is too small, treat it as click -> fullscreen capture.
+            # If movement is too small, treat it as click -> capture the
+            # monitor under the cursor (not the whole virtual desktop). Crop
+            # the current screen's region out of the composite rather than
+            # re-grabbing, so the result matches the frozen overlay exactly.
             copy_to_clipboard = get_copy_image_to_clipboard()
             if (self.curr_pos - self.start_pos).manhattanLength() <= self.click_threshold:
-                full = self.pixmap.copy()
-                full.setDevicePixelRatio(self.pixmap.devicePixelRatio())
+                ratio = self.pixmap.devicePixelRatio()
+                cur_screen = (
+                    QtWidgets.QApplication.screenAt(event.globalPosition().toPoint())
+                    or QtWidgets.QApplication.primaryScreen()
+                )
+                if cur_screen is not None:
+                    sg = cur_screen.geometry()
+                    # screen.geometry() is in virtual-desktop (global) coords;
+                    # translate to widget-local to match the composite layout.
+                    origin = self.geometry().topLeft()
+                    local = QtCore.QRect(sg.topLeft() - origin, sg.size())
+                    physical = logical_to_physical_rect(local, dpr=ratio)
+                    full = self.pixmap.copy(physical)
+                else:
+                    full = self.pixmap.copy()
+                full.setDevicePixelRatio(ratio)
                 if copy_to_clipboard:
                     self._set_clipboard_pixmap(full, "fullscreen")
                 captured = full
-                logical_size = self.rect().size()
+                logical_size = (
+                    cur_screen.geometry().size() if cur_screen is not None
+                    else self.rect().size()
+                )
             else:
                 # Region capture: convert logical coordinates to physical pixels.
                 ratio = self.pixmap.devicePixelRatio()
