@@ -2,6 +2,9 @@ from PyQt6 import QtCore
 
 from .capture_window import CaptureWindow
 from .signal_bridge import SignalBridge
+from .logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class CaptureSession(QtCore.QObject):
@@ -58,7 +61,7 @@ class CaptureSession(QtCore.QObject):
             try:
                 win.destroyed.connect(self._clear_window)
             except Exception:
-                pass
+                logger.debug("launch_capture_window: destroyed.connect failed", exc_info=True)
             win.show()
             return
 
@@ -96,13 +99,14 @@ class CaptureSession(QtCore.QObject):
             try:
                 win.update()
             except Exception:
-                pass
+                logger.debug("update_all_windows: repaint failed", exc_info=True)
 
     def max_dpr(self) -> float:
         """Highest devicePixelRatio among the active screens (for logical-size readouts)."""
         try:
             return max((w.dpr for w in self.wins), default=1.0)
         except Exception:
+            logger.debug("max_dpr: failed to read DPRs", exc_info=True)
             return 1.0
 
     def crop_global_rect(self, global_rect):
@@ -127,6 +131,7 @@ class CaptureSession(QtCore.QObject):
                 parts.append((win, wphys, inter))
                 max_dpr = max(max_dpr, win.pixmap.devicePixelRatio())
             except Exception:
+                logger.debug("crop_global_rect: screen skipped", exc_info=True)
                 continue
 
         if not parts:
@@ -161,6 +166,7 @@ class CaptureSession(QtCore.QObject):
                 )
                 painter.drawPixmap(dst, part)
             except Exception:
+                logger.debug("crop_global_rect: stitch part failed", exc_info=True)
                 continue
 
         painter.end()
@@ -187,7 +193,7 @@ class CaptureSession(QtCore.QObject):
                 win.on_closed = None
                 win.close()
             except Exception:
-                pass
+                logger.debug("_close_all_windows: close failed", exc_info=True)
 
     def _clear_window(self, *_args):
         """Helper for legacy destroyed signal connection."""
