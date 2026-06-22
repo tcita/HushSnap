@@ -765,7 +765,7 @@ class CaptureWindow(QtWidgets.QWidget):
                 if captured is not None:
                     self._notify_captured(captured, logical_size)
                     if copy_to_clipboard:
-                        self._show_copied_toast(event.globalPosition().toPoint())
+                        self._show_copied_toast(QtGui.QCursor.pos())
 
                 self.session.global_start_pos = None
                 self.session.global_curr_pos = None
@@ -800,7 +800,7 @@ class CaptureWindow(QtWidgets.QWidget):
                 if captured is not None:
                     self._notify_captured(captured, logical_size)
                     if copy_to_clipboard:
-                        self._show_copied_toast(event.globalPosition().toPoint())
+                        self._show_copied_toast(QtGui.QCursor.pos())
 
                 self.start_pos = self.curr_pos = None
                 self.close()
@@ -811,7 +811,16 @@ class CaptureWindow(QtWidgets.QWidget):
             self.close()
 
     def _show_copied_toast(self, global_pos: QtCore.QPoint):
-        """Show a floating 'Copied' toast at the cursor position."""
+        """Show a floating 'Copied' toast at the cursor position.
+
+        ``global_pos`` should come from ``QCursor.pos()`` rather than the
+        release event's ``globalPosition()``: on a mixed-DPR multi-monitor
+        setup the event position is in Qt's *logical* desktop coords, which
+        are discontinuous across monitors of different DPR — a release ending
+        in that dead zone yields a point on no real screen, and the toast
+        would appear in the wrong place. ``QCursor.pos()`` reads the actual
+        cursor and is anchored to a real screen.
+        """
         try:
             from .config import resolve_ui_lang, ui_text, get_config_path
             lang = resolve_ui_lang(get_config_path())
