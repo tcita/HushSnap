@@ -35,13 +35,8 @@ screen-capture behavior was modeled on [ShareX](https://github.com/ShareX/ShareX
 ## License
 
 HushSnap is distributed under the **GNU General Public License v3.0**
-([LICENSE.md](LICENSE.md)).
-
-This license is required in part by the free (GPL) edition of PyQt6, which
-HushSnap depends on: the GPL edition of PyQt6 obligates any application built
-on it to be distributed under a GPL-compatible license. Third-party
-dependencies keep their own licenses (Apache 2.0, MIT, BSD); see
-`THIRD_PARTY_NOTICES.md` for attribution details.
+([LICENSE.md](LICENSE.md)). See `THIRD_PARTY_NOTICES.md` for third-party
+attribution.
 
 Copyright © 2026 HushSnap.
 
