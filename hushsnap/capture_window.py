@@ -64,10 +64,15 @@ FLOAT_DURATION_MS = 600
 # checking immediately would yield false negatives and over-trigger fallback.
 
 # Delay before verifying whether the light foreground claim took effect.
-# activateWindow()/SetForegroundWindow are asynchronous; too small a delay
-# produces false-negative verifications (and thus needless fallback runs),
-# too large makes the overlay slow to take focus. Tuned conservatively.
-_ACTIVATE_VERIFY_DELAY_MS = 80
+# activateWindow() is asynchronous — Qt processes the focus change on the
+# next event-loop iterations. Measured latency (scratch/probe_activate_delay.py,
+# 25 trials, same Tool/Frameless/StaysOnTop flags as the overlay):
+#   min 1.5ms, median 2.8ms, p95 4.6ms, max 6.6ms.
+# 15ms is ~3x p95 — covers normal jitter with margin, while still escalating
+# quickly when the light path genuinely fails (a fullscreen app holding
+# foreground). Larger values only delay the fallback for no benefit, since
+# the light path either takes effect within a few ms or not at all.
+_ACTIVATE_VERIFY_DELAY_MS = 15
 
 
 def _declare_win32_topmost_signatures():
