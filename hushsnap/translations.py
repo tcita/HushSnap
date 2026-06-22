@@ -148,6 +148,7 @@ UI_TEXT = {
 
         "editor_color": "Color",
         "editor_size": "Size",
+        "editor_mosaic_size": "Coarseness",
         "editor_opacity": "Opacity",
         "editor_font": "Font",
         "editor_font_size": "Font Size",
@@ -321,6 +322,7 @@ UI_TEXT = {
 
         "editor_color": "颜色",
         "editor_size": "大小",
+        "editor_mosaic_size": "厚度",
         "editor_opacity": "不透明度",
         "editor_font": "字体",
         "editor_font_size": "字号",
@@ -493,6 +495,7 @@ UI_TEXT = {
 
         "editor_color": "顏色",
         "editor_size": "大小",
+        "editor_mosaic_size": "厚度",
         "editor_opacity": "不透明度",
         "editor_font": "字型",
         "editor_font_size": "字型大小",
@@ -664,6 +667,7 @@ UI_TEXT = {
 
         "editor_color": "色",
         "editor_size": "サイズ",
+        "editor_mosaic_size": "粗さ",
         "editor_opacity": "不透明度",
         "editor_font": "フォント",
         "editor_font_size": "フォントサイズ",

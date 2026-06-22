@@ -419,15 +419,19 @@ class ImageEditorWindow(QtWidgets.QWidget):
                 layout.addWidget(val_lbl)
 
             elif key == "size":
-                lbl = QtWidgets.QLabel(self._tr("editor_size") + ":")
+                # Mosaic's "size" is pixel-block size (thin/thick code),
+                # not brush thickness — give it a dedicated label so it
+                # doesn't read as the brush's Size.
+                size_key = "editor_mosaic_size" if tool_id == "mosaic" else "editor_size"
+                lbl = QtWidgets.QLabel(self._tr(size_key) + ":")
                 lbl.setObjectName("optionLabel")
                 layout.addWidget(lbl)
-                
+
                 layout.addWidget(self._create_size_presets(tool_id))
-                
+
                 slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
                 slider.setFixedWidth(100)
-                slider.setToolTip(self._tr("editor_size"))
+                slider.setToolTip(self._tr(size_key))
                 slider.setObjectName(f"sizeSlider_{tool_id}")
                 if tool_id == "mosaic":
                     slider.setRange(2, 40)
