@@ -113,18 +113,21 @@ class TestGrabFullScreen:
         with patch("PyQt6.QtGui.QGuiApplication.screens", return_value=[]):
             assert grab_full_screen() is None
 
-    def test_composites_all_screens_at_max_dpr(self, qapp):
-        """The composite spans the virtual desktop and carries the max DPR."""
-        pixmap = grab_full_screen()
-        assert pixmap is not None
-        assert isinstance(pixmap, QtGui.QPixmap)
+    def test_grabs_screen_under_cursor_at_native_dpr(self, qapp):
+        """grab_full_screen scopes to the cursor's screen and tags its DPR."""
+        screen = MagicMock()
+        screen.devicePixelRatio.return_value = 2.0
+        grabbed = QtGui.QPixmap(2000, 1600)
+        screen.grabWindow.return_value = grabbed
 
-        screens = QtGui.QGuiApplication.screens()
-        max_dpr = max(s.devicePixelRatio() for s in screens)
-        virtual = QtGui.QGuiApplication.primaryScreen().virtualGeometry()
-        assert pixmap.devicePixelRatio() == max_dpr
-        assert pixmap.width() == int(round(virtual.width() * max_dpr))
-        assert pixmap.height() == int(round(virtual.height() * max_dpr))
+        with patch("PyQt6.QtWidgets.QApplication.screenAt", return_value=screen), \
+             patch("PyQt6.QtWidgets.QApplication.primaryScreen", return_value=screen):
+            pixmap = grab_full_screen()
+
+        assert pixmap is not None
+        assert pixmap is grabbed
+        assert pixmap.devicePixelRatio() == 2.0
+        screen.grabWindow.assert_called_once_with(0)
 
     def _make_screen(self, geometry, dpr, pm_size):
         screen = MagicMock()
@@ -133,32 +136,24 @@ class TestGrabFullScreen:
         screen.grabWindow.return_value = QtGui.QPixmap(*pm_size)
         return screen
 
-    def test_two_screens_composited_and_both_grabbed(self, qapp):
-        """Two side-by-side screens are tiled onto one canvas at the max DPR."""
-        s1 = self._make_screen(QtCore.QRect(0, 0, 1920, 1080), 1.0, (1920, 1080))
-        s2 = self._make_screen(QtCore.QRect(1920, 0, 1280, 720), 2.0, (2560, 1440))
-        primary = s1
-        primary.virtualGeometry.return_value = QtCore.QRect(0, 0, 3200, 1080)
+    def test_falls_back_to_primary_when_cursor_offscreen(self, qapp):
+        """When screenAt() returns None (cursor off-screen), use the primary."""
+        primary = self._make_screen(QtCore.QRect(0, 0, 1000, 800), 1.0, (1000, 800))
 
-        with patch("PyQt6.QtGui.QGuiApplication.screens", return_value=[s1, s2]), \
-             patch("PyQt6.QtGui.QGuiApplication.primaryScreen", return_value=primary):
+        with patch("PyQt6.QtWidgets.QApplication.screenAt", return_value=None), \
+             patch("PyQt6.QtWidgets.QApplication.primaryScreen", return_value=primary):
             result = grab_full_screen()
 
         assert result is not None
-        # max DPR is 2.0; canvas = virtual logical (3200x1080) × 2.0
-        assert result.devicePixelRatio() == 2.0
-        assert result.width() == 6400
-        assert result.height() == 2160
-        s1.grabWindow.assert_called_once_with(0)
-        s2.grabWindow.assert_called_once_with(0)
+        assert result.devicePixelRatio() == 1.0
+        primary.grabWindow.assert_called_once_with(0)
 
     def test_single_screen_native_resolution_preserved(self, qapp):
-        """A single screen at DPR 2.0 yields a 1:1 native composite."""
+        """A single screen at DPR 2.0 is grabbed at its own native resolution."""
         screen = self._make_screen(QtCore.QRect(0, 0, 1000, 800), 2.0, (2000, 1600))
-        screen.virtualGeometry.return_value = QtCore.QRect(0, 0, 1000, 800)
 
-        with patch("PyQt6.QtGui.QGuiApplication.screens", return_value=[screen]), \
-             patch("PyQt6.QtGui.QGuiApplication.primaryScreen", return_value=screen):
+        with patch("PyQt6.QtWidgets.QApplication.screenAt", return_value=screen), \
+             patch("PyQt6.QtWidgets.QApplication.primaryScreen", return_value=screen):
             result = grab_full_screen()
 
         assert result is not None

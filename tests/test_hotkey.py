@@ -6,8 +6,7 @@ Tests the Windows native event filter for capturing global hotkeys.
 import pytest
 from unittest.mock import MagicMock, patch
 from ctypes import wintypes
-from PyQt6 import QtCore, QtGui
-from hushsnap import hotkey
+from PyQt6 import QtCore
 from hushsnap.hotkey import HotkeyFilter, WM_HOTKEY
 
 @pytest.fixture
@@ -38,21 +37,30 @@ def test_hotkey_filter_handle_wm_hotkey(mock_from_address, mock_app):
     """Test handling of the WM_HOTKEY message and screenshot capture trigger."""
     mock_callback = MagicMock()
     filter = HotkeyFilter(mock_callback)
-
+    
     # Mock MSG
     mock_msg = MagicMock()
     mock_msg.message = WM_HOTKEY
     mock_from_address.return_value = mock_msg
-
-    # grab_full_screen()'s compositing is covered by test_dpi; here we only
-    # verify the filter grabs and forwards the result to the callback.
+    
+    # Mock Screen
+    mock_screen = MagicMock()
     mock_pixmap = MagicMock()
-    with patch.object(hotkey, "grab_full_screen", return_value=mock_pixmap):
-        handled, ret = filter.nativeEventFilter(b"windows_generic_MSG", 12345)
-
+    mock_screen.grabWindow.return_value = mock_pixmap
+    mock_screen.devicePixelRatio.return_value = 1.0
+    # grab_all_screens() resolves all screens, whereas grab_full_screen() fell back to primary.
+    mock_app.screenAt.return_value = mock_screen
+    mock_app.primaryScreen.return_value = mock_screen
+    mock_app.screens.return_value = [mock_screen]
+    
+    # Simulate WM_HOTKEY
+    handled, ret = filter.nativeEventFilter(b"windows_generic_MSG", 12345)
+    
     assert handled is True
     assert ret == 0
-    mock_callback.assert_called_once_with(mock_pixmap)
+    mock_screen.grabWindow.assert_called_once_with(0)
+    mock_pixmap.setDevicePixelRatio.assert_called_once_with(1.0)
+    mock_callback.assert_called_once_with([(mock_screen, mock_pixmap)])
 
 
 @patch("ctypes.wintypes.MSG.from_address")

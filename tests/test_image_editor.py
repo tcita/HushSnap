@@ -1476,7 +1476,7 @@ class TestEditorMultiMonitorPlacement:
         primary = MagicMock()
         primary.devicePixelRatio.return_value = 1.0
 
-        with patch("PyQt6.QtWidgets.QApplication.screenAt", return_value=secondary), \
+        with patch("hushsnap.ui.image_editor.cursor_screen", return_value=secondary), \
              patch("PyQt6.QtWidgets.QApplication.primaryScreen", return_value=primary):
             win = ImageEditorWindow(test_image, _translate)
             # During construction the cursor screen is NOT yet resolved
@@ -1502,8 +1502,7 @@ class TestEditorMultiMonitorPlacement:
         avail = QtCore.QRect(5000, 200, 1600, 1000)
         screen.availableGeometry.return_value = avail
 
-        with patch("PyQt6.QtWidgets.QApplication.screenAt", return_value=screen), \
-             patch("PyQt6.QtWidgets.QApplication.primaryScreen", return_value=screen):
+        with patch("hushsnap.ui.image_editor.cursor_screen", return_value=screen):
             win = ImageEditorWindow(test_image, _translate)
             win._resolve_target_screen()
             a = win._target_screen.availableGeometry()
@@ -1531,8 +1530,7 @@ class TestEditorMultiMonitorPlacement:
         avail = QtCore.QRect(5000, 200, 800, 1200)
         screen.availableGeometry.return_value = avail
 
-        with patch("PyQt6.QtWidgets.QApplication.screenAt", return_value=screen), \
-             patch("PyQt6.QtWidgets.QApplication.primaryScreen", return_value=screen):
+        with patch("hushsnap.ui.image_editor.cursor_screen", return_value=screen):
             win = ImageEditorWindow(test_image, _translate)
             win._resolve_target_screen()
             a = win._target_screen.availableGeometry()

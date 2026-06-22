@@ -8,7 +8,7 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 
 from ..config import get_resource_dir
 from ..constants import APP_ICON_FILENAME
-from ..dpi import grab_full_screen
+from ..dpi import grab_all_screens
 from .styles import BRAND_GREEN
 
 
@@ -226,19 +226,19 @@ def create_tray(
         If user single-clicks (Trigger), start screenshot flow directly.
         """
         if reason == QtWidgets.QSystemTrayIcon.ActivationReason.Trigger:
-            pixmap = grab_full_screen()
-            if pixmap:
+            screens_and_pixmaps = grab_all_screens()
+            if screens_and_pixmaps:
                 # Trigger screenshot selection UI.
-                on_trigger(pixmap)
+                on_trigger(screens_and_pixmaps)
 
     # Bind activation event (e.g. single click).
     tray_icon.activated.connect(on_tray_icon_activated)
 
     # Define delay capture helper
     def do_capture():
-        pixmap = grab_full_screen()
-        if pixmap:
-            on_trigger(pixmap)
+        screens_and_pixmaps = grab_all_screens()
+        if screens_and_pixmaps:
+            on_trigger(screens_and_pixmaps)
 
     # 1. Screenshot Action
     def on_screenshot_triggered():

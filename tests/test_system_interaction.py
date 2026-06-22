@@ -29,11 +29,11 @@ def test_capture_window_initialization(qapp, mock_pixmap):
     """Test proper initialization of the CaptureWindow widget."""
     mock_screen = MagicMock()
     mock_screen.geometry.return_value = QtCore.QRect(0, 0, 100, 100)
-    mock_screen.virtualGeometry.return_value = QtCore.QRect(0, 0, 100, 100)
 
-    # CaptureWindow spans the whole virtual desktop (single-screen here).
-    with patch("PyQt6.QtWidgets.QApplication.screenAt", return_value=mock_screen), \
-         patch("PyQt6.QtWidgets.QApplication.primaryScreen", return_value=mock_screen):
+    # CaptureWindow covers the screen under the cursor (multi-monitor aware).
+    # The default screen resolves via dpi.cursor_screen(); patch it on the
+    # capture_window module so the constructor uses the mock screen.
+    with patch("hushsnap.capture_window.cursor_screen", return_value=mock_screen):
         win = CaptureWindow(mock_pixmap)
 
         assert win.windowFlags() & QtCore.Qt.WindowType.WindowStaysOnTopHint
@@ -179,27 +179,25 @@ def test_capture_window_dpi_scaling_clip(qapp, mock_pixmap):
     win.close()
 
 
-def test_capture_window_clamps_drag_to_desktop_edge(qapp):
-    """A drag straying past the virtual-desktop edge is clamped to that edge.
+def test_capture_window_clamps_drag_to_frozen_screen(qapp):
+    """A drag straying past the frozen screen's edge is clamped to that edge.
 
-    Cross-monitor drags are allowed (the whole desktop is captured), but a
-    drag that runs off the desktop's outer edge has no pixels beyond it, so
-    the selection cursor is clamped to the desktop bounds — keeping the rect
-    and its size label honest.
+    Multi-monitor edge case: pressing on the primary screen and releasing on a
+    neighbouring monitor must not select pixels that were never captured.  The
+    selection cursor is clamped to the frozen window's bounds, so the resulting
+    rect stops at the edge and its size stays honest.
     """
-    # 100x100 virtual desktop at the origin, DPR 1.0 for transparent math.
+    # 100x100 frozen screen at the origin, DPR 1.0 to keep the math transparent.
     screen_geo = QtCore.QRect(0, 0, 100, 100)
     mock_screen = MagicMock()
     mock_screen.geometry.return_value = screen_geo
-    mock_screen.virtualGeometry.return_value = screen_geo
     mock_screen.devicePixelRatio.return_value = 1.0
 
     pixmap = QtGui.QPixmap(100, 100)
     pixmap.fill(QtCore.Qt.GlobalColor.white)
     pixmap.setDevicePixelRatio(1.0)
 
-    with patch("PyQt6.QtWidgets.QApplication.screenAt", return_value=mock_screen), \
-         patch("PyQt6.QtWidgets.QApplication.primaryScreen", return_value=mock_screen):
+    with patch("hushsnap.capture_window.cursor_screen", return_value=mock_screen):
         win = CaptureWindow(pixmap)
         # Bounds are the LOCAL rect (0,0,w,h), not the global geometry —
         # event.position() is widget-local.
@@ -230,25 +228,23 @@ def test_capture_window_clamps_drag_to_desktop_edge(qapp):
 def test_capture_window_region_select_on_secondary_monitor(qapp):
     """Region drag-select works on a non-origin (secondary) monitor.
 
-    The overlay spans the virtual desktop; on a secondary monitor whose
-    top-left is at a non-origin desktop coord (e.g. x=2560) the widget-local
-    rect must still start at (0,0). event.position() is widget-local, so
-    _selection_bounds must be the LOCAL rect — otherwise every drag clamps
-    to the screen's global top-left and collapses into a click.
+    Regression: _selection_bounds was set from self.geometry() (global desktop
+    coords, e.g. x=2560 on a secondary screen) while event.position() is
+    widget-local. The mismatch clamped every local point to the screen's
+    global top-left, collapsing any drag into a click → only fullscreen
+    capture worked on secondary monitors. Bounds must be the LOCAL rect.
     """
     # Secondary monitor: top-left at (2560, 0) in desktop coords, 200x150.
     screen_geo = QtCore.QRect(2560, 0, 200, 150)
     mock_screen = MagicMock()
     mock_screen.geometry.return_value = screen_geo
-    mock_screen.virtualGeometry.return_value = screen_geo
     mock_screen.devicePixelRatio.return_value = 1.0
 
     pixmap = QtGui.QPixmap(200, 150)
     pixmap.fill(QtCore.Qt.GlobalColor.white)
     pixmap.setDevicePixelRatio(1.0)
 
-    with patch("PyQt6.QtWidgets.QApplication.screenAt", return_value=mock_screen), \
-         patch("PyQt6.QtWidgets.QApplication.primaryScreen", return_value=mock_screen):
+    with patch("hushsnap.capture_window.cursor_screen", return_value=mock_screen):
         win = CaptureWindow(pixmap)
         # Local rect, NOT the global (2560,0,...) geometry.
         assert win._selection_bounds == QtCore.QRect(0, 0, 200, 150)

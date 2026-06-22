@@ -160,11 +160,13 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self.action_pill.hide()
 
         # 4. Position and Animation
-        # Use cursor-based screen detection for multi-monitor awareness
-        active_screen = (
-            QtWidgets.QApplication.screenAt(QtGui.QCursor.pos())
-            or QtWidgets.QApplication.primaryScreen()
-        )
+        # Resolve the screen under the cursor in *physical* space so a
+        # mixed-DPR dead zone (a high-DPR neighbour logically shorter than the
+        # desktop box) doesn't make screenAt() return None and fall back to
+        # the primary screen — which would place this thumbnail on the wrong
+        # monitor when the capture ends at a secondary screen's bottom edge.
+        from ..dpi import cursor_screen
+        active_screen = cursor_screen()
         screen = active_screen.availableGeometry()
         self.end_x = screen.x() + screen.width() - self.display_width - THUMBNAIL_MARGIN + self.shadow_padding
         self.end_y = screen.y() + screen.height() - self.display_height - THUMBNAIL_MARGIN + self.shadow_padding

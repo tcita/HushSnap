@@ -12,6 +12,8 @@ needs DPR information should go through the helpers here instead of calling
 """
 from __future__ import annotations
 
+import sys
+
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 
@@ -55,66 +57,182 @@ def physical_to_logical_size(
 # ── Pixmap helpers ───────────────────────────────────────────────────────────
 
 def grab_full_screen() -> QtGui.QPixmap | None:
-    """Grab the **entire virtual desktop** (all monitors) as one composite pixmap.
+    """Grab the **screen under the cursor** and tag the pixmap with its DPR.
 
-    Modeled on ShareX's approach (``CaptureHelpers.GetScreenBounds`` =
-    ``SystemInformation.VirtualScreen`` captures the whole virtual desktop in
-    one shot). Qt exposes no single-call whole-desktop grab, so each screen is
-    captured at its native resolution and composited onto a
-    single canvas laid out in virtual-desktop logical space, scaled into
-    physical pixels by the **highest DPR** among the screens. Using the max
-    DPR (rather than the primary's) means lower-DPR monitors are at worst
-    upscaled — never downsampled — so no captured detail is lost. The
-    composite's devicePixelRatio is set to that max DPR, which keeps the
-    selection → physical-pixel crop math uniform regardless of which monitor
-    a region falls on.
-
-    A single-monitor setup degenerates to the native grab (max DPR equals
-    that screen's DPR, scale 1:1).
+    Multi-monitor aware: the capture is scoped to whichever monitor the
+    cursor currently sits on (falling back to the primary screen when the
+    cursor is outside any screen or no screen is available).  Only that one
+    screen is frozen — other monitors stay live.
 
     Returns ``None`` when no screen is available.
     """
-    screens = QtGui.QGuiApplication.screens()
-    if not screens:
+    screen = (
+        QtWidgets.QApplication.screenAt(QtGui.QCursor.pos())
+        or QtWidgets.QApplication.primaryScreen()
+    )
+    if not screen:
         return None
+    pixmap = screen.grabWindow(0)
+    pixmap.setDevicePixelRatio(screen.devicePixelRatio())
+    return pixmap
 
-    primary = QtGui.QGuiApplication.primaryScreen()
-    if primary is None:
-        return None
-    virtual = primary.virtualGeometry()
-    if virtual.isNull() or virtual.width() <= 0 or virtual.height() <= 0:
-        return None
 
-    max_dpr = max(max(s.devicePixelRatio() for s in screens), 1.0)
-    ox, oy = virtual.x(), virtual.y()
-    canvas_w = int(round(virtual.width() * max_dpr))
-    canvas_h = int(round(virtual.height() * max_dpr))
+def grab_all_screens() -> list[tuple[QtGui.QScreen, QtGui.QPixmap]]:
+    """Grab all available screens and tag each pixmap with its corresponding DPR.
 
-    # Paint in physical pixels with DPR left at 1 — setting devicePixelRatio
-    # before painting would make QPainter treat coords as logical and
-    # double-scale them. DPR is stamped on at the very end.
-    canvas = QtGui.QPixmap(canvas_w, canvas_h)
-    if canvas.isNull():
-        return None
-    canvas.fill(QtCore.Qt.GlobalColor.black)
-
-    painter = QtGui.QPainter(canvas)
-    painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform)
+    Returns:
+        A list of tuples (screen, pixmap) for all connected monitors.
+    """
+    screens = QtWidgets.QApplication.screens()
+    results = []
     for screen in screens:
-        grab = screen.grabWindow(0)
-        if grab.isNull():
-            continue
-        g = screen.geometry()
-        target = QtCore.QRectF(
-            (g.x() - ox) * max_dpr,
-            (g.y() - oy) * max_dpr,
-            g.width() * max_dpr,
-            g.height() * max_dpr,
-        )
-        painter.drawPixmap(
-            target, grab, QtCore.QRectF(0, 0, grab.width(), grab.height())
-        )
-    painter.end()
+        pixmap = screen.grabWindow(0)
+        pixmap.setDevicePixelRatio(screen.devicePixelRatio())
+        results.append((screen, pixmap))
+    return results
 
-    canvas.setDevicePixelRatio(max_dpr)
-    return canvas
+
+def screen_physical_rect(screen: QtGui.QScreen) -> QtCore.QRect:
+    """This monitor's rect in the **contiguous physical** virtual desktop.
+
+    Qt exposes geometry in *logical* pixels, and its logical virtual desktop is
+    discontinuous across monitors of different DPR — a logical gap with no
+    physical counterpart sits between them.  Naively scaling ``logical × DPR``
+    therefore misplaces every non-origin monitor by that gapped-and-rescaled
+    amount, producing a large transparent band in any cross-screen crop.
+
+    Windows tiles the real monitors contiguously in physical device pixels, so
+    we resolve the true physical rect via ``MonitorFromPoint`` +
+    ``GetMonitorInfoW`` (fed the screen's logical centre).  This returns the
+    monitor's actual ``rcMonitor`` in device coordinates, which tile edge to
+    edge with every other monitor regardless of per-monitor DPR.
+
+    On non-Windows platforms (or any Win32 failure) we fall back to the
+    logical-×-DPR approximation, which is exact for single-monitor and
+    uniform-DPR setups.
+    """
+    try:
+        g = screen.geometry()
+    except Exception:
+        g = None
+
+    # Fallback: logical × DPR (exact when all screens share the same DPR).
+    def _fallback():
+        dpr = screen.devicePixelRatio() or 1.0
+        if g is None:
+            return QtCore.QRect()
+        return QtCore.QRect(
+            round(g.x() * dpr),
+            round(g.y() * dpr),
+            round(g.width() * dpr),
+            round(g.height() * dpr),
+        )
+
+    if sys.platform != "win32" or g is None:
+        return _fallback()
+
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+
+        class _MONITORINFOEXW(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", wintypes.DWORD),
+                ("rcMonitor", wintypes.RECT),
+                ("rcWork", wintypes.RECT),
+                ("dwFlags", wintypes.DWORD),
+                ("szDevice", wintypes.WCHAR * 32),
+            ]
+
+        centre = g.center()
+        MONITOR_DEFAULTTONEAREST = 2
+        hmon = user32.MonitorFromPoint(
+            wintypes.POINT(centre.x(), centre.y()),
+            MONITOR_DEFAULTTONEAREST,
+        )
+        if not hmon:
+            return _fallback()
+
+        mi = _MONITORINFOEXW()
+        mi.cbSize = ctypes.sizeof(_MONITORINFOEXW)
+        if not user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
+            return _fallback()
+
+        r = mi.rcMonitor
+        return QtCore.QRect(r.left, r.top, r.right - r.left, r.bottom - r.top)
+    except Exception:
+        return _fallback()
+
+
+def cursor_physical_pos() -> QtCore.QPoint | None:
+    """Cursor position in contiguous physical virtual-desktop pixels.
+
+    Reads Win32 ``GetCursorPos`` directly, which returns physical device
+    coords in the same space as ``screen_physical_rect`` (rcMonitor) — so the
+    value is always continuous across monitors and never lands in a logical
+    "dead zone" (a region of the logical desktop bounding box that sits on no
+    screen because a high-DPR neighbour is logically shorter).  On non-Windows
+    / Win32 failure, fall back to reconstructing from Qt logical coords via
+    the screen under the cursor, anchored on its physical origin.
+    """
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            pt = wintypes.POINT()
+            if ctypes.windll.user32.GetCursorPos(ctypes.byref(pt)):
+                return QtCore.QPoint(pt.x, pt.y)
+        except Exception:
+            pass
+    try:
+        logical = QtGui.QCursor.pos()
+        screen = (
+            QtWidgets.QApplication.screenAt(logical)
+            or QtWidgets.QApplication.primaryScreen()
+        )
+        if screen is None:
+            return None
+        dpr = screen.devicePixelRatio() or 1.0
+        phys_origin = screen_physical_rect(screen).topLeft()
+        local = logical - screen.geometry().topLeft()
+        return phys_origin + QtCore.QPoint(
+            round(local.x() * dpr), round(local.y() * dpr)
+        )
+    except Exception:
+        return None
+
+
+def cursor_screen() -> QtGui.QScreen | None:
+    """The real QScreen under the cursor, robust to mixed-DPR dead zones.
+
+    ``QApplication.screenAt(QCursor.pos())`` resolves the screen from Qt's
+    *logical* global coords; when a high-DPR monitor is logically shorter than
+    its neighbour, the area below it (within the desktop bounding box but on
+    no screen) makes ``screenAt`` return ``None``.  Callers that then fall
+    back to ``primaryScreen()`` mis-place their UI on the wrong monitor.
+
+    This resolves the screen from the cursor's *physical* position (see
+    ``cursor_physical_pos``) by matching it against each screen's real
+    ``screen_physical_rect`` — physical space has no dead zone, so the
+    correct screen is always found.  Falls back to ``screenAt`` then
+    ``primaryScreen``.
+    """
+    phys = cursor_physical_pos()
+    if phys is not None:
+        try:
+            for screen in QtWidgets.QApplication.screens():
+                if screen_physical_rect(screen).contains(phys):
+                    return screen
+        except Exception:
+            pass
+    try:
+        return (
+            QtWidgets.QApplication.screenAt(QtGui.QCursor.pos())
+            or QtWidgets.QApplication.primaryScreen()
+        )
+    except Exception:
+        return None
+

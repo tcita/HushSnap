@@ -7,6 +7,7 @@ from PyQt6 import QtCore, QtGui, QtWidgets, QtSvg
 
 from ..config import get_ocr_font_size, get_resource_dir
 from ..constants import APP_ICON_FILENAME
+from ..dpi import cursor_screen
 from .styles import BRAND_GREEN
 
 # Minimum window size to prevent collapsing to zero
@@ -320,10 +321,7 @@ class OcrPopup(QtWidgets.QWidget):
             card_h = min(content_h + bar_h, 400)
 
             # Ensure it fits on screen
-            screen = (
-                QtWidgets.QApplication.screenAt(QtGui.QCursor.pos())
-                or QtWidgets.QApplication.primaryScreen()
-            )
+            screen = cursor_screen()
             if screen:
                 area = screen.availableGeometry()
                 card_w = min(card_w, int(area.width() * 0.55))
@@ -460,7 +458,7 @@ class OcrPopup(QtWidgets.QWidget):
 
             screen = QtWidgets.QApplication.screenAt(self.pos())
             if not screen:
-                screen = QtWidgets.QApplication.screenAt(QtGui.QCursor.pos()) or QtWidgets.QApplication.primaryScreen()
+                screen = cursor_screen()
             if screen:
                 max_w = int(screen.availableGeometry().width() * 0.75)
                 desired_w = min(desired_w, max_w)
@@ -508,7 +506,7 @@ class OcrPopup(QtWidgets.QWidget):
 
         screen = QtWidgets.QApplication.screenAt(self.pos())
         if not screen or not self.isVisible():
-            screen = QtWidgets.QApplication.screenAt(QtGui.QCursor.pos()) or QtWidgets.QApplication.primaryScreen()
+            screen = cursor_screen()
 
         if screen:
             area = screen.availableGeometry()
@@ -885,7 +883,7 @@ class OcrPopup(QtWidgets.QWidget):
 
     def _place_on_screen(self):
         """Position the popup, preferring the anchor point from a thumbnail click."""
-        screen = QtWidgets.QApplication.screenAt(QtGui.QCursor.pos()) or QtWidgets.QApplication.primaryScreen()
+        screen = cursor_screen()
         if not screen:
             return
         area = screen.availableGeometry()

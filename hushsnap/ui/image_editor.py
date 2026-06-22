@@ -15,7 +15,7 @@ from PIL import Image
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from ..config import get_config_path, get_editor_window_geometry, set_editor_window_geometry
-from ..dpi import current_dpr
+from ..dpi import current_dpr, cursor_screen
 
 # Modularized imports
 from .editor.constants import (
@@ -130,10 +130,10 @@ class ImageEditorWindow(QtWidgets.QWidget):
         lookup can't run inside __init__ — it crashed show() with a hard
         fault, likely by re-entering the windowing system mid-construction.
         """
-        cursor_screen = QtWidgets.QApplication.screenAt(QtGui.QCursor.pos())
-        if cursor_screen is not None:
-            self._target_screen = cursor_screen
-            self._dpr = cursor_screen.devicePixelRatio()
+        resolved = cursor_screen()
+        if resolved is not None:
+            self._target_screen = resolved
+            self._dpr = resolved.devicePixelRatio()
 
     # ── UI Setup ──────────────────────────────────────────────────────────
 

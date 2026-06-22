@@ -12,7 +12,12 @@ from ctypes import wintypes
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from .config import get_copy_image_to_clipboard
-from .dpi import logical_to_physical_rect
+from .dpi import (
+    cursor_physical_pos,
+    cursor_screen,
+    logical_to_physical_rect,
+    screen_physical_rect,
+)
 from .constants import (
     CAPTURE_CLICK_THRESHOLD_PX,
     CAPTURE_OVERLAY_RGBA,
@@ -139,10 +144,12 @@ class CaptureWindow(QtWidgets.QWidget):
        - Left click: capture full screen.
        - Right click / Esc: exit.
     """
-    def __init__(self, pixmap, on_captured=None):
+    def __init__(self, pixmap, screen=None, on_captured=None, on_closed=None):
         super().__init__()
         self.pixmap = pixmap
         self.on_captured = on_captured
+        self.on_closed = on_closed
+        self.session = None
 
         # Configure window attributes: tool style, frameless, initially topmost.
         self.setWindowFlags(
@@ -153,21 +160,42 @@ class CaptureWindow(QtWidgets.QWidget):
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_NativeWindow, True)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, True)
 
-        # Span the entire virtual desktop so a selection can cross monitors.
-        # grab_full_screen() already composited every screen into self.pixmap,
-        # laid out in virtual-desktop space with origin at virtual.topLeft().
-        # The overlay window mirrors that: its geometry is the whole virtual
-        # desktop, so widget-local coords map 1:1 onto the composite (× its
-        # DPR for physical pixels). Frameless + StaysOnTop over the full
-        # virtual geometry covers the taskbar on every monitor, so WindowFullScreen
-        # (which some platforms clamp to a single screen) is not used.
-        # Model: ShareX's RegionCaptureForm (Bounds = GetScreenBounds() =
-        # VirtualScreen, ClientArea 0-based over the whole desktop).
-        primary = QtWidgets.QApplication.primaryScreen()
-        virtual = primary.virtualGeometry() if primary else None
-        if virtual is None or virtual.isNull():
-            virtual = self.rect()
-        self.setGeometry(virtual)
+        if screen is None:
+            screen = cursor_screen()
+
+        # Bind to screen explicitly in Qt6
+        self.winId()  # Forces native window handle creation
+        if self.windowHandle() and screen and isinstance(screen, QtGui.QScreen):
+            self.windowHandle().setScreen(screen)
+
+        self.setWindowState(QtCore.Qt.WindowState.WindowFullScreen)
+        self.setGeometry(screen.geometry())
+
+        # Track this screen's geometry in *physical* virtual-desktop pixels.
+        # Qt's logical virtual desktop is discontinuous across monitors of
+        # different DPR (a logical gap with no physical counterpart), which
+        # splits any cross-screen selection and makes the cursor "teleport"
+        # across the boundary.  The Windows virtual screen tiles physical
+        # monitors contiguously, so the selection is tracked in physical
+        # pixels and converted back to per-screen logical coords only for
+        # painting.  See revert commit 32bf764 for the prior failed attempt.
+        #
+        # NB: the physical origin must come from the real Win32 monitor rect
+        # (screen_physical_rect), NOT from ``logical × DPR`` — that product
+        # misplaces non-origin monitors by the rescaled logical gap, producing
+        # a large transparent band in cross-screen crops.
+        self.dpr = self.pixmap.devicePixelRatio() if self.pixmap is not None else 1.0
+        try:
+            sdpr = screen.devicePixelRatio()
+            if isinstance(sdpr, (int, float)) and sdpr:
+                self.dpr = float(sdpr)
+            self.physical_rect_win = screen_physical_rect(screen)
+            self.physical_top_left = self.physical_rect_win.topLeft()
+        except Exception:
+            # Mock screens (tests) / legacy single-screen path: fall back to
+            # the logical top-left so behaviour is unchanged for non-session use.
+            self.physical_rect_win = None
+            self.physical_top_left = self.geometry().topLeft()
 
         # Initialize interaction state.
         self.setCursor(QtCore.Qt.CursorShape.CrossCursor)
@@ -176,12 +204,14 @@ class CaptureWindow(QtWidgets.QWidget):
         self.curr_pos = None
         self.click_threshold = CAPTURE_CLICK_THRESHOLD_PX
 
-        # Clamp the selection cursor to the virtual-desktop bounds. Cross-
-        # monitor drags are allowed (the whole desktop was captured); the
-        # clamp only stops a drag from running off the edge of the desktop.
+        # Capture happens on a single (frozen) screen; only that screen's
+        # pixels exist.  Clamp the selection cursor to this window's bounds so
+        # a drag that strays onto a neighbouring (live, un-frozen) monitor
+        # stops at the edge instead of silently selecting non-existent pixels.
         # Use the LOCAL rect (0,0,w,h): event.position() is widget-local, and
-        # self.geometry() is global desktop coords — mixing them would clamp
-        # every local point to the desktop's global top-left.
+        # self.geometry() is global desktop coords — on a non-origin monitor
+        # (e.g. secondary at x=2560) mixing them would clamp every local point
+        # to the screen's global top-left, collapsing all drags into a click.
         self._selection_bounds = self.rect()
 
         self._topmost_debug_seq = 0
@@ -346,44 +376,87 @@ class CaptureWindow(QtWidgets.QWidget):
         painter.fillRect(self.rect(), QtGui.QColor(*CAPTURE_OVERLAY_RGBA))
 
         # 3. While dragging, render "cut-out" effect to reveal original area in selection.
-        if self.start_pos and self.curr_pos:
-            rect = QtCore.QRect(self.start_pos, self.curr_pos).normalized()
-            if rect.width() >= CAPTURE_SELECTION_MIN_PX and rect.height() >= CAPTURE_SELECTION_MIN_PX:
+        if self.session and self.session.global_start_pos and self.session.global_curr_pos:
+            global_start = self.session.global_start_pos
+            global_curr = self.session.global_curr_pos
+            # global_rect is in contiguous physical virtual-desktop pixels.
+            global_rect = QtCore.QRect(global_start, global_curr).normalized()
+            wphys = self.physical_rect()
+            dpr = self.dpr or 1.0
+            # Map the full physical selection box into this screen's local
+            # logical coords for drawing.  It may extend past this screen;
+            # the painter clips to the widget, so each screen draws only its
+            # own slice and the box reads as one seamless rectangle spanning
+            # the boundary (no gap, because physical space is contiguous).
+            local_rect = QtCore.QRect(
+                round((global_rect.x() - wphys.x()) / dpr),
+                round((global_rect.y() - wphys.y()) / dpr),
+                round(global_rect.width() / dpr),
+                round(global_rect.height() / dpr),
+            )
+        else:
+            if self.start_pos and self.curr_pos:
+                global_rect = QtCore.QRect(self.start_pos, self.curr_pos).normalized()
+                local_rect = global_rect
+            else:
+                local_rect = None
+
+        if local_rect and local_rect.width() >= CAPTURE_SELECTION_MIN_PX and local_rect.height() >= CAPTURE_SELECTION_MIN_PX:
+            intersected_rect = local_rect.intersected(self.rect())
+            if not intersected_rect.isEmpty():
                 painter.save()
-                painter.setClipRect(rect)
+                painter.setClipRect(intersected_rect)
                 painter.drawPixmap(self.rect(), self.pixmap)
                 painter.restore()
 
                 # --- New Advanced Selection UI ---
+                # Borders/handles use ``intersected_rect`` (this screen's
+                # actual slice), NOT the full ``local_rect``.  When the
+                # selection spans into a taller neighbour, ``local_rect``'s
+                # bottom/right edge lies past this window and would be clipped
+                # away — leaving the slice looking bottomless/rightless.
+                # Drawing the slice's own edges keeps every screen's piece
+                # properly framed; on a single screen the two rects are equal,
+                # so behaviour is unchanged there.
                 # 1. Draw Glow/Shadow Effect
                 glow_pen = QtGui.QPen(QtGui.QColor(*BRAND_GREEN_RGB, 100), 4)
                 painter.setPen(glow_pen)
-                painter.drawRect(rect)
+                painter.drawRect(intersected_rect)
 
                 # 2. Draw Main Vibrant Border
                 main_pen = QtGui.QPen(QtGui.QColor(BRAND_GREEN), 1.5)
                 painter.setPen(main_pen)
-                painter.drawRect(rect)
+                painter.drawRect(intersected_rect)
 
                 # 3. Draw Corner Handles (professional look)
                 handle_size = 10
                 painter.setBrush(QtGui.QColor(BRAND_GREEN))
                 painter.setPen(QtGui.QPen(QtCore.Qt.GlobalColor.white, 1))
-                
-                # Corners: Top-Left, Top-Right, Bottom-Left, Bottom-Right
+
                 corners = [
-                    rect.topLeft(), rect.topRight(), 
-                    rect.bottomLeft(), rect.bottomRight()
+                    intersected_rect.topLeft(), intersected_rect.topRight(),
+                    intersected_rect.bottomLeft(), intersected_rect.bottomRight()
                 ]
                 for pt in corners:
-                    painter.drawRect(QtCore.QRect(
-                        pt.x() - handle_size // 2, 
-                        pt.y() - handle_size // 2, 
-                        handle_size, handle_size
-                    ))
+                    if self.rect().contains(pt):
+                        painter.drawRect(QtCore.QRect(
+                            pt.x() - handle_size // 2,
+                            pt.y() - handle_size // 2,
+                            handle_size, handle_size
+                        ))
 
                 # 4. Real-time Size Label
-                size_text = f"{rect.width()} x {rect.height()}"
+                if self.session and self.session.global_start_pos:
+                    # global_rect is physical; report logical (DIP) size via the
+                    # session's max DPR so the label stays consistent across
+                    # screens and matches the single-screen logical readout.
+                    mdpr = self.session.max_dpr() or 1.0
+                    width_val = round(global_rect.width() / mdpr)
+                    height_val = round(global_rect.height() / mdpr)
+                else:
+                    width_val = local_rect.width()
+                    height_val = local_rect.height()
+                size_text = f"{width_val} x {height_val}"
                 font = painter.font()
                 font.setPointSize(9)
                 font.setBold(True)
@@ -396,34 +469,35 @@ class CaptureWindow(QtWidgets.QWidget):
                 padding_x, padding_y = 6, 2
                 
                 bg_rect = QtCore.QRect(
-                    rect.right() - text_w - padding_x * 2,
-                    rect.bottom() + 5, # Positioned slightly below selection
+                    intersected_rect.right() - text_w - padding_x * 2,
+                    intersected_rect.bottom() + 5, # Positioned slightly below selection
                     text_w + padding_x * 2,
                     text_h + padding_y * 2
                 )
-                
+
                 # Adjust if label goes off-screen
                 if bg_rect.bottom() > self.height():
-                    bg_rect.moveBottom(rect.bottom() - 5)
+                    bg_rect.moveBottom(intersected_rect.bottom() - 5)
                 if bg_rect.left() < 0:
                     bg_rect.moveLeft(5)
 
                 # Draw Label Background
-                painter.setBrush(QtGui.QColor(0, 0, 0, 180))
-                painter.setPen(QtCore.Qt.PenStyle.NoPen)
-                painter.drawRoundedRect(bg_rect, 4, 4)
-                
-                # Draw Text
-                painter.setPen(QtCore.Qt.GlobalColor.white)
-                painter.drawText(bg_rect, QtCore.Qt.AlignmentFlag.AlignCenter, size_text)
+                if self.rect().intersects(bg_rect):
+                    painter.setBrush(QtGui.QColor(0, 0, 0, 180))
+                    painter.setPen(QtCore.Qt.PenStyle.NoPen)
+                    painter.drawRoundedRect(bg_rect, 4, 4)
+                    
+                    # Draw Text
+                    painter.setPen(QtCore.Qt.GlobalColor.white)
+                    painter.drawText(bg_rect, QtCore.Qt.AlignmentFlag.AlignCenter, size_text)
 
     def _clamp_to_bounds(self, pos: QtCore.QPoint) -> QtCore.QPoint:
-        """Clamp a position to the virtual-desktop window bounds.
+        """Clamp a position to the frozen screen's window bounds.
 
-        A drag that runs off the edge of the desktop has no captured pixels
-        beyond it, so clamp the cursor there to keep the selection — and its
-        size label — honest. Cross-monitor drags are fine: the whole desktop
-        was captured, so the bounds are the full virtual geometry.
+        A drag can stray past the window edge onto a neighbouring monitor
+        (Qt keeps delivering events via the implicit mouse grab); those
+        pixels were never captured, so we clamp the cursor here to keep the
+        selection — and its size label — honest.
         """
         b = self._selection_bounds
         # QRect's right()/bottom() are the last valid pixel (inclusive), which
@@ -433,81 +507,161 @@ class CaptureWindow(QtWidgets.QWidget):
             max(b.top(), min(pos.y(), b.bottom())),
         )
 
+    def physical_rect(self) -> QtCore.QRect:
+        """This screen's rect in contiguous physical virtual-desktop pixels.
+
+        Prefers the real Win32 ``rcMonitor`` (which tiles edge-to-edge with
+        every other monitor).  Falls back to ``physical_top_left`` +
+        ``pixmap.size()`` (the native grab extent) for mock/test screens where
+        no Win32 handle was resolved.
+        """
+        if self.physical_rect_win is not None:
+            return self.physical_rect_win
+        size = self.pixmap.size() if self.pixmap is not None else QtCore.QSize(0, 0)
+        return QtCore.QRect(self.physical_top_left, size)
+
+    def _global_physical_cursor(self):
+        """Cursor position in contiguous physical virtual-desktop pixels.
+
+        Delegates to ``dpi.cursor_physical_pos`` — see that helper for why the
+        physical (Win32 ``GetCursorPos``) read is required: in *logical* space
+        a shorter high-DPR neighbour leaves a "dead zone" that makes
+        ``screenAt`` return ``None`` and a ``primaryScreen`` fallback snap the
+        selection box back.  Physical space has no such gap.
+        """
+        pos = cursor_physical_pos()
+        if pos is None:
+            pos = self.physical_top_left
+        return pos
+
+    def _clamp_to_physical_desktop(self, phys_pos: QtCore.QPoint) -> QtCore.QPoint:
+        """Clamp a physical virtual-desktop point to the combined physical bounds of all screens."""
+        if not (self.session and self.session.wins):
+            return phys_pos
+        geom = QtCore.QRect()
+        for win in self.session.wins:
+            try:
+                geom = geom.united(win.physical_rect())
+            except Exception:
+                pass
+        if geom.isNull():
+            return phys_pos
+        return QtCore.QPoint(
+            max(geom.left(), min(phys_pos.x(), geom.right())),
+            max(geom.top(), min(phys_pos.y(), geom.bottom())),
+        )
+
     def mousePressEvent(self, event):
         """Mouse press: record start point or close window."""
         if event.button() == QtCore.Qt.MouseButton.RightButton:
             self.close()
         elif event.button() == QtCore.Qt.MouseButton.LeftButton:
-            self.start_pos = self._clamp_to_bounds(event.position().toPoint())
-            self.curr_pos = self.start_pos
+            if hasattr(self, 'session') and self.session and self.session.wins:
+                phys = self._global_physical_cursor()
+                if phys is None:
+                    phys = self.physical_top_left
+                clamped = self._clamp_to_physical_desktop(phys)
+                self.session.global_start_pos = clamped
+                self.session.global_curr_pos = clamped
+                self.session.update_all_windows()
+            else:
+                local_pos = event.position().toPoint()
+                self.start_pos = self._clamp_to_bounds(local_pos)
+                self.curr_pos = self.start_pos
 
     def mouseMoveEvent(self, event):
         """Mouse move: update selection and trigger repaint."""
-        if self.start_pos:
-            self.curr_pos = self._clamp_to_bounds(event.position().toPoint())
-            self.update()
+        if hasattr(self, 'session') and self.session and self.session.wins:
+            if self.session.global_start_pos:
+                phys = self._global_physical_cursor()
+                if phys is None:
+                    phys = self.physical_top_left
+                self.session.global_curr_pos = self._clamp_to_physical_desktop(phys)
+                self.session.update_all_windows()
+        else:
+            if self.start_pos:
+                local_pos = event.position().toPoint()
+                self.curr_pos = self._clamp_to_bounds(local_pos)
+                self.update()
 
     def mouseReleaseEvent(self, event):
         """Mouse release: choose region capture or fullscreen capture based on drag distance."""
-        if event.button() == QtCore.Qt.MouseButton.LeftButton and self.start_pos:
-            # Guard: pixmap may have been cleared if the window is already closing.
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
             if self.pixmap is None:
-                self.start_pos = self.curr_pos = None
+                if not (hasattr(self, 'session') and self.session):
+                    self.start_pos = self.curr_pos = None
                 return
 
-            self.curr_pos = self._clamp_to_bounds(event.position().toPoint())
-            rect = QtCore.QRect(self.start_pos, self.curr_pos).normalized()
-            captured = None
-            logical_size = None
+            if hasattr(self, 'session') and self.session and self.session.wins:
+                if not self.session.global_start_pos:
+                    return
 
-            # If movement is too small, treat it as click -> capture the
-            # monitor under the cursor (not the whole virtual desktop). Crop
-            # the current screen's region out of the composite rather than
-            # re-grabbing, so the result matches the frozen overlay exactly.
-            copy_to_clipboard = get_copy_image_to_clipboard()
-            if (self.curr_pos - self.start_pos).manhattanLength() <= self.click_threshold:
-                ratio = self.pixmap.devicePixelRatio()
-                cur_screen = (
-                    QtWidgets.QApplication.screenAt(event.globalPosition().toPoint())
-                    or QtWidgets.QApplication.primaryScreen()
-                )
-                if cur_screen is not None:
-                    sg = cur_screen.geometry()
-                    # screen.geometry() is in virtual-desktop (global) coords;
-                    # translate to widget-local to match the composite layout.
-                    origin = self.geometry().topLeft()
-                    local = QtCore.QRect(sg.topLeft() - origin, sg.size())
-                    physical = logical_to_physical_rect(local, dpr=ratio)
-                    full = self.pixmap.copy(physical)
-                else:
+                global_start = self.session.global_start_pos
+                phys = self._global_physical_cursor()
+                if phys is None:
+                    phys = self.physical_top_left
+                global_curr = self._clamp_to_physical_desktop(phys)
+
+                # Check drag threshold (click_threshold is logical px; the
+                # selection is physical, so scale by this screen's DPR).
+                copy_to_clipboard = get_copy_image_to_clipboard()
+                threshold = self.click_threshold * (self.dpr or 1.0)
+                if (global_curr - global_start).manhattanLength() <= threshold:
+                    # Capture full screen under cursor
                     full = self.pixmap.copy()
-                full.setDevicePixelRatio(ratio)
-                if copy_to_clipboard:
-                    self._set_clipboard_pixmap(full, "fullscreen")
-                captured = full
-                logical_size = (
-                    cur_screen.geometry().size() if cur_screen is not None
-                    else self.rect().size()
-                )
+                    full.setDevicePixelRatio(self.pixmap.devicePixelRatio())
+                    if copy_to_clipboard:
+                        self._set_clipboard_pixmap(full, "fullscreen")
+                    captured = full
+                    logical_size = self.rect().size()
+                else:
+                    global_rect = QtCore.QRect(global_start, global_curr).normalized()
+                    captured, logical_size = self.session.crop_global_rect(global_rect)
+                    if captured is not None and copy_to_clipboard:
+                        self._set_clipboard_pixmap(captured, "region")
+
+                if captured is not None:
+                    self._notify_captured(captured, logical_size)
+                    if copy_to_clipboard:
+                        self._show_copied_toast(event.globalPosition().toPoint())
+
+                self.session.global_start_pos = None
+                self.session.global_curr_pos = None
+                self.session._close_all_windows()
             else:
-                # Region capture: convert logical coordinates to physical pixels.
-                ratio = self.pixmap.devicePixelRatio()
-                physical = logical_to_physical_rect(rect, dpr=ratio)
-                final = self.pixmap.copy(physical)
-                final.setDevicePixelRatio(ratio)
-                
-                if copy_to_clipboard:
-                    self._set_clipboard_pixmap(final, "region")
-                captured = final
-                logical_size = rect.size()
+                if not self.start_pos:
+                    return
+                local_pos = event.position().toPoint()
+                self.curr_pos = self._clamp_to_bounds(local_pos)
+                rect = QtCore.QRect(self.start_pos, self.curr_pos).normalized()
+                captured = None
+                logical_size = None
 
-            if captured is not None:
-                self._notify_captured(captured, logical_size)
-                if copy_to_clipboard:
-                    self._show_copied_toast(event.globalPosition().toPoint())
+                copy_to_clipboard = get_copy_image_to_clipboard()
+                if (self.curr_pos - self.start_pos).manhattanLength() <= self.click_threshold:
+                    full = self.pixmap.copy()
+                    full.setDevicePixelRatio(self.pixmap.devicePixelRatio())
+                    if copy_to_clipboard:
+                        self._set_clipboard_pixmap(full, "fullscreen")
+                    captured = full
+                    logical_size = self.rect().size()
+                else:
+                    ratio = self.pixmap.devicePixelRatio()
+                    physical = logical_to_physical_rect(rect, dpr=ratio)
+                    final = self.pixmap.copy(physical)
+                    final.setDevicePixelRatio(ratio)
+                    if copy_to_clipboard:
+                        self._set_clipboard_pixmap(final, "region")
+                    captured = final
+                    logical_size = rect.size()
 
-            self.start_pos = self.curr_pos = None
-            self.close()
+                if captured is not None:
+                    self._notify_captured(captured, logical_size)
+                    if copy_to_clipboard:
+                        self._show_copied_toast(event.globalPosition().toPoint())
+
+                self.start_pos = self.curr_pos = None
+                self.close()
 
     def keyPressEvent(self, event):
         """Keyboard handling: Esc exits capture mode."""
@@ -538,5 +692,12 @@ class CaptureWindow(QtWidgets.QWidget):
     def closeEvent(self, event):
         """Immediately release raw background screenshot reference on close."""
         self.pixmap = None
+        if hasattr(self, 'on_closed') and self.on_closed:
+            cb = self.on_closed
+            self.on_closed = None
+            try:
+                cb()
+            except Exception:
+                pass
         super().closeEvent(event)
 

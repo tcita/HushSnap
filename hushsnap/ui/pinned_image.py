@@ -8,7 +8,7 @@ import time
 
 from .styles import MODERN_MENU_STYLE
 from .toast import show_toast
-from ..dpi import current_dpr, logical_to_physical_size, physical_to_logical_size
+from ..dpi import current_dpr, cursor_screen, logical_to_physical_size, physical_to_logical_size
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +30,7 @@ class PinnedImageWindow(QtWidgets.QWidget):
         #    monitor the user is working on, not always the primary.
         screen = (
             screen
-            or QtWidgets.QApplication.screenAt(QtGui.QCursor.pos())
-            or QtWidgets.QApplication.primaryScreen()
+            or cursor_screen()
         )
         dpr = screen.devicePixelRatio() if screen else current_dpr()
 
@@ -352,8 +351,7 @@ class PinnedImageManager(QtCore.QObject):
             # then the primary screen.
             screen = (
                 (QtWidgets.QApplication.screenAt(morph_pos) if morph_pos is not None else None)
-                or QtWidgets.QApplication.screenAt(QtGui.QCursor.pos())
-                or QtWidgets.QApplication.primaryScreen()
+                or cursor_screen()
             )
             win = PinnedImageWindow(pil_image, logical_size=logical_size, screen=screen)
             avail = screen.availableGeometry()
