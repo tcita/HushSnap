@@ -3,6 +3,7 @@ from PyQt6 import QtCore
 from .capture_window import CaptureWindow
 from .signal_bridge import SignalBridge
 from .logging_config import get_logger
+from .dpi import cursor_screen
 
 logger = get_logger(__name__)
 
@@ -89,6 +90,21 @@ class CaptureSession(QtCore.QObject):
             except Exception:
                 import traceback
                 QtCore.qWarning(f"Failed to create CaptureWindow for screen: {traceback.format_exc()}")
+
+        # Designate the cursor's screen as the "primary" overlay: it is the
+        # only window that claims the foreground (so keyboard Esc lands on the
+        # screen the user is interacting with). Sibling overlays stay
+        # topmost-only — see claim_foreground — which keeps the N windows from
+        # fighting each other for focus.
+        primary_screen = cursor_screen()
+        for win in self.wins:
+            bound = getattr(win, "_bound_screen", None)
+            is_sibling = primary_screen is not None and bound is not None and bound is not primary_screen
+            try:
+                win._is_sibling_overlay = bool(is_sibling)
+            except Exception:
+                logger.debug("launch_capture_window: sibling flag set failed", exc_info=True)
+                win._is_sibling_overlay = False
 
         for win in self.wins:
             win.show()

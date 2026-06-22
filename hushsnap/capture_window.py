@@ -36,6 +36,218 @@ logger = get_logger(__name__)
 FLOAT_UP_PX = 20
 FLOAT_DURATION_MS = 600
 
+# ── Window-foreground strategy (ShareX-style, with fallback) ────────────────
+#
+# The capture overlay must reach the foreground so keyboard input (Esc) and
+# the frozen background land on the right window. ShareX — a mature, battle-
+# tested tool — handles this for its region-capture overlay with nothing more
+# than ``TopMost=true`` + ``Activate()`` + ``BringToFront()`` on the Shown
+# event, relying on the WM_HOTKEY foreground privilege the hotkey thread
+# receives. We mirror that as the *primary* path: it is what works in the
+# common case, costs no P/Invoke, and does not disturb other windows.
+#
+# Where HushSnap diverges from ShareX is the multi-window, mixed-DPR reality:
+# each monitor gets its own overlay window (Qt's logical coords are
+# discontinuous across mixed-DPR monitors, so one spanning window would
+# mis-map), and a fullscreen app can strip topmost. For those cases we keep
+# the previous escalation (WM_CANCELMODE + SetWindowPos TOPMOST +
+# SetForegroundWindow, verified, then AttachThreadInput if still denied) as a
+# *fallback* invoked only when the light path fails verification — so the
+# heavy, side-effecting AttachThreadInput runs far less often, and windows no
+# longer fight each other for the foreground (only the cursor's screen, the
+# "primary" overlay, ever claims foreground; siblings stay topmost-only).
+#
+# Failure is detected by *verification*, not by API return values:
+# ``SetForegroundWindow``'s BOOL is documented as unreliable, so every path
+# checks ``GetForegroundWindow() == hwnd`` afterwards. The verification is
+# delayed one event-loop tick because ``activateWindow()`` is asynchronous —
+# checking immediately would yield false negatives and over-trigger fallback.
+
+# Delay before verifying whether the light foreground claim took effect.
+# activateWindow()/SetForegroundWindow are asynchronous; too small a delay
+# produces false-negative verifications (and thus needless fallback runs),
+# too large makes the overlay slow to take focus. Tuned conservatively.
+_ACTIVATE_VERIFY_DELAY_MS = 80
+
+
+def _declare_win32_topmost_signatures():
+    """Set strict ctypes signatures once per process to avoid 64-bit handle
+    truncation. Idempotent — safe to call from every entry point."""
+    if sys.platform != "win32":
+        return
+    user32 = ctypes.windll.user32
+    user32.GetForegroundWindow.restype = wintypes.HWND
+    user32.IsHungAppWindow.argtypes = [wintypes.HWND]
+    user32.IsHungAppWindow.restype = wintypes.BOOL
+    user32.SendMessageTimeoutW.argtypes = [
+        wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM,
+        wintypes.UINT, wintypes.UINT, ctypes.POINTER(wintypes.DWORD),
+    ]
+    user32.SendMessageTimeoutW.restype = wintypes.LPARAM
+    user32.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
+    user32.AttachThreadInput.restype = wintypes.BOOL
+    user32.SetWindowPos.argtypes = [
+        wintypes.HWND, wintypes.HWND,
+        ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.UINT,
+    ]
+    user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+    user32.SetActiveWindow.argtypes = [wintypes.HWND]
+    user32.SetFocus.argtypes = [wintypes.HWND]
+
+
+def _is_foreground(hwnd) -> bool:
+    """True iff *hwnd* is currently the desktop's foreground window."""
+    if sys.platform != "win32" or not hwnd:
+        return False
+    try:
+        return ctypes.windll.user32.GetForegroundWindow() == hwnd
+    except Exception:
+        return False
+
+
+def _force_topmost_hard(hwnd, old_fg_hwnd):
+    """Escalation fallback: force *hwnd* to the foreground.
+
+    Mirrors the previously-verified 3-stage routine (WM_CANCELMODE to the
+    old foreground → TOPMOST + SetForegroundWindow → AttachThreadInput if
+    still denied), gated on the old window not being hung. Returns True if
+    *hwnd* ended up foreground.
+    """
+    if sys.platform != "win32" or not hwnd:
+        return False
+    _declare_win32_topmost_signatures()
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+
+    try:
+        # Cancel the old foreground's modal state so it releases focus.
+        # WM_CANCELMODE=0x1F, SMTO_ABORTIFHUNG=0x2, 200ms timeout.
+        if old_fg_hwnd and old_fg_hwnd != hwnd:
+            unused = wintypes.DWORD()
+            user32.SendMessageTimeoutW(
+                old_fg_hwnd, 0x001F, 0, 0, 0x0002, 200, ctypes.byref(unused)
+            )
+
+        # SWP_SHOWWINDOW=0x40, SWP_NOMOVE=0x2, SWP_NOSIZE=0x1; HWND_TOPMOST=-1.
+        user32.ShowWindow(hwnd, 5)
+        user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0043)
+        user32.SetForegroundWindow(hwnd)
+        user32.SetActiveWindow(hwnd)
+        user32.SetFocus(hwnd)
+        if _is_foreground(hwnd):
+            return True
+
+        if not old_fg_hwnd:
+            return False
+        # Don't block attaching to a hung window.
+        if user32.IsHungAppWindow(old_fg_hwnd):
+            logger.warning(
+                f"topmost_warn | old foreground {old_fg_hwnd} is HUNG; "
+                f"skipping AttachThreadInput"
+            )
+            return False
+
+        curr_tid = kernel32.GetCurrentThreadId()
+        fg_tid = user32.GetWindowThreadProcessId(old_fg_hwnd, None)
+        if not fg_tid or fg_tid == curr_tid:
+            return _is_foreground(hwnd)
+
+        attached = False
+        try:
+            attached = bool(user32.AttachThreadInput(curr_tid, fg_tid, True))
+        except Exception as e:
+            logger.debug(f"topmost_warn | AttachThreadInput failed: {e}")
+
+        try:
+            if attached:
+                user32.SetForegroundWindow(hwnd)
+                user32.SetActiveWindow(hwnd)
+                user32.SetFocus(hwnd)
+        finally:
+            if attached:
+                user32.AttachThreadInput(curr_tid, fg_tid, False)
+        return _is_foreground(hwnd)
+    except Exception:
+        logger.error(f"topmost_err | {traceback.format_exc().strip()}")
+        return False
+
+
+def claim_foreground(widget, *, primary: bool = True):
+    """Bring *widget* to the foreground, ShareX-style, with a fallback.
+
+    This is the single entry point for the capture overlay's focus/topmost
+    strategy. It runs in two roles:
+
+    - ``primary=True`` (the cursor's screen — the one the user interacts
+      with): claim the *foreground* so keyboard input lands here. Tries the
+      light ShareX path (``raise_`` + ``activateWindow``) first; if
+      verification after a short async delay shows it did not take, escalates
+      to the Win32 hard path (``_force_topmost_hard``).
+    - ``primary=False`` (sibling overlays on other monitors): stay *topmost*
+      only — ``raise_`` so the frozen background stays above other windows,
+      but do NOT claim the foreground. This is what stops the N overlay
+      windows from fighting each other for focus: only one window (the
+      cursor's) ever claims foreground, the rest just stay visible on top.
+
+    The light path mirrors ShareX's ``ForceActivate`` (Activate +
+    BringToFront on the shown window, with TopMost already set via the
+    WindowStaysOnTopHint flag at construction). The hard fallback preserves
+    the previous, separately-verified escalation for the cases ShareX does
+    not face (fullscreen apps stripping topmost, mixed-DPR multi-window
+    z-order contention).
+    """
+    # Light path — always applied, both roles. raise_() keeps the window
+    # above siblings and other apps; activateWindow() claims foreground
+    # (ignored by the OS for non-primary windows effectively, since only one
+    # foreground exists — but harmless).
+    try:
+        widget.raise_()
+        if primary:
+            widget.activateWindow()
+    except Exception:
+        logger.debug("claim_foreground: light raise/activate failed", exc_info=True)
+
+    # Non-Windows or sibling overlay: light path is all we do. Topmost is
+    # already guaranteed by the WindowStaysOnTopHint flag set at construction;
+    # siblings deliberately do not escalate to the hard path.
+    if sys.platform != "win32" or not primary:
+        return
+
+    hwnd = get_hwnd_value(widget.winId()) if widget.winId() else None
+    if not hwnd:
+        return
+
+    # Capture the current foreground *before* the light claim so the hard
+    # path can WM_CANCELMODE it if needed. Verify asynchronously —
+    # activateWindow() takes effect on the next event-loop iteration.
+    old_fg = None
+    try:
+        old_fg = ctypes.windll.user32.GetForegroundWindow()
+    except Exception:
+        pass
+
+    def _verify_and_escalate():
+        if _is_foreground(hwnd):
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("topmost_audit | light path succeeded")
+            return
+        # Light path failed (e.g. fullscreen app holds foreground). Escalate.
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("topmost_audit | light path failed, escalating")
+        if _force_topmost_hard(hwnd, old_fg):
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("topmost_audit | hard fallback succeeded")
+        else:
+            logger.warning(
+                "topmost_warn | foreground claim failed after escalation; "
+                "overlay may not receive keyboard input (Esc)"
+            )
+
+    QtCore.QTimer.singleShot(_ACTIVATE_VERIFY_DELAY_MS, _verify_and_escalate)
+
+
+
+
 
 class CopiedToast(QtWidgets.QWidget):
     """A tiny, sleek floating notification that appears at the cursor position."""
@@ -150,6 +362,11 @@ class CaptureWindow(QtWidgets.QWidget):
         self.on_captured = on_captured
         self.on_closed = on_closed
         self.session = None
+        # The QScreen this overlay was bound to. Compared by CaptureSession to
+        # decide which overlay is "primary" (the cursor's screen — the only one
+        # that claims foreground). Stored separately because QWidget.screen()
+        # is a method, not the bound screen attribute.
+        self._bound_screen = screen
 
         # Configure window attributes: tool style, frameless, initially topmost.
         self.setWindowFlags(
@@ -238,107 +455,24 @@ class CaptureWindow(QtWidgets.QWidget):
             logger.debug(f"topmost_audit_err | {traceback.format_exc().strip()}")
 
     def showEvent(self, event):
-        """Window show event: asynchronously apply Win32 focus/topmost logic and arm safety auto-close."""
+        """Window show event: claim foreground/topmost and arm safety auto-close."""
         super().showEvent(event)
-        # Defer topmost/focus logic to async queue so window handle is fully ready.
-        QtCore.QTimer.singleShot(0, self._force_win_topmost)
+        # Defer so the native window handle is fully ready, then claim focus
+        # via the ShareX-style light path (with hard fallback for the primary
+        # overlay). Sibling overlays pass primary=False so they stay topmost
+        # without fighting the cursor's screen for the foreground.
+        is_primary = not getattr(self, "_is_sibling_overlay", False)
+        QtCore.QTimer.singleShot(0, lambda: claim_foreground(self, primary=is_primary))
 
         # Auto-close after 25s so overlay is removed even if app gets stuck.
         QtCore.QTimer.singleShot(25000, self.close)
-        
+
         # In debug logging, run a delayed single-threaded audit.
         if logger.isEnabledFor(logging.DEBUG):
             QtCore.QTimer.singleShot(
                 DEBUG_TOPMOST_DELAY_MS,
                 lambda: self._debug_topmost_state(f"post_show_{DEBUG_TOPMOST_DELAY_MS}ms"),
             )
-
-    def _force_win_topmost(self):
-        """
-        Progressive topmost escalation:
-        1. Soft topmost (HWND_TOPMOST) + focus transfer attempt.
-        2. Verify focus state.
-        3. Responsiveness check: only attach threads (AttachThreadInput) if target isn't hung.
-        """
-        if sys.platform != "win32": return
-        try:
-            user32 = ctypes.windll.user32
-            kernel32 = ctypes.windll.kernel32
-            
-            # --- Declare strict API signatures to avoid handle truncation on 64-bit systems ---
-            user32.GetForegroundWindow.restype = wintypes.HWND
-            user32.IsHungAppWindow.argtypes = [wintypes.HWND]
-            user32.IsHungAppWindow.restype = wintypes.BOOL
-            
-            # SendMessageTimeoutW: send WM_CANCELMODE to foreground window with 200ms timeout
-            # to avoid deadlock (WM_CANCELMODE=0x1F, SMTO_ABORTIFHUNG=0x2).
-            user32.SendMessageTimeoutW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM, wintypes.UINT, wintypes.UINT, ctypes.POINTER(wintypes.DWORD)]
-            user32.SendMessageTimeoutW.restype = wintypes.LPARAM
-            
-            user32.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
-            user32.AttachThreadInput.restype = wintypes.BOOL
-            
-            user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.UINT]
-            user32.SetForegroundWindow.argtypes = [wintypes.HWND]
-            user32.SetActiveWindow.argtypes = [wintypes.HWND]
-            user32.SetFocus.argtypes = [wintypes.HWND]
-            
-            hwnd = get_hwnd_value(self.winId())
-            if not hwnd: return
-            
-            # --- Stage 1: soft preemption (non-intrusive) ---
-            fg_hwnd = user32.GetForegroundWindow()
-            # Note: compare HWND values directly when using ctypes.
-            if fg_hwnd and fg_hwnd != hwnd:
-                unused_res = wintypes.DWORD()
-                user32.SendMessageTimeoutW(fg_hwnd, 0x001F, 0, 0, 0x0002, 200, ctypes.byref(unused_res))
-            
-            # Base visual topmost (HWND_TOPMOST = -1, SW_SHOW = 5)
-            # SWP_SHOWWINDOW=0x40, SWP_NOMOVE=0x2, SWP_NOSIZE=0x1
-            user32.ShowWindow(hwnd, 5)
-            user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0043)
-            user32.SetForegroundWindow(hwnd)
-            user32.SetActiveWindow(hwnd)
-            user32.SetFocus(hwnd)
-
-            # --- Stage 2: foreground verification and health check ---
-            if user32.GetForegroundWindow() == hwnd:
-                if logger.isEnabledFor(logging.DEBUG):
-                    self._debug_topmost_state("force_complete_soft")
-                return
-
-            if not fg_hwnd: return
-            
-            # Check whether previous foreground window is hung to avoid blocking after attach.
-            if user32.IsHungAppWindow(fg_hwnd):
-                logger.warning(f"topmost_warn | Target window {fg_hwnd} is HUNG. Skipping AttachThreadInput.")
-                return
-
-            # --- Stage 3: intrusive forced attach (fallback) ---
-            curr_tid = kernel32.GetCurrentThreadId()
-            fg_tid = user32.GetWindowThreadProcessId(fg_hwnd, None)
-            
-            attached = False
-            if fg_tid and fg_tid != curr_tid:
-                try:
-                    attached = bool(user32.AttachThreadInput(curr_tid, fg_tid, True))
-                except Exception as e:
-                    logger.debug(f"topmost_warn | AttachThreadInput failed: {e}")
-
-            try:
-                if attached:
-                    user32.SetForegroundWindow(hwnd)
-                    user32.SetActiveWindow(hwnd)
-                    user32.SetFocus(hwnd)
-            finally:
-                if attached:
-                    # Detach threads.
-                    user32.AttachThreadInput(curr_tid, fg_tid, False)
-
-            if logger.isEnabledFor(logging.DEBUG):
-                self._debug_topmost_state("force_complete_hard")
-        except Exception:
-            logger.error(f"topmost_err | {traceback.format_exc().strip()}")
 
     def _set_clipboard_pixmap(self, pixmap, scene):
         """Write generated image into system clipboard."""
