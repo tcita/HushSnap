@@ -472,7 +472,23 @@ class CaptureWindow(QtWidgets.QWidget):
         is_primary = not getattr(self, "_is_sibling_overlay", False)
         QtCore.QTimer.singleShot(0, lambda: claim_foreground(self, primary=is_primary))
 
-        # Auto-close after 25s so overlay is removed even if app gets stuck.
+        # Safety auto-close: the overlay is a fullscreen topmost window that
+        # covers the whole monitor. If something goes wrong (a crash in the
+        # capture logic, a foreground/z-order conflict, a hung state) the
+        # overlay could stay up with no way for the user to dismiss it —
+        # short of killing the process. This timer guarantees that no matter
+        # what, the overlay is gone within 25s and the desktop is usable
+        # again. Each overlay window arms its own timer; any one of them
+        # firing calls close → closeEvent → on_closed → _close_all_windows,
+        # so in multi-monitor mode the N timers are mutually redundant
+        # backstops. 25s is long enough that a slow deliberate cross-screen
+        # drag is not interrupted, while still bounding the worst-case
+        # "stuck overlay" to a tolerable wait. Do not shorten without
+        # considering slow drags; do not remove — this is the only recovery
+        # path short of the user force-killing HushSnap. (It cannot, however,
+        # save the case where the Qt event loop itself is deadlocked, since
+        # QTimer depends on the loop; that would need a native watchdog
+        # thread, which is out of scope.)
         QtCore.QTimer.singleShot(25000, self.close)
 
         # In debug logging, run a delayed single-threaded audit.

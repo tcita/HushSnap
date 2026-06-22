@@ -77,6 +77,16 @@ class OcrService:
             )
 
     def recognize_async(self, request: OcrRequest, done_callback):
+        # Intentional single-slot overwrite, NOT a queue. A later request
+        # replaces any pending one, and the worker (below) only delivers a
+        # result when its ``seq`` still equals ``self._seq`` — i.e. it is the
+        # newest. Superseded requests run to completion but their callbacks
+        # are silently dropped by the seq check. This is deliberate: the OCR
+        # popup has a single text box, so only the most recent capture's
+        # result should ever be shown; a queued FIFO would let an old, slow
+        # result clobber a newer one. It also bounds work when a user
+        # rapidly re-captures and re-OCRs — at most one in-flight inference
+        # plus one pending, never an unbounded backlog.
         with self._lock:
             self._seq += 1
             self._pending = (request, done_callback, self._seq)
