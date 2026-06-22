@@ -33,6 +33,29 @@ portions.
   highlighter, eraser, mosaic, text, pan, undo/redo, zoom) and interaction
   patterns were referenced from Pinta, an open-source raster graphics editor.
 
+## ShareX (GPL-3.0)
+
+- Project: [ShareX](https://github.com/ShareX/ShareX)
+- Copyright: © 2007-2026 ShareX Team
+- License: GNU General Public License v3.0
+- Usage in HushSnap: The cross-monitor screen-capture behavior (whole
+  virtual-desktop canvas, frameless overlay spanning all monitors, click
+  captures the monitor under the cursor) was modeled on ShareX's
+  `Screenshot` / `CaptureHelpers` virtual-screen approach. ShareX's source
+  was consulted as a design reference during development; no ShareX source
+  code is bundled with or distributed by HushSnap. The corresponding
+  HushSnap implementation is independently written in Python/Qt and lives
+  in `hushsnap/dpi.py` (`grab_full_screen`) and
+  `hushsnap/capture_window.py` (`CaptureWindow`).
+
+### Compliance Note
+
+ShareX is licensed under the GPL-3.0. HushSnap itself is distributed under
+the GPL-3.0 (see `LICENSE.md`), which is compatible. If any ShareX source
+code is ever copied or adapted into HushSnap in the future, retain the
+original ShareX copyright notice and GPL-3.0 license text together with
+those portions.
+
 ## PP-OCR Models (Apache 2.0)
 
 - Project: [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)

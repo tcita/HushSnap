@@ -27,11 +27,23 @@ The engine has been tested on standard screen captures (web, apps, UIs) within H
 
 The OCR workflow and product ideas in this project were inspired by the
 [Text-Grab](https://github.com/TheJoeFin/Text-Grab) project, which is licensed
-under the MIT License.
+under the MIT License. The image editor's toolset design was referenced from
+[Pinta](https://github.com/PintaProject/Pinta) (MIT), and the cross-monitor
+screen-capture behavior was modeled on [ShareX](https://github.com/ShareX/ShareX)
+(GPL-3.0) — see `THIRD_PARTY_NOTICES.md` for details.
 
-HushSnap is distributed under **Apache 2.0**. This project-level license
-applies to HushSnap's original code and assets. Third-party projects keep their
-own licenses; see `THIRD_PARTY_NOTICES.md` for attribution details.
+## License
+
+HushSnap is distributed under the **GNU General Public License v3.0**
+([LICENSE.md](LICENSE.md)).
+
+This license is required in part by the free (GPL) edition of PyQt6, which
+HushSnap depends on: the GPL edition of PyQt6 obligates any application built
+on it to be distributed under a GPL-compatible license. Third-party
+dependencies keep their own licenses (Apache 2.0, MIT, BSD); see
+`THIRD_PARTY_NOTICES.md` for attribution details.
+
+Copyright © 2026 HushSnap.
 
 ## Development & Debugging
 

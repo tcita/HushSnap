@@ -57,7 +57,10 @@ def physical_to_logical_size(
 def grab_full_screen() -> QtGui.QPixmap | None:
     """Grab the **entire virtual desktop** (all monitors) as one composite pixmap.
 
-    Each screen is captured at its native resolution and composited onto a
+    Modeled on ShareX's approach (``CaptureHelpers.GetScreenBounds`` =
+    ``SystemInformation.VirtualScreen`` captures the whole virtual desktop in
+    one shot). Qt exposes no single-call whole-desktop grab, so each screen is
+    captured at its native resolution and composited onto a
     single canvas laid out in virtual-desktop logical space, scaled into
     physical pixels by the **highest DPR** among the screens. Using the max
     DPR (rather than the primary's) means lower-DPR monitors are at worst

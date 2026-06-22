@@ -161,6 +161,8 @@ class CaptureWindow(QtWidgets.QWidget):
         # DPR for physical pixels). Frameless + StaysOnTop over the full
         # virtual geometry covers the taskbar on every monitor, so WindowFullScreen
         # (which some platforms clamp to a single screen) is not used.
+        # Model: ShareX's RegionCaptureForm (Bounds = GetScreenBounds() =
+        # VirtualScreen, ClientArea 0-based over the whole desktop).
         primary = QtWidgets.QApplication.primaryScreen()
         virtual = primary.virtualGeometry() if primary else None
         if virtual is None or virtual.isNull():
