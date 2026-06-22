@@ -1083,12 +1083,9 @@ class ImageEditorWindow(QtWidgets.QWidget):
             painter.drawPixmap(0, 0, self._annotations_pixmap)
             painter.end()
             merged = _qpixmap_to_pil(pm)
-            merged.load()  # _qpixmap_to_pil returns a lazy Image.open() result
-            # _qpixmap_to_pil goes through PNG, which drops the alpha channel
-            # for fully-opaque images (returns RGB). Force RGBA so _pil_image
-            # keeps a consistent mode across the session and undo byte-compares.
-            if merged.mode != "RGBA":
-                merged = merged.convert("RGBA")
+            # _qpixmap_to_pil returns RGBA unconditionally (raw RGBA8888 copy),
+            # so _pil_image keeps a consistent mode across the session and undo
+            # byte-compares — no PNG alpha-drop to correct for.
             self._pil_image = merged
             self._annotations_pixmap.fill(QtCore.Qt.GlobalColor.transparent)
 

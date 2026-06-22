@@ -1,6 +1,5 @@
 import logging
 import os
-import io
 from PIL import Image
 from PyQt6 import QtCore, QtGui, QtWidgets, QtSvg
 from .constants import TEXT_OUTLINE_WIDTH, TEXT_OUTLINE_COLOR, TEXT_FILL_COLOR
@@ -121,8 +120,33 @@ def _pil_to_qpixmap(pil_img: Image.Image) -> QtGui.QPixmap:
     return QtGui.QPixmap.fromImage(qimage)
 
 def _qpixmap_to_pil(pixmap: QtGui.QPixmap) -> Image.Image:
-    """Convert QPixmap to PIL Image via PNG buffer."""
-    buffer = QtCore.QBuffer()
-    buffer.open(QtCore.QBuffer.OpenModeFlag.ReadWrite)
-    pixmap.save(buffer, "PNG")
-    return Image.open(io.BytesIO(buffer.data().data()))
+    """Convert a QPixmap to a PIL Image via a direct memory copy.
+
+    A PNG round-trip (``pixmap.save(buf, "PNG")`` then ``Image.open``) would
+    do the same job — but only after ~70ms–1.7s of pure-CPU compress/decompress
+    that scales with both resolution and image entropy (see thumbnail.py's
+    ``qpixmap_to_pil`` for the full rationale). A raw ARGB→RGBA8888 convert +
+    ``constBits()`` copy produces byte-identical pixels in constant time.
+
+    Stride safety: ``QImage.bytesPerLine`` may exceed ``width*4`` when the
+    scanlines are aligned, so we copy line-by-line instead of assuming a
+    contiguous buffer.
+    """
+    if pixmap.isNull():
+        return Image.new("RGBA", (0, 0))
+
+    img = pixmap.toImage().convertToFormat(QtGui.QImage.Format.Format_RGBA8888)
+    w = img.width()
+    h = img.height()
+    bpl = img.bytesPerLine()
+    ptr = img.constBits()
+    ptr.setsize(h * bpl)
+    raw = bytes(ptr)
+
+    if bpl == w * 4:
+        data = raw
+    else:
+        # Strip per-line padding so PIL gets a tight RGBA buffer.
+        data = b"".join(raw[y * bpl:(y * bpl) + w * 4] for y in range(h))
+
+    return Image.frombytes("RGBA", (w, h), data)
