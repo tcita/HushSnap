@@ -5,6 +5,7 @@ from PIL import Image
 from PyQt6 import QtCore, QtGui, QtWidgets
 from .base import BaseTool
 from ..models import UndoChangeType
+from ..utils import _load_editor_icon
 
 logger = logging.getLogger(__name__)
 
@@ -804,8 +805,9 @@ class RotateTool(BaseTool):
 class ResizeTool(BaseTool):
     """Drag a corner handle to resize the image, mirroring the pinned-image feel.
 
-    Aspect ratio is locked by default; hold Shift to resize freely. The opposite
-    corner stays anchored so the grab point tracks the cursor.
+    Aspect ratio is locked by default; a floating chain toggle (bottom-centre,
+    next to Apply/Cancel) unlocks it. The opposite corner stays anchored so the
+    grab point tracks the cursor.
     """
 
     _CORNERS = {
@@ -821,21 +823,30 @@ class ResizeTool(BaseTool):
         self._target = QtCore.QSizeF(0, 0)   # current preview size (image px)
         self._anchor_img = QtCore.QPointF()  # anchored opposite corner (image px)
         self._pan_start = QtCore.QPoint()    # global pos at pan start
+        # Aspect-ratio lock state. True (default) preserves the original
+        # width:height; False lets the corner drag freely. Toggled by the
+        # floating chain button, not a modifier key, so the state is visible.
+        self.aspect_locked = True
         # Floating Apply/Cancel buttons (shared with RotateTool).
         self._action_cancel: Optional[QtWidgets.QPushButton] = None
         self._action_apply: Optional[QtWidgets.QPushButton] = None
+        # Floating aspect-lock toggle (chain icon), Resize-only.
+        self._aspect_btn: Optional[QtWidgets.QToolButton] = None
 
     def tool_id(self) -> str:
         return "resize"
 
     def on_activate(self) -> None:
         self._dragging = None
+        self.aspect_locked = True
         self._editor._begin_resize_session()
         _create_action_buttons(self, self.apply_resize, self.cancel_resize)
+        self._create_aspect_button()
         self._editor._canvas.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
 
     def on_deactivate(self) -> None:
         _destroy_action_buttons(self)
+        self._destroy_aspect_button()
         self._editor._end_resize_session()
 
     def apply_resize(self) -> None:
@@ -851,6 +862,72 @@ class ResizeTool(BaseTool):
             QtCore.Qt.KeyboardModifier.NoModifier,
         )
         self.on_key_press(self._editor._canvas, ke)
+
+    # ── Floating aspect-ratio lock toggle (chain icon) ──────────────────────
+
+    _ASPECT_BTN_STYLE = """
+        QToolButton {
+            background: rgba(40,40,40,200);
+            border: 1px solid rgba(255,255,255,20);
+            border-radius: 11px;
+            padding: 2px;
+            color: #888;
+        }
+        QToolButton:checked {
+            background: rgba(95,201,138,200);
+            border: 1px solid rgba(255,255,255,40);
+            color: #ffffff;
+        }
+        QToolButton:hover { border-color: rgba(255,255,255,45); }
+    """
+
+    def _create_aspect_button(self) -> None:
+        parent = self._editor._scroll_area.viewport()
+        self._aspect_btn = QtWidgets.QToolButton(parent)
+        self._aspect_btn.setCheckable(True)
+        self._aspect_btn.setChecked(self.aspect_locked)
+        self._aspect_btn.setIcon(_load_editor_icon("chain"))
+        self._aspect_btn.setIconSize(QtCore.QSize(16, 16))
+        self._aspect_btn.setFixedSize(30, 30)
+        self._aspect_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self._aspect_btn.setStyleSheet(self._ASPECT_BTN_STYLE)
+        self._aspect_btn.setToolTip(self._editor._tr("editor_resize_lock"))
+        self._aspect_btn.clicked.connect(self._on_aspect_toggled)
+        self._position_aspect_button()
+
+    def _destroy_aspect_button(self) -> None:
+        if self._aspect_btn:
+            self._aspect_btn.deleteLater()
+        self._aspect_btn = None
+
+    def _on_aspect_toggled(self, checked: bool) -> None:
+        self.aspect_locked = checked
+        # Keep the button's checked state authoritative (it already is); this
+        # also future-proofs against programmatic flips of aspect_locked.
+        self._aspect_btn.setChecked(self.aspect_locked)
+
+    def _position_aspect_button(self) -> None:
+        """Pin the chain toggle to the left of the Apply/Cancel cluster."""
+        if not self._aspect_btn:
+            return
+        vp = self._editor._scroll_area.viewport()
+        vw, vh = vp.width(), vp.height()
+        apply_btn = getattr(self, "_action_apply", None)
+        if apply_btn:
+            # Sit just left of the Cancel/Apply cluster, sharing their baseline.
+            apply_btn.adjustSize()
+            h = apply_btn.height()
+            gap = 8
+            btn_w = self._aspect_btn.width()
+            # Cluster is centred; place the toggle `gap` left of the cluster's
+            # left edge (the Cancel button).
+            cancel_btn = getattr(self, "_action_cancel", None)
+            cluster_left = cancel_btn.x() if cancel_btn else int((vw - btn_w) / 2)
+            self._aspect_btn.move(cluster_left - btn_w - gap, vh - h - 16)
+        else:
+            self._aspect_btn.move(16, vh - 30 - 16)
+        self._aspect_btn.show()
+        self._aspect_btn.raise_()
 
     def _corner_screen(self, rect: QtCore.QRectF, name: str) -> QtCore.QPointF:
         sx, sy = self._CORNERS[name]
@@ -917,7 +994,7 @@ class ResizeTool(BaseTool):
             return True
 
         sx, sy = self._CORNERS[self._dragging]
-        free = bool(event.modifiers() & QtCore.Qt.KeyboardModifier.ShiftModifier)
+        free = not self.aspect_locked
         mouse_img = _widget_to_image_f(self._editor, canvas, event.position())
         ax, ay = self._anchor_img.x(), self._anchor_img.y()
         vx, vy = mouse_img.x() - ax, mouse_img.y() - ay
@@ -1022,3 +1099,5 @@ class ResizeTool(BaseTool):
 
         # Keep the floating Apply/Cancel buttons pinned to the viewport.
         _position_action_buttons(self)
+        # And the aspect-lock toggle left of them.
+        self._position_aspect_button()

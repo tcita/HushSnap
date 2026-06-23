@@ -173,7 +173,7 @@ UI_TEXT = {
         "editor_resize_width": "Width",
         "editor_resize_height": "Height",
         "editor_resize_lock": "Lock aspect ratio",
-        "editor_resize_instruction": "Drag a corner to resize; Shift unlocks aspect ratio, Enter confirms, Esc cancels",
+        "editor_resize_instruction": "Drag a corner to resize; Enter confirms, Esc cancels",
 
         "editor_saved": "✓ Image saved",
         "editor_copied": "✓ Copied to clipboard",
@@ -347,7 +347,7 @@ UI_TEXT = {
         "editor_resize_width": "宽度",
         "editor_resize_height": "高度",
         "editor_resize_lock": "锁定比例",
-        "editor_resize_instruction": "拖动角点缩放；Shift 解锁比例，Enter 确认，Esc 取消",
+        "editor_resize_instruction": "拖动角点缩放；Enter 确认，Esc 取消",
 
         "editor_saved": "✓ 已保存",
         "editor_copied": "✓ 已复制到剪贴板",
@@ -520,7 +520,7 @@ UI_TEXT = {
         "editor_resize_width": "寬度",
         "editor_resize_height": "高度",
         "editor_resize_lock": "鎖定比例",
-        "editor_resize_instruction": "拖曳角點縮放；Shift 解鎖比例，Enter 確認，Esc 取消",
+        "editor_resize_instruction": "拖曳角點縮放；Enter 確認，Esc 取消",
 
         "editor_saved": "✓ 已儲存",
         "editor_copied": "✓ 已複製到剪貼簿",
@@ -692,7 +692,7 @@ UI_TEXT = {
         "editor_resize_width": "幅",
         "editor_resize_height": "高さ",
         "editor_resize_lock": "縦横比を固定",
-        "editor_resize_instruction": "角をドラッグしてリサイズ。Shift で縦横比の固定を解除、Enter で確定、Esc でキャンセル",
+        "editor_resize_instruction": "角をドラッグしてリサイズ。Enter で確定、Esc でキャンセル",
 
         "editor_saved": "✓ 保存しました",
         "editor_copied": "✓ クリップボードにコピーしました",
