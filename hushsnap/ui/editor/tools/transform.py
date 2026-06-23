@@ -365,7 +365,9 @@ class CropTool(BaseTool):
 
         corner_sz = 11
         edge_sz = 9
-        painter.setPen(QtGui.QPen(QtGui.QColor("#5FC98A"), 2.0))
+        # White fill + dark stroke so handles read on any background (matches
+        # ResizeTool): dark outline on light screenshots, white fill on dark.
+        painter.setPen(QtGui.QPen(QtGui.QColor("#1a1a1a"), 2.0))
         painter.setBrush(QtGui.QBrush(QtGui.QColor("#ffffff")))
         for name, fn in self._HANDLES.items():
             hx, hy = fn(r)
@@ -1026,7 +1028,11 @@ class ResizeTool(BaseTool):
 
         for name in self._HANDLES:
             c = self._handle_screen(rect, name)
-            painter.setPen(QtGui.QPen(QtGui.QColor("#5FC98A"), 1.6))
+            # White fill + dark stroke: the dark outline reads on light
+            # backgrounds (documents, chat), the white fill reads on dark
+            # ones — together visible on any screenshot. Thicker than the
+            # old 1.6px green so it survives a shrink.
+            painter.setPen(QtGui.QPen(QtGui.QColor("#1a1a1a"), 2.0))
             painter.setBrush(QtGui.QBrush(QtGui.QColor("#ffffff")))
             painter.drawRect(QtCore.QRectF(c.x() - _HANDLE_R / 2,
                                            c.y() - _HANDLE_R / 2,
