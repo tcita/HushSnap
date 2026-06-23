@@ -65,7 +65,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
     ):
         super().__init__(parent)
         self._tr = translate_fn
-        self._original_pil = pil_image.copy()
         self._pil_image = pil_image.copy()
 
         # Resolve the target screen (multi-monitor aware). The cursor-screen
@@ -273,17 +272,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._redo_btn.clicked.connect(self._redo)
         self._redo_btn.setEnabled(False)
         layout.addWidget(self._redo_btn)
-
-        _add_sep()
-
-        self._reset_btn = QtWidgets.QPushButton()
-        self._reset_btn.setToolTip(self._tr("editor_reset"))
-        self._reset_btn.setIcon(_load_editor_icon("reset", QtGui.QColor("#ff5050")))
-        self._reset_btn.setIconSize(QtCore.QSize(20, 20))
-        self._reset_btn.setFixedSize(32, 28)
-        self._reset_btn.setStyleSheet(EDITOR_PUSH_BUTTON_STYLE)
-        self._reset_btn.clicked.connect(self._reset_image)
-        layout.addWidget(self._reset_btn)
 
         _add_sep()
 
@@ -637,20 +625,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
         # (edge/corner detection in mousePressEvent/mouseMoveEvent) — no
         # dedicated corner grip needed.
         return bar
-
-    def _reset_image(self) -> None:
-        if not self._modified and not self._text_items and (
-            not self._annotations_pixmap or self._annotations_pixmap.isNull()
-        ):
-            return
-            
-        self._save_undo(UndoChangeType.FULL)
-        self._pil_image = self._original_pil.copy()
-        self._clear_annotations()
-        self._rebuild_display()
-        self._resize_canvas()
-        self._center_image_on_canvas()
-        self._modified = True
 
     # ── Tools ─────────────────────────────────────────────────────────────
 
@@ -1658,7 +1632,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._rotate_cumulative_angle = 0.0
         self._resize_base_image = None
         self._pil_image = None
-        self._original_pil = None
         if self._tools:
             self._tools.clear()
         gc.collect()

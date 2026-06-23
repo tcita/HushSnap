@@ -142,7 +142,6 @@ UI_TEXT = {
 
         "editor_undo": "Undo",
         "editor_redo": "Redo",
-        "editor_reset": "Discard all edits",
         "editor_save": "Save",
         "editor_save_as": "Save As...",
 
@@ -317,7 +316,6 @@ UI_TEXT = {
         "editor_undo": "撤销",
 
         "editor_redo": "重做",
-        "editor_reset": "丢弃所有编辑",
         "editor_save": "保存",
         "editor_save_as": "另存为...",
 
@@ -491,7 +489,6 @@ UI_TEXT = {
         "editor_undo": "撤销",
 
         "editor_redo": "重做",
-        "editor_reset": "丟棄所有編輯",
         "editor_save": "儲存",
         "editor_save_as": "另存為...",
 
@@ -664,7 +661,6 @@ UI_TEXT = {
 
         "editor_undo": "元に戻す",
         "editor_redo": "やり直し",
-        "editor_reset": "すべて破棄",
         "editor_save": "保存",
         "editor_save_as": "名前を付けて保存...",
 
