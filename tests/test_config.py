@@ -217,3 +217,40 @@ def test_config_migration_does_not_overwrite_existing_keys(tmp_path):
     data = tomllib.loads(config_path.read_text(encoding="utf-8"))
     assert data["copy_image_to_clipboard"] is False  # user's choice
 
+
+# ── Editor window size persistence ─────────────────────────────────────
+
+
+def test_editor_window_size_roundtrip(tmp_path):
+    """set/get editor window size persists w/h to the state file."""
+    from hushsnap.config import get_editor_window_size, set_editor_window_size
+    state_path = tmp_path / "hushsnap_state.toml"
+    assert get_editor_window_size(state_path) is None  # nothing yet
+
+    set_editor_window_size(1100, 720, state_path)
+    assert get_editor_window_size(state_path) == {"w": 1100, "h": 720}
+
+
+def test_editor_window_size_preserves_other_state(tmp_path):
+    """Writing editor size must not drop OCR/onboarding state fields."""
+    from hushsnap.config import (
+        set_editor_window_size,
+        get_ocr_font_size,
+        update_ocr_font_size,
+        get_editor_window_size,
+    )
+    state_path = tmp_path / "hushsnap_state.toml"
+    update_ocr_font_size(24, state_path)
+    set_editor_window_size(800, 600, state_path)
+
+    assert get_ocr_font_size(state_path) == 24
+    assert get_editor_window_size(state_path) == {"w": 800, "h": 600}
+
+
+def test_editor_window_size_rejects_too_small(tmp_path):
+    """A size smaller than the minimum is treated as not stored."""
+    from hushsnap.config import set_editor_window_size, get_editor_window_size
+    state_path = tmp_path / "hushsnap_state.toml"
+    set_editor_window_size(100, 100, state_path)
+    assert get_editor_window_size(state_path) is None
+

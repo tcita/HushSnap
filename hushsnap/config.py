@@ -711,11 +711,46 @@ def set_onboarding_toast_shown(state_path=None):
         logger.error(f"Failed to update onboarding_toast_shown in state: {e}")
 
 
-# ── Editor window geometry persistence ─────────────────────────────────
-# Removed: the editor no longer remembers its window geometry. It opens at
-# a fixed proportion of the cursor screen, centred, every time (see
-# show_image_editor). The remember/restore machinery kept regressing
-# (config-vs-state path bug) and offered little for a short task.
+# ── Editor window size persistence ─────────────────────────────────────
+# Only the window SIZE is remembered (the user's preferred editor size),
+# never its position — the editor always opens centred on the cursor's
+# screen. Position memory was dropped because it kept regressing (the
+# config-vs-state path bug) and offered little for a short task. Size is
+# screen-independent, so it has none of position's straddle-screen problems.
+
+
+def get_editor_window_size(state_path=None):
+    """Read the last image-editor window size from state.
+
+    Returns a dict {w, h} or None when nothing valid is stored.
+    """
+    if state_path is None:
+        state_path = STATE_PATH
+    _ensure_default_state_exists(state_path)
+    state_data = _load_state_data(state_path)
+    geo = state_data.get("editor_window_geometry")
+    if not isinstance(geo, dict):
+        return None
+    try:
+        w, h = int(geo["w"]), int(geo["h"])
+        if w >= 320 and h >= 240:
+            return {"w": w, "h": h}
+    except (KeyError, TypeError, ValueError):
+        pass
+    return None
+
+
+def set_editor_window_size(w, h, state_path=None):
+    """Persist the image-editor window size to state (position is not stored)."""
+    if state_path is None:
+        state_path = STATE_PATH
+    _ensure_default_state_exists(state_path)
+    try:
+        state_data = _load_state_data(state_path)
+        state_data["editor_window_geometry"] = {"w": int(w), "h": int(h)}
+        _write_state_data(state_data, state_path)
+    except Exception as e:
+        logger.error(f"Failed to update editor window size in state: {e}")
 
 
 def load_hotkey_setting():

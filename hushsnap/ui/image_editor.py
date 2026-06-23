@@ -14,7 +14,7 @@ from typing import Optional, Callable
 from PIL import Image
 from PyQt6 import QtCore, QtGui, QtWidgets
 
-from ..config import get_config_path
+from ..config import get_config_path, get_state_path, get_editor_window_size, set_editor_window_size
 from ..dpi import current_dpr, cursor_screen
 
 # Modularized imports
@@ -48,14 +48,8 @@ logger = logging.getLogger(__name__)
 # canvas (~250 px); narrower than this and the tool buttons crowd together.
 _EDITOR_MIN_W, _EDITOR_MIN_H = 640, 520
 _EDITOR_DEFAULT_W, _EDITOR_DEFAULT_H = 960, 700
-# Chrome overhead added on top of the image when sizing the window to a
-# screenshot: vertical covers title bar + two toolbar rows + status bar;
-# horizontal is just side padding. Used to fit the window to the image
-# rather than always taking 80% of the screen (which left big margins on
-# small screenshots).
-_EDITOR_CHROME_W, _EDITOR_CHROME_H = 40, 168
-# Fraction of the cursor screen's available area the window will never
-# exceed — large screenshots shrink-to-fit below this cap.
+# Fraction of the cursor screen's available area used as the size fallback
+# (no remembered size yet) and as the upper clamp on a remembered size.
 _EDITOR_SCREEN_FRAC = 0.8
 
 
@@ -1608,6 +1602,14 @@ class ImageEditorWindow(QtWidgets.QWidget):
             self._canvas.update()
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        # Persist the window SIZE (not position) so the next editor opens at
+        # the user's preferred footprint. Position is never remembered — see
+        # show_image_editor.
+        try:
+            g = self.geometry()
+            set_editor_window_size(g.width(), g.height(), get_state_path())
+        except Exception:
+            logger.exception("Failed to persist editor window size")
         self._cleanup_resources()
         event.accept()
         super().closeEvent(event)
@@ -1645,14 +1647,14 @@ def show_image_editor(
 ) -> ImageEditorWindow:
     """Create and show the image editor window for the given PIL image.
 
-    No geometry is remembered: the window is sized to the screenshot plus
-    chrome, clamped to [minimum, 80% of the cursor screen's available area],
-    and centred on that screen. Small screenshots get a tight window; large
-    ones cap at the screen fraction and _fit_to_viewport shrinks the image
-    into the canvas. This drops the whole remember/restore/straddle-screen
-    machinery — position memory kept regressing (see the config-vs-state
-    path bug) and offered little for a short screenshot-annotation task
-    where the cursor already says which screen to use.
+    The window SIZE is remembered across sessions (the user's preferred
+    editor footprint); position is not — the window always opens centred on
+    the cursor's screen. With no remembered size it falls back to 80% of
+    that screen's available area. The screenshot itself is fit into the
+    canvas by _fit_to_viewport regardless of window size. Position memory
+    was dropped because it kept regressing (the config-vs-state path bug)
+    and offered little for a short task where the cursor already picks the
+    screen; size is screen-independent so it has none of those problems.
     """
     win = ImageEditorWindow(pil_image, translate_fn)
     win.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
@@ -1660,15 +1662,20 @@ def show_image_editor(
     target = win._target_screen or QtWidgets.QApplication.primaryScreen()
 
     avail = target.availableGeometry()
-    # Size the window to the screenshot plus chrome, then clamp to
-    # [minimum, 80% of available area]. Small screenshots get a tight window
-    # (little margin); large ones cap at the screen fraction and the image is
-    # fit-to-canvas by _fit_to_viewport instead.
-    img_w, img_h = pil_image.size
+    # Size: reuse the user's last editor size (clamped to this screen) if
+    # one is remembered; otherwise fall back to 80% of the available area.
+    # The screenshot is fit into the canvas by _fit_to_viewport regardless,
+    # so the window size is about the user's preferred editor footprint, not
+    # about matching the image.
+    remembered = get_editor_window_size(get_state_path())
     max_w = int(avail.width() * _EDITOR_SCREEN_FRAC)
     max_h = int(avail.height() * _EDITOR_SCREEN_FRAC)
-    w = max(_EDITOR_MIN_W, min(img_w + _EDITOR_CHROME_W, max_w))
-    h = max(_EDITOR_MIN_H, min(img_h + _EDITOR_CHROME_H, max_h))
+    if remembered is not None:
+        w = max(_EDITOR_MIN_W, min(remembered["w"], max_w))
+        h = max(_EDITOR_MIN_H, min(remembered["h"], max_h))
+    else:
+        w = max(_EDITOR_MIN_W, max_w)
+        h = max(_EDITOR_MIN_H, max_h)
     x = avail.x() + (avail.width() - w) // 2
     y = avail.y() + (avail.height() - h) // 2
 
