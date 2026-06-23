@@ -506,28 +506,48 @@ _ROT_ZERO_SNAP = 4.0  # snap back to 0 within this many degrees (PS-style)
 
 # Shared styling for the floating Apply/Cancel buttons used by the rotate and
 # resize tools (mirrors CropTool's action buttons).
+# Cancel is a subdued underlined text link — the escape hatch, deliberately
+# de-emphasised so it doesn't compete with Apply for the user's attention.
 _BTN_STYLE_CANCEL = """
     QPushButton {
-        background: rgba(40,40,40,200);
-        border: 1px solid rgba(255,255,255,20);
+        background: transparent;
+        border: none;
+        color: #999;
+        font-size: 12px;
+        text-decoration: underline;
+        padding: 4px 14px;
+    }
+    QPushButton:hover { color: #ccc; }
+    QPushButton:pressed { color: #777; }
+"""
+# Revert uses red outline + red text so the risk ("this discards in-session
+# edits") is signalled before the click, not just after — no memory required.
+_BTN_STYLE_REVERT = """
+    QPushButton {
+        background: transparent;
+        border: 1px solid #E05555;
         border-radius: 11px;
         padding: 4px 14px;
-        color: #ccc;
+        color: #E05555;
         font-size: 12px;
     }
     QPushButton:hover {
-        background: rgba(60,60,60,220);
-        border-color: rgba(255,255,255,35);
-        color: #fff;
+        background: rgba(224, 85, 85, 25);
+        border-color: #F06666;
+        color: #F06666;
     }
     QPushButton:pressed {
-        background: rgba(28,28,28,235);
-        border-color: rgba(255,255,255,20);
+        background: rgba(224, 85, 85, 40);
+        border-color: #CC4444;
+        color: #CC4444;
     }
 """
+# Apply green deepened by one shade (#4AB87A) from the brand #5FC98A —
+# improves contrast for accessibility while giving the primary action
+# more visual weight.
 _BTN_STYLE_APPLY = """
     QPushButton {
-        background: #5FC98A;
+        background: #4AB87A;
         border: none;
         border-radius: 11px;
         padding: 4px 16px;
@@ -535,8 +555,8 @@ _BTN_STYLE_APPLY = """
         font-size: 12px;
         font-weight: 600;
     }
-    QPushButton:hover { background: #6fd99d; }
-    QPushButton:pressed { background: #4ab87a; }
+    QPushButton:hover { background: #5FC98A; }
+    QPushButton:pressed { background: #3DA86B; }
 """
 
 
@@ -565,7 +585,7 @@ def _create_action_buttons(tool, apply_slot, cancel_slot, reset_slot=None) -> No
     if reset_slot is not None:
         tool._action_reset = QtWidgets.QPushButton(t("editor_transform_revert"), parent)
         tool._action_reset.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-        tool._action_reset.setStyleSheet(_BTN_STYLE_CANCEL)
+        tool._action_reset.setStyleSheet(_BTN_STYLE_REVERT)
         tool._action_reset.setToolTip(t("editor_transform_revert_tip"))
         tool._action_reset.clicked.connect(reset_slot)
     else:
@@ -588,12 +608,14 @@ def _destroy_action_buttons(tool) -> None:
 def _position_action_buttons(tool) -> None:
     """Pin the action buttons to the bottom of the visible viewport.
 
-    Layout expresses the action hierarchy by spacing, not just order:
-      - Cancel + Apply sit together, centred — they are the session-ending
-        actions (exit the transform).
-      - Reset sits alone at the left, separated by a wide gap — it is an
-        in-session action (revert to start, stay in the tool), visually
-        distinct from the exit pair so users don't read the three as peers.
+    Layout expresses the action hierarchy through placement conventions:
+      - Cancel | Apply are right-aligned (16 px margin) — they follow the
+        platform dialog pattern where confirm / dismiss live in the
+        bottom-right corner.  Right-alignment works regardless of whether
+        Revert is present (CropTool has no Revert; Rotate / Resize do).
+      - Revert sits alone at the left margin — it is an in-session action
+        (revert to start, stay in the tool), visually isolated from the
+        session-ending pair so users never read them as peers.
     """
     if not getattr(tool, "_action_apply", None) or not getattr(tool, "_action_cancel", None):
         return
@@ -608,12 +630,13 @@ def _position_action_buttons(tool) -> None:
         b.setFixedHeight(shared_h)
     bottom_y = vh - shared_h - 16
 
-    # Centred exit pair: Cancel | Apply, tight gap.
+    # Right-aligned exit pair: Cancel | Apply, tight gap.
+    margin = 16
     pair_gap = 8
     cancel_w = tool._action_cancel.sizeHint().width()
     apply_w = tool._action_apply.sizeHint().width()
     pair_w = cancel_w + apply_w + pair_gap
-    pair_left = int((vw - pair_w) / 2)
+    pair_left = vw - pair_w - margin
     tool._action_cancel.move(pair_left, bottom_y)
     tool._action_apply.move(pair_left + cancel_w + pair_gap, bottom_y)
     tool._action_cancel.show()
@@ -621,9 +644,9 @@ def _position_action_buttons(tool) -> None:
     tool._action_cancel.raise_()
     tool._action_apply.raise_()
 
-    # Reset on its own at the left margin — separated from the exit pair.
+    # Revert on its own at the left margin — separated from the exit pair.
     if tool._action_reset is not None:
-        tool._action_reset.move(16, bottom_y)
+        tool._action_reset.move(margin, bottom_y)
         tool._action_reset.show()
         tool._action_reset.raise_()
 
