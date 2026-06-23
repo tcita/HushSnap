@@ -14,7 +14,7 @@ from typing import Optional, Callable
 from PIL import Image
 from PyQt6 import QtCore, QtGui, QtWidgets
 
-from ..config import get_config_path, get_editor_window_geometry, set_editor_window_geometry
+from ..config import get_config_path, get_state_path, get_editor_window_geometry, set_editor_window_geometry
 from ..dpi import current_dpr, cursor_screen
 
 # Modularized imports
@@ -1604,7 +1604,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
         try:
             g = self.geometry()
             set_editor_window_geometry(g.x(), g.y(), g.width(), g.height(),
-                                       get_config_path())
+                                       get_state_path())
         except Exception:
             logger.exception("Failed to persist editor window geometry")
         self._cleanup_resources()
@@ -1655,7 +1655,7 @@ def show_image_editor(
     win._resolve_target_screen()
     target = win._target_screen
 
-    remembered = get_editor_window_geometry(get_config_path())
+    remembered = get_editor_window_geometry(get_state_path())
 
     if target is not None:
         avail = target.availableGeometry()
