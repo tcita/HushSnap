@@ -321,13 +321,14 @@ class ImageEditorWindow(QtWidgets.QWidget):
 
         # Page 5: Text options
         page_text = self._make_options_page(["font", "font_size"], "text")
-        # Prepend an instruction label so the double-click-to-create behaviour
-        # is discoverable.
+        # Append an instruction label on the right so the double-click-to-create
+        # behaviour is discoverable without crowding the font/size controls left.
         tlayout = page_text.layout()
         if tlayout:
             tinst = QtWidgets.QLabel(self._tr("editor_text_instruction"))
             tinst.setStyleSheet("color: #aaa; font-size: 11px; background: transparent;")
-            tlayout.insertWidget(0, tinst)
+            tlayout.addStretch()
+            tlayout.addWidget(tinst)
         self._options_stack.addWidget(page_text)
 
         # Page 6: Pan tool

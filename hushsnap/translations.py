@@ -159,7 +159,7 @@ UI_TEXT = {
         "editor_crop_confirm": "Crop",
         "editor_crop_cancel": "Cancel",
         "editor_apply": "Apply",
-        "editor_text_instruction": "Double-click to place text, drag to move, double-click to edit",
+        "editor_text_instruction": "Double-click to add or edit text",
 
         "tool_rotate": "Rotate",
         "editor_rotate_title": "Rotate Image",
@@ -333,7 +333,7 @@ UI_TEXT = {
         "editor_crop_confirm": "裁剪",
         "editor_crop_cancel": "取消",
         "editor_apply": "应用",
-        "editor_text_instruction": "双击放置文字，拖拽移动，双击编辑",
+        "editor_text_instruction": "双击添加或编辑文字",
 
         "tool_rotate": "旋转",
         "editor_rotate_title": "旋转图像",
@@ -506,7 +506,7 @@ UI_TEXT = {
         "editor_crop_confirm": "裁剪",
         "editor_crop_cancel": "取消",
         "editor_apply": "套用",
-        "editor_text_instruction": "雙擊放置文字，拖曳移動，雙擊編輯",
+        "editor_text_instruction": "雙擊新增或編輯文字",
 
         "tool_rotate": "旋轉",
         "editor_rotate_title": "旋轉影像",
@@ -678,7 +678,7 @@ UI_TEXT = {
         "editor_crop_confirm": "クロップ",
         "editor_crop_cancel": "キャンセル",
         "editor_apply": "適用",
-        "editor_text_instruction": "ダブルクリックで配置、ドラッグで移動、ダブルクリックで編集",
+        "editor_text_instruction": "ダブルクリックで追加・編集",
 
         "tool_rotate": "回転",
         "editor_rotate_title": "画像を回転",
