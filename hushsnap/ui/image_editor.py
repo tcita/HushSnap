@@ -14,7 +14,7 @@ from typing import Optional, Callable
 from PIL import Image
 from PyQt6 import QtCore, QtGui, QtWidgets
 
-from ..config import get_config_path, get_state_path, get_editor_window_geometry, set_editor_window_geometry
+from ..config import get_config_path
 from ..dpi import current_dpr, cursor_screen
 
 # Modularized imports
@@ -1599,14 +1599,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
             self._canvas.update()
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
-        # Persist the window geometry so the next editor opens at the same
-        # size/position (when on the same screen — see show_image_editor).
-        try:
-            g = self.geometry()
-            set_editor_window_geometry(g.x(), g.y(), g.width(), g.height(),
-                                       get_state_path())
-        except Exception:
-            logger.exception("Failed to persist editor window geometry")
         self._cleanup_resources()
         event.accept()
         super().closeEvent(event)
@@ -1644,48 +1636,35 @@ def show_image_editor(
 ) -> ImageEditorWindow:
     """Create and show the image editor window for the given PIL image.
 
-    Opens on the screen under the cursor. Geometry (size + position) is
-    restored from the last session when the stored window lies on the
-    cursor's screen; otherwise the remembered size is reused but the
-    window is centered on the current screen (the standard multi-monitor
-    editor behavior — never pop a window onto a screen the user isn't on).
+    No geometry is remembered: the window opens at a fixed proportion of the
+    cursor screen's available area, centred on that screen. The screenshot
+    itself is then fit into the canvas by _fit_to_viewport (large images
+    shrink to fit, small ones show at 1:1). This drops the whole
+    remember/restore/straddle-screen machinery — position memory kept
+    regressing (see the config-vs-state path bug) and offered little for a
+    short screenshot-annotation task where the cursor already says which
+    screen to use.
     """
     win = ImageEditorWindow(pil_image, translate_fn)
     win.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
     win._resolve_target_screen()
-    target = win._target_screen
+    target = win._target_screen or QtWidgets.QApplication.primaryScreen()
 
-    remembered = get_editor_window_geometry(get_state_path())
+    avail = target.availableGeometry()
+    # ~80% of the available area, floored at the minimum and capped at full.
+    w = max(_EDITOR_MIN_W, min(int(avail.width() * 0.8), avail.width()))
+    h = max(_EDITOR_MIN_H, min(int(avail.height() * 0.8), avail.height()))
+    x = avail.x() + (avail.width() - w) // 2
+    y = avail.y() + (avail.height() - h) // 2
 
-    if target is not None:
-        avail = target.availableGeometry()
-        if remembered is not None and avail.contains(
-            QtCore.QPoint(remembered["x"], remembered["y"])
-        ):
-            # Last session's window is on the cursor's screen → full restore,
-            # but still respect the minimum size and the screen's available area
-            # (a stale entry could be smaller than the current minimum or poke
-            # past the right/bottom edge on a since-shrunk display).
-            w = max(_EDITOR_MIN_W, min(remembered["w"], avail.width()))
-            h = max(_EDITOR_MIN_H, min(remembered["h"], avail.height()))
-            x = min(remembered["x"], avail.x() + avail.width() - w)
-            y = min(remembered["y"], avail.y() + avail.height() - h)
-        else:
-            # Reuse remembered size (clamped to this screen), center here.
-            w = max(_EDITOR_MIN_W, min(
-                remembered["w"] if remembered else _EDITOR_DEFAULT_W, avail.width()))
-            h = max(_EDITOR_MIN_H, min(
-                remembered["h"] if remembered else _EDITOR_DEFAULT_H, avail.height()))
-            x = avail.x() + (avail.width() - w) // 2
-            y = avail.y() + (avail.height() - h) // 2
-        # Assign the target screen before show() — otherwise Windows may
-        # place the window on the primary screen instead of the cursor's.
-        _ = win.winId()
-        wh = win.windowHandle()
-        if wh is not None and target is not None:
-            wh.setScreen(target)
-        win.resize(w, h)
-        win.move(x, y)
+    # Assign the target screen before show() — otherwise Windows may place
+    # the window on the primary screen instead of the cursor's.
+    _ = win.winId()
+    wh = win.windowHandle()
+    if wh is not None:
+        wh.setScreen(target)
+    win.resize(w, h)
+    win.move(x, y)
     win.show()
     # Defer fit until the layout is settled — the viewport has zero
     # dimensions during __init__ (before show()).

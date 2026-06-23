@@ -712,46 +712,10 @@ def set_onboarding_toast_shown(state_path=None):
 
 
 # ── Editor window geometry persistence ─────────────────────────────────
-
-def get_editor_window_geometry(state_path=None):
-    """Read the last image-editor window geometry from state.
-
-    Returns a dict {x, y, w, h} or None when nothing is stored.
-    """
-    if state_path is None:
-        state_path = STATE_PATH
-    _ensure_default_state_exists(state_path)
-    state_data = _load_state_data(state_path)
-    geo = state_data.get("editor_window_geometry")
-    if not isinstance(geo, dict):
-        return None
-    try:
-        result = {
-            "x": int(geo["x"]),
-            "y": int(geo["y"]),
-            "w": int(geo["w"]),
-            "h": int(geo["h"]),
-        }
-        if result["w"] >= 320 and result["h"] >= 240:
-            return result
-    except (KeyError, TypeError, ValueError):
-        pass
-    return None
-
-
-def set_editor_window_geometry(x, y, w, h, state_path=None):
-    """Persist the image-editor window geometry to state."""
-    if state_path is None:
-        state_path = STATE_PATH
-    _ensure_default_state_exists(state_path)
-    try:
-        state_data = _load_state_data(state_path)
-        state_data["editor_window_geometry"] = {
-            "x": int(x), "y": int(y), "w": int(w), "h": int(h),
-        }
-        _write_state_data(state_data, state_path)
-    except Exception as e:
-        logger.error(f"Failed to update editor window geometry in state: {e}")
+# Removed: the editor no longer remembers its window geometry. It opens at
+# a fixed proportion of the cursor screen, centred, every time (see
+# show_image_editor). The remember/restore machinery kept regressing
+# (config-vs-state path bug) and offered little for a short task.
 
 
 def load_hotkey_setting():
