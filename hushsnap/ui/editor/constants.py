@@ -207,6 +207,42 @@ QSpinBox:hover {
 QSpinBox:focus {
     border-color: #5FC98A;
 }
+QSpinBox::up-button, QSpinBox::down-button {
+    border: none;
+    background: transparent;
+    width: 16px;
+}
+QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+    background: rgba(255, 255, 255, 18);
+}
+QSpinBox::up-button {
+    border-left: 1px solid rgba(255, 255, 255, 20);
+    border-top-right-radius: 5px;
+}
+QSpinBox::down-button {
+    border-left: 1px solid rgba(255, 255, 255, 20);
+    border-bottom-right-radius: 5px;
+}
+QSpinBox::up-arrow {
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-bottom: 5px solid #999;
+    width: 0;
+    height: 0;
+}
+QSpinBox::down-arrow {
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid #999;
+    width: 0;
+    height: 0;
+}
+QSpinBox::up-button:hover::up-arrow {
+    border-bottom-color: #5FC98A;
+}
+QSpinBox::down-button:hover::down-arrow {
+    border-top-color: #5FC98A;
+}
 """
 
 # Preset color palette: 4 columns × 4 rows

@@ -3,21 +3,6 @@ from ..constants import (
     _SWATCH_COLORS, _SWATCH_COLS, _SWATCH_SIZE, _SWATCH_PAD, _SWATCH_GAP
 )
 
-class _EditorComboBox(QtWidgets.QComboBox):
-    """QComboBox whose dropdown popup is frameless / translucent."""
-
-    def showPopup(self) -> None:
-        popup = self.view().window()
-        if popup:
-            popup.setWindowFlags(
-                QtCore.Qt.WindowType.Popup
-                | QtCore.Qt.WindowType.FramelessWindowHint,
-            )
-            popup.setAttribute(
-                QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True
-            )
-        super().showPopup()
-
 class _EditorFontComboBox(QtWidgets.QFontComboBox):
     """QFontComboBox variant with the same frameless popup treatment."""
 

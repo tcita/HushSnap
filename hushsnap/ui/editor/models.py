@@ -20,7 +20,7 @@ class TextItem:
     by design. Don't re-add a color field without revisiting that trade-off.
     """
     def __init__(self, text: str, img_pos: QtCore.QPointF,
-                 font_family: str = "Arial", font_size: int = 24):
+                 font_family: str = "Arial", font_size: int = 32):
         self.text = text
         self.img_pos = img_pos  # Image-space coordinates
         self.font_family = font_family

@@ -12,7 +12,7 @@ class TextTool(BaseTool):
         self.font_family = QtGui.QFontDatabase.systemFont(
             QtGui.QFontDatabase.SystemFont.GeneralFont
         ).family()
-        self.font_size = 24
+        self.font_size = 32
 
         self._dragging_item: Optional[TextItem] = None
         self._drag_offset = QtCore.QPointF()

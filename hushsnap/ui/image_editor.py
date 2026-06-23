@@ -36,7 +36,7 @@ from .editor.tools.navigation import PanTool
 from .editor.tools.transform import CropTool, MosaicTool, SequenceTool, RotateTool, ResizeTool
 from .editor.widgets.canvas import EditorCanvas
 from .editor.widgets.controls import (
-    _EditorComboBox, _EditorFontComboBox, _ColorButton, _SwatchPopup
+    _EditorFontComboBox, _ColorButton, _SwatchPopup
 )
 
 logger = logging.getLogger(__name__)
@@ -485,7 +485,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
                 layout.addWidget(lbl)
                 spin = QtWidgets.QSpinBox()
                 spin.setRange(1, self.MAX_FONT_SIZE)
-                spin.setValue(24)
+                spin.setValue(32)
                 spin.setSuffix(" px")
                 spin.setObjectName(f"fontSizeSpin_{tool_id}")
                 # QSpinBox natively accepts only integers in range, so letters
