@@ -490,6 +490,12 @@ class ImageEditorWindow(QtWidgets.QWidget):
                 combo.setEditable(True)
                 combo.setCurrentText("24")
                 combo.setObjectName(f"fontSizeSpin_{tool_id}")
+                # Restrict typed input to integers only — the combo is editable
+                # so users can type a custom size, but letters/symbols would
+                # just be rejected downstream by _on_font_size_text_changed,
+                # leaving them visible in the box. A QIntValidator blocks them
+                # at the keystroke instead.
+                combo.lineEdit().setValidator(QtGui.QIntValidator(1, self.MAX_FONT_SIZE))
                 combo.currentTextChanged.connect(
                     lambda t, tid=tool_id: self._on_font_size_text_changed(tid, t)
                 )
