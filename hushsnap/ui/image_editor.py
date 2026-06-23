@@ -1012,8 +1012,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
             vh * 0.90 / pm.height(),
             1.0,  # don't upscale small images
         )
-        # Effective range [0.10 … 5.0], DPR-adjusted so the user sees the
-        # same limits regardless of screen density.
+        # Effective range [0.10 … 5.0].
         self._scale = max(0.10, fit_effective) * self._dpr
         self._resize_canvas()
         self._center_image_on_canvas()
