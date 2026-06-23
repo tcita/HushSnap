@@ -135,7 +135,7 @@ class CropTool(BaseTool):
         img_w, img_h = self._editor._pil_image.size
         self._crop_rect = QtCore.QRect(0, 0, img_w, img_h)
         self._editor._canvas.setCursor(QtCore.Qt.CursorShape.OpenHandCursor)
-        _create_action_buttons(self, self.apply_crop, self.cancel_crop)
+        _create_action_buttons(self, self.apply_crop, self.cancel_crop, self.reset_crop)
         self._redraw_overlay()
         self._editor._canvas.update()
 
@@ -266,6 +266,16 @@ class CropTool(BaseTool):
         # is a no-op because cancel already cleared _transform_active.
         self._editor._cancel_transform_session()
         self._editor._activate_tool("pan")
+
+    def reset_crop(self) -> None:
+        # Revert the crop selection to the full image and stay in the tool.
+        # Crop never mutates _pil_image (apply happens on confirm), so the
+        # session-start state is simply "whole image selected".
+        img_w, img_h = self._editor._pil_image.size
+        self._crop_rect = QtCore.QRect(0, 0, img_w, img_h)
+        self._dragging = None
+        self._redraw_overlay()
+        self._editor._canvas.update()
 
     _HANDLES = {
         "tl":  lambda r: (r.left(),  r.top()),
@@ -528,11 +538,14 @@ _BTN_STYLE_APPLY = """
 """
 
 
-def _create_action_buttons(tool, apply_slot, cancel_slot) -> None:
+def _create_action_buttons(tool, apply_slot, cancel_slot, reset_slot=None) -> None:
     """Create the floating Apply/Cancel buttons parented on the scroll viewport.
 
-    Shared by RotateTool and ResizeTool. The buttons stay pinned to the
-    bottom-centre of the visible area (see _position_action_buttons).
+    Shared by CropTool, RotateTool and ResizeTool. The buttons stay pinned to
+    the bottom-centre of the visible area (see _position_action_buttons). When
+    reset_slot is given, a third "Reset" button is placed left of Cancel — it
+    reverts the in-progress transform to its session start without leaving the
+    tool (unlike Cancel, which exits to pan).
     """
     parent = tool._editor._scroll_area.viewport()
     t = tool._editor._tr
@@ -547,16 +560,27 @@ def _create_action_buttons(tool, apply_slot, cancel_slot) -> None:
     tool._action_apply.setStyleSheet(_BTN_STYLE_APPLY)
     tool._action_apply.clicked.connect(apply_slot)
 
+    if reset_slot is not None:
+        tool._action_reset = QtWidgets.QPushButton(t("editor_transform_reset"), parent)
+        tool._action_reset.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        tool._action_reset.setStyleSheet(_BTN_STYLE_CANCEL)
+        tool._action_reset.setToolTip(t("editor_transform_reset_tip"))
+        tool._action_reset.clicked.connect(reset_slot)
+    else:
+        tool._action_reset = None
+
     _position_action_buttons(tool)
 
 
 def _destroy_action_buttons(tool) -> None:
     for b in (getattr(tool, "_action_cancel", None),
-              getattr(tool, "_action_apply", None)):
+              getattr(tool, "_action_apply", None),
+              getattr(tool, "_action_reset", None)):
         if b:
             b.deleteLater()
     tool._action_cancel = None
     tool._action_apply = None
+    tool._action_reset = None
 
 
 def _position_action_buttons(tool) -> None:
@@ -565,27 +589,26 @@ def _position_action_buttons(tool) -> None:
         return
     vp = tool._editor._scroll_area.viewport()
     vw, vh = vp.width(), vp.height()
-    # Ensure both buttons have been laid out so sizeHint() is accurate, then
-    # force them to the same visual height so they sit on the same baseline.
-    tool._action_cancel.adjustSize()
-    tool._action_apply.adjustSize()
-    shared_h = max(tool._action_cancel.sizeHint().height(),
-                   tool._action_apply.sizeHint().height())
-    tool._action_cancel.setFixedHeight(shared_h)
-    tool._action_apply.setFixedHeight(shared_h)
+    # Ensure every present button has been laid out so sizeHint() is accurate,
+    # then force them to the same visual height so they share a baseline.
+    btns = [b for b in (tool._action_reset, tool._action_cancel, tool._action_apply) if b]
+    for b in btns:
+        b.adjustSize()
+    shared_h = max(b.sizeHint().height() for b in btns)
+    for b in btns:
+        b.setFixedHeight(shared_h)
     # Recompute widths after the height may have triggered a re-layout.
-    cancel_w = tool._action_cancel.sizeHint().width()
-    apply_w = tool._action_apply.sizeHint().width()
     gap = 8
-    total_w = cancel_w + apply_w + gap
+    widths = [b.sizeHint().width() for b in btns]
+    total_w = sum(widths) + gap * (len(btns) - 1)
     left = int((vw - total_w) / 2)
     bottom_y = vh - shared_h - 16
-    tool._action_cancel.move(left, bottom_y)
-    tool._action_apply.move(left + cancel_w + gap, bottom_y)
-    tool._action_cancel.show()
-    tool._action_apply.show()
-    tool._action_cancel.raise_()
-    tool._action_apply.raise_()
+    x = left
+    for b, w in zip(btns, widths):
+        b.move(x, bottom_y)
+        b.show()
+        b.raise_()
+        x += w + gap
 
 
 def _image_screen_rect(editor, canvas) -> QtCore.QRectF:
@@ -659,7 +682,7 @@ class RotateTool(BaseTool):
     def on_activate(self) -> None:
         self._angle = 0.0
         self._editor._begin_rotate_session()
-        _create_action_buttons(self, self.apply_rotation, self.cancel_rotation)
+        _create_action_buttons(self, self.apply_rotation, self.cancel_rotation, self.reset_rotation)
 
     def on_deactivate(self) -> None:
         _destroy_action_buttons(self)
@@ -680,6 +703,28 @@ class RotateTool(BaseTool):
             QtCore.Qt.KeyboardModifier.NoModifier,
         )
         self.on_key_press(self._editor._canvas, ke)
+
+    def reset_rotation(self) -> None:
+        """Revert to the session-start image and stay in the tool.
+
+        Restores _pil_image from the rotation base (the baked image captured
+        on session enter), zeroes the cumulative angle and live preview, and
+        rebuilds the display — without touching the undo stack (the session
+        entry still points at the same start state) or leaving the tool.
+        """
+        ed = self._editor
+        if ed._rotate_base_image is not None:
+            ed._pil_image = ed._rotate_base_image.copy()
+        ed._rotate_cumulative_angle = 0.0
+        self._angle = 0.0
+        # Clear the live preview (None = not rotating), matching the just-
+        # entered-tool state. The session stays active, so the undo entry and
+        # _rotate_base_image are preserved for the next drag.
+        ed._preview_angle = None
+        ed._rebuild_display()
+        ed._resize_canvas()
+        ed._center_image_on_canvas()
+        ed._canvas.update()
 
     def on_mouse_press(self, canvas, event) -> bool:
         if event.button() != QtCore.Qt.MouseButton.LeftButton:
@@ -843,7 +888,7 @@ class ResizeTool(BaseTool):
     def on_activate(self) -> None:
         self._dragging = None
         self._editor._begin_resize_session()
-        _create_action_buttons(self, self.apply_resize, self.cancel_resize)
+        _create_action_buttons(self, self.apply_resize, self.cancel_resize, self.reset_resize)
         self._editor._canvas.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
 
     def on_deactivate(self) -> None:
@@ -863,6 +908,24 @@ class ResizeTool(BaseTool):
             QtCore.Qt.KeyboardModifier.NoModifier,
         )
         self.on_key_press(self._editor._canvas, ke)
+
+    def reset_resize(self) -> None:
+        """Revert to the session-start image and stay in the tool.
+
+        Restores _pil_image from the resize base (the baked image captured on
+        session enter), drops any in-progress drag/preview, and rebuilds the
+        display — without touching the undo stack or leaving the tool.
+        """
+        ed = self._editor
+        if ed._resize_base_image is not None:
+            ed._pil_image = ed._resize_base_image.copy()
+        self._dragging = None
+        self._target = QtCore.QSizeF(0, 0)
+        ed._set_preview_pixmap(None)
+        ed._rebuild_display()
+        ed._resize_canvas()
+        ed._center_image_on_canvas()
+        ed._canvas.update()
 
     def _handle_screen(self, rect: QtCore.QRectF, name: str) -> QtCore.QPointF:
         sx, sy = self._HANDLES[name]

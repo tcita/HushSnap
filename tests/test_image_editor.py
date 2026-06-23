@@ -50,6 +50,8 @@ def _translate(key, **kwargs):
         "editor_crop_confirm": "Crop",
         "editor_crop_cancel": "Cancel",
         "editor_apply": "Apply",
+        "editor_transform_reset": "Reset",
+        "editor_transform_reset_tip": "Reset this transform",
         "editor_text_instruction": "Double-click to add or edit text",
         "editor_copy": "Copy",
         "editor_saved": "Saved",
