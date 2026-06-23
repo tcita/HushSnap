@@ -1841,6 +1841,45 @@ class TestInlineEditorFocus:
         assert item.text == ""
         widget.commit_edit()
 
+    def test_spinbox_signal_path_does_not_commit(self, editor):
+        """Changing the font size through the SpinBox's own valueChanged
+        signal (the path real UI interaction takes — arrows / wheel / typed
+        digits) must not commit the in-progress text, and must not recurse.
+
+        This guards the control swap: QSpinBox emits valueChanged both on
+        user input and on programmatic setValue, so we verify the live-edit
+        path stays non-committing and that _sync_widgets' blocked setValue
+        doesn't loop back into the handler.
+        """
+        tool, item = self._spawn(editor)
+        widget = tool._editing_widget
+        widget.setText("hello")
+        assert item.text == ""
+
+        spin = editor._option_widgets[("text", "fontSizeSpin")]
+        calls = {"n": 0}
+        orig = editor._on_font_size_changed
+
+        def counting(tid, v):
+            calls["n"] += 1
+            return orig(tid, v)
+        editor._on_font_size_changed = counting
+
+        # Drive it the way the widget does: setValue fires valueChanged,
+        # which is connected to _on_font_size_changed.
+        spin.setValue(60)
+
+        editor._on_font_size_changed = orig
+
+        # Editor survived, size adopted, text still uncommitted.
+        assert tool._editing_widget is widget
+        assert item.font_size == 60
+        assert item.text == ""
+        # No runaway recursion: the handler ran once for this change, and the
+        # blocked setValue inside _sync_widgets did not re-enter it.
+        assert calls["n"] == 1, calls
+        widget.commit_edit()
+
     def test_escape_reverts_and_commits(self, editor):
         """Escape reverts to the pre-edit text and commits (closes editor)."""
         tool, item = self._spawn(editor)
