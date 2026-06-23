@@ -258,6 +258,7 @@ class CropTool(BaseTool):
             self._editor._modified = True
         except Exception:
             logger.exception("CropTool: failed to apply crop")
+        self._editor._exiting_transform = True
         self._editor._activate_tool("pan")
 
     def cancel_crop(self) -> None:
@@ -265,6 +266,7 @@ class CropTool(BaseTool):
         # _activate_tool triggers on_deactivate, whose _commit_transform_session
         # is a no-op because cancel already cleared _transform_active.
         self._editor._cancel_transform_session()
+        self._editor._exiting_transform = True
         self._editor._activate_tool("pan")
 
     def reset_crop(self) -> None:
@@ -584,31 +586,46 @@ def _destroy_action_buttons(tool) -> None:
 
 
 def _position_action_buttons(tool) -> None:
-    """Pin the buttons to the bottom-centre of the visible viewport."""
+    """Pin the action buttons to the bottom of the visible viewport.
+
+    Layout expresses the action hierarchy by spacing, not just order:
+      - Cancel + Apply sit together, centred — they are the session-ending
+        actions (exit the transform).
+      - Reset sits alone at the left, separated by a wide gap — it is an
+        in-session action (revert to start, stay in the tool), visually
+        distinct from the exit pair so users don't read the three as peers.
+    """
     if not getattr(tool, "_action_apply", None) or not getattr(tool, "_action_cancel", None):
         return
     vp = tool._editor._scroll_area.viewport()
     vw, vh = vp.width(), vp.height()
-    # Ensure every present button has been laid out so sizeHint() is accurate,
-    # then force them to the same visual height so they share a baseline.
+    # Force every present button to the same height so they share a baseline.
     btns = [b for b in (tool._action_reset, tool._action_cancel, tool._action_apply) if b]
     for b in btns:
         b.adjustSize()
     shared_h = max(b.sizeHint().height() for b in btns)
     for b in btns:
         b.setFixedHeight(shared_h)
-    # Recompute widths after the height may have triggered a re-layout.
-    gap = 8
-    widths = [b.sizeHint().width() for b in btns]
-    total_w = sum(widths) + gap * (len(btns) - 1)
-    left = int((vw - total_w) / 2)
     bottom_y = vh - shared_h - 16
-    x = left
-    for b, w in zip(btns, widths):
-        b.move(x, bottom_y)
-        b.show()
-        b.raise_()
-        x += w + gap
+
+    # Centred exit pair: Cancel | Apply, tight gap.
+    pair_gap = 8
+    cancel_w = tool._action_cancel.sizeHint().width()
+    apply_w = tool._action_apply.sizeHint().width()
+    pair_w = cancel_w + apply_w + pair_gap
+    pair_left = int((vw - pair_w) / 2)
+    tool._action_cancel.move(pair_left, bottom_y)
+    tool._action_apply.move(pair_left + cancel_w + pair_gap, bottom_y)
+    tool._action_cancel.show()
+    tool._action_apply.show()
+    tool._action_cancel.raise_()
+    tool._action_apply.raise_()
+
+    # Reset on its own at the left margin — separated from the exit pair.
+    if tool._action_reset is not None:
+        tool._action_reset.move(16, bottom_y)
+        tool._action_reset.show()
+        tool._action_reset.raise_()
 
 
 def _image_screen_rect(editor, canvas) -> QtCore.QRectF:
@@ -692,17 +709,17 @@ class RotateTool(BaseTool):
 
     def apply_rotation(self) -> None:
         """Confirm: end the session (commits one undo entry if rotated)."""
+        self._editor._exiting_transform = True
         self._editor._activate_tool("pan")
 
     def cancel_rotation(self) -> None:
         """Abandon: restore the pre-rotation base state, no undo entry."""
-        self._editor._canvas.setFocus()
-        ke = QtGui.QKeyEvent(
-            QtCore.QEvent.Type.KeyPress,
-            QtCore.Qt.Key.Key_Escape,
-            QtCore.Qt.KeyboardModifier.NoModifier,
-        )
-        self.on_key_press(self._editor._canvas, ke)
+        ed = self._editor
+        ed._canvas.setFocus()
+        ed._set_rotation_preview(0.0)
+        ed._cancel_rotate_session()
+        ed._exiting_transform = True
+        ed._activate_tool("pan")
 
     def reset_rotation(self) -> None:
         """Revert to the session-start image and stay in the tool.
@@ -780,12 +797,8 @@ class RotateTool(BaseTool):
             self.apply_rotation()
             return True
         if event.key() == QtCore.Qt.Key.Key_Escape:
-            # Abandon: restore the pre-composite state (clean image + editable
-            # annotations + text) via the shared session cancel, no undo entry.
-            ed = self._editor
-            ed._set_rotation_preview(0.0)
-            ed._cancel_rotate_session()
-            ed._activate_tool("pan")
+            # Abandon: same path as the floating Cancel button.
+            self.cancel_rotation()
             return True
         return False
 
@@ -897,17 +910,16 @@ class ResizeTool(BaseTool):
 
     def apply_resize(self) -> None:
         """Confirm: end the session (commits one undo entry if resized)."""
+        self._editor._exiting_transform = True
         self._editor._activate_tool("pan")
 
     def cancel_resize(self) -> None:
         """Abandon: revert to the pre-resize base state, no undo entry."""
-        self._editor._canvas.setFocus()
-        ke = QtGui.QKeyEvent(
-            QtCore.QEvent.Type.KeyPress,
-            QtCore.Qt.Key.Key_Escape,
-            QtCore.Qt.KeyboardModifier.NoModifier,
-        )
-        self.on_key_press(self._editor._canvas, ke)
+        ed = self._editor
+        ed._canvas.setFocus()
+        ed._cancel_resize_session()
+        ed._exiting_transform = True
+        ed._activate_tool("pan")
 
     def reset_resize(self) -> None:
         """Revert to the session-start image and stay in the tool.
@@ -1071,9 +1083,8 @@ class ResizeTool(BaseTool):
             self.apply_resize()
             return True
         if event.key() == QtCore.Qt.Key.Key_Escape:
-            # Abandon the resize session: revert to the pre-resize base state.
-            self._editor._cancel_resize_session()
-            self._editor._activate_tool("pan")
+            # Abandon: same path as the floating Cancel button.
+            self.cancel_resize()
             return True
         return False
 

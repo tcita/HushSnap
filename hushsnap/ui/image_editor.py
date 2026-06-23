@@ -98,6 +98,9 @@ class ImageEditorWindow(QtWidgets.QWidget):
         # atomic undo unit, committed on tool deactivate. See
         # _begin/_commit/_cancel_transform_session.
         self._transform_active = False
+        # Set by Apply/Cancel right before they switch to pan, so the toolbar
+        # lock in _activate_tool lets the exit through (see _activate_tool).
+        self._exiting_transform = False
         # Tool-local resampling bases (only the active tool uses its own):
         # rotate samples from _rotate_base_image every release so repeated
         # rotations don't compound; resize does the same with _resize_base_image.
@@ -669,6 +672,22 @@ class ImageEditorWindow(QtWidgets.QWidget):
         }
 
     def _activate_tool(self, tool_id: str) -> None:
+        # Lock the toolbar during a transform session: switching to an editing
+        # tool (brush, text, …) is refused, because that would leave the
+        # session half-baked — annotations merged into pixels with no signal,
+        # the core source of user confusion. Exiting to pan is allowed (pan
+        # never edits, so a baked image is safe to view); the floating Apply /
+        # Cancel buttons and Esc are the intended exit paths and set
+        # _exiting_transform to bypass this guard entirely.
+        if (self._transform_active and not self._exiting_transform
+                and self._active_tool is not None
+                and tool_id != self._active_tool.tool_id()
+                and tool_id != "pan"):
+            # Re-check the current tool's button so the toolbar reflects that
+            # the switch was refused, not silently swallowed.
+            for tid, btn in self._tool_buttons.items():
+                btn.setChecked(tid == self._active_tool.tool_id())
+            return
         for tid, btn in self._tool_buttons.items():
             btn.setChecked(tid == tool_id)
         if tool_id not in self._tools:
@@ -693,6 +712,10 @@ class ImageEditorWindow(QtWidgets.QWidget):
         Rotate and resize sessions are atomic, commit-on-deactivate operations,
         so mid-session undo/redo are disabled (Esc abandons instead). Hiding
         the buttons communicates that: visible = usable.
+
+        During a transform the toolbar is also locked (see _activate_tool):
+        every tool button except the active transform is disabled so it reads
+        as unavailable, not silently clickable.
         """
         hide = self._transform_active
         for w in (self._undo_btn, self._redo_btn):
@@ -702,10 +725,15 @@ class ImageEditorWindow(QtWidgets.QWidget):
                 w.setEnabled(False)
             if self._redo_shift_sc is not None:
                 self._redo_shift_sc.setEnabled(False)
+            active_id = self._active_tool.tool_id() if self._active_tool else None
+            for tid, btn in self._tool_buttons.items():
+                btn.setEnabled(tid == active_id)
         else:
             # Re-sync enabled state with the actual stacks now that the
-            # buttons are visible again.
+            # buttons are visible again, and re-enable the whole toolbar.
             self._update_undo_buttons()
+            for btn in self._tool_buttons.values():
+                btn.setEnabled(True)
 
     def _effective_scale(self) -> float:
         return self._scale / self._dpr
@@ -1408,6 +1436,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
         if not self._transform_active:
             return
         self._transform_active = False
+        self._exiting_transform = False
         self._update_undo_button_visibility()
 
     def _cancel_transform_session(self) -> None:
@@ -1423,6 +1452,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
             entry = self._undo_stack.pop()
             self._apply_undo_entry(entry)
         self._transform_active = False
+        self._exiting_transform = False
         self._update_undo_button_visibility()
 
     # ── Rotation (paint-time preview) ──────────────────────────────────────
