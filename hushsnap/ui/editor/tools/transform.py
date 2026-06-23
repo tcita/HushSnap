@@ -564,10 +564,12 @@ def _create_action_buttons(tool, apply_slot, cancel_slot, reset_slot=None) -> No
     """Create the floating Apply/Cancel buttons parented on the scroll viewport.
 
     Shared by CropTool, RotateTool and ResizeTool. The buttons stay pinned to
-    the bottom-centre of the visible area (see _position_action_buttons). When
-    reset_slot is given, a third "Reset" button is placed left of Cancel — it
-    reverts the in-progress transform to its session start without leaving the
-    tool (unlike Cancel, which exits to pan).
+    the bottom of the visible area (see _position_action_buttons).
+
+    .. deprecated:: reset_slot
+        The Revert button has been removed from the UI (the feature is no
+        longer user-accessible).  The parameter is kept to avoid breaking
+        callers; the underlying reset methods are likewise deprecated.
     """
     parent = tool._editor._scroll_area.viewport()
     t = tool._editor._tr
@@ -582,14 +584,20 @@ def _create_action_buttons(tool, apply_slot, cancel_slot, reset_slot=None) -> No
     tool._action_apply.setStyleSheet(_BTN_STYLE_APPLY)
     tool._action_apply.clicked.connect(apply_slot)
 
-    if reset_slot is not None:
-        tool._action_reset = QtWidgets.QPushButton(t("editor_transform_revert"), parent)
-        tool._action_reset.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-        tool._action_reset.setStyleSheet(_BTN_STYLE_REVERT)
-        tool._action_reset.setToolTip(t("editor_transform_revert_tip"))
-        tool._action_reset.clicked.connect(reset_slot)
-    else:
-        tool._action_reset = None
+    # ── Revert button — DEPRECATED, not shown ────────────────────────
+    # The Revert feature is no longer user-accessible.  The button
+    # creation code is kept as reference; reset_slot is silently ignored.
+    # To restore the button, uncomment the block below and pass a slot.
+    # if reset_slot is not None:
+    #     tool._action_reset = QtWidgets.QPushButton(t("editor_transform_revert"), parent)
+    #     tool._action_reset.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+    #     tool._action_reset.setStyleSheet(_BTN_STYLE_REVERT)
+    #     tool._action_reset.setToolTip(t("editor_transform_revert_tip"))
+    #     tool._action_reset.clicked.connect(reset_slot)
+    # else:
+    #     tool._action_reset = None
+    tool._action_reset = None
+    # ── end deprecated block ─────────────────────────────────────────
 
     _position_action_buttons(tool)
 
@@ -608,14 +616,8 @@ def _destroy_action_buttons(tool) -> None:
 def _position_action_buttons(tool) -> None:
     """Pin the action buttons to the bottom of the visible viewport.
 
-    Layout expresses the action hierarchy through placement conventions:
-      - Cancel | Apply are right-aligned (16 px margin) — they follow the
-        platform dialog pattern where confirm / dismiss live in the
-        bottom-right corner.  Right-alignment works regardless of whether
-        Revert is present (CropTool has no Revert; Rotate / Resize do).
-      - Revert sits alone at the left margin — it is an in-session action
-        (revert to start, stay in the tool), visually isolated from the
-        session-ending pair so users never read them as peers.
+    Cancel | Apply are right-aligned (16 px margin), following the platform
+    dialog convention where confirm / dismiss live in the bottom-right corner.
     """
     if not getattr(tool, "_action_apply", None) or not getattr(tool, "_action_cancel", None):
         return
@@ -644,7 +646,9 @@ def _position_action_buttons(tool) -> None:
     tool._action_cancel.raise_()
     tool._action_apply.raise_()
 
-    # Revert on its own at the left margin — separated from the exit pair.
+    # ── Revert positioning — DEPRECATED, currently a no-op ──────────
+    # _action_reset is always None; the block is kept so restoring the
+    # button only requires uncommenting _create_action_buttons above.
     if tool._action_reset is not None:
         tool._action_reset.move(margin, bottom_y)
         tool._action_reset.show()
