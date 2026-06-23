@@ -142,7 +142,7 @@ UI_TEXT = {
 
         "editor_undo": "Undo",
         "editor_redo": "Redo",
-        "editor_reset": "Reset",
+        "editor_reset": "Discard all edits",
         "editor_save": "Save",
         "editor_save_as": "Save As...",
 
@@ -159,8 +159,8 @@ UI_TEXT = {
         "editor_crop_confirm": "Crop",
         "editor_crop_cancel": "Cancel",
         "editor_apply": "Apply",
-        "editor_transform_reset": "Reset",
-        "editor_transform_reset_tip": "Reset this transform to its start (stay in tool)",
+        "editor_transform_revert": "Revert",
+        "editor_transform_revert_tip": "Revert this transform to its start (stay in tool)",
         "editor_text_instruction": "Double-click to add or edit text",
 
         "tool_rotate": "Rotate",
@@ -317,7 +317,7 @@ UI_TEXT = {
         "editor_undo": "撤销",
 
         "editor_redo": "重做",
-        "editor_reset": "重置",
+        "editor_reset": "丢弃所有编辑",
         "editor_save": "保存",
         "editor_save_as": "另存为...",
 
@@ -334,8 +334,8 @@ UI_TEXT = {
         "editor_crop_confirm": "裁剪",
         "editor_crop_cancel": "取消",
         "editor_apply": "应用",
-        "editor_transform_reset": "重置",
-        "editor_transform_reset_tip": "重置本次变换到起点（留在当前工具）",
+        "editor_transform_revert": "还原",
+        "editor_transform_revert_tip": "还原本次变换到起点（留在当前工具）",
         "editor_text_instruction": "双击添加或编辑文字",
 
         "tool_rotate": "旋转",
@@ -491,7 +491,7 @@ UI_TEXT = {
         "editor_undo": "撤销",
 
         "editor_redo": "重做",
-        "editor_reset": "重置",
+        "editor_reset": "丟棄所有編輯",
         "editor_save": "儲存",
         "editor_save_as": "另存為...",
 
@@ -508,8 +508,8 @@ UI_TEXT = {
         "editor_crop_confirm": "裁剪",
         "editor_crop_cancel": "取消",
         "editor_apply": "套用",
-        "editor_transform_reset": "重設",
-        "editor_transform_reset_tip": "重設本次變換到起點（留在當前工具）",
+        "editor_transform_revert": "還原",
+        "editor_transform_revert_tip": "還原本次變換到起點（留在當前工具）",
         "editor_text_instruction": "雙擊新增或編輯文字",
 
         "tool_rotate": "旋轉",
@@ -664,7 +664,7 @@ UI_TEXT = {
 
         "editor_undo": "元に戻す",
         "editor_redo": "やり直し",
-        "editor_reset": "リセット",
+        "editor_reset": "すべて破棄",
         "editor_save": "保存",
         "editor_save_as": "名前を付けて保存...",
 
@@ -681,8 +681,8 @@ UI_TEXT = {
         "editor_crop_confirm": "クロップ",
         "editor_crop_cancel": "キャンセル",
         "editor_apply": "適用",
-        "editor_transform_reset": "リセット",
-        "editor_transform_reset_tip": "この変形を開始時に戻す（ツールは維持）",
+        "editor_transform_revert": "取り消す",
+        "editor_transform_revert_tip": "この変形を開始時に戻す（ツールは維持）",
         "editor_text_instruction": "ダブルクリックで追加・編集",
 
         "tool_rotate": "回転",

@@ -563,10 +563,10 @@ def _create_action_buttons(tool, apply_slot, cancel_slot, reset_slot=None) -> No
     tool._action_apply.clicked.connect(apply_slot)
 
     if reset_slot is not None:
-        tool._action_reset = QtWidgets.QPushButton(t("editor_transform_reset"), parent)
+        tool._action_reset = QtWidgets.QPushButton(t("editor_transform_revert"), parent)
         tool._action_reset.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         tool._action_reset.setStyleSheet(_BTN_STYLE_CANCEL)
-        tool._action_reset.setToolTip(t("editor_transform_reset_tip"))
+        tool._action_reset.setToolTip(t("editor_transform_revert_tip"))
         tool._action_reset.clicked.connect(reset_slot)
     else:
         tool._action_reset = None
