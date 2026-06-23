@@ -483,24 +483,19 @@ class ImageEditorWindow(QtWidgets.QWidget):
                 lbl = QtWidgets.QLabel(self._tr("editor_font_size") + ":")
                 lbl.setObjectName("optionLabel")
                 layout.addWidget(lbl)
-                _FONT_SIZES = ["8", "10", "12", "14", "18",
-                               "24", "36", "48", "72"]
-                combo = _EditorComboBox()
-                combo.addItems(_FONT_SIZES)
-                combo.setEditable(True)
-                combo.setCurrentText("24")
-                combo.setObjectName(f"fontSizeSpin_{tool_id}")
-                # Restrict typed input to integers only — the combo is editable
-                # so users can type a custom size, but letters/symbols would
-                # just be rejected downstream by _on_font_size_text_changed,
-                # leaving them visible in the box. A QIntValidator blocks them
-                # at the keystroke instead.
-                combo.lineEdit().setValidator(QtGui.QIntValidator(1, self.MAX_FONT_SIZE))
-                combo.currentTextChanged.connect(
-                    lambda t, tid=tool_id: self._on_font_size_text_changed(tid, t)
+                spin = QtWidgets.QSpinBox()
+                spin.setRange(1, self.MAX_FONT_SIZE)
+                spin.setValue(24)
+                spin.setSuffix(" px")
+                spin.setObjectName(f"fontSizeSpin_{tool_id}")
+                # QSpinBox natively accepts only integers in range, so letters
+                # are blocked at the keystroke and out-of-range values are
+                # clamped — no extra validator or downstream parsing needed.
+                spin.valueChanged.connect(
+                    lambda v, tid=tool_id: self._on_font_size_changed(tid, v)
                 )
-                layout.addWidget(combo)
-                self._option_widgets[(tool_id, "fontSizeSpin")] = combo
+                layout.addWidget(spin)
+                self._option_widgets[(tool_id, "fontSizeSpin")] = spin
 
             elif key == "fill":
                 btn = QtWidgets.QToolButton()
@@ -748,7 +743,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
         fs = ow.get((tool_id, "fontSizeSpin"))
         if fs and hasattr(tool, "font_size"):
             fs.blockSignals(True)
-            fs.setCurrentText(str(tool.font_size))
+            fs.setValue(tool.font_size)
             fs.blockSignals(False)
         ft = ow.get((tool_id, "fillBtn"))
         if ft and hasattr(tool, "fill"):
@@ -918,20 +913,18 @@ class ImageEditorWindow(QtWidgets.QWidget):
             if tool_id == "text":
                 tool._sync_widgets()
 
-    def _on_font_size_text_changed(self, tool_id: str, text: str) -> None:
-        try:
-            value = int(text.strip())
-        except ValueError:
-            return
+    def _on_font_size_changed(self, tool_id: str, value: int) -> None:
         tool = self._tools.get(tool_id)
         if tool and hasattr(tool, "font_size"):
+            # QSpinBox already enforces the [1, MAX_FONT_SIZE] range, so value
+            # is always valid — clamp is a no-op kept as a defensive guard.
             clamped = max(1, min(value, self.MAX_FONT_SIZE))
             tool.font_size = clamped
-            combo = self._option_widgets.get((tool_id, "fontSizeSpin"))
-            if combo and combo.currentText().strip() != str(clamped):
-                combo.blockSignals(True)
-                combo.setCurrentText(str(clamped))
-                combo.blockSignals(False)
+            spin = self._option_widgets.get((tool_id, "fontSizeSpin"))
+            if spin and spin.value() != clamped:
+                spin.blockSignals(True)
+                spin.setValue(clamped)
+                spin.blockSignals(False)
             if tool_id == "text":
                 tool._sync_widgets()
 
