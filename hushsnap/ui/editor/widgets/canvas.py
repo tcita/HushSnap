@@ -170,20 +170,23 @@ class EditorCanvas(QtWidgets.QWidget):
         angle = self._editor._preview_angle
         offset = self._image_offset()
 
+        # During a rotation preview the rotated image exposes triangular
+        # corners that only become transparent *after* the rotation commits
+        # (expand=True) — mid-session the base image is still fully opaque, so
+        # painting the transparency checkerboard there would advertise
+        # transparency that doesn't exist yet (and the old code filled an
+        # even larger diagonal-circumscribed square, leaking the pattern well
+        # past the real bounding box). Let those corners fall through to the
+        # canvas background (#1a1a1a) instead. Once the tool commits and
+        # _preview_angle clears, the real transparent pixels own the
+        # checkerboard via the plain (non-rotated) branch below.
         if angle is not None and angle != 0.0:
-            # During a rotation preview the painted image is a rotated copy of
-            # the display pixmap; its axis-aligned bounding box in widget
-            # space is what we want to fill behind the transparent corners.
-            w, h = pm.width() * scale, pm.height() * scale
-            cx = offset.x() + w / 2.0
-            cy = offset.y() + h / 2.0
-            rad = ((w / 2.0) ** 2 + (h / 2.0) ** 2) ** 0.5
-            img_rect = QtCore.QRectF(cx - rad, cy - rad, rad * 2, rad * 2)
-        else:
-            img_rect = QtCore.QRectF(
-                offset.x(), offset.y(),
-                pm.width() * scale, pm.height() * scale,
-            )
+            return
+
+        img_rect = QtCore.QRectF(
+            offset.x(), offset.y(),
+            pm.width() * scale, pm.height() * scale,
+        )
 
         painter.fillRect(clip_rect & img_rect.toRect(),
                          self._checkerboard_brush())

@@ -1160,33 +1160,92 @@ class TestRotationAndResizeImprovements:
     def test_session_based_rotation_prevents_compounding_growth(self, editor):
         """Repeated rotations within the same session rotate the original base image,
 
-        preventing unbounded canvas size growth.
+        preventing unbounded canvas size growth. Each commit also trims
+        fully-transparent outer borders (getbbox), so the result matches the
+        base rotated by the cumulative angle then autocropped.
         """
         # Activate the rotate tool (begins the session)
         editor._activate_tool("rotate")
         assert editor._transform_active is True
         assert editor._rotate_base_image is not None
-        
+
         orig_w, orig_h = editor._pil_image.size
-        
+
         # Apply 15 degree rotation
         editor._apply_rotation(15.0, True)
         size_after_15 = editor._pil_image.size
         assert size_after_15[0] > orig_w
-        
+
         # Apply another rotation (total 30 degrees)
         # It should rotate the *original* image by 30 degrees, not size_after_15 by 15.
         editor._apply_rotation(30.0, True)
         size_after_30 = editor._pil_image.size
-        
-        # Calculate size of original rotated directly by 30
+
+        # Calculate size of original rotated directly by 30, then autocropped
+        # the same way _apply_rotation does (trims transparent outer borders).
         expected_rotated = editor._rotate_base_image.rotate(-30.0, expand=True)
+        expected_bbox = expected_rotated.getbbox()
+        if expected_bbox:
+            expected_rotated = expected_rotated.crop(expected_bbox)
         assert size_after_30 == expected_rotated.size
-        
+
         # Deactivate tool (ends the session)
         editor._activate_tool("pan")
         assert editor._transform_active is False
         assert editor._rotate_base_image is None
+
+    def test_repeated_rotate_sessions_do_not_compound_padding(self, editor):
+        """Across sessions, repeated rotate/commit must not snowball the canvas.
+
+        Each session's base is the previous committed image; without the
+        post-rotation getbbox trim, expand=True compounds the transparent
+        padding (canvas ×(cos+sin) every session) and the image balloons.
+        With the trim, the size stays bounded at the true content bbox for
+        the total rotation, even after many sessions.
+        """
+        from PIL import Image as _PILImage
+
+        # Start from a known tight base: one 20° rotation, committed.
+        editor._activate_tool("rotate")
+        editor._apply_rotation(20.0, True)
+        editor._activate_tool("pan")
+        size_after_one = editor._pil_image.size
+        # Snapshot the tight post-session-1 image; both simulated paths and
+        # the real editor continue from this same starting point.
+        base_img = editor._pil_image.copy()
+
+        # Real editor path: three more separate sessions, each +5°.
+        for _ in range(3):
+            editor._activate_tool("rotate")
+            editor._apply_rotation(5.0, True)
+            editor._activate_tool("pan")
+        size_with_trim = editor._pil_image.size
+
+        # Simulated NO-trim path: same rotations, but never getbbox-crop.
+        sim = base_img
+        for _ in range(3):
+            sim = sim.rotate(-5.0, expand=True, resample=_PILImage.BICUBIC,
+                             fillcolor=(0, 0, 0, 0))
+        size_without_trim = sim.size
+
+        # Simulated WITH-trim path: mirrors _apply_rotation exactly.
+        sim2 = base_img
+        for _ in range(3):
+            r = sim2.rotate(-5.0, expand=True, resample=_PILImage.BICUBIC,
+                            fillcolor=(0, 0, 0, 0))
+            b = r.getbbox()
+            sim2 = r.crop(b) if b else r
+        size_sim_with_trim = sim2.size
+
+        # The real editor matches the with-trim simulation.
+        assert size_with_trim == size_sim_with_trim
+        # And the trim keeps the canvas markedly smaller than the snowball.
+        assert size_with_trim[0] < size_without_trim[0]
+        assert size_with_trim[1] < size_without_trim[1]
+        # Bounded: stays close to the single-rotation size (no snowball).
+        assert size_with_trim[0] < size_after_one[0] * 1.2
+        assert size_with_trim[1] < size_after_one[1] * 1.2
+
 
     def test_rotation_undo_redo(self, editor):
         """A rotate session is a single atomic undo unit.

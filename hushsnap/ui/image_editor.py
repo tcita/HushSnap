@@ -1485,6 +1485,20 @@ class ImageEditorWindow(QtWidgets.QWidget):
             rotated = img.rotate(
                 -angle, expand=expand, resample=Image.BICUBIC, fillcolor=(0, 0, 0, 0)
             )
+            # Trim fully-transparent outer borders back to the content bbox.
+            # expand=True grows the canvas to fit the rotated image, and each
+            # new rotate session captures the previous expanded image as its
+            # base — so without trimming, repeated rotate/commit cycles
+            # compound the transparent padding (canvas ×(cos+sin) each time)
+            # and the checkerboard balloons. getbbox() on RGBA excludes the
+            # (0,0,0,0) fill, so this recovers the true content bounding box.
+            # After a single rotation the content touches all four edges, so
+            # this is a no-op then; it only ever strips the compounded outer
+            # padding from second rotation onward. (Safe for HushSnap:
+            # transparency here only ever comes from rotation.)
+            bbox = rotated.getbbox()
+            if bbox:
+                rotated = rotated.crop(bbox)
             self._pil_image = rotated
 
             self._rotate_cumulative_angle = angle
