@@ -5,7 +5,6 @@ from PIL import Image
 from PyQt6 import QtCore, QtGui, QtWidgets
 from .base import BaseTool
 from ..models import UndoChangeType
-from ..utils import _load_editor_icon
 
 logger = logging.getLogger(__name__)
 
@@ -803,50 +802,50 @@ class RotateTool(BaseTool):
 
 
 class ResizeTool(BaseTool):
-    """Drag a corner handle to resize the image, mirroring the pinned-image feel.
+    """Drag a handle to resize the image, mirroring the pinned-image feel.
 
-    Aspect ratio is locked by default; a floating chain toggle (bottom-centre,
-    next to Apply/Cancel) unlocks it. The opposite corner stays anchored so the
-    grab point tracks the cursor.
+    Eight handles (Figma-style): the four corners scale proportionally
+    (aspect-preserving), the four edge midpoints scale along a single axis.
+    The opposite corner / edge stays anchored so the grab point tracks the
+    cursor. No aspect-lock toggle — the handle you grab already decides
+    whether the ratio is preserved, so there is no separate state to surface.
     """
 
-    _CORNERS = {
+    # sign per axis: -1 = top/left, +1 = bottom/right, 0 = mid-edge (that axis
+    # is held constant by this handle). Corners have both signs non-zero; edge
+    # midpoints have exactly one zero.
+    _HANDLES = {
         "tl": (-1, -1),
         "tr": (1, -1),
         "bl": (-1, 1),
         "br": (1, 1),
+        "t":  (0, -1),
+        "b":  (0, 1),
+        "l":  (-1, 0),
+        "r":  (1, 0),
     }
 
     def __init__(self, editor):
         super().__init__(editor)
-        self._dragging: Optional[str] = None  # corner name, or "pan"
+        self._dragging: Optional[str] = None  # handle name, or "pan"
         self._target = QtCore.QSizeF(0, 0)   # current preview size (image px)
-        self._anchor_img = QtCore.QPointF()  # anchored opposite corner (image px)
+        self._anchor_img = QtCore.QPointF()  # anchored opposite edge/corner (image px)
         self._pan_start = QtCore.QPoint()    # global pos at pan start
-        # Aspect-ratio lock state. True (default) preserves the original
-        # width:height; False lets the corner drag freely. Toggled by the
-        # floating chain button, not a modifier key, so the state is visible.
-        self.aspect_locked = True
         # Floating Apply/Cancel buttons (shared with RotateTool).
         self._action_cancel: Optional[QtWidgets.QPushButton] = None
         self._action_apply: Optional[QtWidgets.QPushButton] = None
-        # Floating aspect-lock toggle (chain icon), Resize-only.
-        self._aspect_btn: Optional[QtWidgets.QToolButton] = None
 
     def tool_id(self) -> str:
         return "resize"
 
     def on_activate(self) -> None:
         self._dragging = None
-        self.aspect_locked = True
         self._editor._begin_resize_session()
         _create_action_buttons(self, self.apply_resize, self.cancel_resize)
-        self._create_aspect_button()
         self._editor._canvas.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
 
     def on_deactivate(self) -> None:
         _destroy_action_buttons(self)
-        self._destroy_aspect_button()
         self._editor._end_resize_session()
 
     def apply_resize(self) -> None:
@@ -863,81 +862,15 @@ class ResizeTool(BaseTool):
         )
         self.on_key_press(self._editor._canvas, ke)
 
-    # ── Floating aspect-ratio lock toggle (chain icon) ──────────────────────
-
-    _ASPECT_BTN_STYLE = """
-        QToolButton {
-            background: rgba(40,40,40,200);
-            border: 1px solid rgba(255,255,255,20);
-            border-radius: 11px;
-            padding: 2px;
-            color: #888;
-        }
-        QToolButton:checked {
-            background: rgba(95,201,138,200);
-            border: 1px solid rgba(255,255,255,40);
-            color: #ffffff;
-        }
-        QToolButton:hover { border-color: rgba(255,255,255,45); }
-    """
-
-    def _create_aspect_button(self) -> None:
-        parent = self._editor._scroll_area.viewport()
-        self._aspect_btn = QtWidgets.QToolButton(parent)
-        self._aspect_btn.setCheckable(True)
-        self._aspect_btn.setChecked(self.aspect_locked)
-        self._aspect_btn.setIcon(_load_editor_icon("chain"))
-        self._aspect_btn.setIconSize(QtCore.QSize(16, 16))
-        self._aspect_btn.setFixedSize(30, 30)
-        self._aspect_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-        self._aspect_btn.setStyleSheet(self._ASPECT_BTN_STYLE)
-        self._aspect_btn.setToolTip(self._editor._tr("editor_resize_lock"))
-        self._aspect_btn.clicked.connect(self._on_aspect_toggled)
-        self._position_aspect_button()
-
-    def _destroy_aspect_button(self) -> None:
-        if self._aspect_btn:
-            self._aspect_btn.deleteLater()
-        self._aspect_btn = None
-
-    def _on_aspect_toggled(self, checked: bool) -> None:
-        self.aspect_locked = checked
-        # Keep the button's checked state authoritative (it already is); this
-        # also future-proofs against programmatic flips of aspect_locked.
-        self._aspect_btn.setChecked(self.aspect_locked)
-
-    def _position_aspect_button(self) -> None:
-        """Pin the chain toggle to the left of the Apply/Cancel cluster."""
-        if not self._aspect_btn:
-            return
-        vp = self._editor._scroll_area.viewport()
-        vw, vh = vp.width(), vp.height()
-        apply_btn = getattr(self, "_action_apply", None)
-        if apply_btn:
-            # Sit just left of the Cancel/Apply cluster, sharing their baseline.
-            apply_btn.adjustSize()
-            h = apply_btn.height()
-            gap = 8
-            btn_w = self._aspect_btn.width()
-            # Cluster is centred; place the toggle `gap` left of the cluster's
-            # left edge (the Cancel button).
-            cancel_btn = getattr(self, "_action_cancel", None)
-            cluster_left = cancel_btn.x() if cancel_btn else int((vw - btn_w) / 2)
-            self._aspect_btn.move(cluster_left - btn_w - gap, vh - h - 16)
-        else:
-            self._aspect_btn.move(16, vh - 30 - 16)
-        self._aspect_btn.show()
-        self._aspect_btn.raise_()
-
-    def _corner_screen(self, rect: QtCore.QRectF, name: str) -> QtCore.QPointF:
-        sx, sy = self._CORNERS[name]
-        cx = rect.right() if sx > 0 else rect.left()
-        cy = rect.bottom() if sy > 0 else rect.top()
+    def _handle_screen(self, rect: QtCore.QRectF, name: str) -> QtCore.QPointF:
+        sx, sy = self._HANDLES[name]
+        cx = rect.left() if sx < 0 else rect.right() if sx > 0 else rect.center().x()
+        cy = rect.top() if sy < 0 else rect.bottom() if sy > 0 else rect.center().y()
         return QtCore.QPointF(cx, cy)
 
-    def _hit_corner(self, rect: QtCore.QRectF, pos: QtCore.QPointF) -> Optional[str]:
-        for name in self._CORNERS:
-            if (pos - self._corner_screen(rect, name)).manhattanLength() <= _HANDLE_R + 4:
+    def _hit_handle(self, rect: QtCore.QRectF, pos: QtCore.QPointF) -> Optional[str]:
+        for name in self._HANDLES:
+            if (pos - self._handle_screen(rect, name)).manhattanLength() <= _HANDLE_R + 4:
                 return name
         return None
 
@@ -947,20 +880,23 @@ class ResizeTool(BaseTool):
         rect = _rendered_screen_rect(self._editor, canvas)
         if rect.isNull():
             return False
-        name = self._hit_corner(rect, event.position())
+        name = self._hit_handle(rect, event.position())
         if name:
             self._dragging = name
-            # Anchor = opposite corner, in image-pixel coords.
-            osx, osy = self._CORNERS[name]
-            ax_sign, ay_sign = -osx, -osy
+            # Anchor = opposite handle, in image-pixel coords. For a corner the
+            # opposite is the diagonally opposite corner; for an edge midpoint
+            # the opposite edge midpoint (the other axis is held constant, so
+            # only the dragged axis's far edge matters).
+            sx, sy = self._HANDLES[name]
+            ax_sign, ay_sign = -sx, -sy
             pm = self._editor._rendered_display_pixmap()
             self._anchor_img = QtCore.QPointF(
-                pm.width() if ax_sign > 0 else 0.0,
-                pm.height() if ay_sign > 0 else 0.0,
+                pm.width() if ax_sign > 0 else (pm.width() / 2.0 if ax_sign == 0 else 0.0),
+                pm.height() if ay_sign > 0 else (pm.height() / 2.0 if ay_sign == 0 else 0.0),
             )
             self._target = QtCore.QSizeF(pm.width(), pm.height())
             return True
-        # Not on a corner: pan the canvas (like the crop tool), so the user can
+        # Not on a handle: pan the canvas (like the crop tool), so the user can
         # reposition the image without switching tools.
         self._dragging = "pan"
         self._pan_start = event.globalPosition().toPoint()
@@ -981,11 +917,15 @@ class ResizeTool(BaseTool):
 
         if not self._dragging:
             if not rect.isNull():
-                name = self._hit_corner(rect, event.position())
+                name = self._hit_handle(rect, event.position())
                 if name in ("tl", "br"):
                     canvas.setCursor(QtCore.Qt.CursorShape.SizeFDiagCursor)
                 elif name in ("tr", "bl"):
                     canvas.setCursor(QtCore.Qt.CursorShape.SizeBDiagCursor)
+                elif name in ("t", "b"):
+                    canvas.setCursor(QtCore.Qt.CursorShape.SizeVerCursor)
+                elif name in ("l", "r"):
+                    canvas.setCursor(QtCore.Qt.CursorShape.SizeHorCursor)
                 else:
                     # Open hand hints the body is draggable to pan.
                     canvas.setCursor(QtCore.Qt.CursorShape.OpenHandCursor)
@@ -993,19 +933,38 @@ class ResizeTool(BaseTool):
         if rect.isNull():
             return True
 
-        sx, sy = self._CORNERS[self._dragging]
-        free = not self.aspect_locked
+        sx, sy = self._HANDLES[self._dragging]
         mouse_img = _widget_to_image_f(self._editor, canvas, event.position())
         ax, ay = self._anchor_img.x(), self._anchor_img.y()
         vx, vy = mouse_img.x() - ax, mouse_img.y() - ay
 
-        if free:
-            new_w = abs(vx)
-            new_h = abs(vy)
+        orig = self._editor._display_pixmap
+        orig_w = orig.width()
+        orig_h = orig.height()
+
+        if sx == 0 or sy == 0:
+            # Edge handle: single-axis scale. The zeroed axis keeps the
+            # original size; only the dragged axis follows the cursor.
+            if sx == 0:
+                new_w = orig_w
+                new_h = abs(vy)
+            else:
+                new_w = abs(vx)
+                new_h = orig_h
         else:
-            # Project the cursor onto the anchor->corner diagonal so the grabbed
-            # corner tracks the mouse while preserving aspect ratio (same math
-            # the pinned-image window uses).
+            # Corner handle: project the cursor onto the anchor->corner
+            # diagonal so the grabbed corner tracks the mouse while preserving
+            # aspect ratio (same math the pinned-image window uses).
+            aspect = orig_w / orig_h if orig_h else 1.0
+            dx, dy = sx * aspect, sy * 1.0
+            dot = vx * dx + vy * dy
+            mag_sq = dx * dx + dy * dy
+            scale = dot / mag_sq if mag_sq else 0.0
+            new_w = abs(scale * dx)
+            new_h = abs(scale * dy)
+            # Corner handle: project the cursor onto the anchor->corner
+            # diagonal so the grabbed corner tracks the mouse while preserving
+            # aspect ratio (same math the pinned-image window uses).
             orig = self._editor._display_pixmap
             aspect = orig.width() / orig.height() if orig.height() else 1.0
             dx, dy = sx * aspect, sy * 1.0
@@ -1065,8 +1024,8 @@ class ResizeTool(BaseTool):
         painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
         painter.drawRect(rect)
 
-        for name in self._CORNERS:
-            c = self._corner_screen(rect, name)
+        for name in self._HANDLES:
+            c = self._handle_screen(rect, name)
             painter.setPen(QtGui.QPen(QtGui.QColor("#5FC98A"), 1.6))
             painter.setBrush(QtGui.QBrush(QtGui.QColor("#ffffff")))
             painter.drawRect(QtCore.QRectF(c.x() - _HANDLE_R / 2,
@@ -1099,5 +1058,3 @@ class ResizeTool(BaseTool):
 
         # Keep the floating Apply/Cancel buttons pinned to the viewport.
         _position_action_buttons(self)
-        # And the aspect-lock toggle left of them.
-        self._position_aspect_button()
