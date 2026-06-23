@@ -48,6 +48,15 @@ logger = logging.getLogger(__name__)
 # canvas (~250 px); narrower than this and the tool buttons crowd together.
 _EDITOR_MIN_W, _EDITOR_MIN_H = 640, 520
 _EDITOR_DEFAULT_W, _EDITOR_DEFAULT_H = 960, 700
+# Chrome overhead added on top of the image when sizing the window to a
+# screenshot: vertical covers title bar + two toolbar rows + status bar;
+# horizontal is just side padding. Used to fit the window to the image
+# rather than always taking 80% of the screen (which left big margins on
+# small screenshots).
+_EDITOR_CHROME_W, _EDITOR_CHROME_H = 40, 168
+# Fraction of the cursor screen's available area the window will never
+# exceed — large screenshots shrink-to-fit below this cap.
+_EDITOR_SCREEN_FRAC = 0.8
 
 
 class ImageEditorWindow(QtWidgets.QWidget):
@@ -1636,14 +1645,14 @@ def show_image_editor(
 ) -> ImageEditorWindow:
     """Create and show the image editor window for the given PIL image.
 
-    No geometry is remembered: the window opens at a fixed proportion of the
-    cursor screen's available area, centred on that screen. The screenshot
-    itself is then fit into the canvas by _fit_to_viewport (large images
-    shrink to fit, small ones show at 1:1). This drops the whole
-    remember/restore/straddle-screen machinery — position memory kept
-    regressing (see the config-vs-state path bug) and offered little for a
-    short screenshot-annotation task where the cursor already says which
-    screen to use.
+    No geometry is remembered: the window is sized to the screenshot plus
+    chrome, clamped to [minimum, 80% of the cursor screen's available area],
+    and centred on that screen. Small screenshots get a tight window; large
+    ones cap at the screen fraction and _fit_to_viewport shrinks the image
+    into the canvas. This drops the whole remember/restore/straddle-screen
+    machinery — position memory kept regressing (see the config-vs-state
+    path bug) and offered little for a short screenshot-annotation task
+    where the cursor already says which screen to use.
     """
     win = ImageEditorWindow(pil_image, translate_fn)
     win.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
@@ -1651,9 +1660,15 @@ def show_image_editor(
     target = win._target_screen or QtWidgets.QApplication.primaryScreen()
 
     avail = target.availableGeometry()
-    # ~80% of the available area, floored at the minimum and capped at full.
-    w = max(_EDITOR_MIN_W, min(int(avail.width() * 0.8), avail.width()))
-    h = max(_EDITOR_MIN_H, min(int(avail.height() * 0.8), avail.height()))
+    # Size the window to the screenshot plus chrome, then clamp to
+    # [minimum, 80% of available area]. Small screenshots get a tight window
+    # (little margin); large ones cap at the screen fraction and the image is
+    # fit-to-canvas by _fit_to_viewport instead.
+    img_w, img_h = pil_image.size
+    max_w = int(avail.width() * _EDITOR_SCREEN_FRAC)
+    max_h = int(avail.height() * _EDITOR_SCREEN_FRAC)
+    w = max(_EDITOR_MIN_W, min(img_w + _EDITOR_CHROME_W, max_w))
+    h = max(_EDITOR_MIN_H, min(img_h + _EDITOR_CHROME_H, max_h))
     x = avail.x() + (avail.width() - w) // 2
     y = avail.y() + (avail.height() - h) // 2
 
