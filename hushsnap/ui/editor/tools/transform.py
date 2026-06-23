@@ -727,6 +727,11 @@ class RotateTool(BaseTool):
         return False
 
     def on_key_press(self, canvas, event) -> bool:
+        if event.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter):
+            # Confirm: same path as the floating Done button — end the session
+            # and commit one undo entry iff the image was rotated.
+            self.apply_rotation()
+            return True
         if event.key() == QtCore.Qt.Key.Key_Escape:
             # Abandon: restore the pre-composite state (clean image + editable
             # annotations + text) via the shared session cancel, no undo entry.
@@ -959,6 +964,11 @@ class ResizeTool(BaseTool):
         return False
 
     def on_key_press(self, canvas, event) -> bool:
+        if event.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter):
+            # Confirm: same path as the floating Done button — end the session
+            # and commit one undo entry iff the image was resized.
+            self.apply_resize()
+            return True
         if event.key() == QtCore.Qt.Key.Key_Escape:
             # Abandon the resize session: revert to the pre-resize base state.
             self._editor._cancel_resize_session()
