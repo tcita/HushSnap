@@ -36,6 +36,18 @@ logger = get_logger(__name__)
 FLOAT_UP_PX = 20
 FLOAT_DURATION_MS = 600
 
+# ── Overlay housekeeping ────────────────────────────────────────────────────
+#
+# The overlay is dismissed by the user (Esc / right-click / a completed
+# capture), mirroring ShareX's RegionCaptureForm. There is deliberately NO
+# auto-close: a QTimer shares the event loop it would save, so it solves
+# nothing Esc cannot (loop alive → Esc suffices; loop deadlocked → neither
+# fires), and auto-closing would only interrupt a slow, deliberate capture.
+# The one timer kept is a hint, not a closer: after HINT_DELAY_MS show a
+# non-dismissing "right-click or Esc" toast. A genuinely deadlocked loop is
+# unrecoverable in-process — Task Manager is the only floor.
+HINT_DELAY_MS = 30000   # show the "Esc / right-click" hint after this long
+
 # ── Window-foreground strategy (ShareX-style, with fallback) ────────────────
 #
 # The capture overlay must reach the foreground so keyboard input (Esc) and
@@ -353,6 +365,88 @@ class CopiedToast(QtWidgets.QWidget):
             self._group.start()
 
 
+class ExitHintToast(QtWidgets.QWidget):
+    """A non-dismissing "right-click or Esc" hint, shown after HINT_DELAY_MS.
+
+    Placed at the bottom-center of the screen the cursor is currently on,
+    stays on top, no focus steal (WA_ShowWithoutActivating). Closed by
+    CaptureWindow.closeEvent.
+    """
+
+    def __init__(self, text: str, parent: QtWidgets.QWidget):
+        super().__init__(parent)
+        self.setWindowFlags(
+            QtCore.Qt.WindowType.FramelessWindowHint
+            | QtCore.Qt.WindowType.WindowStaysOnTopHint
+            | QtCore.Qt.WindowType.Tool
+        )
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
+
+        # Transparent wrapper with margin so the shadow draws inside the
+        # window bounds (blur 16, offset 3).
+        outer = QtWidgets.QVBoxLayout(self)
+        outer.setContentsMargins(16, 12, 16, 14)
+        outer.setSpacing(0)
+
+        container = QtWidgets.QFrame()
+        container.setObjectName("hintCard")
+        container.setStyleSheet(
+            "QFrame#hintCard {"
+            "  background: rgba(28, 28, 30, 0.96);"
+            "  border: 1px solid rgba(255, 255, 255, 0.10);"
+            "  border-radius: 10px;"
+            "}"
+        )
+        outer.addWidget(container)
+
+        layout = QtWidgets.QHBoxLayout(container)
+        layout.setContentsMargins(18, 10, 18, 10)
+
+        label = QtWidgets.QLabel(text)
+        label.setStyleSheet(
+            "QLabel {"
+            "  color: #F2F2F2;"
+            "  background: transparent;"
+            "  font-size: 13px;"
+            "  font-weight: 500;"
+            "  letter-spacing: 0.2px;"
+            "  font-family: \"Microsoft YaHei\", \"Segoe UI\", sans-serif;"
+            "}"
+        )
+        layout.addWidget(label)
+        self.adjustSize()
+
+        # Soft shadow so the card reads against arbitrary screenshot backgrounds.
+        shadow = QtWidgets.QGraphicsDropShadowEffect(container)
+        shadow.setBlurRadius(16)
+        shadow.setColor(QtGui.QColor(0, 0, 0, 140))
+        shadow.setOffset(0, 3)
+        container.setGraphicsEffect(shadow)
+
+        # Bottom-center of the screen the cursor is on now (the cursor may
+        # have moved off the overlay's bound screen during the 30s wait).
+        # Fallback chain: screenAt(cursor) → parent's screen → parent geometry.
+        screen_geo = self._cursor_screen_geo(parent)
+        x = screen_geo.x() + (screen_geo.width() - self.width()) // 2
+        y = screen_geo.bottom() - self.height() - 56
+        self.move(x, y)
+
+    @staticmethod
+    def _cursor_screen_geo(parent: QtWidgets.QWidget) -> QtCore.QRect:
+        app = QtWidgets.QApplication.instance()
+        screen = app.screenAt(QtGui.QCursor.pos()) if app is not None else None
+        if screen is None:
+            try:
+                screen = parent.screen()
+            except Exception:
+                screen = None
+        if screen is not None:
+            return screen.geometry()
+        return parent.geometry()
+
+
 class CaptureWindow(QtWidgets.QWidget):
     """
     Fullscreen screenshot window.
@@ -375,6 +469,11 @@ class CaptureWindow(QtWidgets.QWidget):
         # that claims foreground). Stored separately because QWidget.screen()
         # is a method, not the bound screen attribute.
         self._bound_screen = screen
+
+        # Overlay housekeeping state. See showEvent / closeEvent. _exit_hint
+        # is the non-dismissing "right-click or Esc" toast shown after
+        # HINT_DELAY_MS; closed by closeEvent when the overlay itself closes.
+        self._exit_hint: "ExitHintToast | None" = None
 
         # Configure window attributes: tool style, frameless, initially topmost.
         self.setWindowFlags(
@@ -463,7 +562,7 @@ class CaptureWindow(QtWidgets.QWidget):
             logger.debug(f"topmost_audit_err | {traceback.format_exc().strip()}")
 
     def showEvent(self, event):
-        """Window show event: claim foreground/topmost and arm safety auto-close."""
+        """Window show event: claim foreground/topmost and arm housekeeping."""
         super().showEvent(event)
         # Defer so the native window handle is fully ready, then claim focus
         # via the ShareX-style light path (with hard fallback for the primary
@@ -472,24 +571,11 @@ class CaptureWindow(QtWidgets.QWidget):
         is_primary = not getattr(self, "_is_sibling_overlay", False)
         QtCore.QTimer.singleShot(0, lambda: claim_foreground(self, primary=is_primary))
 
-        # Safety auto-close: the overlay is a fullscreen topmost window that
-        # covers the whole monitor. If something goes wrong (a crash in the
-        # capture logic, a foreground/z-order conflict, a hung state) the
-        # overlay could stay up with no way for the user to dismiss it —
-        # short of killing the process. This timer guarantees that no matter
-        # what, the overlay is gone within 25s and the desktop is usable
-        # again. Each overlay window arms its own timer; any one of them
-        # firing calls close → closeEvent → on_closed → _close_all_windows,
-        # so in multi-monitor mode the N timers are mutually redundant
-        # backstops. 25s is long enough that a slow deliberate cross-screen
-        # drag is not interrupted, while still bounding the worst-case
-        # "stuck overlay" to a tolerable wait. Do not shorten without
-        # considering slow drags; do not remove — this is the only recovery
-        # path short of the user force-killing HushSnap. (It cannot, however,
-        # save the case where the Qt event loop itself is deadlocked, since
-        # QTimer depends on the loop; that would need a native watchdog
-        # thread, which is out of scope.)
-        QtCore.QTimer.singleShot(25000, self.close)
+        # Arm the exit hint: after HINT_DELAY_MS, show a non-dismissing
+        # "right-click or Esc" toast. No auto-close — see the note above the
+        # constants. Each overlay arms its own; in multi-monitor mode any one
+        # closing calls _close_all_windows.
+        QtCore.QTimer.singleShot(HINT_DELAY_MS, self._show_exit_hint)
 
         # In debug logging, run a delayed single-threaded audit.
         if logger.isEnabledFor(logging.DEBUG):
@@ -846,6 +932,30 @@ class CaptureWindow(QtWidgets.QWidget):
         except Exception:
             logger.error(f"copied_toast_err | trace={traceback.format_exc().strip()}")
 
+    def _show_exit_hint(self):
+        """Show the non-dismissing 'right-click or Esc' hint after HINT_DELAY_MS.
+
+        Guarded against firing after the window has closed (the singleShot may
+        outlive the widget; isVisible() then raises and is caught).
+        """
+        try:
+            if not self.isVisible():
+                return
+            if self._exit_hint is not None:
+                return
+            # Only the primary (cursor's) overlay shows the hint, so
+            # multi-monitor does not get one toast per screen.
+            if getattr(self, "_is_sibling_overlay", False):
+                return
+            from .config import resolve_ui_lang, ui_text, get_config_path
+            lang = resolve_ui_lang(get_config_path())
+            text = ui_text(lang, "capture_exit_hint")
+            hint = ExitHintToast(text, self)
+            hint.show()
+            self._exit_hint = hint
+        except Exception:
+            logger.error(f"exit_hint_err | trace={traceback.format_exc().strip()}")
+
     def _notify_captured(self, pixmap, logical_size):
         """Notify app layer with the captured image and its logical selection size."""
         if self.on_captured is None:
@@ -858,6 +968,15 @@ class CaptureWindow(QtWidgets.QWidget):
 
     def closeEvent(self, event):
         """Immediately release raw background screenshot reference on close."""
+        # Close the exit-hint child so it does not outlive the overlay.
+        hint = getattr(self, "_exit_hint", None)
+        if hint is not None:
+            self._exit_hint = None
+            try:
+                hint.close()
+            except Exception:
+                pass
+
         self.pixmap = None
         if hasattr(self, 'on_closed') and self.on_closed:
             cb = self.on_closed
