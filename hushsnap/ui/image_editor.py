@@ -33,7 +33,7 @@ from .editor.tools.drawing import BrushTool, HighlighterTool, EraserTool
 from .editor.tools.shapes import ShapeTool
 from .editor.tools.text import TextTool
 from .editor.tools.navigation import PanTool
-from .editor.tools.transform import CropTool, MosaicTool, SequenceTool, RotateTool, ResizeTool
+from .editor.tools.transform import CropTool, MosaicTool, RotateTool, ResizeTool
 from .editor.widgets.canvas import EditorCanvas
 from .editor.widgets.controls import (
     _EditorFontComboBox, _ColorButton, _SwatchPopup
@@ -226,7 +226,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
             ("rectangle", "tool_rectangle", "rectangle"),
             ("ellipse", "tool_ellipse", "ellipse"),
             ("line", "tool_line", "line"),
-            ("sequence", "tool_sequence", "sequence"),
         ])
 
         _add_sep()
@@ -235,13 +234,13 @@ class ImageEditorWindow(QtWidgets.QWidget):
             ("text", "tool_text", "text"),
             ("brush", "tool_brush", "brush"),
             ("highlighter", "tool_highlighter", "highlighter"),
+            ("mosaic", "tool_mosaic", "mosaic"),
+            ("eraser", "tool_eraser", "eraser"),
         ])
 
         _add_sep()
 
         _add_tools([
-            ("mosaic", "tool_mosaic", "mosaic"),
-            ("eraser", "tool_eraser", "eraser"),
             ("crop", "tool_crop", "crop"),
             ("rotate", "tool_rotate", "rotate"),
             ("resize", "tool_resize", "resize"),
@@ -275,8 +274,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._redo_btn.clicked.connect(self._redo)
         self._redo_btn.setEnabled(False)
         layout.addWidget(self._redo_btn)
-
-        _add_sep()
 
         _add_tools([
             ("pan", "tool_pan", "pan"),
@@ -341,11 +338,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
         page_line = self._make_options_page(["color", "size", "arrow", "double_arrow"], "line")
         self._options_stack.addWidget(page_line)
 
-        # Page 10: Sequence options
-        page_sequence = self._make_options_page(["color", "size"], "sequence")
-        self._options_stack.addWidget(page_sequence)
-
-        # Page 11: Rotate tool — instruction line only
+        # Page 10: Rotate tool — instruction line only
         page_rotate = QtWidgets.QWidget()
         page_rotate.setStyleSheet(EDITOR_OPTIONS_STYLE)
         rlayout = QtWidgets.QHBoxLayout(page_rotate)
@@ -356,7 +349,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
         rlayout.addStretch()
         self._options_stack.addWidget(page_rotate)
 
-        # Page 12: Resize tool — instruction line only
+        # Page 11: Resize tool — instruction line only
         page_resize = QtWidgets.QWidget()
         page_resize.setStyleSheet(EDITOR_OPTIONS_STYLE)
         slayout = QtWidgets.QHBoxLayout(page_resize)
@@ -368,8 +361,8 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._options_stack.addWidget(page_resize)
 
     PAGE_INDEX = {"brush": 0, "highlighter": 1, "eraser": 2, "mosaic": 3, "crop": 4, "text": 5,
-                  "pan": 6, "rectangle": 7, "ellipse": 8, "line": 9, "sequence": 10,
-                  "rotate": 11, "resize": 12}
+                  "pan": 6, "rectangle": 7, "ellipse": 8, "line": 9,
+                  "rotate": 10, "resize": 11}
 
     def _make_options_page(
         self, option_keys: list[str], tool_id: str
@@ -642,7 +635,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
             "rectangle": ShapeTool(self, "rectangle"),
             "ellipse": ShapeTool(self, "ellipse"),
             "line": ShapeTool(self, "line"),
-            "sequence": SequenceTool(self),
             "pan": PanTool(self),
             "rotate": RotateTool(self),
             "resize": ResizeTool(self),
@@ -803,7 +795,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
         "rectangle": (2, 5, 10),
         "ellipse": (2, 5, 10),
         "line": (2, 5, 10),
-        "sequence": (20, 28, 40),
     }
 
     def _size_preset_values(self, tool_id: str) -> list[int]:

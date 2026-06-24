@@ -138,7 +138,6 @@ UI_TEXT = {
         "tool_ellipse": "Ellipse",
         "tool_arrow": "Arrow",
         "tool_line": "Line",
-        "tool_sequence": "Sequence",
 
         "editor_undo": "Undo",
         "editor_redo": "Redo",
@@ -311,7 +310,6 @@ UI_TEXT = {
         "tool_ellipse": "椭圆",
         "tool_arrow": "箭头",
         "tool_line": "直线",
-        "tool_sequence": "序号",
 
         "editor_undo": "撤销",
 
@@ -484,7 +482,6 @@ UI_TEXT = {
         "tool_ellipse": "椭圆",
         "tool_arrow": "箭头",
         "tool_line": "直线",
-        "tool_sequence": "序号",
 
         "editor_undo": "撤销",
 
@@ -657,7 +654,6 @@ UI_TEXT = {
         "tool_ellipse": "楕円",
         "tool_arrow": "矢印",
         "tool_line": "直線",
-        "tool_sequence": "番号",
 
         "editor_undo": "元に戻す",
         "editor_redo": "やり直し",
