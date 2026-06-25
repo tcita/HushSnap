@@ -57,9 +57,9 @@ def test_initialization_thread_safety():
         assert isinstance(r, float)
         assert r > 0
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Fallback path only used off-Windows")
 def test_non_windows_fallback():
-    if sys.platform != "win32":
-        assert get_working_set_mb() == -1.0
-        assert fmt_memory() == "WS=unavailable"
-        stats = get_memory_stats()
-        assert stats["working_set_mb"] == -1.0
+    assert get_working_set_mb() == -1.0
+    assert fmt_memory() == "WS=unavailable"
+    stats = get_memory_stats()
+    assert stats["working_set_mb"] == -1.0

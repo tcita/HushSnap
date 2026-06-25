@@ -225,11 +225,13 @@ def test_matches_english():
 # ═══════════════════════════════════════════════════════════════════════
 
 def test_finalize_default_text():
-    assert finalize_default_text("hello\n\nworld") == "hello\n\nworld"
+    # finalize_default_text wraps normalize_ocr_text — exercise its transforms
+    # (CRLF/CR normalization, trailing-space stripping), not just identity passthrough.
+    assert finalize_default_text("a\r\nb  \nc\r") == "a\nb\nc"
 
 
 def test_finalize_english_text():
-    assert finalize_english_text("hello\n\nworld") == "hello\n\nworld"
+    assert finalize_english_text("a\r\nb  \nc\r") == "a\nb\nc"
 
 
 # ═══════════════════════════════════════════════════════════════════════
