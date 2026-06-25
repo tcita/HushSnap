@@ -565,7 +565,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
 
         save_label = self._tr("editor_save")
         save_btn = QtWidgets.QPushButton(f"  {save_label}")
-        save_btn.setIcon(_load_editor_icon("save", QtGui.QColor("#5FC98A")))
+        save_btn.setIcon(_load_editor_icon("save", QtGui.QColor(BRAND_GREEN)))
         save_btn.setIconSize(QtCore.QSize(14, 14))
         save_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         save_btn.setShortcut("Ctrl+S")
@@ -595,24 +595,24 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._zoom_label.setFlat(True)
         self._zoom_label.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self._zoom_label.setToolTip(self._tr("editor_fit_tooltip"))
-        self._zoom_label.setStyleSheet("""
-            QPushButton#zoomLabel {
+        self._zoom_label.setStyleSheet(f"""
+            QPushButton#zoomLabel {{
                 background: transparent;
                 border: 1px solid transparent;
                 border-radius: 10px;
                 color: #999;
                 font-size: 11px;
                 padding: 2px 10px;
-            }
-            QPushButton#zoomLabel:hover {
+            }}
+            QPushButton#zoomLabel:hover {{
                 background: #2d2d2d;
                 border-color: #4a4a4a;
                 color: #ccc;
-            }
-            QPushButton#zoomLabel:pressed {
+            }}
+            QPushButton#zoomLabel:pressed {{
                 background: #222;
-                border-color: #5FC98A;
-            }
+                border-color: {BRAND_GREEN};
+            }}
         """)
         self._zoom_label.clicked.connect(self._fit_to_viewport)
         layout.addWidget(self._zoom_label)
@@ -825,7 +825,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
                 "QToolButton { background: transparent; border: none; "
                 f"color: #888; font-size: {dot}px; }}"
                 "QToolButton:hover { color: #ccc; }"
-                "QToolButton:checked { color: #5FC98A; }"
+                f"QToolButton:checked {{ color: {BRAND_GREEN}; }}"
             )
             b.clicked.connect(
                 lambda _checked=False, v=val, t=tool_id: self._apply_size_preset(t, v)

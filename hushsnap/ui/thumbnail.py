@@ -515,15 +515,10 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self.setWindowOpacity(1.0)
 
         menu = QtWidgets.QMenu(self)
-        from .styles import MODERN_MENU_STYLE
+        from .styles import MODERN_MENU_STYLE, apply_menu_shadow
         menu.setStyleSheet(MODERN_MENU_STYLE)
         menu.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
-        
-        shadow = QtWidgets.QGraphicsDropShadowEffect(menu)
-        shadow.setBlurRadius(15)
-        shadow.setColor(QtGui.QColor(0, 0, 0, 80))
-        shadow.setOffset(0, 4)
-        menu.setGraphicsEffect(shadow)
+        apply_menu_shadow(menu)
 
         pin_action = menu.addAction(ui_text(lang, "thumbnail_pin"))
         copy_action = menu.addAction(ui_text(lang, "pin_copy_image"))

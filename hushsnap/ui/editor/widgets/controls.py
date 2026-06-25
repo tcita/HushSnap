@@ -2,6 +2,7 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 from ..constants import (
     _SWATCH_COLORS, _SWATCH_COLS, _SWATCH_SIZE, _SWATCH_PAD, _SWATCH_GAP
 )
+from ...styles import BRAND_GREEN
 
 class _EditorFontComboBox(QtWidgets.QFontComboBox):
     """QFontComboBox variant with the same frameless popup treatment."""
@@ -68,9 +69,9 @@ class _ColorButton(QtWidgets.QWidget):
         painter.setBrush(QtGui.QBrush(display))
 
         if self._pressed:
-            pen = QtGui.QPen(QtGui.QColor("#5FC98A"), 2.5)
+            pen = QtGui.QPen(QtGui.QColor(BRAND_GREEN), 2.5)
         elif self._hovered:
-            pen = QtGui.QPen(QtGui.QColor("#5FC98A"), 2.0)
+            pen = QtGui.QPen(QtGui.QColor(BRAND_GREEN), 2.0)
         else:
             pen = QtGui.QPen(QtGui.QColor(255, 255, 255, 102), 2.0)
 
@@ -109,7 +110,7 @@ class _SwatchPopup(QtWidgets.QFrame):
                 f"  border: {border}; border-radius: {_SWATCH_SIZE // 2}px;"
                 f"}}"
                 f"QPushButton:hover {{ border: 2px solid #fff; }}"
-                f"QPushButton:pressed {{ border: 2px solid #5FC98A; }}"
+                f"QPushButton:pressed {{ border: 2px solid {BRAND_GREEN}; }}"
             )
             btn.clicked.connect(lambda checked, c=QtGui.QColor(hex_color): self._on_pick(c))
             row, col = divmod(i, _SWATCH_COLS)

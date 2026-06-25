@@ -15,6 +15,10 @@ SETTINGS_CAPTURE_DIALOG_MIN_WIDTH = 340
 # progress bars, icon drawing, and web landing pages.
 BRAND_GREEN = "#5FC98A"
 BRAND_GREEN_RGB = (95, 201, 138)  # for QColor(*BRAND_GREEN_RGB, alpha)
+# Brand green shaded down for primary-action buttons (hover/press states):
+# deepened one shade for resting/press contrast, two shades for pressed.
+BRAND_GREEN_DEEP = "#4AB87A"
+BRAND_GREEN_DEEPER = "#3DA86B"
 
 SETTINGS_ERROR_COLOR = "#B00020"
 SETTINGS_BG_COLOR = "#F2F2F2"
@@ -360,3 +364,18 @@ QMenu::separator {
     margin: 4px 8px;
 }
 """
+
+
+def apply_menu_shadow(menu):
+    """Attach the standard soft drop shadow to a styled QMenu.
+
+    Shared by the thumbnail and pinned-image context menus, which use the
+    same MODERN_MENU_STYLE and need identical shadow tuning.
+    """
+    from PyQt6 import QtGui, QtWidgets
+    shadow = QtWidgets.QGraphicsDropShadowEffect(menu)
+    shadow.setBlurRadius(15)
+    shadow.setColor(QtGui.QColor(0, 0, 0, 80))
+    shadow.setOffset(0, 4)
+    menu.setGraphicsEffect(shadow)
+

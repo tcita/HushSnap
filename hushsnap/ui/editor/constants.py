@@ -24,8 +24,8 @@ QWidget#toolbarRow {
 }
 """
 
-EDITOR_TOOL_BUTTON_STYLE = """
-QToolButton {
+EDITOR_TOOL_BUTTON_STYLE = f"""
+QToolButton {{
     background-color: transparent;
     border: 1px solid rgba(255, 255, 255, 25);
     border-radius: 6px;
@@ -34,22 +34,22 @@ QToolButton {
     font-size: 12px;
     min-width: 20px;
     min-height: 28px;
-}
-QToolButton:hover {
+}}
+QToolButton:hover {{
     background-color: rgba(95, 201, 138, 50);
     border-color: rgba(95, 201, 138, 120);
     color: #fff;
-}
-QToolButton:checked {
+}}
+QToolButton:checked {{
     background-color: rgba(95, 201, 138, 70);
-    border-color: #5FC98A;
+    border-color: {BRAND_GREEN};
     color: #fff;
-}
-QToolButton:pressed {
+}}
+QToolButton:pressed {{
     background-color: rgba(95, 201, 138, 100);
-    border-color: #5FC98A;
+    border-color: {BRAND_GREEN};
     color: #fff;
-}
+}}
 """
 
 EDITOR_PUSH_BUTTON_STYLE = """
@@ -78,8 +78,8 @@ QPushButton:disabled {
 }
 """
 
-EDITOR_OPTION_TOGGLE_STYLE = """
-QToolButton {
+EDITOR_OPTION_TOGGLE_STYLE = f"""
+QToolButton {{
     background-color: transparent;
     border: 1px solid rgba(255, 255, 255, 25);
     border-radius: 5px;
@@ -88,22 +88,22 @@ QToolButton {
     font-size: 11px;
     min-width: 24px;
     min-height: 22px;
-}
-QToolButton:hover {
+}}
+QToolButton:hover {{
     background-color: rgba(95, 201, 138, 50);
     border-color: rgba(95, 201, 138, 120);
     color: #fff;
-}
-QToolButton:checked {
+}}
+QToolButton:checked {{
     background-color: rgba(95, 201, 138, 70);
-    border-color: #5FC98A;
+    border-color: {BRAND_GREEN};
     color: #fff;
-}
-QToolButton:pressed {
+}}
+QToolButton:pressed {{
     background-color: rgba(95, 201, 138, 100);
-    border-color: #5FC98A;
+    border-color: {BRAND_GREEN};
     color: #fff;
-}
+}}
 """
 
 EDITOR_STATUS_STYLE = """
@@ -116,35 +116,35 @@ QLabel#statusLabel {
 }
 """
 
-EDITOR_OPTIONS_STYLE = """
-QWidget#optionsArea {
+EDITOR_OPTIONS_STYLE = f"""
+QWidget#optionsArea {{
     background-color: #282828;
     border-bottom: 1px solid rgba(255, 255, 255, 15);
-}
-QLabel#optionLabel {
+}}
+QLabel#optionLabel {{
     color: #aaa;
     font-size: 11px;
     padding: 0 6px;
-}
-QSlider::groove:horizontal {
+}}
+QSlider::groove:horizontal {{
     border: none;
     height: 4px;
     background-color: #444;
     border-radius: 2px;
-}
-QSlider::handle:horizontal {
-    background-color: #5FC98A;
+}}
+QSlider::handle:horizontal {{
+    background-color: {BRAND_GREEN};
     border: none;
     width: 14px;
     height: 14px;
     margin: -5px 0;
     border-radius: 7px;
-}
-QSlider::sub-page:horizontal {
-    background-color: #5FC98A;
+}}
+QSlider::sub-page:horizontal {{
+    background-color: {BRAND_GREEN};
     border-radius: 2px;
-}
-QComboBox {
+}}
+QComboBox {{
     background-color: #353535;
     border: 1px solid rgba(255, 255, 255, 30);
     border-radius: 5px;
@@ -152,19 +152,19 @@ QComboBox {
     color: #ccc;
     font-size: 12px;
         min-width: 80px;
-}
-QComboBox:hover {
+}}
+QComboBox:hover {{
     border-color: rgba(95, 201, 138, 140);
     background-color: #3a3a3a;
-}
-QComboBox:focus {
-    border-color: #5FC98A;
-}
-QComboBox::drop-down {
+}}
+QComboBox:focus {{
+    border-color: {BRAND_GREEN};
+}}
+QComboBox::drop-down {{
     border: none;
     width: 24px;
-}
-QComboBox::down-arrow {
+}}
+QComboBox::down-arrow {{
     image: none;
     border-left: 4px solid transparent;
     border-right: 4px solid transparent;
@@ -172,8 +172,8 @@ QComboBox::down-arrow {
     width: 0;
     height: 0;
     margin-right: 6px;
-}
-QComboBox QAbstractItemView {
+}}
+QComboBox QAbstractItemView {{
     background-color: #2d2d2d;
     border: 1px solid rgba(255, 255, 255, 20);
     border-radius: 5px;
@@ -183,66 +183,66 @@ QComboBox QAbstractItemView {
     font-size: 12px;
         selection-background-color: rgba(95, 201, 138, 50);
     selection-color: #fff;
-}
-QComboBox QAbstractItemView::item {
+}}
+QComboBox QAbstractItemView::item {{
     padding: 7px 14px;
     min-height: 28px;
-}
-QComboBox QAbstractItemView::item:hover {
+}}
+QComboBox QAbstractItemView::item:hover {{
     background-color: rgba(95, 201, 138, 25);
     color: #fff;
-}
-QSpinBox {
+}}
+QSpinBox {{
     background-color: #353535;
     border: 1px solid rgba(255, 255, 255, 30);
     border-radius: 5px;
     padding: 5px 10px;
     color: #ccc;
     font-size: 12px;
-}
-QSpinBox:hover {
+}}
+QSpinBox:hover {{
     border-color: rgba(95, 201, 138, 140);
     background-color: #3a3a3a;
-}
-QSpinBox:focus {
-    border-color: #5FC98A;
-}
-QSpinBox::up-button, QSpinBox::down-button {
+}}
+QSpinBox:focus {{
+    border-color: {BRAND_GREEN};
+}}
+QSpinBox::up-button, QSpinBox::down-button {{
     border: none;
     background: transparent;
     width: 16px;
-}
-QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+}}
+QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
     background: rgba(255, 255, 255, 18);
-}
-QSpinBox::up-button {
+}}
+QSpinBox::up-button {{
     border-left: 1px solid rgba(255, 255, 255, 20);
     border-top-right-radius: 5px;
-}
-QSpinBox::down-button {
+}}
+QSpinBox::down-button {{
     border-left: 1px solid rgba(255, 255, 255, 20);
     border-bottom-right-radius: 5px;
-}
-QSpinBox::up-arrow {
+}}
+QSpinBox::up-arrow {{
     border-left: 4px solid transparent;
     border-right: 4px solid transparent;
     border-bottom: 5px solid #999;
     width: 0;
     height: 0;
-}
-QSpinBox::down-arrow {
+}}
+QSpinBox::down-arrow {{
     border-left: 4px solid transparent;
     border-right: 4px solid transparent;
     border-top: 5px solid #999;
     width: 0;
     height: 0;
-}
-QSpinBox::up-button:hover::up-arrow {
-    border-bottom-color: #5FC98A;
-}
-QSpinBox::down-button:hover::down-arrow {
-    border-top-color: #5FC98A;
-}
+}}
+QSpinBox::up-button:hover::up-arrow {{
+    border-bottom-color: {BRAND_GREEN};
+}}
+QSpinBox::down-button:hover::down-arrow {{
+    border-top-color: {BRAND_GREEN};
+}}
 """
 
 # Preset color palette: 4 columns × 4 rows

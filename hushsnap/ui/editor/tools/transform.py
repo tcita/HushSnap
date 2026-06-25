@@ -5,6 +5,7 @@ from PIL import Image
 from PyQt6 import QtCore, QtGui, QtWidgets
 from .base import BaseTool
 from ..models import UndoChangeType
+from ...styles import BRAND_GREEN, BRAND_GREEN_DEEP, BRAND_GREEN_DEEPER
 
 logger = logging.getLogger(__name__)
 
@@ -355,7 +356,7 @@ class CropTool(BaseTool):
         if r.right() < img_w:
             painter.drawRect(r.right(), r.top(), img_w - r.right(), r.height())
 
-        pen = QtGui.QPen(QtGui.QColor("#5FC98A"), 2.5,
+        pen = QtGui.QPen(QtGui.QColor(BRAND_GREEN), 2.5,
                          QtCore.Qt.PenStyle.SolidLine)
         painter.setPen(pen)
         painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
@@ -474,21 +475,21 @@ _BTN_STYLE_REVERT = """
         color: #CC4444;
     }
 """
-# Apply green deepened by one shade (#4AB87A) from the brand #5FC98A —
-# improves contrast for accessibility while giving the primary action
-# more visual weight.
-_BTN_STYLE_APPLY = """
-    QPushButton {
-        background: #4AB87A;
+# Apply brand green deepened by one shade for the primary action — improves
+# contrast for accessibility while giving it more visual weight. See
+# BRAND_GREEN_DEEP / _DEEPER in styles.py for the shade ladder.
+_BTN_STYLE_APPLY = f"""
+    QPushButton {{
+        background: {BRAND_GREEN_DEEP};
         border: none;
         border-radius: 11px;
         padding: 4px 16px;
         color: #fff;
         font-size: 12px;
         font-weight: 600;
-    }
-    QPushButton:hover { background: #5FC98A; }
-    QPushButton:pressed { background: #3DA86B; }
+    }}
+    QPushButton:hover {{ background: {BRAND_GREEN}; }}
+    QPushButton:pressed {{ background: {BRAND_GREEN_DEEPER}; }}
 """
 
 
@@ -788,9 +789,9 @@ class RotateTool(BaseTool):
         rad = math.radians(angle - 90.0)  # -90 so 0° points up
         ix = center.x() + math.cos(rad) * (r - 4)
         iy = center.y() + math.sin(rad) * (r - 4)
-        painter.setPen(QtGui.QPen(QtGui.QColor("#5FC98A"), 2.4))
+        painter.setPen(QtGui.QPen(QtGui.QColor(BRAND_GREEN), 2.4))
         painter.drawLine(center, QtCore.QPointF(ix, iy))
-        painter.setBrush(QtGui.QBrush(QtGui.QColor("#5FC98A")))
+        painter.setBrush(QtGui.QBrush(QtGui.QColor(BRAND_GREEN)))
         painter.setPen(QtGui.QPen(QtGui.QColor("#ffffff"), 1.2))
         painter.drawEllipse(QtCore.QPointF(ix, iy), 3.2, 3.2)
 
@@ -1043,7 +1044,7 @@ class ResizeTool(BaseTool):
         painter.save()
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
 
-        painter.setPen(QtGui.QPen(QtGui.QColor("#5FC98A"), 1.4,
+        painter.setPen(QtGui.QPen(QtGui.QColor(BRAND_GREEN), 1.4,
                                   QtCore.Qt.PenStyle.DashLine))
         painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
         painter.drawRect(rect)
