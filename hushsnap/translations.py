@@ -17,7 +17,6 @@ DEFAULT_UI_LANG = UI_LANG_AUTO
 UI_TEXT = {
     UI_LANG_EN: {
         "error": "Error",
-        "hotkey_taken": "{hotkey} is already in use.\nConfig: {config_path}",
         "startup_conflict_single": "{hotkey} is already in use by another application.\n\nOpen Settings to choose a different shortcut?",
         "startup_conflict_multiple": "{hotkeys} are already in use by other applications.\n\nOpen Settings to choose different shortcuts?",
 
@@ -54,7 +53,7 @@ UI_TEXT = {
         "settings_thumbnail_time_never": "Never hide",
         "settings_ocr_font_size_label": "OCR Text Size",
         "settings_ocr_font_size_subtitle": "Font size for recognized text in the popup window",
-        "language_changed_body": "Interface language has been changed. HushSnap will restart automatically to apply the change.",
+        "language_changed_body": "Interface language changed. Restarting in a moment…",
         "settings_save_hotkey_btn": "Save Hotkey",
         "settings_hotkey_capture_title": "Change Screenshot Hotkey",
         "settings_hotkey_capture_hint": "Press the hotkey combination you want to use.",
@@ -185,7 +184,6 @@ UI_TEXT = {
     },
     UI_LANG_ZH: {
         "error": "错误",
-        "hotkey_taken": "{hotkey} 热键已被占用！\n配置文件: {config_path}",
         "startup_conflict_single": "{hotkey} 已被其他程序占用。\n\n打开设置重新绑定快捷键？",
         "startup_conflict_multiple": "{hotkeys} 已被其他程序占用。\n\n打开设置重新绑定快捷键？",
 
@@ -222,7 +220,7 @@ UI_TEXT = {
         "settings_thumbnail_time_never": "不消失",
         "settings_ocr_font_size_label": "OCR 文本字号",
         "settings_ocr_font_size_subtitle": "识别结果弹窗中的文本字号大小",
-        "language_changed_body": "界面语言已修改，HushSnap 将自动重启以应用更改。",
+        "language_changed_body": "界面语言已更改，即将重启…",
         "settings_save_hotkey_btn": "保存快捷键",
         "settings_hotkey_capture_title": "修改截图快捷键",
         "settings_hotkey_capture_hint": "请按下你想使用的快捷键组合。",
@@ -353,7 +351,6 @@ UI_TEXT = {
     },
     UI_LANG_ZH_TW: {
         "error": "錯誤",
-        "hotkey_taken": "{hotkey} 熱鍵已被佔用！\n設定檔: {config_path}",
         "startup_conflict_single": "{hotkey} 已被其他程式佔用。\n\n開啟設定重新綁定快速鍵？",
         "startup_conflict_multiple": "{hotkeys} 已被其他程式佔用。\n\n開啟設定重新綁定快速鍵？",
 
@@ -390,7 +387,7 @@ UI_TEXT = {
         "settings_thumbnail_time_12s": "12秒",
         "settings_thumbnail_time_30s": "30秒",
         "settings_thumbnail_time_never": "不消失",
-        "language_changed_body": "介面語言已修改，HushSnap 將自動重啟以套用變更。",
+        "language_changed_body": "介面語言已更改，即將重啟…",
         "settings_save_hotkey_btn": "儲存快速鍵",
         "settings_hotkey_capture_title": "修改截圖快速鍵",
         "settings_hotkey_capture_hint": "請按下你想使用的快速鍵組合。",
@@ -521,7 +518,6 @@ UI_TEXT = {
     },
     UI_LANG_JA: {
         "error": "エラー",
-        "hotkey_taken": "「{hotkey}」は既に使用されています。\n設定ファイル: {config_path}",
         "startup_conflict_single": "「{hotkey}」は他のアプリケーションで使用中です。\n\n設定を開いて別のショートカットを割り当てますか？",
         "startup_conflict_multiple": "「{hotkeys}」は他のアプリケーションで使用中です。\n\n設定を開いて別のショートカットを割り当てますか？",
 
@@ -558,7 +554,7 @@ UI_TEXT = {
         "settings_thumbnail_time_never": "非表示にしない",
         "settings_ocr_font_size_label": "OCR テキストサイズ",
         "settings_ocr_font_size_subtitle": "認識結果ポップアップ内の文字サイズ",
-        "language_changed_body": "表示言語が変更されました。変更を適用するため、HushSnap を自動再起動します。",
+        "language_changed_body": "表示言語を変更しました。まもなく再起動します…",
         "settings_save_hotkey_btn": "ショートカットを保存",
         "settings_hotkey_capture_title": "スクリーンショットのショートカット変更",
         "settings_hotkey_capture_hint": "使用したいキーコンビネーションを押してください。",

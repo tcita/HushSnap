@@ -511,11 +511,12 @@ class Application(QtCore.QObject):
             self.hotkey_manager.stop_watch()
             self.hotkey_manager.release_resources()
         # Show a toast first so the restart reads as an intentional action
-        # rather than a sudden crash. The brief delay also gives the toast
-        # time to render before the process exits.
+        # rather than a sudden crash. The delay also gives the toast time to
+        # render before the process exits — restart must wait at least as long
+        # as the toast duration, otherwise the process exits mid-display.
         from .ui.toast import show_toast
-        show_toast(self.translate("language_changed_body"), duration_ms=2000)
-        QtCore.QTimer.singleShot(1500, lambda: _restart_app(self.qt_app, self.instance_lock))
+        show_toast(self.translate("language_changed_body"), duration_ms=3000)
+        QtCore.QTimer.singleShot(3000, lambda: _restart_app(self.qt_app, self.instance_lock))
 
     def _open_config_dir(self):
         try:
