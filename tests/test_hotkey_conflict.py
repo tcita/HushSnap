@@ -1,15 +1,25 @@
 """
-Unit tests for conflict-prone hotkey detection in the capture dialog.
+Unit tests for hotkey capture in the settings dialog.
 
-The detector flags combos that *register* successfully via RegisterHotKey but
-silently shadow common app/system shortcuts (Ctrl+S, F1, Alt+Space, bare keys).
-It is a soft warning — the combo is still allowed; the dialog just turns amber.
+Covers two things:
+- _qt_key_to_hotkey_token: which keys the capture box accepts as a hotkey's
+  main key. Only letters, digits and function keys are accepted; everything
+  else (Esc, Tab, Enter, Space, arrows, Backspace) returns None so the dialog
+  silently ignores it — most apps don't bind those as shortcuts, so letting
+  them through would only set up conflicts.
+- _is_conflict_prone_hotkey / _hotkey_frame_state: which valid combos earn a
+  soft amber warning (Ctrl+S, F1, Alt+Space, bare keys) vs. stay green.
 """
 
 import pytest
+from PyQt6 import QtCore
 
 from hushsnap.constants import MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN
-from hushsnap.ui.settings_dialog import _is_conflict_prone_hotkey, _hotkey_frame_state
+from hushsnap.ui.settings_dialog import (
+    _is_conflict_prone_hotkey,
+    _hotkey_frame_state,
+    _qt_key_to_hotkey_token,
+)
 
 # Common virtual-key codes used across cases.
 VK_A = 0x41
@@ -137,3 +147,46 @@ def test_frame_state_safe_on_parse_failure():
     """Unparseable input must not crash or falsely warn — fall back to safe."""
     assert _hotkey_frame_state("") == "safe"
     assert _hotkey_frame_state("garbage") == "safe"
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# _qt_key_to_hotkey_token — which main keys the capture box accepts
+# ═══════════════════════════════════════════════════════════════════════
+
+@pytest.mark.parametrize("key,expected", [
+    (QtCore.Qt.Key.Key_A, "A"),
+    (QtCore.Qt.Key.Key_Z, "Z"),
+    (QtCore.Qt.Key.Key_0, "0"),
+    (QtCore.Qt.Key.Key_9, "9"),
+    (QtCore.Qt.Key.Key_F1, "F1"),
+    (QtCore.Qt.Key.Key_F12, "F12"),
+])
+def test_token_accepts_letter_digit_function(key, expected):
+    """Letters, digits and function keys are the universal hotkey vocabulary."""
+    assert _qt_key_to_hotkey_token(key) == expected
+
+
+@pytest.mark.parametrize("key", [
+    QtCore.Qt.Key.Key_Escape,
+    QtCore.Qt.Key.Key_Tab,
+    QtCore.Qt.Key.Key_Enter,
+    QtCore.Qt.Key.Key_Return,
+    QtCore.Qt.Key.Key_Space,
+    QtCore.Qt.Key.Key_Backspace,
+    QtCore.Qt.Key.Key_Left,
+    QtCore.Qt.Key.Key_Up,
+    QtCore.Qt.Key.Key_Right,
+    QtCore.Qt.Key.Key_Down,
+    QtCore.Qt.Key.Key_Insert,
+    QtCore.Qt.Key.Key_Delete,
+    QtCore.Qt.Key.Key_Home,
+    QtCore.Qt.Key.Key_End,
+    QtCore.Qt.Key.Key_PageUp,
+    QtCore.Qt.Key.Key_PageDown,
+])
+def test_token_rejects_non_shortcut_keys(key):
+    """Esc/Tab/Enter/Space/arrows/Backspace/nav keys return None so the capture
+    dialog silently ignores them — they aren't used as hotkey main keys and
+    accepting them would only create conflicts. The user presses one, nothing
+    happens, and they reach for a normal key."""
+    assert _qt_key_to_hotkey_token(key) is None

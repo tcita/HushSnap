@@ -150,26 +150,22 @@ def create_language_icon():
 
 
 def _qt_key_to_hotkey_token(key):
-    """Convert Qt key enum value into internal hotkey token text."""
+    """Convert Qt key enum value into internal hotkey token text.
+
+    Only letters, digits and function keys are accepted as the main key of a
+    hotkey — the universal hotkey vocabulary. Everything else (Esc, Tab,
+    Enter, Space, arrows, Backspace, …) returns None so the capture dialog
+    can silently ignore it: most apps don't bind those as shortcuts, so
+    letting them through would only set up conflicts. The user presses one,
+    nothing happens, and they reach for a normal key.
+    """
     if QtCore.Qt.Key.Key_A <= key <= QtCore.Qt.Key.Key_Z:
         return chr(key)
     if QtCore.Qt.Key.Key_0 <= key <= QtCore.Qt.Key.Key_9:
         return chr(key)
     if QtCore.Qt.Key.Key_F1 <= key <= QtCore.Qt.Key.Key_F24:
         return f"F{key - QtCore.Qt.Key.Key_F1 + 1}"
-
-    special_map = {
-        QtCore.Qt.Key.Key_Escape: "ESC",
-        QtCore.Qt.Key.Key_Tab: "TAB",
-        QtCore.Qt.Key.Key_Enter: "ENTER",
-        QtCore.Qt.Key.Key_Return: "ENTER",
-        QtCore.Qt.Key.Key_Space: "SPACE",
-        QtCore.Qt.Key.Key_Left: "LEFT",
-        QtCore.Qt.Key.Key_Up: "UP",
-        QtCore.Qt.Key.Key_Right: "RIGHT",
-        QtCore.Qt.Key.Key_Down: "DOWN",
-    }
-    return special_map.get(key)
+    return None
 
 
 # Virtual-key codes for Alt-modified combos Windows reserves for the shell.
@@ -877,39 +873,18 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
     def keyPressEvent(self, event):
         """Override key event to intercept and parse user shortcut combination.
 
-        Color is only set when a *complete* combo is captured — never mid-input.
-        A bare modifier (Alt/Ctrl/Shift/Win held alone) or an unmappable key is
-        a half-finished input, not an error, so we keep the frame neutral and
-        just disable Save until a real combo lands.
+        The capture box is overwrite-style, not edit-style: pressing a valid
+        combo replaces whatever was captured, and anything that isn't a valid
+        combo is silently ignored. No feedback, no clearing — the user presses
+        an unusable key (Backspace, Tab, Enter, a bare modifier, an arrow…),
+        nothing happens, and they reach for a normal key. This sidesteps the
+        whole class of "did my captured combo get deleted?" confusion: the only
+        way to change what's shown is to capture a new valid combo.
         """
-        modifier_only_keys = {
-            QtCore.Qt.Key.Key_Control,
-            QtCore.Qt.Key.Key_Shift,
-            QtCore.Qt.Key.Key_Alt,
-            QtCore.Qt.Key.Key_Meta,
-            QtCore.Qt.Key.Key_Super_L,
-            QtCore.Qt.Key.Key_Super_R,
-        }
-
         key = event.key()
-        if key in modifier_only_keys:
-            self.captured_hotkey = None
-            self.save_button.setEnabled(False)
-            self._set_feedback(
-                self.translate("settings_hotkey_capture_invalid"),
-            )
-            self._set_neutral_frame()
-            event.accept()
-            return
-
         key_token = _qt_key_to_hotkey_token(key)
         if key_token is None:
-            self.captured_hotkey = None
-            self.save_button.setEnabled(False)
-            self._set_feedback(
-                self.translate("settings_hotkey_capture_invalid"),
-            )
-            self._set_neutral_frame()
+            # Bare modifier, Backspace, Tab, Enter, arrows, … — silently ignore.
             event.accept()
             return
 
@@ -929,12 +904,6 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
             modifier_mask, virtual_key, canonical_hotkey = parse_hotkey(requested_hotkey)
         except Exception as exc:
             logger.debug(f"Rejected invalid hotkey input '{requested_hotkey}': {exc}")
-            self.captured_hotkey = None
-            self.save_button.setEnabled(False)
-            self._set_feedback(
-                self.translate("settings_hotkey_invalid"),
-            )
-            self._set_neutral_frame()
             event.accept()
             return
 
