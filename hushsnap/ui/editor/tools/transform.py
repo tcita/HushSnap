@@ -998,17 +998,6 @@ class ResizeTool(BaseTool):
             scale = dot / mag_sq if mag_sq else 0.0
             new_w = abs(scale * dx)
             new_h = abs(scale * dy)
-            # Corner handle: project the cursor onto the anchor->corner
-            # diagonal so the grabbed corner tracks the mouse while preserving
-            # aspect ratio (same math the pinned-image window uses).
-            orig = self._editor._display_pixmap
-            aspect = orig.width() / orig.height() if orig.height() else 1.0
-            dx, dy = sx * aspect, sy * 1.0
-            dot = vx * dx + vy * dy
-            mag_sq = dx * dx + dy * dy
-            scale = dot / mag_sq if mag_sq else 0.0
-            new_w = abs(scale * dx)
-            new_h = abs(scale * dy)
 
         new_w = max(_MIN_DIM, min(new_w, _MAX_DIM))
         new_h = max(_MIN_DIM, min(new_h, _MAX_DIM))

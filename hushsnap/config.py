@@ -86,20 +86,6 @@ def is_running_as_package() -> bool:
         return False
 
 
-def get_package_family_name() -> str:
-    """Get the MSIX package family name."""
-    try:
-        length = ctypes.c_uint32(0)
-        _kernel32.GetCurrentPackageFamilyName(ctypes.byref(length), None)
-        if length.value > 0:
-            buf = ctypes.create_unicode_buffer(length.value)
-            if _kernel32.GetCurrentPackageFamilyName(ctypes.byref(length), buf) == 0:
-                return buf.value
-    except Exception:
-        pass
-    return ""
-
-
 def resolve_physical_path(path: Path) -> Path:
     """
     Resolves any path (including virtualized paths inside MSIX sandbox)
@@ -157,11 +143,6 @@ CONFIG_PATH = get_user_data_dir() / APP_CONFIG_FILENAME
 STATE_PATH = get_user_data_dir() / APP_STATE_FILENAME
 # Resource directory (for PyInstaller, read from _MEIPASS; otherwise APP_DIR).
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR)) if _is_frozen else APP_DIR
-
-
-def get_app_dir():
-    """Get the application install directory."""
-    return APP_DIR
 
 
 def get_resource_dir():
@@ -518,7 +499,7 @@ def _migrate_ocr_from_config(state_data, config_path):
             _write_state_data(state_data)
             logger.debug("Migrated OCR settings from config to state file")
         except Exception:
-            pass
+            logger.info("Failed to persist OCR settings migration to state file; will retry next launch", exc_info=True)
     return state_data
 
 

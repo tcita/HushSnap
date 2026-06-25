@@ -8,8 +8,6 @@ from .config import (
 )
 from .constants import (
     OCR_ENGINE_PPOCR,
-    TRAY_MSG_MEDIUM_MS,
-    TRAY_NOTIFICATIONS_ENABLED,
 )
 from .ocr import OcrRequest, OcrService
 

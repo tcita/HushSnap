@@ -2,8 +2,7 @@
 Floating OCR text popup widget.
 """
 
-import os
-from PyQt6 import QtCore, QtGui, QtWidgets, QtSvg
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 from ..config import get_ocr_font_size, get_resource_dir
 from ..constants import APP_ICON_FILENAME
@@ -583,29 +582,10 @@ class OcrPopup(QtWidgets.QWidget):
 
     # ── custom icons ─────────────────────────────────────────────────
     @staticmethod
-    @staticmethod
     def _svg_icon(name, normal_color, active_color):
         """Load an SVG icon from the icons dir with two color variants."""
-        icons_dir = os.path.join(os.path.dirname(__file__), "icons")
-        path = os.path.join(icons_dir, f"{name}.svg")
-        if not os.path.isfile(path):
-            return QtGui.QIcon()
-
-        def _render(color_str):
-            with open(path, "r", encoding="utf-8") as f:
-                svg = f.read().replace("currentColor", color_str)
-            r = QtSvg.QSvgRenderer(QtCore.QByteArray(svg.encode("utf-8")))
-            pm = QtGui.QPixmap(24, 24)
-            pm.fill(QtCore.Qt.GlobalColor.transparent)
-            p = QtGui.QPainter(pm)
-            r.render(p)
-            p.end()
-            return pm
-
-        icon = QtGui.QIcon()
-        icon.addPixmap(_render(normal_color), QtGui.QIcon.Mode.Normal)
-        icon.addPixmap(_render(active_color), QtGui.QIcon.Mode.Active)
-        return icon
+        from .icon_utils import load_svg_icon
+        return load_svg_icon(name, normal_color, active_color, size=24)
 
     @staticmethod
     def _make_close_icon():

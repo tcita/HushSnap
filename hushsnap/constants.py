@@ -29,14 +29,6 @@ APP_ICON_FILENAME = "hushsnap.ico"
 # --- 3. Logic thresholds and timing (ms/px) ---
 # Hotkey re-registration debounce delay
 RELOAD_TIMER_MS = 300
-# Tray message duration (short)
-TRAY_MSG_SHORT_MS = 2000
-# Tray message duration (medium)
-TRAY_MSG_MEDIUM_MS = 3000
-# Tray message duration (long)
-TRAY_MSG_LONG_MS = 4000
-# Disable tray balloon notifications entirely to avoid Windows notification sounds.
-TRAY_NOTIFICATIONS_ENABLED = False
 # OCR engine identifier.
 OCR_ENGINE_PPOCR = "ppocr"
 
@@ -51,8 +43,6 @@ CAPTURE_CLICK_THRESHOLD_PX = 8
 CAPTURE_SELECTION_MIN_PX = 10
 # RGBA color for screenshot overlay mask
 CAPTURE_OVERLAY_RGBA = (0, 0, 0, 80)
-# Log timestamp format
-CAPTURE_LOG_TS_FMT = "%Y-%m-%d %H:%M:%S"
 # Marker string used to identify the start of a new session in the log file.
 SESSION_START_MARKER = "Logging initialized. Level:"
 

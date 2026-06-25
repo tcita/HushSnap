@@ -177,6 +177,8 @@ def create_tray(
     
     # Create tray icon object.
     tray_icon = QtWidgets.QSystemTrayIcon(tray_icon_image, app)
+    # Tooltip shown when hovering the tray icon (otherwise Windows renders an empty bubble).
+    tray_icon.setToolTip(translate("tray_tooltip"))
     # Create right-click context menu.
     tray_menu = QtWidgets.QMenu()
     tray_icon.setContextMenu(tray_menu)

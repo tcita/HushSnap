@@ -241,7 +241,7 @@ def claim_foreground(widget, *, primary: bool = True):
     try:
         old_fg = ctypes.windll.user32.GetForegroundWindow()
     except Exception:
-        pass
+        logger.debug("capture: GetForegroundWindow failed", exc_info=True)
 
     def _verify_and_escalate():
         if _is_foreground(hwnd):
@@ -787,7 +787,7 @@ class CaptureWindow(QtWidgets.QWidget):
             try:
                 geom = geom.united(win.physical_rect())
             except Exception:
-                pass
+                logger.debug("capture: physical_rect union skipped a window", exc_info=True)
         if geom.isNull():
             return phys_pos
         return QtCore.QPoint(
@@ -975,7 +975,7 @@ class CaptureWindow(QtWidgets.QWidget):
             try:
                 hint.close()
             except Exception:
-                pass
+                logger.debug("capture: exit-hint close failed", exc_info=True)
 
         self.pixmap = None
         if hasattr(self, 'on_closed') and self.on_closed:
@@ -984,6 +984,6 @@ class CaptureWindow(QtWidgets.QWidget):
             try:
                 cb()
             except Exception:
-                pass
+                logger.debug("capture: on_closed callback failed", exc_info=True)
         super().closeEvent(event)
 

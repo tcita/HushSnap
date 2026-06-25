@@ -1,10 +1,13 @@
 """High-frequency memory sampler for OCR performance profiling."""
 
+import logging
 import os
 import time
 import threading
 
 import psutil
+
+logger = logging.getLogger(__name__)
 
 _process = psutil.Process(os.getpid())
 
@@ -136,7 +139,7 @@ class MemorySampler:
                 ss_tot = np.sum((y - np.mean(y)) ** 2)
                 r_squared = 1 - ss_res / ss_tot if ss_tot > 0 else 0
         except Exception:
-            pass
+            logger.debug("benchmark: decay-rate polyfit skipped (insufficient data)", exc_info=True)
 
         return {
             "ws_baseline": ws_baseline,

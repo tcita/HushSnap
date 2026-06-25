@@ -11,13 +11,16 @@ from .dpi import grab_all_screens
 
 
 import ctypes
+import logging
+
+logger = logging.getLogger(__name__)
 
 WM_TASKBARCREATED = 0
 if hasattr(ctypes, "windll"):
     try:
         WM_TASKBARCREATED = ctypes.windll.user32.RegisterWindowMessageW("TaskbarCreated")
     except Exception:
-        pass
+        logger.debug("hotkey: RegisterWindowMessageW(TaskbarCreated) failed", exc_info=True)
 
 
 class HotkeyFilter(QtCore.QAbstractNativeEventFilter):

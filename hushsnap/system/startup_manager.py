@@ -98,7 +98,7 @@ async def set_startup_state(enable: bool) -> bool:
                 try:
                     shortcut_path.unlink()
                 except Exception:
-                    pass
+                    logger.debug("startup: failed to remove old startup shortcut", exc_info=True)
 
             if enable:
                 if getattr(sys, 'frozen', False):

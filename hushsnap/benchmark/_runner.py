@@ -129,7 +129,7 @@ class BenchmarkRunner:
         try:
             self.controller.bridge.ocr_result.disconnect()
         except Exception:
-            pass
+            logger.debug("benchmark: ocr_result disconnect failed", exc_info=True)
         return False  # don't suppress exceptions
 
     # ── Signal handlers ───────────────────────────────────────────

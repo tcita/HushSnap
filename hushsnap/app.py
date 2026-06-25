@@ -233,7 +233,7 @@ class Application(QtCore.QObject):
                 shutil.rmtree(cache_dir, ignore_errors=True)
                 self.logger.debug(f"Previous drag cache purged at startup: {cache_dir}")
         except Exception:
-            pass
+            self.logger.debug("Failed to purge drag cache at startup", exc_info=True)
 
     def _init_qt_app(self):
         with self.startup_profiler.step("UI services initialized"):
@@ -248,7 +248,7 @@ class Application(QtCore.QObject):
                     import ctypes
                     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
                 except Exception:
-                    pass
+                    self.logger.debug("Failed to set AppUserModelID", exc_info=True)
 
             self.ui_language = resolve_ui_lang(self.config_path)
             global _translate
@@ -504,8 +504,18 @@ class Application(QtCore.QObject):
     def _handle_restart_requested(self):
         self.logger.info("Restart requested. Cleaning up...")
         if self.hotkey_manager:
+            # Stop the config watcher first: release_resources() unregisters
+            # the hotkey, and the config write that triggered this restart
+            # would otherwise fire a delayed reload that re-registers it and
+            # pops a spurious "Enabled <hotkey>" toast over the restart toast.
+            self.hotkey_manager.stop_watch()
             self.hotkey_manager.release_resources()
-        QtCore.QTimer.singleShot(0, lambda: _restart_app(self.qt_app, self.instance_lock))
+        # Show a toast first so the restart reads as an intentional action
+        # rather than a sudden crash. The brief delay also gives the toast
+        # time to render before the process exits.
+        from .ui.toast import show_toast
+        show_toast(self.translate("language_changed_body"), duration_ms=2000)
+        QtCore.QTimer.singleShot(1500, lambda: _restart_app(self.qt_app, self.instance_lock))
 
     def _open_config_dir(self):
         try:

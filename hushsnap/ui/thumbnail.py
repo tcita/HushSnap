@@ -4,7 +4,7 @@ import time
 import logging
 from pathlib import Path
 
-from PyQt6 import QtCore, QtGui, QtWidgets, QtSvg
+from PyQt6 import QtCore, QtGui, QtWidgets
 from PIL import Image
 
 from .styles import BRAND_GREEN, MODERN_MENU_STYLE
@@ -165,8 +165,15 @@ class ThumbnailWindow(QtWidgets.QWidget):
         # the primary screen — which would place this thumbnail on the wrong
         # monitor when the capture ends at a secondary screen's bottom edge.
         from ..dpi import cursor_screen
-        active_screen = cursor_screen()
-        screen = active_screen.availableGeometry()
+        active_screen = cursor_screen() or QtWidgets.QApplication.primaryScreen()
+        if active_screen is None:
+            # No screen available (e.g. monitors disconnected / RDP session
+            # switching). Fall back to a degenerate geometry so __init__ still
+            # completes (animations/timers/drag-state must be initialized);
+            # the thumbnail simply stays at the origin, off the user's view.
+            screen = QtCore.QRect(0, 0, 0, 0)
+        else:
+            screen = active_screen.availableGeometry()
         self.end_x = screen.x() + screen.width() - self.display_width - THUMBNAIL_MARGIN + self.shadow_padding
         self.end_y = screen.y() + screen.height() - self.display_height - THUMBNAIL_MARGIN + self.shadow_padding
         # Slide-in start point. Previously this was ``screen.x() + screen.width()``
@@ -240,26 +247,8 @@ class ThumbnailWindow(QtWidgets.QWidget):
     @staticmethod
     def _svg_icon(name, normal_color, active_color):
         """Load an SVG icon from the icons dir with two color variants."""
-        icons_dir = os.path.join(os.path.dirname(__file__), "icons")
-        path = os.path.join(icons_dir, f"{name}.svg")
-        if not os.path.isfile(path):
-            return QtGui.QIcon()
-
-        def _render(color_str):
-            with open(path, "r", encoding="utf-8") as f:
-                svg = f.read().replace("currentColor", color_str)
-            r = QtSvg.QSvgRenderer(QtCore.QByteArray(svg.encode("utf-8")))
-            pm = QtGui.QPixmap(24, 24)
-            pm.fill(QtCore.Qt.GlobalColor.transparent)
-            p = QtGui.QPainter(pm)
-            r.render(p)
-            p.end()
-            return pm
-
-        icon = QtGui.QIcon()
-        icon.addPixmap(_render(normal_color), QtGui.QIcon.Mode.Normal)
-        icon.addPixmap(_render(active_color), QtGui.QIcon.Mode.Active)
-        return icon
+        from .icon_utils import load_svg_icon
+        return load_svg_icon(name, normal_color, active_color, size=24)
 
     @staticmethod
     def _make_edit_icon():
@@ -636,7 +625,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
                                        SHCNF_PATH | SHCNF_FLUSHNOWAIT,
                                        temp_path, None)
             except Exception:
-                pass
+                logger.debug("thumbnail: SHChangeNotify(CREATE) failed", exc_info=True)
 
         drag = QtGui.QDrag(self)
         mime_data = QtCore.QMimeData()
@@ -672,7 +661,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
                                        SHCNF_IDLIST | SHCNF_FLUSH,
                                        None, None)
             except Exception:
-                pass
+                logger.debug("thumbnail: SHChangeNotify(UPDATEDIR) failed", exc_info=True)
 
         try:
             if not self.isVisible():
@@ -900,11 +889,19 @@ class ThumbnailManager(QtCore.QObject):
         self._windows = []
 
     def _do_show(self, pil_image: Image.Image):
+        # Only one thumbnail is ever visible at a time: a hidden/off-screen
+        # thumbnail carries no information for the user, so each new capture
+        # replaces the previous window. The list is cleared synchronously
+        # here, and the old window's close() fires its `destroyed` signal
+        # later — by then `win` is no longer in `self._windows`, so the
+        # destroyed handler below is a guarded no-op for it. The handler
+        # exists to drop the *current* window from the list when it
+        # self-dismisses (auto-timeout / fade-out close).
         for w in self._windows:
             try:
                 w.close()
             except Exception:
-                pass
+                logger.debug("thumbnail: failed to close previous window", exc_info=True)
         self._windows = []
 
         win = ThumbnailWindow(pil_image)
@@ -919,6 +916,8 @@ class ThumbnailManager(QtCore.QObject):
                 win.card_rect.size()
             )
         )
+        # `win` is captured per-call (each _do_show gets its own closure), so
+        # this removes exactly this window, not whichever happens to be last.
         win.destroyed.connect(lambda: self._windows.remove(win) if win in self._windows else None)
         self._windows.append(win)
         win.show()
@@ -930,7 +929,7 @@ class ThumbnailManager(QtCore.QObject):
                 if w.isVisible():
                     return w
             except RuntimeError:
-                pass
+                logger.debug("thumbnail: current_window on deleted window", exc_info=True)
         return None
 
     def dismiss_current(self):
@@ -939,7 +938,7 @@ class ThumbnailManager(QtCore.QObject):
             try:
                 w.dismiss()
             except Exception:
-                pass
+                logger.debug("thumbnail: dismiss failed", exc_info=True)
         self._windows.clear()
 
     def refresh_current(self):
@@ -953,7 +952,7 @@ class ThumbnailManager(QtCore.QObject):
             try:
                 win.refresh_timer()
             except Exception:
-                pass
+                logger.debug("thumbnail: refresh_timer failed", exc_info=True)
 
     def current_window_center(self):
         for w in self._windows:
@@ -962,7 +961,7 @@ class ThumbnailManager(QtCore.QObject):
                     geo = w.geometry()
                     return (geo.center().x(), geo.center().y())
             except RuntimeError:
-                pass
+                logger.debug("thumbnail: center on deleted window", exc_info=True)
         return None
 
     def current_window_rect(self):
@@ -971,7 +970,7 @@ class ThumbnailManager(QtCore.QObject):
                 if w.isVisible():
                     return w.mapToGlobal(w.card_rect.topLeft()), w.card_rect.size()
             except RuntimeError:
-                pass
+                logger.debug("thumbnail: rect on deleted window", exc_info=True)
         return None, None
 
 thumbnail_manager = ThumbnailManager()

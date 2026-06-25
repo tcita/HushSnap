@@ -1314,7 +1314,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
                 from .toast import show_toast
                 show_toast(self._tr("editor_saved"))
             except Exception:
-                pass
+                logger.debug("editor: saved toast failed", exc_info=True)
         except Exception:
             logger.exception("Failed to save image")
 
@@ -1650,8 +1650,14 @@ def show_image_editor(
     win.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
     win._resolve_target_screen()
     target = win._target_screen or QtWidgets.QApplication.primaryScreen()
-
-    avail = target.availableGeometry()
+    if target is not None:
+        avail = target.availableGeometry()
+    else:
+        # No screen available (monitors disconnected / RDP switching). Use a
+        # degenerate geometry so sizing math still produces finite values; the
+        # editor opens at the minimum size rather than crashing here.
+        logger.debug("editor: no screen available, using degenerate geometry")
+        avail = QtCore.QRect(0, 0, 1, 1)
     # Size: reuse the user's last editor size (clamped to this screen) if
     # one is remembered; otherwise fall back to 80% of the available area.
     # The screenshot is fit into the canvas by _fit_to_viewport regardless,

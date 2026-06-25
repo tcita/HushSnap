@@ -12,9 +12,12 @@ needs DPR information should go through the helpers here instead of calling
 """
 from __future__ import annotations
 
+import logging
 import sys
 
 from PyQt6 import QtCore, QtGui, QtWidgets
+
+logger = logging.getLogger(__name__)
 
 
 def current_dpr() -> float:
@@ -186,7 +189,7 @@ def cursor_physical_pos() -> QtCore.QPoint | None:
             if ctypes.windll.user32.GetCursorPos(ctypes.byref(pt)):
                 return QtCore.QPoint(pt.x, pt.y)
         except Exception:
-            pass
+            logger.debug("dpi: GetCursorPos failed, falling back to QCursor", exc_info=True)
     try:
         logical = QtGui.QCursor.pos()
         screen = (
@@ -227,7 +230,7 @@ def cursor_screen() -> QtGui.QScreen | None:
                 if screen_physical_rect(screen).contains(phys):
                     return screen
         except Exception:
-            pass
+            logger.debug("dpi: screen hit-test by physical rect failed", exc_info=True)
     try:
         return (
             QtWidgets.QApplication.screenAt(QtGui.QCursor.pos())

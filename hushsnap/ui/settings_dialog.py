@@ -136,21 +136,9 @@ class CategoryList(QtWidgets.QListWidget):
 
 
 def _load_svg_icon(name, color_str="#CCCCCC", size=20):
-    """Load an SVG icon from the icons dir with the given color."""
-    import os
-    from PyQt6 import QtSvg
-    path = os.path.join(os.path.dirname(__file__), "icons", f"{name}.svg")
-    if not os.path.isfile(path):
-        return QtGui.QIcon()
-    with open(path, "r", encoding="utf-8") as f:
-        svg = f.read().replace("currentColor", color_str)
-    renderer = QtSvg.QSvgRenderer(QtCore.QByteArray(svg.encode("utf-8")))
-    pm = QtGui.QPixmap(size, size)
-    pm.fill(QtCore.Qt.GlobalColor.transparent)
-    p = QtGui.QPainter(pm)
-    renderer.render(p)
-    p.end()
-    return QtGui.QIcon(pm)
+    """Load a single-color SVG icon from the icons dir."""
+    from .icon_utils import load_svg_icon
+    return load_svg_icon(name, color_str, size=size)
 
 
 def create_system_icon():

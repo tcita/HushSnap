@@ -10,10 +10,6 @@ from PyQt6 import QtCore, QtWidgets
 from ..config import parse_hotkey, read_hotkey_text_from_config
 from ..constants import (
     RELOAD_TIMER_MS,
-    TRAY_MSG_LONG_MS,
-    TRAY_MSG_MEDIUM_MS,
-    TRAY_MSG_SHORT_MS,
-    TRAY_NOTIFICATIONS_ENABLED,
 )
 
 logger = logging.getLogger(__name__)
@@ -194,28 +190,11 @@ class HotkeyManager(QtCore.QObject):
             )
             return
 
-        # Skip if hotkey settings are unchanged and currently active.
+        # Skip if hotkey settings are unchanged.
         if (
             new_modifier == self.current_hotkey_modifier
             and new_virtual_key == self.current_hotkey_virtual_key
         ):
-            if self.hotkey_registered:
-                return
-            # If previously inactive (e.g., conflict), try to reactivate.
-            if self.register_hotkey(new_modifier, new_virtual_key, new_name):
-                self._request_status_msg(
-                    "hotkey_enabled_title",
-                    "hotkey_enabled",
-                    is_error=False,
-                    hotkey=new_name,
-                )
-            else:
-                self._request_status_msg(
-                    "hotkey_not_updated_title",
-                    "hotkey_still_occupied",
-                    is_error=True,
-                    hotkey=new_name,
-                )
             return
 
         # Hotkey changed, run update flow.
@@ -278,3 +257,21 @@ class HotkeyManager(QtCore.QObject):
         self._watcher.fileChanged.connect(self.schedule_hotkey_reload)
         self._watcher.directoryChanged.connect(self.schedule_hotkey_reload)
         self._reload_timer.timeout.connect(self.apply_hotkey_reload)
+
+    def stop_watch(self):
+        """Stop watching config changes and cancel any pending reload.
+
+        Used on the restart path: release_resources() unregisters the hotkey,
+        so a subsequent config-write-triggered reload would misread the empty
+        state as "hotkey was inactive, now re-enabled" and pop a spurious
+        "Enabled <hotkey>" toast that overlaps the restart toast.
+        """
+        if self._reload_timer is not None:
+            self._reload_timer.stop()
+        if self._watcher is not None:
+            try:
+                self._watcher.removePath(self._config_dir_path_str)
+                if self.config_path.exists():
+                    self._watcher.removePath(self._config_file_path_str)
+            except Exception:
+                logger.debug("hotkey: stop_watch removePath failed", exc_info=True)
