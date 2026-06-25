@@ -21,6 +21,9 @@ BRAND_GREEN_DEEP = "#4AB87A"
 BRAND_GREEN_DEEPER = "#3DA86B"
 
 SETTINGS_ERROR_COLOR = "#B00020"
+# Amber for soft warnings (e.g. hotkey captures a conflict-prone combo):
+# distinct from brand green (safe) — the only risk signal we now surface.
+SETTINGS_WARNING_COLOR = "#E8941A"
 SETTINGS_BG_COLOR = "#F2F2F2"
 SETTINGS_CARD_BG = "#F9F9F9"
 SETTINGS_CARD_BORDER = "#E5E5E5"

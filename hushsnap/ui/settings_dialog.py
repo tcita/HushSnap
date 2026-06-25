@@ -23,6 +23,7 @@ from ..config import (
     get_thumbnail_display_time,
     update_thumbnail_display_time,
 )
+from ..constants import MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN
 from ..system import startup_manager
 from .thumbnail import thumbnail_manager
 from .styles import (
@@ -46,8 +47,8 @@ from .styles import (
     SETTING_CARD_STYLE,
     SETTINGS_CAPTURE_DIALOG_MIN_WIDTH,
     SETTINGS_DIALOG_WIDTH,
-    SETTINGS_ERROR_COLOR,
     SETTINGS_LABEL_COLOR,
+    SETTINGS_WARNING_COLOR,
     STATUS_LABEL_STYLE,
     SUBTITLE_STYLE,
     MESSAGE_BOX_STYLE,
@@ -171,6 +172,110 @@ def _qt_key_to_hotkey_token(key):
     return special_map.get(key)
 
 
+# Virtual-key codes for Alt-modified combos Windows reserves for the shell.
+_VK_SPACE = 0x20
+_VK_F4 = 0x73
+
+# Ctrl + these letters are near-universal edit/file ops (select all, copy, paste,
+# cut, undo, redo, save, print, new, open, find, close). Binding them as a global
+# hotkey shadows shortcuts almost every app uses, so they earn an amber warning.
+# Other Ctrl+letter combos (Q/M/G/J/B/I/U/L/…) are app-specific or rare and are
+# left alone — a soft warning should only flag genuinely high-collision keys.
+_CONFLICT_PRONE_CTRL_KEYS = frozenset({
+    0x41,  # A — select all
+    0x43,  # C — copy
+    0x46,  # F — find
+    0x4E,  # N — new
+    0x4F,  # O — open
+    0x50,  # P — print
+    0x53,  # S — save
+    0x56,  # V — paste
+    0x57,  # W — close
+    0x58,  # X — cut
+    0x59,  # Y — redo
+    0x5A,  # Z — undo
+})
+
+
+def _is_conflict_prone_hotkey(modifier_mask, virtual_key):
+    """Return True when a combo is likely to clash with common app/system shortcuts.
+
+    These all *register* successfully via ``RegisterHotKey`` (so they are valid
+    global hotkeys) but silently hijack combos users rely on elsewhere — editor
+    save/copy, browser tabs, help keys, window menus. We flag them so the capture
+    dialog can show a soft amber warning instead of letting the binding go
+    through with no signal that it may shadow another app's shortcut.
+
+    Considered safe (no warning): combos that include Alt or Win (other than the
+    reserved Alt+Space / Alt+F4), Ctrl combos with an extra modifier such as
+    Ctrl+Shift+… / Ctrl+Alt+…, and the long tail of Ctrl+letter combos that are
+    not near-universal shortcuts. Only flag combos that collide with shortcuts
+    almost every app uses — bare keys, the shell window keys, and the canonical
+    Ctrl+edit/file ops.
+    """
+    has_alt = bool(modifier_mask & MOD_ALT)
+    has_ctrl = bool(modifier_mask & MOD_CONTROL)
+    has_shift = bool(modifier_mask & MOD_SHIFT)
+    has_win = bool(modifier_mask & MOD_WIN)
+
+    # No modifier at all → bare key intercepts normal typing / common keys.
+    if not (has_alt or has_ctrl or has_win):
+        return True
+
+    # Alt+Space (window menu) and Alt+F4 (close) are shell-reserved.
+    if has_alt and not has_ctrl and not has_win:
+        if virtual_key in (_VK_SPACE, _VK_F4):
+            return True
+        # Alt + letter/digit/function is the safe region the default Alt+Q lives in.
+        return False
+
+    # Pure Ctrl + a single key (no Alt/Win/Shift). Only the near-universal
+    # edit/file ops are worth a warning — Ctrl+A/C/V/X/Z/Y (edit), S/P/N/O/F/W
+    # (file/find/close). The rest (Ctrl+Q/M/G/J/B/I/U/L/…) are app-specific or
+    # rare, so we don't nag on them.
+    if has_ctrl and not has_alt and not has_win and not has_shift:
+        return virtual_key in _CONFLICT_PRONE_CTRL_KEYS
+
+    # Ctrl+Shift+…, Ctrl+Alt+…, Win+… (non-reserved), etc. → low collision risk.
+    return False
+
+
+def _hotkey_frame_state(hotkey_name):
+    """Return 'warning' if the hotkey is conflict-prone, else 'safe'.
+
+    Used to tint the hotkey pills on the settings page so a risky binding
+    (e.g. Ctrl+S) keeps its amber reminder after the capture dialog closes.
+    Falls back to 'safe' on any parse error — the register path still has
+    the final say on validity.
+    """
+    try:
+        modifier_mask, virtual_key, _ = parse_hotkey(hotkey_name)
+    except Exception:
+        return "safe"
+    return "warning" if _is_conflict_prone_hotkey(modifier_mask, virtual_key) else "safe"
+
+
+# Persistent frame tint for the settings-page hotkey pills. Subtler than the
+# capture-dialog feedback frame: a thin border + faint wash that reads as a
+# standing status ("this is safe" / "watch out") rather than a fresh event.
+_HOTKEY_FRAME_STYLES = {
+    "safe": (
+        "QWidget {"
+        f"  border: 1px solid {BRAND_GREEN};"
+        "  border-radius: 6px;"
+        "  background-color: #F2FDF6;"
+        "}"
+    ),
+    "warning": (
+        "QWidget {"
+        f"  border: 1px solid {SETTINGS_WARNING_COLOR};"
+        "  border-radius: 6px;"
+        "  background-color: #FFF7EC;"
+        "}"
+    ),
+}
+
+
 def _make_kbd_pill(text):
     """Create a single kbd pill for one key."""
     pill = QtWidgets.QLabel(text)
@@ -188,16 +293,19 @@ def _make_plus_label():
     return lbl
 
 
-def _build_kbd_pills_row(hotkey_string):
+def _build_kbd_pills_row(hotkey_string, frame_state="safe"):
     """Build a row of individual kbd pills separated by '+' labels.
+
+    *frame_state* tints the surrounding frame ('safe' green / 'warning' amber)
+    so a conflict-prone binding stays flagged on the settings page.
 
     Returns (container_widget, pill_labels_list) so the caller can
     update text via setText on each pill later.
     """
     container = QtWidgets.QWidget()
-    container.setStyleSheet("background: transparent; border: none;")
+    container.setStyleSheet(_HOTKEY_FRAME_STYLES.get(frame_state, _HOTKEY_FRAME_STYLES["safe"]))
     layout = QtWidgets.QHBoxLayout(container)
-    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setContentsMargins(6, 3, 6, 3)
     layout.setSpacing(2)
 
     pills = []
@@ -213,8 +321,11 @@ def _build_kbd_pills_row(hotkey_string):
     return container, pills
 
 
-def _rebuild_kbd_pills(container, hotkey_string):
+def _rebuild_kbd_pills(container, hotkey_string, frame_state="safe"):
     """Clear container layout and rebuild all pills + plus labels from scratch.
+
+    Also re-applies the *frame_state* tint so the surrounding frame matches the
+    newly shown hotkey's risk level.
 
     Returns the new list of pill widgets.
     """
@@ -226,6 +337,8 @@ def _rebuild_kbd_pills(container, hotkey_string):
         item = layout.takeAt(0)
         if item.widget():
             item.widget().deleteLater()
+
+    container.setStyleSheet(_HOTKEY_FRAME_STYLES.get(frame_state, _HOTKEY_FRAME_STYLES["safe"]))
 
     pills = []
     parts = [p.strip() for p in hotkey_string.split("+") if p.strip()]
@@ -456,7 +569,7 @@ def _make_setting_card(label_text, subtitle_text, hotkey_text, button_text):
 
     top_layout.addStretch()
 
-    pills_container, pills = _build_kbd_pills_row(hotkey_text)
+    pills_container, pills = _build_kbd_pills_row(hotkey_text, _hotkey_frame_state(hotkey_text))
     top_layout.addWidget(pills_container, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
 
     btn = _make_ghost_button(button_text)
@@ -691,16 +804,9 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
             "background: transparent; border: none;"
         )
         self.pills_layout.addWidget(placeholder, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
-        
-        # Reset stylesheet to normal grey border
-        self.pills_container.setStyleSheet(
-            "QFrame#pillsContainer {"
-            "  border: 1px solid #D5D5D5;"
-            "  border-radius: 8px;"
-            "  background-color: #F9F9F9;"
-            "  min-height: 50px;"
-            "}"
-        )
+
+        # Reset stylesheet to neutral grey border
+        self._set_neutral_frame()
 
     def _update_pills_display(self, hotkey_string):
         # Clear container layout
@@ -723,47 +829,59 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
             )
             self.pills_layout.addWidget(pill, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
 
-    def _shake_window(self):
-        if hasattr(self, "_shake_anim") and self._shake_anim is not None:
-            self._shake_anim.stop()
-            
-        self._shake_anim = QtCore.QSequentialAnimationGroup(self)
-        orig_pos = self.pos()
-        
-        offsets = [8, -8, 6, -6, 4, -4, 0]
-        for offset in offsets:
-            anim = QtCore.QPropertyAnimation(self, b"pos")
-            anim.setDuration(35)
-            anim.setStartValue(self.pos())
-            anim.setEndValue(QtCore.QPoint(orig_pos.x() + offset, orig_pos.y()))
-            self._shake_anim.addAnimation(anim)
-            
-        self._shake_anim.start()
-
-    def _show_invalid_input(self):
-        # Revert container border stylesheet to red error style
-        self.pills_container.setStyleSheet(
+    # Frame states for the pills container. Color is set only when a complete
+    # combo is captured; a half-finished input (bare modifier, unmappable key)
+    # stays neutral rather than flashing red mid-keystroke.
+    _FRAME_STYLES = {
+        "neutral": (
             "QFrame#pillsContainer {"
-            "  border: 1.5px solid #B00020;"
+            "  border: 1px solid #D5D5D5;"
             "  border-radius: 8px;"
-            "  background-color: #FFF5F5;"
+            "  background-color: #F9F9F9;"
             "  min-height: 50px;"
             "}"
-        )
-        self._shake_window()
+        ),
+        "safe": (
+            "QFrame#pillsContainer {"
+            f"  border: 1.5px solid {BRAND_GREEN};"
+            "  border-radius: 8px;"
+            "  background-color: #F2FDF6;"
+            "  min-height: 50px;"
+            "}"
+        ),
+        "warning": (
+            "QFrame#pillsContainer {"
+            f"  border: 1.5px solid {SETTINGS_WARNING_COLOR};"
+            "  border-radius: 8px;"
+            "  background-color: #FFF7EC;"
+            "  min-height: 50px;"
+            "}"
+        ),
+    }
 
-    def _set_feedback(self, message, is_error=False):
+    def _set_neutral_frame(self):
+        self.pills_container.setStyleSheet(self._FRAME_STYLES["neutral"])
+
+    def _set_frame_style(self, state):
+        """Set the pills frame to 'safe' (green) or 'warning' (amber)."""
+        self.pills_container.setStyleSheet(self._FRAME_STYLES[state])
+
+    def _set_feedback(self, message, is_warning=False):
         self.feedback_label.setText(message)
+        color = SETTINGS_WARNING_COLOR if is_warning else "#999"
         self.feedback_label.setStyleSheet(
-            f"font-size: 12px; border: none; background: transparent; color: {SETTINGS_ERROR_COLOR};"
-            " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
-            if is_error
-            else "font-size: 12px; border: none; background: transparent; color: #999;"
+            f"font-size: 12px; border: none; background: transparent; color: {color};"
             " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
         )
 
     def keyPressEvent(self, event):
-        """Override key event to intercept and parse user shortcut combination."""
+        """Override key event to intercept and parse user shortcut combination.
+
+        Color is only set when a *complete* combo is captured — never mid-input.
+        A bare modifier (Alt/Ctrl/Shift/Win held alone) or an unmappable key is
+        a half-finished input, not an error, so we keep the frame neutral and
+        just disable Save until a real combo lands.
+        """
         modifier_only_keys = {
             QtCore.Qt.Key.Key_Control,
             QtCore.Qt.Key.Key_Shift,
@@ -779,9 +897,8 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
             self.save_button.setEnabled(False)
             self._set_feedback(
                 self.translate("settings_hotkey_capture_invalid"),
-                is_error=True,
             )
-            self._show_invalid_input()
+            self._set_neutral_frame()
             event.accept()
             return
 
@@ -791,9 +908,8 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
             self.save_button.setEnabled(False)
             self._set_feedback(
                 self.translate("settings_hotkey_capture_invalid"),
-                is_error=True,
             )
-            self._show_invalid_input()
+            self._set_neutral_frame()
             event.accept()
             return
 
@@ -810,36 +926,37 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
 
         requested_hotkey = "+".join(modifier_tokens + [key_token]) if modifier_tokens else key_token
         try:
-            _, _, canonical_hotkey = parse_hotkey(requested_hotkey)
+            modifier_mask, virtual_key, canonical_hotkey = parse_hotkey(requested_hotkey)
         except Exception as exc:
             logger.debug(f"Rejected invalid hotkey input '{requested_hotkey}': {exc}")
             self.captured_hotkey = None
             self.save_button.setEnabled(False)
             self._set_feedback(
                 self.translate("settings_hotkey_invalid"),
-                is_error=True,
             )
-            self._show_invalid_input()
+            self._set_neutral_frame()
             event.accept()
             return
 
         self.captured_hotkey = canonical_hotkey
         self._update_pills_display(canonical_hotkey)
-        self._set_feedback(
-            self.translate("settings_hotkey_capture_captured", hotkey=canonical_hotkey),
-            is_error=False,
-        )
+
+        if _is_conflict_prone_hotkey(modifier_mask, virtual_key):
+            # Valid global hotkey, but the combo shadows common app/system
+            # shortcuts (Ctrl+S, F1, Alt+Space …). Soft-warn in amber, but
+            # still allow saving — the user's choice. The amber frame persists
+            # after save so the risk stays visible on the settings page.
+            self._set_feedback(
+                self.translate("settings_hotkey_capture_risky", hotkey=canonical_hotkey),
+                is_warning=True,
+            )
+            self._set_frame_style("warning")
+        else:
+            self._set_feedback(
+                self.translate("settings_hotkey_capture_captured", hotkey=canonical_hotkey),
+            )
+            self._set_frame_style("safe")
         self.save_button.setEnabled(True)
-        
-        # Set container border stylesheet to valid green success style
-        self.pills_container.setStyleSheet((
-            "QFrame#pillsContainer {"
-            f"  border: 1.5px solid {BRAND_GREEN};"
-            "  border-radius: 8px;"
-            "  background-color: #F2FDF6;"
-            "  min-height: 50px;"
-            "}"
-        ))
         event.accept()
 
 
@@ -860,9 +977,10 @@ class SettingsDialogController(QtCore.QObject):
     def _refresh_pills(self):
         if self._screenshot_pills_container is None:
             return
+        name = self.hotkey_manager.current_hotkey_name
         try:
             self._screenshot_pills = _rebuild_kbd_pills(
-                self._screenshot_pills_container, self.hotkey_manager.current_hotkey_name
+                self._screenshot_pills_container, name, _hotkey_frame_state(name)
             )
         except RuntimeError:
             self._screenshot_pills_container = None
