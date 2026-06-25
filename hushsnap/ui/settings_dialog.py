@@ -1002,10 +1002,27 @@ class SettingsDialogController(QtCore.QObject):
         # Hotkey
         def change_hotkey():
             cap = HotkeyCaptureDialog(self.translate, parent=dialog)
-            if cap.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            # Temporarily unregister the live global hotkey while the capture
+            # dialog is open. Otherwise pressing the *current* hotkey (e.g. to
+            # rebind it) is intercepted by the OS as a WM_HOTKEY and triggers a
+            # screenshot behind the modal dialog — the overlay then can't win
+            # foreground from the dialog, leaving Esc dead and the user stuck.
+            hm = self.hotkey_manager
+            old_modifier = hm.current_hotkey_modifier
+            old_vk = hm.current_hotkey_virtual_key
+            old_name = hm.current_hotkey_name
+            hm.unregister_current_hotkey()
+            try:
+                accepted = cap.exec() == QtWidgets.QDialog.DialogCode.Accepted
+            finally:
+                if not accepted:
+                    # Re-register the previous hotkey so the user isn't left
+                    # with no working shortcut after cancelling.
+                    hm.register_hotkey(old_modifier, old_vk, old_name)
+            if accepted:
                 hot = cap.captured_hotkey
                 update_hotkey_in_config(self.config_path, hot)
-                self.hotkey_manager.apply_hotkey_reload()
+                hm.apply_hotkey_reload()
                 self._refresh_pills()
 
         card_hot, self._screenshot_pills_container, self._screenshot_pills, btn_hot = _make_setting_card(
