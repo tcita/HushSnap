@@ -472,6 +472,25 @@ def test_cjk_spacing_pure_latin():
     assert _apply_cjk_spacing("hello world") == "hello world"
 
 
+def test_cjk_spacing_protects_url_with_cjk_query():
+    """Regression: a URL whose query value is CJK must not be split.
+
+    Before URL protection, ``kw=测试页面&fr=pb`` was rewritten to
+    ``kw= 测试页面 &fr=pb`` (a space at every CJK↔Latin boundary), so the link
+    highlighter — which stops at whitespace — only coloured the fragment up to
+    the first inserted space.  The URL span is now exempt from the spacers.
+    """
+    assert _apply_cjk_spacing("https://tieba.baidu.com/f?kw=测试页面&fr=pb") == \
+        "https://tieba.baidu.com/f?kw=测试页面&fr=pb"
+
+
+def test_cjk_spacing_still_spaces_cjk_latin_outside_url():
+    """Spacing still applies to CJK↔Latin runs that are not part of a URL."""
+    assert _apply_cjk_spacing("访问 example.com 看看") == "访问 example.com 看看"
+    # No URL scheme here, so the CJK↔Latin boundaries are spaced as usual.
+    assert _apply_cjk_spacing("中文hello") == "中文 hello"
+
+
 # ── _separate_paragraphs ────────────────────────────────────────────
 
 def _make_line(text, y, h=20, w=100):

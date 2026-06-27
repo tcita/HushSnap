@@ -14,7 +14,12 @@ NO_SPACE_SCRIPT_CHAR_CLASS = r"\u3040-\u30ff\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9
 # doesn't get swallowed into the link.  Remaining trailing punctuation \u2014
 # ASCII and CJK \u2014 is trimmed in _iter_url_spans so the coloured span and the
 # clickable region stay in sync.
-URL_REGEX = re.compile(r"https?://[^\s<>\]\)\}]+", re.IGNORECASE)
+#
+# The scheme separator accepts ONE or TWO slashes: OCR not infrequently drops a
+# slash and yields "https:/host" (see normalize_url \u2014 QUrl needs the second
+# slash restored before opening, but matching it here keeps it highlighted and
+# protects it from the punctuation-cleanup spacers).
+URL_REGEX = re.compile(r"https?://?[^\s<>\]\)\}]+", re.IGNORECASE)
 
 # Trailing characters stripped from a matched URL.  CJK fullwidth punctuation
 # is included because OCR of Chinese/Japanese text frequently appends \u3002 or \uff09
@@ -60,6 +65,17 @@ def find_url_at_position(text: str, pos: int) -> str | None:
     return None
 
 
+def normalize_url(url: str) -> str:
+    """Restore the second slash OCR sometimes drops: ``https:/host`` → ``https://host``.
+
+    Browsers tolerate a single slash after the scheme, but ``QUrl`` parses
+    ``https:/host`` with an empty host and ``QDesktopServices.openUrl`` then
+    fails to navigate.  The matched/highlighted span keeps the OCR text as-is
+    (so the user sees what was recognised); this is applied only at open time.
+    """
+    return re.sub(r"^(https?:)/(?!/)", r"\1//", url, flags=re.IGNORECASE)
+
+
 @dataclass(frozen=True)
 class OcrTextAdapter:
     """Language-specific text composition rules kept separate from OCR IO."""
@@ -94,6 +110,36 @@ def is_space_joining_word(token: str) -> bool:
     return False
 
 
+def _apply_punct_spacing(text: str) -> str:
+    """Tighten/insert spacing around ASCII punctuation for natural-language text."""
+    text = re.sub(r"\s+([,;:.!?])", r"\1", text)
+    text = re.sub(r"([,;:.!?])(?=[A-Za-z0-9])", r"\1 ", text)
+    return text
+
+
+def apply_outside_urls(text: str, transform: Callable[[str], str]) -> str:
+    """Apply *transform* to the non-URL runs of *text*, leaving URL spans intact.
+
+    URLs (per :data:`URL_REGEX`) are matched on the raw, pre-spacing text —
+    which is exactly when OCR output is cleanest, before CJK↔Latin spacers and
+    punctuation cleanup insert spaces inside them.  Keeping the matched spans
+    untouched here means the link highlighter and Ctrl+Click handler later see
+    the same complete URL.  Empty string flows through (``transform("")`` may
+    still be called on a tail run); ``None`` is not handled — callers pass str.
+    """
+    if text == "":
+        return text
+    parts: list[str] = []
+    last_end = 0
+    for m in URL_REGEX.finditer(text):
+        if m.start() > last_end:
+            parts.append(transform(text[last_end:m.start()]))
+        parts.append(m.group(0))
+        last_end = m.end()
+    parts.append(transform(text[last_end:]))
+    return "".join(parts)
+
+
 def cleanup_ocr_text_line(text: str) -> str:
     """Normalize spacing around punctuation.
 
@@ -101,10 +147,14 @@ def cleanup_ocr_text_line(text: str) -> str:
     (ppocr._build_lines_from_ordered_blocks + _apply_cjk_spacing) is the
     authority on inter-word spacing via word_separator() and pangu-style
     CJK↔Latin regexes.  Stripping spaces here would undo that work.
+
+    URLs are protected from the punctuation rules: the dot/colon spacers would
+    otherwise rewrite ``https://www.deepseek.com`` to ``https://www. deepseek.
+    com`` (a space after every dot), and the link highlighter — which stops at
+    whitespace — would then only colour ``https://www.``.  Only the non-URL
+    runs are reformatted, via :func:`apply_outside_urls`.
     """
-    text = re.sub(r"\s+([,;:.!?])", r"\1", text)
-    text = re.sub(r"([,;:.!?])(?=[A-Za-z0-9])", r"\1 ", text)
-    return text
+    return apply_outside_urls(text, _apply_punct_spacing)
 
 
 def normalize_token_text(token: str) -> str:

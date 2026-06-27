@@ -22,6 +22,8 @@ from hushsnap.ocr.text import (
     matches_english,
     normalize_ocr_text,
     normalize_token_text,
+    normalize_url,
+    apply_outside_urls,
     select_text_adapter,
     _iter_url_spans,
     _postprocess_layout_text,
@@ -100,6 +102,60 @@ def test_cleanup_punctuation_add_space_after():
     assert cleanup_ocr_text_line("hello.World") == "hello. World"
     assert cleanup_ocr_text_line("end,begin") == "end, begin"
     assert cleanup_ocr_text_line("ok;next") == "ok; next"
+
+
+def test_cleanup_protects_url_from_dot_spacing():
+    """Regression: the dot/colon spacers must not split a URL.
+
+    Previously ``https://www.deepseek.com`` was rewritten to
+    ``https://www. deepseek. com`` (a space inserted after every dot), so the
+    link highlighter — which stops at whitespace — only matched ``https://www.``
+    and the Ctrl+Click hover tooltip never fired over the rest of the URL.
+    """
+    assert cleanup_ocr_text_line("https://www.deepseek.com") == "https://www.deepseek.com"
+    # The full URL survives as a single extractable link.
+    assert extract_urls(cleanup_ocr_text_line("https://www.deepseek.com")) == ["https://www.deepseek.com"]
+
+
+def test_cleanup_protects_url_but_still_cleans_surrounding_text():
+    """Punctuation cleanup still applies to the non-URL runs around a URL."""
+    cleaned = cleanup_ocr_text_line("Visit https://www.deepseek.com today . ok")
+    assert cleaned == "Visit https://www.deepseek.com today. ok"
+    assert extract_urls(cleaned) == ["https://www.deepseek.com"]
+
+
+def test_cleanup_protects_url_with_port_query_and_fragment():
+    """Colons (port), query and fragment punctuation inside a URL are preserved."""
+    url = "https://example.com:8080/path?q=a,b&x=1#frag-ment"
+    assert cleanup_ocr_text_line(url) == url
+    assert extract_urls(cleanup_ocr_text_line(url)) == [url]
+
+
+def test_cleanup_protects_url_with_cjk_query_value():
+    """A URL whose query value is CJK survives cleanup intact and extractable.
+
+    Regression for the tieba case: ``kw=测试页面&fr=pb`` must stay a single URL.
+    """
+    url = "https://tieba.baidu.com/f?kw=测试页面&fr=pb"
+    assert cleanup_ocr_text_line(url) == url
+    assert extract_urls(cleanup_ocr_text_line(url)) == [url]
+
+
+def test_apply_outside_urls_leaves_url_runs_untouched():
+    """apply_outside_urls runs the transform only on non-URL spans."""
+    # Upper-case the non-URL text; URL stays exactly as-is.
+    out = apply_outside_urls("see https://x.com/y?z=1 end", str.upper)
+    assert out == "SEE https://x.com/y?z=1 END"
+
+
+def test_apply_outside_urls_no_url_runs_transform_on_all():
+    assert apply_outside_urls("hello.world", lambda s: s.replace(".", " ")) == "hello world"
+
+
+def test_apply_outside_urls_empty_and_none():
+    assert apply_outside_urls("", str.upper) == ""
+    with pytest.raises(TypeError):
+        apply_outside_urls(None, str.upper)
 
 
 def test_cleanup_empty():
@@ -505,3 +561,39 @@ class TestIterUrlSpansAgreement:
         assert [u for _, _, u in spans] == ["https://x.com", "https://y.com"]
         # And match extract_urls output
         assert [u for _, _, u in spans] == extract_urls(text)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# OCR-dropped slash — single-slash https:/ is still a link, restored on open
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestSingleSlashUrl:
+    def test_single_slash_is_detected(self):
+        # OCR dropped one slash: https:/ instead of https://
+        text = "https:/tieba.baidu.com/p/10824444531?fr=personalize_page"
+        assert extract_urls(text) == [text]
+
+    def test_single_slash_hit_test(self):
+        text = "see https:/tieba.baidu.com/p/10824444531 here"
+        idx = text.find("https:/")
+        assert find_url_at_position(text, idx + 5) == "https:/tieba.baidu.com/p/10824444531"
+
+    def test_cleanup_does_not_split_single_slash_url(self):
+        # Regression: because the URL wasn't recognised, cleanup_ocr_text_line
+        # used to insert a space after every dot -> "tieba. baidu. com".
+        raw = "https:/tieba.baidu.com/p/10824444531?fr=personalize_page"
+        assert cleanup_ocr_text_line(raw) == raw
+        assert extract_urls(cleanup_ocr_text_line(raw)) == [raw]
+
+
+class TestNormalizeUrl:
+    def test_restores_missing_slash(self):
+        assert normalize_url("https:/tieba.baidu.com/p/1") == "https://tieba.baidu.com/p/1"
+        assert normalize_url("http:/example.com") == "http://example.com"
+
+    def test_double_slash_unchanged(self):
+        assert normalize_url("https://example.com/path?q=1") == "https://example.com/path?q=1"
+        assert normalize_url("http://example.com") == "http://example.com"
+
+    def test_case_insensitive_scheme(self):
+        assert normalize_url("HTTPS:/example.com") == "HTTPS://example.com"

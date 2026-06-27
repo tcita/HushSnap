@@ -295,7 +295,7 @@ UI_TEXT = {
         "tool_mosaic": "马赛克",
         "tool_crop": "裁剪",
         "tool_text": "文字",
-        "tool_pan": "抓手",
+        "tool_pan": "平移",
         "tool_rectangle": "矩形",
         "tool_ellipse": "椭圆",
         "tool_arrow": "箭头",

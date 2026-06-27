@@ -450,12 +450,24 @@ def _apply_cjk_spacing(text: str) -> str:
     """Ensure a single space between CJK and Latin characters.
 
     Idempotent: will not double-space text that already has correct spacing.
+
+    URLs are exempted: the pangu-style CJK↔Latin spacers would otherwise
+    insert a space at every CJK/Latin boundary *inside* a URL (e.g.
+    ``kw=测试页面&fr=pb`` → ``kw= 测试页面 &fr=pb``), and the link highlighter —
+    which stops at whitespace — would then only colour the fragment up to the
+    first inserted space.  Spacing is applied only to the non-URL runs.
     """
+    from .text import apply_outside_urls
+
     if not text:
         return text
-    text = _CJK_ANS_RE.sub(r'\1 \2', text)
-    text = _ANS_CJK_RE.sub(r'\1 \2', text)
-    return text
+
+    def _space_runs(s: str) -> str:
+        s = _CJK_ANS_RE.sub(r'\1 \2', s)
+        s = _ANS_CJK_RE.sub(r'\1 \2', s)
+        return s
+
+    return apply_outside_urls(text, _space_runs)
 
 
 def _separate_paragraphs(lines: list[OcrLine]) -> list[OcrLine]:

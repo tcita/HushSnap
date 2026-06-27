@@ -7,7 +7,7 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 from ..config import get_ocr_font_size, get_resource_dir
 from ..constants import APP_ICON_FILENAME
 from ..dpi import cursor_screen
-from ..ocr.text import _iter_url_spans, find_url_at_position
+from ..ocr.text import _iter_url_spans, find_url_at_position, normalize_url
 from .styles import BRAND_GREEN
 
 # Minimum window size to prevent collapsing to zero
@@ -215,6 +215,16 @@ class OcrPopup(QtWidgets.QWidget):
         # detection works even when the mouse is over the child widget.
         self.text_edit.viewport().installEventFilter(self)
         self.text_block.installEventFilter(self)
+
+        # Enable hover events on the text viewport.  Without WA_Hover the
+        # viewport — the widget actually under the cursor — receives no
+        # HoverMove on a plain hover (it has no mouse tracking either), so the
+        # URL link-hover feedback (Ctrl+Click tooltip + hand cursor) wired into
+        # the eventFilter above never fired in real use.  The popup itself has
+        # WA_Hover, but that does not deliver hover to this child viewport.
+        self.text_edit.viewport().setAttribute(
+            QtCore.Qt.WidgetAttribute.WA_Hover, True
+        )
 
         # ── caret colour ────────────────────────────────────────────
         pal = self.text_edit.palette()
@@ -865,25 +875,41 @@ class OcrPopup(QtWidgets.QWidget):
             edge = self._get_edge(local_pos)
 
             if event.type() == QtCore.QEvent.Type.HoverMove:
-                self._update_cursor(edge, obj)
-                if not edge:
-                    self._apply_url_hover(obj, pos)
-            elif event.type() == QtCore.QEvent.Type.MouseButtonPress:
-                if edge and event.button() == QtCore.Qt.MouseButton.LeftButton:
-                    if self.windowHandle():
-                        self.windowHandle().startSystemResize(edge)
-                        return True # Eat the event so child doesn't start selection
-                elif event.button() == QtCore.Qt.MouseButton.LeftButton:
-                    # Ctrl+Click on a URL opens it in the default browser.
-                    ctrl = bool(
-                        QtWidgets.QApplication.keyboardModifiers()
-                        & QtCore.Qt.KeyboardModifier.ControlModifier
+                # A URL under the pointer takes priority over edge-resize cursor
+                # feedback.  The first (top-left) line of OCR text sits inside
+                # the corner resize band (CORNER_HIT), so without this a link
+                # there would show a resize cursor and no "Ctrl+Click" tooltip —
+                # the hover feedback was being swallowed by the edge logic.
+                url = self._url_under(obj, pos)
+                if url is not None:
+                    ctrl = bool(event.modifiers() & QtCore.Qt.KeyboardModifier.ControlModifier)
+                    obj.setCursor(
+                        QtCore.Qt.CursorShape.PointingHandCursor
+                        if ctrl
+                        else QtCore.Qt.CursorShape.IBeamCursor
                     )
+                    QtWidgets.QToolTip.showText(
+                        global_pos,
+                        self.translate("ocr_link_open_hint"),
+                        self.text_edit,
+                    )
+                else:
+                    self._update_cursor(edge, obj)
+                    QtWidgets.QToolTip.hideText()
+            elif event.type() == QtCore.QEvent.Type.MouseButtonPress:
+                if event.button() == QtCore.Qt.MouseButton.LeftButton:
+                    # Ctrl+Click on a URL opens it, taking priority over edge
+                    # resize so a link in the corner band is reachable.
+                    ctrl = bool(event.modifiers() & QtCore.Qt.KeyboardModifier.ControlModifier)
                     if ctrl:
                         url = self._url_under(obj, pos)
                         if url:
-                            QtGui.QDesktopServices.openUrl(QtCore.QUrl(url))
+                            QtGui.QDesktopServices.openUrl(QtCore.QUrl(normalize_url(url)))
                             return True
+                    if edge:
+                        if self.windowHandle():
+                            self.windowHandle().startSystemResize(edge)
+                            return True  # Eat the event so child doesn't start selection
         return super().eventFilter(obj, event)
 
     # ── link hover / open ─────────────────────────────────────────────
@@ -899,26 +925,6 @@ class OcrPopup(QtWidgets.QWidget):
         cursor = self.text_edit.cursorForPosition(point)
         block = cursor.block()
         return find_url_at_position(block.text(), cursor.position() - block.position())
-
-    def _apply_url_hover(self, obj, pos):
-        """On hover over a URL, show a "Ctrl+Click to open" tooltip; with Ctrl
-        held also switch to the hand cursor.  No-op (default cursor preserved)
-        when not over a URL."""
-        url = self._url_under(obj, pos)
-        if url is not None:
-            ctrl = bool(
-                QtWidgets.QApplication.keyboardModifiers()
-                & QtCore.Qt.KeyboardModifier.ControlModifier
-            )
-            if ctrl:
-                obj.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-            QtWidgets.QToolTip.showText(
-                obj.mapToGlobal(pos.toPoint() if hasattr(pos, "toPoint") else pos),
-                self.translate("ocr_link_open_hint"),
-                self.text_edit,
-            )
-        else:
-            QtWidgets.QToolTip.hideText()
 
     def enterEvent(self, event):
         self._update_button_positions()
