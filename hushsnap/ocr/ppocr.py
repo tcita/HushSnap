@@ -45,6 +45,29 @@ from ..system.memory_utils import get_working_set_mb, fmt_memory, trim_working_s
 
 logger = logging.getLogger(__name__)
 
+# ── Fallback / tuning constants ──────────────────────────────────────────────
+# Fallback median block dimension when no text blocks are available.
+_FALLBACK_MEDIAN = 15.0
+# Column-detection multiplier applied to median block width.
+_COLUMN_WIDTH_MULTIPLIER = 2.0
+# Overlap threshold fraction for merging columns.
+_COLUMN_OVERLAP_FRAC = 0.8
+# Line-grouping vertical-centre tolerance (fraction of average height).
+_LINE_Y_TOLERANCE = 0.6
+# Paragraph-separation gap multiplier applied to median block height.
+_PARA_GAP_MULTIPLIER = 1.6
+# Minimum contrast range for recognition-without-detection fallback.
+_MIN_CONTRAST_RANGE = 80
+
+# ── Default PP-OCR engine parameters (documented in the module header) ───────
+_DEFAULT_ENGINE_PARAMS: dict = {
+    "Global.max_side_len": 1280,
+    "Rec.rec_batch_num": 1,
+    "EngineConfig.onnxruntime.intra_op_num_threads": 8,
+    "EngineConfig.onnxruntime.inter_op_num_threads": 1,
+    "EngineConfig.onnxruntime.enable_cpu_mem_arena": False,
+}
+
 
 # -- pure functions ----------------------------------------------------
 
@@ -151,8 +174,8 @@ def _region_metrics(blocks: list[dict]) -> dict:
     heights = [b["height"] for b in blocks]
     widths = [b["width"] for b in blocks]
     return {
-        "med_h": statistics.median(heights) if heights else 15.0,
-        "med_w": statistics.median(widths) if widths else 15.0,
+        "med_h": statistics.median(heights) if heights else _FALLBACK_MEDIAN,
+        "med_w": statistics.median(widths) if widths else _FALLBACK_MEDIAN,
     }
 
 
@@ -197,9 +220,9 @@ def _leaf_reading_order(
         x_centers = sorted(b["center_x"] for b in blocks)
         x_span = x_centers[-1] - x_centers[0]
         widths = [b["width"] for b in blocks]
-        med_w = statistics.median(widths) if widths else 15.0
+        med_w = statistics.median(widths) if widths else _FALLBACK_MEDIAN
 
-        if x_span > med_w * 2.0:
+        if x_span > med_w * _COLUMN_WIDTH_MULTIPLIER:
             # Multi-column vertical CJK -> traditional right->left column order.
             blocks.sort(key=lambda b: b["center_x"])
 
@@ -213,7 +236,7 @@ def _leaf_reading_order(
                 avg_w = sum(b["width"] for b in last) / len(last)
                 if (
                     abs(block["center_x"] - avg_cx)
-                    <= max(avg_w, block["width"]) * 0.8
+                    <= max(avg_w, block["width"]) * _COLUMN_OVERLAP_FRAC
                 ):
                     last.append(block)
                 else:
@@ -311,16 +334,16 @@ def _build_lines_from_ordered_blocks(
         return []
 
     heights = [b["height"] for b in ordered_blocks]
-    med_h = statistics.median(heights) if heights else 15.0
+    med_h = statistics.median(heights) if heights else _FALLBACK_MEDIAN
 
-    # Group consecutive blocks whose center_y is within 0.6x median height
+    # Group consecutive blocks whose center_y is within tolerance of median height
     line_groups: list[list[dict]] = []
     current_line = [ordered_blocks[0]]
 
     for block in ordered_blocks[1:]:
         avg_y = sum(b["center_y"] for b in current_line) / len(current_line)
         avg_h = sum(b["height"] for b in current_line) / len(current_line)
-        if abs(block["center_y"] - avg_y) < avg_h * 0.6:
+        if abs(block["center_y"] - avg_y) < avg_h * _LINE_Y_TOLERANCE:
             current_line.append(block)
         else:
             line_groups.append(current_line)
@@ -453,7 +476,7 @@ def _separate_paragraphs(lines: list[OcrLine]) -> list[OcrLine]:
         curr_top = curr.bounding_box.y
         gap = curr_top - prev_bottom
 
-        if gap > med_h * 1.6:
+        if gap > med_h * _PARA_GAP_MULTIPLIER:
             lines[i - 1].text = lines[i - 1].text.rstrip() + "\n"
 
     return lines
@@ -600,11 +623,7 @@ def _get_engine() -> "PPOCR":
                     "Rec.ocr_version": local_OCRVersion.PPOCRV5,
                     "Cls.ocr_version": local_OCRVersion.PPOCRV5,
                     "Global.use_cls": False,
-                    "Global.max_side_len": 1280,
-                    "Rec.rec_batch_num": 1,
-                    "EngineConfig.onnxruntime.intra_op_num_threads": 8,
-                    "EngineConfig.onnxruntime.inter_op_num_threads": 1,
-                    "EngineConfig.onnxruntime.enable_cpu_mem_arena": False,
+                    **_DEFAULT_ENGINE_PARAMS,
                 }
                 if _engine_params_override:
                     params.update(_engine_params_override)
@@ -691,7 +710,7 @@ def _recognize_without_detection(engine, arr) -> OcrRecognition:
         # 2. Pre-recognition enhancement: Normalize contrast
         gray_crop = cv2.cvtColor(arr, cv2.COLOR_BGR2GRAY)
         min_v, max_v, _, _ = cv2.minMaxLoc(gray_crop)
-        if max_v - min_v < 80:
+        if max_v - min_v < _MIN_CONTRAST_RANGE:
             arr = cv2.normalize(arr, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
 
         _acquire_request()

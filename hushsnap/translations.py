@@ -450,22 +450,22 @@ UI_TEXT = {
         "hotkey_kept_old": "{new_hotkey} 被佔用，已保持 {old_hotkey}",
 
         # Image Editor
-        "thumbnail_edit": "编辑",
+        "thumbnail_edit": "編輯",
 
-        "editor_title": "HushSnap 图片编辑器",
-        "tool_brush": "画笔",
-        "tool_highlighter": "荧光笔",
+        "editor_title": "HushSnap 圖片編輯器",
+        "tool_brush": "畫筆",
+        "tool_highlighter": "螢光筆",
         "tool_eraser": "橡皮擦",
-        "tool_mosaic": "马赛克",
+        "tool_mosaic": "馬賽克",
         "tool_crop": "裁剪",
         "tool_text": "文字",
-        "tool_pan": "抓手",
+        "tool_pan": "平移",
         "tool_rectangle": "矩形",
-        "tool_ellipse": "椭圆",
-        "tool_arrow": "箭头",
-        "tool_line": "直线",
+        "tool_ellipse": "橢圓",
+        "tool_arrow": "箭頭",
+        "tool_line": "直線",
 
-        "editor_undo": "撤销",
+        "editor_undo": "復原",
 
         "editor_redo": "重做",
         "editor_save": "儲存",

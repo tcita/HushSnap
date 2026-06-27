@@ -36,6 +36,34 @@ logger = get_logger(__name__)
 FLOAT_UP_PX = 20
 FLOAT_DURATION_MS = 600
 
+# ── Win32 window-manipulation constants ──────────────────────────────────────
+# Used by _force_topmost_hard() for foreground escalation.
+_WM_CANCELMODE = 0x001F
+_SMTO_ABORTIFHUNG = 0x0002
+_SW_SHOW = 5
+_HWND_TOPMOST = -1
+# SWP_SHOWWINDOW | SWP_NOMOVE | SWP_NOSIZE
+_SWP_TOPMOST_FLAGS = 0x0043
+_WM_CANCELMODE_TIMEOUT_MS = 200
+
+# ── Selection-handle / dimension-label drawing constants ─────────────────────
+_SELECTION_HANDLE_SIZE = 10
+_DIMENSION_LABEL_FONT_SIZE = 9
+_DIMENSION_LABEL_PAD_X = 6
+_DIMENSION_LABEL_PAD_Y = 2
+_DIMENSION_LABEL_RADIUS = 4
+_DIMENSION_LABEL_BG = (0, 0, 0, 180)
+_DIMENSION_LABEL_OFFSET = 5
+
+# ── Toast / hint visual constants ────────────────────────────────────────────
+_TOAST_SHADOW_MARGIN = (12, 12, 12, 14)
+_TOAST_SHADOW_BLUR = 10
+_TOAST_SHADOW_OFFSET = (0, 2)
+_HINT_SHADOW_MARGIN = (16, 12, 16, 14)
+_HINT_SHADOW_BLUR = 16
+_HINT_SHADOW_OFFSET = (0, 3)
+_HINT_BOTTOM_OFFSET = 56
+
 # ── Overlay housekeeping ────────────────────────────────────────────────────
 #
 # The overlay is dismissed by the user (Esc / right-click / a completed
@@ -138,16 +166,18 @@ def _force_topmost_hard(hwnd, old_fg_hwnd):
 
     try:
         # Cancel the old foreground's modal state so it releases focus.
-        # WM_CANCELMODE=0x1F, SMTO_ABORTIFHUNG=0x2, 200ms timeout.
         if old_fg_hwnd and old_fg_hwnd != hwnd:
             unused = wintypes.DWORD()
             user32.SendMessageTimeoutW(
-                old_fg_hwnd, 0x001F, 0, 0, 0x0002, 200, ctypes.byref(unused)
+                old_fg_hwnd, _WM_CANCELMODE, 0, 0,
+                _SMTO_ABORTIFHUNG, _WM_CANCELMODE_TIMEOUT_MS,
+                ctypes.byref(unused),
             )
 
-        # SWP_SHOWWINDOW=0x40, SWP_NOMOVE=0x2, SWP_NOSIZE=0x1; HWND_TOPMOST=-1.
-        user32.ShowWindow(hwnd, 5)
-        user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0043)
+        user32.ShowWindow(hwnd, _SW_SHOW)
+        user32.SetWindowPos(
+            hwnd, _HWND_TOPMOST, 0, 0, 0, 0, _SWP_TOPMOST_FLAGS,
+        )
         user32.SetForegroundWindow(hwnd)
         user32.SetActiveWindow(hwnd)
         user32.SetFocus(hwnd)
@@ -285,8 +315,7 @@ class CopiedToast(QtWidgets.QWidget):
 
         # Main layout for the top-level CopiedToast widget (transparent wrapper)
         outer_layout = QtWidgets.QVBoxLayout(self)
-        # Margin around container for shadow to draw inside window bounds (blur radius 10, offset 2)
-        outer_layout.setContentsMargins(12, 12, 12, 14)
+        outer_layout.setContentsMargins(*_TOAST_SHADOW_MARGIN)
         outer_layout.setSpacing(0)
 
         # Container widget for actual content
@@ -329,9 +358,9 @@ class CopiedToast(QtWidgets.QWidget):
 
         # Drop shadow on the container widget to render inside the top-level window
         shadow = QtWidgets.QGraphicsDropShadowEffect(self.container)
-        shadow.setBlurRadius(10)
+        shadow.setBlurRadius(_TOAST_SHADOW_BLUR)
         shadow.setColor(QtGui.QColor(0, 0, 0, 100))
-        shadow.setOffset(0, 2)
+        shadow.setOffset(*_TOAST_SHADOW_OFFSET)
         self.container.setGraphicsEffect(shadow)
 
         # Center on cursor (accounting for its own width)
@@ -385,9 +414,9 @@ class ExitHintToast(QtWidgets.QWidget):
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
 
         # Transparent wrapper with margin so the shadow draws inside the
-        # window bounds (blur 16, offset 3).
+        # window bounds.
         outer = QtWidgets.QVBoxLayout(self)
-        outer.setContentsMargins(16, 12, 16, 14)
+        outer.setContentsMargins(*_HINT_SHADOW_MARGIN)
         outer.setSpacing(0)
 
         container = QtWidgets.QFrame()
@@ -420,9 +449,9 @@ class ExitHintToast(QtWidgets.QWidget):
 
         # Soft shadow so the card reads against arbitrary screenshot backgrounds.
         shadow = QtWidgets.QGraphicsDropShadowEffect(container)
-        shadow.setBlurRadius(16)
+        shadow.setBlurRadius(_HINT_SHADOW_BLUR)
         shadow.setColor(QtGui.QColor(0, 0, 0, 140))
-        shadow.setOffset(0, 3)
+        shadow.setOffset(*_HINT_SHADOW_OFFSET)
         container.setGraphicsEffect(shadow)
 
         # Bottom-center of the screen the cursor is on now (the cursor may
@@ -430,7 +459,7 @@ class ExitHintToast(QtWidgets.QWidget):
         # Fallback chain: screenAt(cursor) → parent's screen → parent geometry.
         screen_geo = self._cursor_screen_geo(parent)
         x = screen_geo.x() + (screen_geo.width() - self.width()) // 2
-        y = screen_geo.bottom() - self.height() - 56
+        y = screen_geo.bottom() - self.height() - _HINT_BOTTOM_OFFSET
         self.move(x, y)
 
     @staticmethod
@@ -673,7 +702,6 @@ class CaptureWindow(QtWidgets.QWidget):
                 painter.drawRect(intersected_rect)
 
                 # 3. Draw Corner Handles (professional look)
-                handle_size = 10
                 painter.setBrush(QtGui.QColor(BRAND_GREEN))
                 painter.setPen(QtGui.QPen(QtCore.Qt.GlobalColor.white, 1))
 
@@ -684,9 +712,9 @@ class CaptureWindow(QtWidgets.QWidget):
                 for pt in corners:
                     if self.rect().contains(pt):
                         painter.drawRect(QtCore.QRect(
-                            pt.x() - handle_size // 2,
-                            pt.y() - handle_size // 2,
-                            handle_size, handle_size
+                            pt.x() - _SELECTION_HANDLE_SIZE // 2,
+                            pt.y() - _SELECTION_HANDLE_SIZE // 2,
+                            _SELECTION_HANDLE_SIZE, _SELECTION_HANDLE_SIZE
                         ))
 
                 # 4. Real-time Size Label
@@ -702,34 +730,33 @@ class CaptureWindow(QtWidgets.QWidget):
                     height_val = local_rect.height()
                 size_text = f"{width_val} x {height_val}"
                 font = painter.font()
-                font.setPointSize(9)
+                font.setPointSize(_DIMENSION_LABEL_FONT_SIZE)
                 font.setBold(True)
                 painter.setFont(font)
-                
+
                 # Calculate label background rect
                 metrics = painter.fontMetrics()
                 text_w = metrics.horizontalAdvance(size_text)
                 text_h = metrics.height()
-                padding_x, padding_y = 6, 2
-                
+
                 bg_rect = QtCore.QRect(
-                    intersected_rect.right() - text_w - padding_x * 2,
-                    intersected_rect.bottom() + 5, # Positioned slightly below selection
-                    text_w + padding_x * 2,
-                    text_h + padding_y * 2
+                    intersected_rect.right() - text_w - _DIMENSION_LABEL_PAD_X * 2,
+                    intersected_rect.bottom() + _DIMENSION_LABEL_OFFSET,
+                    text_w + _DIMENSION_LABEL_PAD_X * 2,
+                    text_h + _DIMENSION_LABEL_PAD_Y * 2
                 )
 
                 # Adjust if label goes off-screen
                 if bg_rect.bottom() > self.height():
-                    bg_rect.moveBottom(intersected_rect.bottom() - 5)
+                    bg_rect.moveBottom(intersected_rect.bottom() - _DIMENSION_LABEL_OFFSET)
                 if bg_rect.left() < 0:
-                    bg_rect.moveLeft(5)
+                    bg_rect.moveLeft(_DIMENSION_LABEL_OFFSET)
 
                 # Draw Label Background
                 if self.rect().intersects(bg_rect):
-                    painter.setBrush(QtGui.QColor(0, 0, 0, 180))
+                    painter.setBrush(QtGui.QColor(*_DIMENSION_LABEL_BG))
                     painter.setPen(QtCore.Qt.PenStyle.NoPen)
-                    painter.drawRoundedRect(bg_rect, 4, 4)
+                    painter.drawRoundedRect(bg_rect, _DIMENSION_LABEL_RADIUS, _DIMENSION_LABEL_RADIUS)
                     
                     # Draw Text
                     painter.setPen(QtCore.Qt.GlobalColor.white)

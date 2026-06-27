@@ -16,6 +16,45 @@ OUTER_MARGIN = 28  # Matches RESIZE_HIT — creates a clear "window chrome" ring
 RESIZE_HIT = 28
 CORNER_HIT = 52  # Wide corner zone — corners are point targets, need the extra room
 
+# ── Size-adjustment layout constants ─────────────────────────────────────────
+# Chrome estimates: outer margins + borders + viewport paddings + scrollbar.
+_CHROME_WIDTH = 100
+_CHROME_HEIGHT = 48
+# Viewport reduction = outer_margins + panel_padding + viewport_margins + borders.
+_VP_WIDTH_REDUCTION = 72
+# Text width padding inside the viewport (16+16).
+_TEXT_WIDTH_PAD = 32
+# Minimum unwrapped line width before wrapping kicks in.
+_MIN_LINE_WIDTH = 200
+# Minimum text height (prevents collapsing to an invisible sliver).
+_MIN_TEXT_HEIGHT = 40
+# Line-spacing buffer added to the measured QTextDocument height.
+_LINE_SPACING_BUFFER = 8
+# Bubble padding: space between the text block and the bubble frame.
+_BUBBLE_PAD = 22
+# Screen-edge margins for clamping the final geometry.
+_SCREEN_MARGIN_W = 40
+_SCREEN_MARGIN_H = 60
+# Screen-area fraction cap for max popup width.
+_MAX_WIDTH_SCREEN_FRAC = 0.75
+# Edge-attach threshold: if the window edge is within this many px of a screen
+# edge, it stays anchored so the popup grows inward rather than pushing off-screen.
+_EDGE_THRESHOLD = 80
+
+# ── Loading-card layout constants ────────────────────────────────────────────
+_LOADING_MAX_IMG_W = 480
+_LOADING_MAX_IMG_H = 360
+_LOADING_FALLBACK_W = 280
+_LOADING_FALLBACK_H = 180
+_LOADING_PROGRESS_BAR_H = 2
+_LOADING_CARD_MIN_W = 280
+_LOADING_CARD_MAX_W = 480
+_LOADING_CARD_MAX_H = 400
+_LOADING_SCREEN_FRAC = 0.55
+# Default compact size before any text is loaded.
+_DEFAULT_W = 420
+_DEFAULT_H = 200
+
 
 class OcrPopup(QtWidgets.QWidget):
     """Semi-transparent floating popup for recognized OCR text."""
@@ -164,7 +203,7 @@ class OcrPopup(QtWidgets.QWidget):
 
         # Compact default; height auto-fits content on show_text.
         # User resizes freely — scroll area handles overflow.
-        self.resize(420, 200)
+        self.resize(_DEFAULT_W, _DEFAULT_H)
 
         self._morph_anim = None
         self._anchor_pos = None
@@ -298,7 +337,11 @@ class OcrPopup(QtWidgets.QWidget):
         # jarring "expand then shrink" when OCR finishes.
         if pixmap:
             img_w, img_h = pixmap.width(), pixmap.height()
-            scale = min(480.0 / img_w, 360.0 / img_h, 1.0)
+            scale = min(
+                _LOADING_MAX_IMG_W / img_w,
+                _LOADING_MAX_IMG_H / img_h,
+                1.0,
+            )
             content_w = int(img_w * scale)
             content_h = int(img_h * scale)
             self.loading_img_label.setPixmap(pixmap.scaled(
@@ -307,24 +350,23 @@ class OcrPopup(QtWidgets.QWidget):
                 QtCore.Qt.TransformationMode.SmoothTransformation,
             ))
         else:
-            content_w, content_h = 280, 180  # fallback
+            content_w, content_h = _LOADING_FALLBACK_W, _LOADING_FALLBACK_H
 
         if self._anchor_geom:
             m = OUTER_MARGIN
-            bar_h = 2  # progress bar
 
             # Loading card width: bounded to a narrow band so the
             # transition to the text card is a 1D height change.
-            card_w = max(content_w, 280)
-            card_w = min(card_w, 480)
-            card_h = min(content_h + bar_h, 400)
+            card_w = max(content_w, _LOADING_CARD_MIN_W)
+            card_w = min(card_w, _LOADING_CARD_MAX_W)
+            card_h = min(content_h + _LOADING_PROGRESS_BAR_H, _LOADING_CARD_MAX_H)
 
             # Ensure it fits on screen
             screen = cursor_screen()
             if screen:
                 area = screen.availableGeometry()
-                card_w = min(card_w, int(area.width() * 0.55))
-                card_h = min(card_h, int(area.height() * 0.55))
+                card_w = min(card_w, int(area.width() * _LOADING_SCREEN_FRAC))
+                card_h = min(card_h, int(area.height() * _LOADING_SCREEN_FRAC))
 
             target_w = card_w + 2 * m
             target_h = card_h + 2 * m
@@ -442,15 +484,14 @@ class OcrPopup(QtWidgets.QWidget):
                 w = fm.horizontalAdvance(line)
                 if w > max_line_px:
                     max_line_px = w
-            max_line_px = max(max_line_px, 200.0)
+            max_line_px = max(max_line_px, float(_MIN_LINE_WIDTH))
 
             content_w = max_line_px
 
             # Window chrome: outer margins + borders +
             #                 viewport margins + scrollbar + safety buffer
-            chrome_w = 100
-            desired_w = int(content_w + chrome_w)
-            
+            desired_w = int(content_w + _CHROME_WIDTH)
+
             # During the transition from loading, we might want to be smaller than WINDOW_MIN_WIDTH
             # if the text is very sparse, but usually text popups should have a baseline.
             desired_w = max(desired_w, WINDOW_MIN_WIDTH)
@@ -459,7 +500,7 @@ class OcrPopup(QtWidgets.QWidget):
             if not screen:
                 screen = cursor_screen()
             if screen:
-                max_w = int(screen.availableGeometry().width() * 0.75)
+                max_w = int(screen.availableGeometry().width() * _MAX_WIDTH_SCREEN_FRAC)
                 desired_w = min(desired_w, max_w)
 
             # Use immediate resize if not visible yet, otherwise it's handled by geometry animation
@@ -471,12 +512,9 @@ class OcrPopup(QtWidgets.QWidget):
             target_w = self.width()
 
         # ── height ─────────────────────────────────────────────────
-        # Viewport width = window − outer_margins(24) − panel_padding(12)
-        #                  − viewport_margins(32) − borders(4) ≈ 72
-        vp_w = target_w - 72
+        vp_w = target_w - _VP_WIDTH_REDUCTION
 
-        # padding (16+16)
-        text_w = max(vp_w - 32, 200)
+        text_w = max(vp_w - _TEXT_WIDTH_PAD, _MIN_LINE_WIDTH)
 
         # Use QTextDocument to calculate exact height of the plain text with wrapping
         td = QtGui.QTextDocument()
@@ -487,20 +525,16 @@ class OcrPopup(QtWidgets.QWidget):
         td.setPlainText(text)
 
         # Add a small buffer for line spacing
-        text_h = int(td.size().height()) + 8
+        text_h = int(td.size().height()) + _LINE_SPACING_BUFFER
         td.deleteLater()
 
         # Respect minimum height
-        text_h = max(text_h, 40)
+        text_h = max(text_h, _MIN_TEXT_HEIGHT)
 
         # Accumulate: bubble internals + chrome
-        # chrome_h: outer margins + text_block borders + safety
-        chrome_h = 48
+        bubble_h = text_h + _BUBBLE_PAD
 
-        # bubble_h: text + viewport padding already in text_edit
-        bubble_h = text_h + 22
-
-        total_h = chrome_h + bubble_h
+        total_h = _CHROME_HEIGHT + bubble_h
         total_h = max(total_h, WINDOW_MIN_HEIGHT)
 
         screen = QtWidgets.QApplication.screenAt(self.pos())
@@ -510,8 +544,8 @@ class OcrPopup(QtWidgets.QWidget):
         if screen:
             area = screen.availableGeometry()
             # Don't exceed screen dimensions
-            max_w = area.width() - 40
-            max_h = area.height() - 60
+            max_w = area.width() - _SCREEN_MARGIN_W
+            max_h = area.height() - _SCREEN_MARGIN_H
             total_h = min(total_h, max_h)
             new_w = min(target_w, max_w)
         else:
@@ -533,10 +567,9 @@ class OcrPopup(QtWidgets.QWidget):
             # Anchor edges that already sit close to a screen border so
             # the popup feels "attached" — it grows inward instead of
             # pushing off-screen every time the text changes.
-            EDGE_THRESHOLD = 80
-            if old_right >= area.right() - EDGE_THRESHOLD:
+            if old_right >= area.right() - _EDGE_THRESHOLD:
                 target_geom.moveRight(old_right)
-            if old_bottom >= area.bottom() - EDGE_THRESHOLD:
+            if old_bottom >= area.bottom() - _EDGE_THRESHOLD:
                 target_geom.moveBottom(old_bottom)
 
             # Safety clamp — keeps the window on screen
@@ -582,35 +615,35 @@ class OcrPopup(QtWidgets.QWidget):
 
     # ── custom icons ─────────────────────────────────────────────────
     @staticmethod
-    def _svg_icon(name, normal_color, active_color):
-        """Load an SVG icon from the icons dir with two color variants."""
-        from .icon_utils import load_svg_icon
-        return load_svg_icon(name, normal_color, active_color, size=24)
-
-    @staticmethod
     def _make_close_icon():
-        return OcrPopup._svg_icon("close", "#d4f5e2", "#ffffff")
+        from .icon_utils import load_svg_icon
+        return load_svg_icon("close", "#d4f5e2", "#ffffff", size=24)
 
     @staticmethod
     def _make_copy_icon():
-        return OcrPopup._svg_icon("copy_simple", BRAND_GREEN, "#a3f2c2")
+        from .icon_utils import load_svg_icon
+        return load_svg_icon("copy_simple", BRAND_GREEN, "#a3f2c2", size=24)
 
     @staticmethod
     def _make_check_icon():
-        return OcrPopup._svg_icon("check", "#d4f5e2", "#ffffff")
+        from .icon_utils import load_svg_icon
+        return load_svg_icon("check", "#d4f5e2", "#ffffff", size=24)
 
     @staticmethod
     def _make_success_check_icon():
-        return OcrPopup._svg_icon("check", BRAND_GREEN, "#a3f2c2")
+        from .icon_utils import load_svg_icon
+        return load_svg_icon("check", BRAND_GREEN, "#a3f2c2", size=24)
 
     @staticmethod
     def _make_x_icon():
-        return OcrPopup._svg_icon("close", BRAND_GREEN, "#a3f2c2")
+        from .icon_utils import load_svg_icon
+        return load_svg_icon("close", BRAND_GREEN, "#a3f2c2", size=24)
 
     @staticmethod
     def _make_pin_icon(checked=False):
+        from .icon_utils import load_svg_icon
         name = "pin" if checked else "pin_unlocked"
-        return OcrPopup._svg_icon(name, BRAND_GREEN, "#a3f2c2")
+        return load_svg_icon(name, BRAND_GREEN, "#a3f2c2", size=24)
 
     # ── pin ──────────────────────────────────────────────────────────
     def _on_pin_toggled(self, checked):

@@ -43,24 +43,33 @@ _close_handle = _kernel32.CloseHandle
 _close_handle.argtypes = (wintypes.HANDLE,)
 _close_handle.restype = wintypes.BOOL
 _ERROR_ALREADY_EXISTS = 183
+_APPMODEL_ERROR_NO_PACKAGE = 15700
 
 logger = logging.getLogger(__name__)
 
 # --- Environment Isolation ---
 _is_frozen = getattr(sys, "frozen", False)
 
+
+def _get_app_folder_name() -> str:
+    """Return the app folder / registration name, suffixed for dev runs."""
+    return "HushSnap" if _is_frozen else "HushSnap_Dev"
+
+
 def get_app_id() -> str:
     """Get the application identifier for AppUserModelID and registration."""
-    return "HushSnap" if _is_frozen else "HushSnap_Dev"
+    return _get_app_folder_name()
+
 
 def get_mutex_name() -> str:
     """Get the unique mutex name for single-instance detection."""
     suffix = "" if _is_frozen else ".Dev"
     return f"Local\\hushsnap.SingleInstance{suffix}"
 
+
 def get_startup_reg_name() -> str:
     """Get the registry key name for startup execution."""
-    return "HushSnap" if _is_frozen else "HushSnap_Dev"
+    return _get_app_folder_name()
 
 # ── Config defaults (single source of truth for new-key migration) ────
 _CONFIG_DEFAULTS = {
@@ -80,8 +89,7 @@ def is_running_as_package() -> bool:
         # Call once to get required length, will fail with ERROR_INSUFFICIENT_BUFFER if packaged,
         # or APPMODEL_ERROR_NO_PACKAGE if unpackaged.
         result = _kernel32.GetCurrentPackageFullName(ctypes.byref(length), None)
-        # 15700 is APPMODEL_ERROR_NO_PACKAGE
-        return result != 15700
+        return result != _APPMODEL_ERROR_NO_PACKAGE
     except (AttributeError, Exception):
         return False
 
@@ -114,7 +122,7 @@ def get_user_data_dir():
     Returns:
         Path: Path object for the user data directory.
     """
-    folder_name = "HushSnap" if _is_frozen else "HushSnap_Dev"
+    folder_name = _get_app_folder_name()
     local_app_data = os.getenv("LOCALAPPDATA")
     
     if local_app_data:

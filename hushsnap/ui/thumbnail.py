@@ -21,6 +21,14 @@ from ..constants import (
 
 logger = logging.getLogger(__name__)
 
+# ── Layout / interaction constants ───────────────────────────────────────────
+_DRAG_THRESHOLD_PX = 15
+_SHADOW_PASSES = 9
+_SHADOW_ALPHA_PER_PASS = 25
+_ELEVATION_PASSES = 5
+_ELEVATION_ALPHA_PER_PASS = 45
+_COUNTDOWN_WARN_S = 2.0
+
 class ThumbnailWindow(QtWidgets.QWidget):
     """
     Floating thumbnail window with slide-in animation, auto-hide, 
@@ -245,22 +253,19 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self._countdown_tick.timeout.connect(self._tick_countdown)
 
     @staticmethod
-    def _svg_icon(name, normal_color, active_color):
-        """Load an SVG icon from the icons dir with two color variants."""
-        from .icon_utils import load_svg_icon
-        return load_svg_icon(name, normal_color, active_color, size=24)
-
-    @staticmethod
     def _make_edit_icon():
-        return ThumbnailWindow._svg_icon("edit_brush", BRAND_GREEN, "#8ef0b6")
+        from .icon_utils import load_svg_icon
+        return load_svg_icon("edit_brush", BRAND_GREEN, "#8ef0b6", size=24)
 
     @staticmethod
     def _make_pin_icon():
-        return ThumbnailWindow._svg_icon("pin_unlocked", BRAND_GREEN, "#8ef0b6")
+        from .icon_utils import load_svg_icon
+        return load_svg_icon("pin_unlocked", BRAND_GREEN, "#8ef0b6", size=24)
 
     @staticmethod
     def _make_close_icon():
-        return ThumbnailWindow._svg_icon("close", "#ffffff", "#ff5c5c")
+        from .icon_utils import load_svg_icon
+        return load_svg_icon("close", "#ffffff", "#ff5c5c", size=24)
 
     def _get_display_ms(self) -> int:
         """Get the configured display duration from settings."""
@@ -271,17 +276,8 @@ class ThumbnailWindow(QtWidgets.QWidget):
             return 12000 # Fallback to 12s
 
     def _pil_to_qpixmap(self, pil_img: Image.Image) -> QtGui.QPixmap:
-        """Convert PIL Image to QPixmap efficiently."""
-        if pil_img.mode != "RGBA":
-            pil_img = pil_img.convert("RGBA")
-        data = pil_img.tobytes("raw", "RGBA")
-        qimage = QtGui.QImage(
-            data, 
-            pil_img.size[0], 
-            pil_img.size[1], 
-            QtGui.QImage.Format.Format_RGBA8888
-        ).copy()
-        return QtGui.QPixmap.fromImage(qimage)
+        from .editor.utils import _pil_to_qpixmap as _shared
+        return _shared(pil_img)
 
     def _create_blurred_background(self, pil_img: Image.Image) -> QtGui.QPixmap:
         """Crop-to-fill the card aspect ratio, scale down, apply Gaussian blur,
@@ -482,7 +478,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
             return
         if not self._drag_start_pos:
             return
-        if (event.position().toPoint() - self._drag_start_pos).manhattanLength() < 15:
+        if (event.position().toPoint() - self._drag_start_pos).manhattanLength() < _DRAG_THRESHOLD_PX:
             return
         self._start_drag()
 
@@ -698,8 +694,8 @@ class ThumbnailWindow(QtWidgets.QWidget):
         painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform)
 
         # Shadow
-        for i in range(1, 10):
-            alpha = int(25 * (1.0 - (i / 10.0)))
+        for i in range(1, _SHADOW_PASSES + 1):
+            alpha = int(_SHADOW_ALPHA_PER_PASS * (1.0 - (i / (_SHADOW_PASSES + 1))))
             painter.setPen(QtGui.QPen(QtGui.QColor(0, 0, 0, alpha), 2))
             painter.drawRoundedRect(
                 QtCore.QRectF(self.card_rect).adjusted(-i + 0.5, -i + 3.5, i - 0.5, i + 3.5),
@@ -722,8 +718,8 @@ class ThumbnailWindow(QtWidgets.QWidget):
         # than sitting flat against it.
         shadow_rect = QtCore.QRectF(self.pixmap_rect)
         painter.setPen(QtCore.Qt.PenStyle.NoPen)
-        for i in range(1, 6):
-            alpha = int(45 * (1.0 - i / 6.0))
+        for i in range(1, _ELEVATION_PASSES + 1):
+            alpha = int(_ELEVATION_ALPHA_PER_PASS * (1.0 - i / (_ELEVATION_PASSES + 1)))
             spread = i * 2.0
             painter.setBrush(QtGui.QColor(0, 0, 0, alpha))
             painter.drawRoundedRect(
@@ -794,7 +790,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
             )
 
             # Fill colour: neutral white, warming to a soft red in the last 2 s
-            if remaining <= 2.0:
+            if remaining <= _COUNTDOWN_WARN_S:
                 t = max(0.0, remaining) / 2.0  # 1.0 → 0.0 (2 s → 0 s)
                 r = 255
                 g = int(90 + (255 - 90) * t)
@@ -971,37 +967,8 @@ class ThumbnailManager(QtCore.QObject):
 thumbnail_manager = ThumbnailManager()
 
 def qpixmap_to_pil(pixmap: QtGui.QPixmap) -> Image.Image:
-    """Convert a QPixmap to a PIL Image via a direct memory copy.
-
-    The previous implementation round-tripped through PNG
-    (``pixmap.save(buf, "PNG")`` then ``Image.open``), which spends ~1.8s on a
-    2560x1600 capture just to compress and decompress the pixels — and it ran
-    synchronously on the mouse-release hot path, stalling the thumbnail for
-    the whole duration. Replacing it with an ARGB32→RGBA8888 convert + raw
-    ``bits()`` copy cuts that to a few tens of ms with identical output.
-
-    Stride safety: ``QImage.bytesPerLine`` may exceed ``width*4`` when the
-    scanlines are aligned, so we copy line-by-line instead of assuming a
-    contiguous buffer.
-    """
-    if pixmap.isNull():
-        return Image.new("RGBA", (0, 0))
-
-    img = pixmap.toImage().convertToFormat(QtGui.QImage.Format.Format_RGBA8888)
-    w = img.width()
-    h = img.height()
-    bpl = img.bytesPerLine()
-    ptr = img.constBits()
-    ptr.setsize(h * bpl)
-    raw = bytes(ptr)
-
-    if bpl == w * 4:
-        data = raw
-    else:
-        # Strip per-line padding so PIL gets a tight RGBA buffer.
-        data = b"".join(raw[y * bpl:(y * bpl) + w * 4] for y in range(h))
-
-    return Image.frombytes("RGBA", (w, h), data)
+    from .editor.utils import _qpixmap_to_pil as _shared
+    return _shared(pixmap)
 
 
 def show_thumbnail(pil_image: Image.Image):

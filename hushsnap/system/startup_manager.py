@@ -7,7 +7,6 @@ import logging
 import os
 import sys
 import ctypes
-import asyncio
 import winreg
 from pathlib import Path
 from ..config import get_startup_reg_name

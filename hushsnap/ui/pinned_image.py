@@ -1,10 +1,8 @@
 import logging
-import os
 from PyQt6 import QtCore, QtGui, QtWidgets
 from PIL import Image
 import io
 from pathlib import Path
-import time
 
 from .styles import MODERN_MENU_STYLE, apply_menu_shadow
 from .toast import show_toast
@@ -267,10 +265,8 @@ class PinnedImageWindow(QtWidgets.QWidget):
         self._update_ui_positions()
 
     def _pil_to_qpixmap(self, pil_img: Image.Image) -> QtGui.QPixmap:
-        if pil_img.mode != "RGBA": pil_img = pil_img.convert("RGBA")
-        data = pil_img.tobytes("raw", "RGBA")
-        qimage = QtGui.QImage(data, pil_img.size[0], pil_img.size[1], QtGui.QImage.Format.Format_RGBA8888).copy()
-        return QtGui.QPixmap.fromImage(qimage)
+        from .editor.utils import _pil_to_qpixmap as _shared
+        return _shared(pil_img)
 
     def paintEvent(self, event):
         painter = QtGui.QPainter(self)
