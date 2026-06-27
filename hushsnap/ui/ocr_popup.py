@@ -7,6 +7,7 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 from ..config import get_ocr_font_size, get_resource_dir
 from ..constants import APP_ICON_FILENAME
 from ..dpi import cursor_screen
+from ..ocr.text import _iter_url_spans, find_url_at_position
 from .styles import BRAND_GREEN
 
 # Minimum window size to prevent collapsing to zero
@@ -54,6 +55,31 @@ _LOADING_SCREEN_FRAC = 0.55
 # Default compact size before any text is loaded.
 _DEFAULT_W = 420
 _DEFAULT_H = 200
+
+# ── Link styling (http(s) URLs in recognised text) ───────────────────────────
+_LINK_COLOR = "#7ab7ff"          # light blue — reads on the dark card
+_LINK_UNDERLINE = QtGui.QTextCharFormat.UnderlineStyle.SingleUnderline
+
+
+class UrlHighlighter(QtGui.QSyntaxHighlighter):
+    """Highlights http(s) URLs in the OCR text so they read as clickable links.
+
+    Shares the URL span logic with the click/hover handling via
+    ``ocr.text._iter_url_spans`` — whatever is coloured is exactly what
+    Ctrl+Click will open.  Re-runs automatically whenever the document text
+    changes (including user edits), so edited URLs stay highlighted.
+    """
+
+    def __init__(self, parent: QtGui.QTextDocument):
+        super().__init__(parent)
+        self._fmt = QtGui.QTextCharFormat()
+        self._fmt.setForeground(QtGui.QColor(_LINK_COLOR))
+        self._fmt.setUnderlineStyle(_LINK_UNDERLINE)
+        self._fmt.setToolTip(None)
+
+    def highlightBlock(self, text: str) -> None:
+        for start, end, _ in _iter_url_spans(text):
+            self.setFormat(start, end - start, self._fmt)
 
 
 class OcrPopup(QtWidgets.QWidget):
@@ -200,6 +226,10 @@ class OcrPopup(QtWidgets.QWidget):
         self._apply_stylesheet()
         self.apply_font_size()
         self._refresh_labels()
+
+        # Highlight http(s) URLs as clickable links.  Attached to the document
+        # so it re-runs on every edit (including user corrections).
+        self._url_highlighter = UrlHighlighter(self.text_edit.document())
 
         # Compact default; height auto-fits content on show_text.
         # User resizes freely — scroll area handles overflow.
@@ -820,7 +850,8 @@ class OcrPopup(QtWidgets.QWidget):
                     target.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
 
     def eventFilter(self, obj, event):
-        """Intercept HoverMove and MousePress on child widgets for edge resizing."""
+        """Intercept HoverMove and MousePress on child widgets for edge resizing
+        and Ctrl+Click link opening."""
         if event.type() in (QtCore.QEvent.Type.HoverMove, QtCore.QEvent.Type.MouseButtonPress):
             # Map child coords to window coords
             if hasattr(event, "position"):
@@ -828,19 +859,66 @@ class OcrPopup(QtWidgets.QWidget):
             else:
                 # Fallback for older event types if any
                 pos = event.pos() if hasattr(event, "pos") else QtCore.QPointF(0, 0)
-            
+
             global_pos = obj.mapToGlobal(pos.toPoint() if hasattr(pos, "toPoint") else pos)
             local_pos = self.mapFromGlobal(global_pos)
             edge = self._get_edge(local_pos)
-            
+
             if event.type() == QtCore.QEvent.Type.HoverMove:
                 self._update_cursor(edge, obj)
+                if not edge:
+                    self._apply_url_hover(obj, pos)
             elif event.type() == QtCore.QEvent.Type.MouseButtonPress:
                 if edge and event.button() == QtCore.Qt.MouseButton.LeftButton:
                     if self.windowHandle():
                         self.windowHandle().startSystemResize(edge)
                         return True # Eat the event so child doesn't start selection
+                elif event.button() == QtCore.Qt.MouseButton.LeftButton:
+                    # Ctrl+Click on a URL opens it in the default browser.
+                    ctrl = bool(
+                        QtWidgets.QApplication.keyboardModifiers()
+                        & QtCore.Qt.KeyboardModifier.ControlModifier
+                    )
+                    if ctrl:
+                        url = self._url_under(obj, pos)
+                        if url:
+                            QtGui.QDesktopServices.openUrl(QtCore.QUrl(url))
+                            return True
         return super().eventFilter(obj, event)
+
+    # ── link hover / open ─────────────────────────────────────────────
+    def _url_under(self, obj, pos) -> str | None:
+        """Return the URL under *pos* (relative to *obj*), or None.
+
+        Only meaningful over the text viewport; returns None elsewhere so the
+        surrounding edge-resize / drag logic is unaffected.
+        """
+        if obj is not self.text_edit.viewport():
+            return None
+        point = pos.toPoint() if hasattr(pos, "toPoint") else pos
+        cursor = self.text_edit.cursorForPosition(point)
+        block = cursor.block()
+        return find_url_at_position(block.text(), cursor.position() - block.position())
+
+    def _apply_url_hover(self, obj, pos):
+        """On hover over a URL, show a "Ctrl+Click to open" tooltip; with Ctrl
+        held also switch to the hand cursor.  No-op (default cursor preserved)
+        when not over a URL."""
+        url = self._url_under(obj, pos)
+        if url is not None:
+            ctrl = bool(
+                QtWidgets.QApplication.keyboardModifiers()
+                & QtCore.Qt.KeyboardModifier.ControlModifier
+            )
+            if ctrl:
+                obj.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+            QtWidgets.QToolTip.showText(
+                obj.mapToGlobal(pos.toPoint() if hasattr(pos, "toPoint") else pos),
+                self.translate("ocr_link_open_hint"),
+                self.text_edit,
+            )
+        else:
+            QtWidgets.QToolTip.hideText()
 
     def enterEvent(self, event):
         self._update_button_positions()
@@ -848,6 +926,7 @@ class OcrPopup(QtWidgets.QWidget):
 
     def leaveEvent(self, event):
         self.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
+        QtWidgets.QToolTip.hideText()
         super().leaveEvent(event)
 
     def event(self, event):

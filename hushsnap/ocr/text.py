@@ -8,6 +8,58 @@ from .models import OcrLine, OcrRecognition
 NO_SPACE_SCRIPT_CHAR_CLASS = r"\u3040-\u30ff\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff"
 
 
+# \u2500\u2500 URL detection (shared by the OCR popup highlighter & click handling) \u2500\u2500\u2500\u2500\u2500\u2500
+# Matches http(s) URLs.  The body stops at whitespace and closing brackets so a
+# trailing "\u3002"/")" that the OCR picked up (or that sits in the source text)
+# doesn't get swallowed into the link.  Remaining trailing punctuation \u2014
+# ASCII and CJK \u2014 is trimmed in _iter_url_spans so the coloured span and the
+# clickable region stay in sync.
+URL_REGEX = re.compile(r"https?://[^\s<>\]\)\}]+", re.IGNORECASE)
+
+# Trailing characters stripped from a matched URL.  CJK fullwidth punctuation
+# is included because OCR of Chinese/Japanese text frequently appends \u3002 or \uff09
+# immediately after a URL.
+_URL_TRAILING_CHARS = set(".,;:!?\"')]}\u3002\uff0c\uff1b\uff1a\uff01\uff1f\u300d\u300f\uff09\u3011\u3001'")
+
+
+def _iter_url_spans(text: str):
+    """Yield (start, end, url) for each URL in *text*, trailing junk trimmed.
+
+    The returned end offset (and the slice text[start:end]) exclude trailing
+    punctuation/brackets, so callers (highlighter, hit-testing) see the same
+    span.  URLs never span newlines \u2014 callers should pass a single line/block.
+    """
+    for m in URL_REGEX.finditer(text):
+        url = m.group(0)
+        end = m.end()
+        while end > m.start() and url[-1] in _URL_TRAILING_CHARS:
+            url = url[:-1]
+            end -= 1
+        if end > m.start():
+            yield m.start(), end, text[m.start():end]
+
+
+def extract_urls(text: str) -> list[str]:
+    """Return deduplicated URLs found in *text*, in order of first appearance."""
+    seen: set[str] = set()
+    urls: list[str] = []
+    for _, _, url in _iter_url_spans(text):
+        if url not in seen:
+            seen.add(url)
+            urls.append(url)
+    return urls
+
+
+def find_url_at_position(text: str, pos: int) -> str | None:
+    """Return the URL covering character index *pos* in *text*, else None."""
+    if pos < 0:
+        return None
+    for start, end, _ in _iter_url_spans(text):
+        if start <= pos < end:
+            return text[start:end]
+    return None
+
+
 @dataclass(frozen=True)
 class OcrTextAdapter:
     """Language-specific text composition rules kept separate from OCR IO."""
