@@ -7,6 +7,13 @@ import os
 # thread keeps virtual memory minimal with no performance impact.
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
+# Enable faulthandler at the absolute earliest point so a native crash
+# (segfault / access violation) prints the Python stack trace to stderr
+# instead of dying silently. setup_logging() later redirects it into the
+# log file once the file path is known.
+import faulthandler
+faulthandler.enable()
+
 import time
 # Record the absolute earliest possible start time in the Python process.
 BOOT_START_TIME = time.perf_counter()

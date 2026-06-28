@@ -794,7 +794,7 @@ def recognize_ppocr_qimage(image_or_result, language_tag: str = "") -> OcrRecogn
     bgr_image = None
     
     try:
-        logger.info("[ANCHOR] IMAGE_CONVERT_START")
+        logger.debug("[ANCHOR] IMAGE_CONVERT_START")
         import numpy as np
         # Callers must pass a QImage whose format stores [B, G, R] in the
         # first three bytes on this platform (RGB32 / ARGB32 / ARGB32_PM on
@@ -808,16 +808,16 @@ def recognize_ppocr_qimage(image_or_result, language_tag: str = "") -> OcrRecogn
         ptr.setsize(image.sizeInBytes())
         # [:, :, :3] drops the X/A channel → contiguous BGR array for ONNX.
         arr = np.frombuffer(ptr, dtype=np.uint8).reshape((height, width, 4))[:, :, :3].copy()
-        logger.info("[ANCHOR] IMAGE_CONVERT_END")
+        logger.debug("[ANCHOR] IMAGE_CONVERT_END")
 
         _acquire_request()
         try:
             engine = _get_engine()
-            logger.info("[ANCHOR] INFERENCE_START")
+            logger.debug("[ANCHOR] INFERENCE_START")
             result = engine(arr)
-            logger.info("[ANCHOR] INFERENCE_END")
+            logger.debug("[ANCHOR] INFERENCE_END")
             if hasattr(result, "elapse_list"):
-                logger.info("[ANCHOR] ELAPSE_DETAIL: %s", result.elapse_list)
+                logger.debug("[ANCHOR] ELAPSE_DETAIL: %s", result.elapse_list)
             json_data = result.to_json()
         finally:
             _release_request()

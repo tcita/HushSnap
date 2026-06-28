@@ -102,7 +102,7 @@ class PinnedImageWindow(QtWidgets.QWidget):
             "  background-color: rgba(0, 0, 0, 120);"
             "  color: white;"
             "  border: none;"
-            "  border-radius: 12px;"
+            "  border-radius: 4px;"
             "  font-size: 16px;"
             "  font-weight: bold;"
             "}"
@@ -348,8 +348,14 @@ class PinnedImageManager(QtCore.QObject):
             win = PinnedImageWindow(pil_image, logical_size=logical_size, screen=screen)
             avail = screen.availableGeometry()
             n = len(self._windows)
-            x, y = win.x() + n * 30, win.y() + n * 30
+            # Alternate x-direction so consecutive pins don't fully overlap:
+            # 1st extra → left, 2nd → right, 3rd → left, etc.
+            # y cascades downward so earlier pins stay visible at a glance.
+            sign = -1 if n % 2 == 0 else 1
+            x = win.x() + sign * 40 * ((n + 1) // 2)
+            y = win.y() + 40 * n
             if x + win.width() > avail.right(): x = avail.right() - win.width()
+            if x < avail.left(): x = avail.left()
             if y + win.height() > avail.bottom(): y = avail.bottom() - win.height()
             win.move(x, y)
             win.set_morph_source(morph_pos, morph_size)

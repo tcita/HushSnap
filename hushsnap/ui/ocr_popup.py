@@ -2,6 +2,8 @@
 Floating OCR text popup widget.
 """
 
+import logging
+
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from ..config import get_ocr_font_size, get_resource_dir
@@ -433,6 +435,7 @@ class OcrPopup(QtWidgets.QWidget):
         self.activateWindow()
 
     def show_text(self, text, pixmap=None, lines=None):
+        logging.info("[OCR_CHAIN] show_text entered, text_len=%d", len(text or ""))
         self._is_loading = False
         if pixmap is not None:
             self._last_pixmap = pixmap
@@ -460,6 +463,7 @@ class OcrPopup(QtWidgets.QWidget):
         self.show()
         self.raise_()
         self.activateWindow()
+        logging.info("[OCR_CHAIN] show_text done, visible=%s", self.isVisible())
 
     def set_intended_geom(self, geom):
         """Update the target geometry that this window is moving towards."""

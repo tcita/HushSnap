@@ -222,7 +222,13 @@ class OcrController:
 
     def on_ocr_finished(self, response, target_popup=None):
         self._trim_timer.start(5000)
-        logging.debug("[on_ocr_finished] engine=%s, text_len=%d", 
+        logging.info(
+            "[OCR_CHAIN] on_ocr_finished entered, text_len=%d, has_error=%s, target_is_active=%s",
+            len(response.text or ""),
+            bool(response.error),
+            target_popup is None or target_popup is self.popup,
+        )
+        logging.debug("[on_ocr_finished] engine=%s, text_len=%d",
                       response.recognition.engine_type if response.recognition else "unknown",
                       len(response.text or ""))
 

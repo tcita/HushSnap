@@ -71,6 +71,16 @@ def setup_logging(log_file_path: Path, force_level=None):
         logging.getLogger('RapidOCR').setLevel(logging.WARNING)
 
         logging.info(f"{SESSION_START_MARKER} {logging.getLevelName(level)}, Path: {log_file_path}")
+
+        # Redirect faulthandler's native-crash traceback into the log file.
+        # MSIX sandboxed runs have no visible stderr, so without this a
+        # segfault dies silently with no trace in the log. The file handle
+        # is kept open for the process lifetime; flushing happens on crash.
+        try:
+            import faulthandler
+            faulthandler.enable(file=open(log_file_path, "a", encoding="utf-8"))
+        except Exception:
+            pass
     
     # Fallback: if logging initialization fails, write to a fallback file.
     except Exception as e:

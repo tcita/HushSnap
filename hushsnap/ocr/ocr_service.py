@@ -106,9 +106,24 @@ class OcrService:
             response = None  # guard: ensure del response in finally never raises UnboundLocalError
             try:
                 response = self.recognize(request)
+                logger.info("[OCR_CHAIN] worker recognize done, seq=%d", seq)
+                # Decide under the lock whether this result is still the
+                # newest, but emit OUTSIDE the lock. Calling the callback
+                # (which emits a Qt signal carrying the response — including
+                # a QPixmap — across threads) while holding self._lock risks
+                # a deadlock / reentrant-lock crash if anything on the main
+                # thread tries to acquire the lock while the emit is in
+                # flight. The seq check is the only thing that needs the
+                # lock; the delivery does not.
+                deliver = False
                 with self._lock:
                     if seq == self._seq:
-                        callback(response)
+                        deliver = True
+                    else:
+                        logger.info("[OCR_CHAIN] worker result superseded, seq=%d", seq)
+                if deliver:
+                    callback(response)
+                    logger.info("[OCR_CHAIN] worker callback emitted, seq=%d", seq)
             except Exception as exc:
                 logger.exception(f"Unexpected error in OCR worker thread: {exc}")
                 response = OcrResponse(
@@ -117,9 +132,12 @@ class OcrService:
                     pixmap=request.pixmap,
                     recognition=None,
                 )
+                deliver_err = False
                 with self._lock:
                     if seq == self._seq:
-                        callback(response)
+                        deliver_err = True
+                if deliver_err:
+                    callback(response)
             finally:
                 # Explicitly clear local references so that pixmap and
                 # recognition objects are eligible for immediate reclamation
