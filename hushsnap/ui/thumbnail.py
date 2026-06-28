@@ -488,7 +488,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
             if self.card_rect.contains(release_pos):
                 if self.action_pill.geometry().contains(release_pos):
                     return
-                logger.debug(f"Thumbnail click triggered at {release_pos}")
+                logger.debug("[OCR_CHAIN] thumbnail clicked at %s", release_pos)
                 self.clicked_signal.emit()
                 if not self._loading:
                     self.close()
@@ -925,6 +925,7 @@ class ThumbnailManager(QtCore.QObject):
 
     def dismiss_current(self):
         """Close the current thumbnail immediately (called when OCR result is ready)."""
+        logger.debug("[OCR_CHAIN] thumbnail dismiss_current")
         for w in self._windows:
             try:
                 w.dismiss()

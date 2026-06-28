@@ -22,6 +22,10 @@ dist-installer-test/
 # Tool output / profiling data
 scratch/
 
+# Stress-test generated artifacts (logs, OCR result variants)
+stress_results/
+ocr_stability_results/
+
 # Test cache
 .pytest_cache/
 

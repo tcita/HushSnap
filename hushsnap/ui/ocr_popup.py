@@ -366,6 +366,7 @@ class OcrPopup(QtWidgets.QWidget):
     # ── show / hide text ─────────────────────────────────────────────
     def show_loading(self, pixmap=None):
         """Show the popup in a loading state at the thumbnail's position."""
+        logging.debug("[OCR_CHAIN] show_loading")
         self._is_loading = True
         self._last_pixmap = pixmap
 
@@ -435,7 +436,7 @@ class OcrPopup(QtWidgets.QWidget):
         self.activateWindow()
 
     def show_text(self, text, pixmap=None, lines=None):
-        logging.info("[OCR_CHAIN] show_text entered, text_len=%d", len(text or ""))
+        logging.debug("[OCR_CHAIN] show_text entered, text_len=%d", len(text or ""))
         self._is_loading = False
         if pixmap is not None:
             self._last_pixmap = pixmap

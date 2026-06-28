@@ -251,6 +251,7 @@ class OcrController:
 
         if error:
             logging.error(f"OCR Error: {error}")
+            logging.debug("[OCR_CHAIN] on_ocr_finished calling show_text (error)")
             target.show_text(
                 f"{self.translate('ocr_failed_title')}\n{self.translate('ocr_failed_body')}",
                 pixmap=pixmap,
@@ -260,6 +261,7 @@ class OcrController:
         recognized = (text or "").rstrip()
         if not recognized:
             logging.debug("OCR result is empty.")
+            logging.debug("[OCR_CHAIN] on_ocr_finished calling show_text (empty)")
             target.show_text(self.translate("ocr_empty_popup_hint"), pixmap=pixmap)
             return
 
@@ -268,6 +270,7 @@ class OcrController:
             if clipboard:
                 clipboard.setText(recognized)
 
+        logging.debug("[OCR_CHAIN] on_ocr_finished calling show_text (result)")
         target.show_text(
             recognized,
             pixmap=pixmap,
@@ -277,6 +280,7 @@ class OcrController:
     def start_request(self, pixmap):
         self._trim_timer.stop()
         self._expecting_ocr_result = True
+        logging.debug("[OCR_CHAIN] start_request")
         debug_dir = self.user_data_dir if self.save_debug_image else None
 
         # Capture current popup instance to ensure result is delivered correctly
@@ -287,6 +291,7 @@ class OcrController:
         image = pixmap.toImage() if isinstance(pixmap, QtGui.QPixmap) else pixmap
         request = OcrRequest(pixmap=image, engine=OCR_ENGINE_PPOCR, debug_dir=debug_dir)
         self.service.recognize_async(request, lambda resp: self.bridge.ocr_result.emit(resp, target))
+        logging.debug("[OCR_CHAIN] start_request dispatched")
 
     def _background_warmup(self):
         import threading
