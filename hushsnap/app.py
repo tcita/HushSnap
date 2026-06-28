@@ -366,6 +366,7 @@ class Application(QtCore.QObject):
 
     def _on_capture_completed(self, captured_pixmap, logical_size):
         """Callback after screenshot is copied to clipboard."""
+        self.logger.info("[OCR_CHAIN] capture completed callback")
         if not self.ocr_controller.needs_ocr:
             try:
                 pil_img = qpixmap_to_pil(captured_pixmap)
@@ -383,12 +384,14 @@ class Application(QtCore.QObject):
                 # zero flash-dismiss events. The 50ms only added ~57ms of
                 # thumbnail-appear latency, so it is removed.
                 show_thumbnail(pil_img)
+                self.logger.info("[OCR_CHAIN] thumbnail shown")
             except Exception:
                 self.logger.exception("Failed to show thumbnail")
 
         self.ocr_controller.handle_capture_completed(captured_pixmap)
 
     def _handle_thumbnail_clicked(self, pil_img):
+        self.logger.info("[OCR_CHAIN] thumbnail click handled")
         from .ui.thumbnail import thumbnail_manager
         thumb_win = thumbnail_manager.current_window()
         if thumb_win:

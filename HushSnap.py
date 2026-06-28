@@ -8,11 +8,28 @@ import os
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
 # Enable faulthandler at the absolute earliest point so a native crash
-# (segfault / access violation) prints the Python stack trace to stderr
-# instead of dying silently. setup_logging() later redirects it into the
-# log file once the file path is known.
+# (segfault / access violation) prints the Python stack trace instead of
+# dying silently. setup_logging() later redirects it into the log file once
+# the file path is known.
+#
+# In a PyInstaller --windowed (no-console) build sys.stderr is None, and
+# faulthandler.enable() with no ``file`` argument then raises
+# RuntimeError("sys.stderr is None") — i.e. this very crash-capture line
+# would crash the packaged app at boot. Fall back to a temp crash file so
+# very-early native crashes are still recorded; setup_logging() re-points
+# faulthandler at the real log file shortly after. Never let this block boot.
 import faulthandler
-faulthandler.enable()
+try:
+    faulthandler.enable()
+except RuntimeError:
+    import tempfile
+    _early_crash = open(
+        os.path.join(tempfile.gettempdir(), "HushSnap_early_crash.log"),
+        "a", encoding="utf-8",
+    )
+    faulthandler.enable(file=_early_crash)
+except Exception:
+    pass
 
 import time
 # Record the absolute earliest possible start time in the Python process.

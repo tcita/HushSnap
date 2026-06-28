@@ -37,12 +37,15 @@ class CaptureSession(QtCore.QObject):
 
     def request_capture(self, screens_and_pixmaps):
         """Queue a capture request onto the Qt bridge."""
+        logger.info("[OCR_CHAIN] request_capture")
         self.bridge.signal.emit(screens_and_pixmaps)
 
     def launch_capture_window(self, screens_and_pixmaps):
         """Show capture windows across all screens unless active."""
         if self.wins:
+            logger.debug("[OCR_CHAIN] capture window already active, request skipped")
             return
+        logger.info("[OCR_CHAIN] capture window launching")
 
         from PyQt6 import QtGui
         is_legacy = False

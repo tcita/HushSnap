@@ -53,10 +53,12 @@ class OcrService:
             _save_debug_preprocessed_image(preprocess_result.image, request.debug_dir)
 
             # Engine receives the preprocessed QImage directly
+            logger.info("[OCR_CHAIN] recognize() engine call begin, engine=%s", engine_id)
             recognition = recognize_fn(
                 preprocess_result.image,
                 language_tag=request.language_tag,
             )
+            logger.info("[OCR_CHAIN] recognize() engine call end, engine=%s", engine_id)
             if recognition:
                 recognition.engine_type = engine_id
 
@@ -89,10 +91,14 @@ class OcrService:
         # plus one pending, never an unbounded backlog.
         with self._lock:
             self._seq += 1
-            self._pending = (request, done_callback, self._seq)
-            if not self._busy:
+            seq = self._seq
+            self._pending = (request, done_callback, seq)
+            spawn = not self._busy
+            if spawn:
                 self._busy = True
-                threading.Thread(target=self._worker, daemon=True).start()
+        logger.info("[OCR_CHAIN] recognize_async, seq=%d, spawned_worker=%s", seq, spawn)
+        if spawn:
+            threading.Thread(target=self._worker, daemon=True).start()
 
     def _worker(self):
         while True:
@@ -102,6 +108,7 @@ class OcrService:
                     return
                 request, callback, seq = self._pending
                 self._pending = None
+            logger.info("[OCR_CHAIN] worker picked up, seq=%d", seq)
 
             response = None  # guard: ensure del response in finally never raises UnboundLocalError
             try:
@@ -126,6 +133,7 @@ class OcrService:
                     logger.info("[OCR_CHAIN] worker callback emitted, seq=%d", seq)
             except Exception as exc:
                 logger.exception(f"Unexpected error in OCR worker thread: {exc}")
+                logger.info("[OCR_CHAIN] worker exception, seq=%d", seq)
                 response = OcrResponse(
                     text="",
                     error=str(exc),

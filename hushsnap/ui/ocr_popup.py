@@ -366,6 +366,7 @@ class OcrPopup(QtWidgets.QWidget):
     # ── show / hide text ─────────────────────────────────────────────
     def show_loading(self, pixmap=None):
         """Show the popup in a loading state at the thumbnail's position."""
+        logging.info("[OCR_CHAIN] show_loading")
         self._is_loading = True
         self._last_pixmap = pixmap
 

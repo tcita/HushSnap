@@ -57,11 +57,17 @@ class HotkeyFilter(QtCore.QAbstractNativeEventFilter):
             # Convert message pointer to a Python-friendly MSG struct.
             message_struct = wintypes.MSG.from_address(int(message))
             if message_struct.message == WM_HOTKEY:
+                # Stress-test / crash-diagnostic marker: this is t=0 of a
+                # capture round. Grep `[OCR_CHAIN]` to reconstruct the full
+                # pipeline timeline and pinpoint where a crash halts.
+                logger.info("[OCR_CHAIN] hotkey WM_HOTKEY received")
                 # Performance optimization: capture screen immediately in nativeEventFilter.
                 # This runs before Qt's event queue, so the screenshot is effectively frozen
                 # before the capture UI appears, reducing on-screen change interference.
                 screens_and_pixmaps = grab_all_screens()
                 if screens_and_pixmaps:
+                    count = len(screens_and_pixmaps) if isinstance(screens_and_pixmaps, list) else 1
+                    logger.info("[OCR_CHAIN] hotkey grabbed %d screens", count)
                     self.on_trigger(screens_and_pixmaps)
 
                 # Return True to stop propagation to other filters.

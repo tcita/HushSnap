@@ -987,6 +987,10 @@ class CaptureWindow(QtWidgets.QWidget):
         """Notify app layer with the captured image and its logical selection size."""
         if self.on_captured is None:
             return
+        logger.info(
+            "[OCR_CHAIN] capture completed, size=%dx%d",
+            pixmap.width(), pixmap.height(),
+        )
         try:
             # signature: on_captured(pixmap, logical_size)
             self.on_captured(pixmap, logical_size)
