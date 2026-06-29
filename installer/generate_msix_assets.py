@@ -31,12 +31,33 @@ def generate_assets(icon_path, output_dir):
 
     # Asset specifications: (filename, width, height, icon_target_size, bg_color)
     # If bg_color is None, background is transparent.
+    #
+    # icon_target_size is set to the canvas's short edge so the (square) logo
+    # fills the tile edge-to-edge with no transparent margin. Any transparent
+    # margin is filled by the BackgroundColor declared in AppxManifest's
+    # VisualElements (transparent here) — independent of the system theme.
+    # Wide310x150Logo is a banner (2:1), so the logo fills the 150px height
+    # and centers horizontally; SplashScreen keeps a dark opaque background.
     specs = [
-        ("StoreLogo.png", 50, 50, 40, None),
-        ("Square150x150Logo.png", 150, 150, 96, None),
-        ("Square44x44Logo.png", 44, 44, 30, None),
-        ("Wide310x150Logo.png", 310, 150, 80, None),
+        ("StoreLogo.png", 50, 50, 50, None),
+        ("Square150x150Logo.png", 150, 150, 150, None),
+        ("Square44x44Logo.png", 44, 44, 44, None),
+        ("Wide310x150Logo.png", 310, 150, 150, None),
         ("SplashScreen.png", 620, 300, 120, QColor("#1e1e24")),
+        
+        # Standard targetsize assets (plated)
+        ("Square44x44Logo.targetsize-16.png", 16, 16, 16, None),
+        ("Square44x44Logo.targetsize-24.png", 24, 24, 24, None),
+        ("Square44x44Logo.targetsize-32.png", 32, 32, 32, None),
+        ("Square44x44Logo.targetsize-48.png", 48, 48, 48, None),
+        ("Square44x44Logo.targetsize-256.png", 256, 256, 256, None),
+
+        # Unplated targetsize assets (for transparent background on taskbar)
+        ("Square44x44Logo.targetsize-16_altform-unplated.png", 16, 16, 16, None),
+        ("Square44x44Logo.targetsize-24_altform-unplated.png", 24, 24, 24, None),
+        ("Square44x44Logo.targetsize-32_altform-unplated.png", 32, 32, 32, None),
+        ("Square44x44Logo.targetsize-48_altform-unplated.png", 48, 48, 48, None),
+        ("Square44x44Logo.targetsize-256_altform-unplated.png", 256, 256, 256, None),
     ]
 
     print(f"Generating MSIX visual assets under '{output_dir}'...")

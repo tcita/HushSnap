@@ -588,6 +588,22 @@ $assetsStageDir = Join-Path $stageDir "Assets"
 New-Item -ItemType Directory -Path $assetsStageDir -Force | Out-Null
 
 Write-Host "Generating PNG visual assets from ico.ico..." -ForegroundColor Cyan
+
+# Regenerate hushsnap.ico from assets/logo.png before deriving the store
+# tiles from it. This keeps the rounded-square mask (transparent corners)
+# as the single source of truth — the .ico in the repo is a build artifact,
+# refreshed here so the build never ships a stale pre-rounded icon. The
+# taskbar / tray read this same .ico at runtime (bundled by PyInstaller),
+# so taskbar, tray, and store all stay in sync.
+$iconGeneratorScript = Join-Path $rootDir "scripts\generate_icon.py"
+$logoSource = Join-Path $rootDir "assets\logo.png"
+if (Test-Path $iconGeneratorScript) {
+    Write-Host "  regenerating hushsnap.ico from $logoSource (rounded corners)..." -ForegroundColor DarkGray
+    & python.exe $iconGeneratorScript --source $logoSource | Out-Null
+} else {
+    Write-Host "  [warn] scripts\generate_icon.py not found — using existing hushsnap.ico as-is" -ForegroundColor Yellow
+}
+
 $icoPath = Join-Path $rootDir "hushsnap.ico"
 $generatorScript = Join-Path $rootDir "installer\generate_msix_assets.py"
 & python.exe $generatorScript $icoPath $assetsStageDir

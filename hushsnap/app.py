@@ -246,7 +246,22 @@ class Application(QtCore.QObject):
             if sys.platform == "win32":
                 try:
                     import ctypes
-                    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+                    # Check if running inside MSIX package (Desktop Bridge)
+                    # If so, do NOT override the AppUserModelID, otherwise taskbar grouping breaks.
+                    is_packaged = False
+                    try:
+                        length = ctypes.c_uint32(0)
+                        rc = ctypes.windll.kernel32.GetCurrentPackageFullName(ctypes.byref(length), None)
+                        # APPMODEL_ERROR_NO_PACKAGE (15700) is returned if not packaged
+                        if rc != 15700:
+                            is_packaged = True
+                    except Exception:
+                        pass
+
+                    if not is_packaged:
+                        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+                    else:
+                        self.logger.debug("Skipping SetCurrentProcessExplicitAppUserModelID in MSIX package context")
                 except Exception:
                     self.logger.debug("Failed to set AppUserModelID", exc_info=True)
 

@@ -3,6 +3,7 @@ HushSnap system tray module.
 Creates tray icon, context menu (right-click menu), and tray interaction logic.
 """
 
+import io
 from pathlib import Path
 from PyQt6 import QtCore, QtGui, QtWidgets
 
@@ -10,6 +11,88 @@ from ..config import get_resource_dir
 from ..constants import APP_ICON_FILENAME
 from ..dpi import grab_all_screens
 from .styles import BRAND_GREEN
+
+
+def _apply_round_mask(pil_img, radius_fraction=0.18):
+    """Apply a rounded-corner alpha mask to a PIL RGBA image.
+
+    Draws a rounded-rectangle mask so that the four corner pixels (and the
+    anti-aliased fringe) are fully transparent.  This prevents Windows from
+    rendering the residual dark anti-alias pixels in the corners as opaque
+    blobs on a light (e.g. white) taskbar/menu background.
+
+    Args:
+        pil_img (PIL.Image.Image): Source image, must be RGBA.
+        radius_fraction (float): Corner radius as a fraction of the shorter
+            edge.  0.18 ≈ the visual rounding of the HushSnap logo.
+
+    Returns:
+        PIL.Image.Image: A new RGBA image with corners masked to alpha=0.
+    """
+    from PIL import Image, ImageDraw
+    w, h = pil_img.size
+    r = max(1, int(min(w, h) * radius_fraction))
+
+    mask = Image.new("L", (w, h), 0)
+    draw = ImageDraw.Draw(mask)
+    draw.rounded_rectangle([0, 0, w - 1, h - 1], radius=r, fill=255)
+
+    result = pil_img.copy()
+    # Multiply existing alpha with the mask so we never *add* opacity
+    orig_alpha = pil_img.split()[3]
+    from PIL import ImageChops
+    new_alpha = ImageChops.multiply(orig_alpha, mask)
+    result.putalpha(new_alpha)
+    return result
+
+
+def load_app_icon(ico_path: Path) -> QtGui.QIcon:
+    """Load a multi-size QIcon from an .ico file with correct corner transparency.
+
+    Qt (and Windows) sometimes retain semi-transparent anti-alias fringe pixels
+    in the corners of ICO frames.  On a light taskbar or menu background these
+    dark pixels appear as four sharp 'ears', making the icon look like a black
+    rounded-rectangle placed on a white canvas.
+
+    This function:
+    1. Opens every size frame stored in the .ico with PIL.
+    2. Applies a rounded-corner alpha mask (_apply_round_mask) so the four
+       corners are completely transparent.
+    3. Converts each masked frame to QPixmap and adds it to a QIcon.
+
+    Falls back to a plain QIcon(str(ico_path)) if PIL is not available or the
+    file cannot be read.
+    """
+    try:
+        from PIL import Image
+    except ImportError:
+        return QtGui.QIcon(str(ico_path))
+
+    try:
+        with open(ico_path, "rb") as f:
+            raw = f.read()
+
+        ico_img = Image.open(io.BytesIO(raw))
+        sizes = sorted(ico_img.ico.sizes(), key=lambda s: s[0])
+
+        q_icon = QtGui.QIcon()
+        for sz in sizes:
+            frame = ico_img.ico.getimage(sz).convert("RGBA")
+            masked = _apply_round_mask(frame)
+
+            data = masked.tobytes("raw", "RGBA")
+            qimg = QtGui.QImage(
+                data,
+                masked.width,
+                masked.height,
+                QtGui.QImage.Format.Format_RGBA8888,
+            ).copy()  # .copy() detaches from the Python buffer
+            q_icon.addPixmap(QtGui.QPixmap.fromImage(qimg))
+
+        return q_icon if not q_icon.isNull() else QtGui.QIcon(str(ico_path))
+    except Exception:
+        # Silently fall back to the unmasked icon
+        return QtGui.QIcon(str(ico_path))
 
 
 def load_tinted_pixmap(icon_path, color_hex):
@@ -171,8 +254,10 @@ def create_tray(
     Returns:
         tuple: (tray_icon, settings_action) for later dynamic operations.
     """
-    # Load tray icon.
-    tray_icon_image = QtGui.QIcon(str(get_resource_dir() / APP_ICON_FILENAME))
+    # Load tray icon with rounded-corner alpha mask applied to every ICO frame.
+    # This prevents dark anti-alias pixels in the four corners from appearing as
+    # white 'ears' on a light taskbar/menu background (common in MSIX packages).
+    tray_icon_image = load_app_icon(get_resource_dir() / APP_ICON_FILENAME)
     app.setWindowIcon(tray_icon_image)
     
     # Create tray icon object.
