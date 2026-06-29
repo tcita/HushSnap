@@ -4,16 +4,25 @@ HushSnap is a lightweight screenshot & OCR tool that lives in your system tray. 
 
 After capture, a thumbnail slides in at the bottom-right corner of your screen. This thumbnail is the heart of HushSnap's post-capture flow:
 
-- **Hover** to pause auto-hide and reveal a close button.
+- **Hover** to pause auto-hide and reveal an action pill with **Edit**, **Pin**, and **Close** buttons.
 - **Drag and drop** the thumbnail anywhere to save the image — into a chat, an email, a folder, or another app.
 - **Left-click** the thumbnail to run **offline OCR**. Recognized text opens in a floating popup where you can edit, copy, resize, or pin the window to keep it visible. By default text is also auto-copied to your clipboard.
-- **Right-click** for more options: open in your default image viewer, **pin** as a floating always-on-top window (with its own OCR), save to Desktop, or Save As… anywhere you choose.
+- **Edit** (the brush button on the action pill, or the right-click menu) opens the built-in **image editor** — annotate, redact, crop, rotate, resize, then copy or save. See [Image Editor](#image-editor) below.
+- **Right-click** for more options: open in your default image viewer, **pin** as a floating always-on-top window (with its own OCR), edit, save to Desktop, or Save As… anywhere you choose.
 
 HushSnap is controlled from the **system tray**: single-click the tray icon to start a capture, or right-click to access Screenshot, Settings, the config folder, and Quit. The **Settings** dialog (with General, Capture, and OCR pages) lets you rebind the global hotkey (default `Alt+Q`), switch UI language, change how long the thumbnail stays visible, toggle auto-copy behavior, adjust OCR font size, and more.
 
 Because HushSnap works at the Windows level, the hotkey responds from any app, anywhere. Everything runs locally — your screenshots and OCR results never leave your device.
 
 As the project continues to evolve, some parts of this README may occasionally lag behind the latest behavior or features.
+
+## Image Editor
+
+The built-in image editor opens from the thumbnail's **Edit** button or the right-click menu (on both the corner thumbnail and a pinned image). It's a lightweight, dark-themed window for touching up a capture before sharing — annotate, redact, crop, rotate, resize, then copy to clipboard or save. The window opens centered on the cursor's screen and remembers its size across sessions.
+
+**Tools:** rectangle / ellipse / line (color, size, fill, optional arrowhead), text (font, size, color), brush, highlighter, mosaic (pixelate/redact), eraser, pan, and the crop / rotate / resize transforms. Plus undo/redo (`Ctrl+Z` / `Ctrl+Y`), fit-to-viewport (`Ctrl+0`), copy, and Save As… (`Ctrl+S`, PNG / JPEG / BMP). Transforms run as atomic sessions — **Esc** cancels — so the state stays unambiguous mid-edit.
+
+Everything runs locally; the edited image never leaves your device.
 
 ## OCR Engine
 
@@ -28,9 +37,10 @@ The engine has been tested on standard screen captures (web, apps, UIs) within H
 The OCR workflow and product ideas in this project were inspired by the
 [Text-Grab](https://github.com/TheJoeFin/Text-Grab) project, which is licensed
 under the MIT License. The image editor's toolset design was referenced from
-[Pinta](https://github.com/PintaProject/Pinta) (MIT), and the cross-monitor
-screen-capture behavior was modeled on [ShareX](https://github.com/ShareX/ShareX)
-(GPL-3.0) — see `THIRD_PARTY_NOTICES.md` for details.
+[Pinta](https://github.com/PintaProject/Pinta) (MIT), and the project's overall
+architecture and various implementation approaches have drawn on
+[ShareX](https://github.com/ShareX/ShareX) (GPL-3.0) — see `THIRD_PARTY_NOTICES.md`
+for details.
 
 ## License
 
