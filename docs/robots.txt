@@ -1,0 +1,4 @@
+Sitemap: https://tcita.github.io/HushSnap/sitemap.xml
+
+User-agent: *
+Allow: /

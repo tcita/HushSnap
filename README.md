@@ -2,6 +2,8 @@
 
 HushSnap is a lightweight screenshot & OCR tool that lives in your system tray. Press a hotkey and a crosshair overlay appears instantly — select a region or click for the full screen, and the shot lands on your clipboard immediately. No pre-launching menus or windows; the UI surfaces only when you need it.
 
+🌐 **[HushSnap Website](https://tcita.github.io/HushSnap/)** — [Microsoft Store](https://apps.microsoft.com/detail/9p0qzv5z8njz)
+
 After capture, a thumbnail slides in at the bottom-right corner of your screen. This thumbnail is the heart of HushSnap's post-capture flow:
 
 - **Hover** to pause auto-hide and reveal an action pill with **Edit**, **Pin**, and **Close** buttons.
