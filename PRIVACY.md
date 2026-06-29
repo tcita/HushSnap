@@ -1,6 +1,6 @@
 # Privacy Policy for HushSnap
 
-**Last Updated: May 24, 2026**
+**Last Updated: June 29, 2026**
 
 TCITA Studio ("we," "us," or "our") operates the HushSnap application. We are committed to protecting and respecting your privacy.
 
@@ -12,6 +12,7 @@ HushSnap is built to stay entirely local on your Windows device:
 - **No Remote Servers:** HushSnap does not communicate with any external servers, nor does it transmit any data over the internet.
 - **Local OCR:** Optical Character Recognition (OCR) is performed entirely on your local machine using embedded offline libraries (RapidOCR).
 - **Screen Captures:** Screenshots captured by the application are held in your system memory and copied directly to your local clipboard. They are never uploaded or shared with us or any third party.
+- **Local Image Editor:** Image annotations, cropping, rotation, resizing, and all other editing operations are performed entirely on your local machine. Edited images are never uploaded.
 
 ## 2. Information We Access
 

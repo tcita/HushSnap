@@ -21,7 +21,7 @@
 <meta property="og:type" content="website">
 <meta property="og:title" content="HushSnap — Windows 离线截图 & OCR 工具">
 <meta property="og:description" content="极简高效的截图识字助手。流畅、私密、全本地。">
-<meta property="og:image" content="https://tcita.github.io/HushSnap/assets/logo.png">
+<meta property="og:image" content="https://tcita.github.io/HushSnap/og-preview.png">
 <meta property="og:url" content="https://tcita.github.io/HushSnap/">
 <meta name="twitter:card" content="summary_large_image">
 
@@ -117,10 +117,15 @@
   .loading-fill { width: 70%; height: 100%; background: #5fc98a; }
   .action-pill {
     position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
-    width: 46px; height: 18px; background: rgba(0,0,0,0.7);
+    width: 66px; height: 18px; background: rgba(0,0,0,0.7);
     border-radius: 100px; border: 1px solid rgba(255,255,255,0.1);
-    display: flex; align-items: center; justify-content: center; gap: 5px; z-index: 110;
+    display: flex; align-items: center; justify-content: center; gap: 4px; z-index: 110;
   }
+  .pill-btn { font-size: 8px; line-height: 1; cursor: default; }
+  .pill-edit { color: #5fc98a; }
+  .pill-pin  { color: #5fc98a; }
+  .pill-close{ color: #fff; }
+  .pill-sep  { width: 1px; height: 7px; background: rgba(255,255,255,0.2); }
 
   .capture-frame {
     position: absolute; bottom: 60px; left: 20px; width: 155px; height: 100px;
@@ -166,6 +171,41 @@
     color: #5fc98a; text-decoration: none; transition: color 0.2s;
   }
   .site-footer a:hover { color: #a0f0c0; }
+
+  /* ── Features ── */
+  .features {
+    max-width: 1000px; width: 100%; margin: 36px 20px 0; padding: 0 0 8px;
+  }
+  .features h2 {
+    color: #fff; font-size: 22px; font-weight: 700; text-align: center;
+    margin-bottom: 22px; letter-spacing: -0.5px;
+  }
+  .feature-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
+  }
+  .feature-card {
+    background: #121216; border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px; padding: 20px 18px;
+    transition: border-color 0.2s, transform 0.15s, background 0.2s;
+  }
+  .feature-card:hover {
+    border-color: rgba(95,201,138,0.35); background: #18181e;
+    transform: translateY(-2px);
+  }
+  .feature-icon {
+    width: 38px; height: 38px; border-radius: 10px; margin-bottom: 14px;
+    display: flex; align-items: center; justify-content: center; font-size: 19px;
+    background: rgba(95,201,138,0.1); border: 1px solid rgba(95,201,138,0.18);
+  }
+  .feature-card h3 { color: #fff; font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+  .feature-card p  { color: #bcc4d0; font-size: 12px; line-height: 1.55; }
+  @media (max-width: 768px) {
+    .features { margin: 28px 20px 0; }
+    .feature-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  }
+  @media (max-width: 420px) {
+    .feature-grid { grid-template-columns: 1fr; }
+  }
 
   /* ── Mobile hero (hidden on desktop) ── */
   .mobile-hero { display: none; }
@@ -250,9 +290,11 @@
 
       <div class="hub-thumbnail" id="el-hub">
         <div class="action-pill">
-          <div style="font-size:8px;color:#5fc98a;">📌</div>
-          <div style="width:1px;height:7px;background:rgba(255,255,255,0.2);"></div>
-          <div style="font-size:8px;color:#fff;">×</div>
+          <div class="pill-btn pill-edit">✎</div>
+          <div class="pill-sep"></div>
+          <div class="pill-btn pill-pin">📌</div>
+          <div class="pill-sep"></div>
+          <div class="pill-btn pill-close">×</div>
         </div>
         <div class="thumb-inner">
           <div class="loading-bar"><div class="loading-fill"></div></div>
@@ -291,6 +333,43 @@
   </a>
 </div>
 
+<!-- ── Features ── -->
+<section class="features">
+  <h2 id="el-features-title">为什么选择 HushSnap</h2>
+  <div class="feature-grid">
+    <div class="feature-card">
+      <div class="feature-icon">🛡️</div>
+      <h3 id="el-f1-title">全本地 · 零联网</h3>
+      <p id="el-f1-desc">截图与 OCR 全程在设备本地完成,数据不上传任何服务器。</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">⚡</div>
+      <h3 id="el-f2-title">热键秒起</h3>
+      <p id="el-f2-desc">Alt+Q 唤出十字准星,选区即截,直接进剪贴板,无需预开窗口。</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🌐</div>
+      <h3 id="el-f3-title">多语 OCR</h3>
+      <p id="el-f3-desc">内置 PP-OCRv5,简/繁/英/日表现优异,结果可编辑、复制、置顶。</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">✎</div>
+      <h3 id="el-f4-title">内置图片编辑器</h3>
+      <p id="el-f4-desc">标注、打码、裁剪、旋转、缩放,截图后顺手修图,复制或保存。</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">💾</div>
+      <h3 id="el-f5-title">轻量省资源</h3>
+      <p id="el-f5-desc">常驻系统托盘,内存占用极低,后台静默不拖慢电脑。</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">✨</div>
+      <h3 id="el-f6-title">极简美学</h3>
+      <p id="el-f6-desc">深色界面干净利落,功能直达不深藏。没有满屏按钮,只有恰到好处的设计。</p>
+    </div>
+  </div>
+</section>
+
 <footer class="site-footer">
   <span>&copy; 2026 HushSnap</span>
   <a href="https://github.com/tcita/HushSnap">GitHub</a>
@@ -310,7 +389,21 @@ const dictionary = {
     lblResult: "3. Result",
     lblClick: "Left-click",
     storeText: "Download from Microsoft Store",
-    storeUrl: "https://apps.microsoft.com/detail/9p0qzv5z8njz?hl=en-us&gl=US"
+    storeUrl: "https://apps.microsoft.com/detail/9p0qzv5z8njz?hl=en-us&gl=US",
+    privacy: "Screenshots and OCR results never leave your device",
+    featuresTitle: "Why HushSnap",
+    f1Title: "Local · Zero Network",
+    f1Desc: "Capture and OCR run entirely on-device — nothing is uploaded to any server.",
+    f2Title: "Instant Hotkey",
+    f2Desc: "Alt+Q summons a crosshair; select to capture straight to the clipboard, no window to pre-open.",
+    f3Title: "Multilingual OCR",
+    f3Desc: "Built-in PP-OCRv5 with strong ZH/EN/JA support; edit, copy, or pin the results.",
+    f4Title: "Built-in Image Editor",
+    f4Desc: "Annotate, redact, crop, rotate, and resize — touch up a capture, then copy or save.",
+    f5Title: "Lightweight Footprint",
+    f5Desc: "Sits quietly in your system tray with minimal memory use — won't slow down your PC.",
+    f6Title: "Clean & Elegant",
+    f6Desc: "A polished dark UI free of clutter. OCR is one click away — no digging through buried menus."
   },
   zh: {
     headline: "截图.<br><span>识字.</span><br>搞定.",
@@ -323,7 +416,21 @@ const dictionary = {
     lblResult: "3. 结果",
     lblClick: "左键单击",
     storeText: "从 Microsoft Store 下载",
-    storeUrl: "https://apps.microsoft.com/detail/9p0qzv5z8njz?hl=zh-cn&gl=CN"
+    storeUrl: "https://apps.microsoft.com/detail/9p0qzv5z8njz?hl=zh-cn&gl=CN",
+    privacy: "截图与识别结果永不离开你的设备",
+    featuresTitle: "为什么选择 HushSnap",
+    f1Title: "全本地 · 零联网",
+    f1Desc: "截图与 OCR 全程在设备本地完成,数据不上传任何服务器。",
+    f2Title: "热键秒起",
+    f2Desc: "Alt+Q 唤出十字准星,选区即截,直接进剪贴板,无需预开窗口。",
+    f3Title: "多语 OCR",
+    f3Desc: "内置 PP-OCRv5,简/繁/英/日表现优异,结果可编辑、复制、置顶。",
+    f4Title: "内置图片编辑器",
+    f4Desc: "标注、打码、裁剪、旋转、缩放,截图后顺手修图,复制或保存。",
+    f5Title: "轻量省资源",
+    f5Desc: "常驻系统托盘,内存占用极低,后台静默不拖慢电脑。",
+    f6Title: "极简美学",
+    f6Desc: "深色界面干净利落,功能直达不深藏。没有满屏按钮,只有恰到好处的设计。"
   },
   tw: {
     headline: "截圖.<br><span>識字.</span><br>搞定.",
@@ -336,7 +443,21 @@ const dictionary = {
     lblResult: "3. 結果",
     lblClick: "左鍵單擊",
     storeText: "從 Microsoft Store 下載",
-    storeUrl: "https://apps.microsoft.com/detail/9p0qzv5z8njz?hl=zh-tw&gl=TW"
+    storeUrl: "https://apps.microsoft.com/detail/9p0qzv5z8njz?hl=zh-tw&gl=TW",
+    privacy: "截圖與辨識結果永不離開你的裝置",
+    featuresTitle: "為什麼選擇 HushSnap",
+    f1Title: "全本機 · 零聯網",
+    f1Desc: "截圖與 OCR 全程在裝置本機完成,資料不上傳任何伺服器。",
+    f2Title: "熱鍵秒起",
+    f2Desc: "Alt+Q 喚出十字準星,選區即截,直接進剪貼簿,無需預開視窗。",
+    f3Title: "多語 OCR",
+    f3Desc: "內建 PP-OCRv5,簡/繁/英/日表現優異,結果可編輯、複製、置頂。",
+    f4Title: "內建圖片編輯器",
+    f4Desc: "標註、打碼、裁剪、旋轉、縮放,截圖後順手修圖,複製或儲存。",
+    f5Title: "輕量省資源",
+    f5Desc: "常駐系統匣,記憶體佔用極低,後台靜默不拖慢電腦。",
+    f6Title: "極簡美學",
+    f6Desc: "深色介面乾淨俐落,功能直達不深藏。沒有滿屏按鈕,只有恰到好處的設計。"
   },
   ja: {
     headline: "キャプチャ.<br><span>認識.</span><br>完了.",
@@ -349,7 +470,21 @@ const dictionary = {
     lblResult: "3. 結果",
     lblClick: "左クリック",
     storeText: "Microsoft Store からダウンロード",
-    storeUrl: "https://apps.microsoft.com/detail/9p0qzv5z8njz?hl=ja-jp&gl=JP"
+    storeUrl: "https://apps.microsoft.com/detail/9p0qzv5z8njz?hl=ja-jp&gl=JP",
+    privacy: "スクリーンショットも認識結果もデバイスから外に出しません",
+    featuresTitle: "HushSnap を選ぶ理由",
+    f1Title: "ローカル ・ 完全オフライン",
+    f1Desc: "キャプチャも OCR も端末上で完結。データは一切サーバーに送信されません。",
+    f2Title: "ホットキーで瞬時に",
+    f2Desc: "Alt+Q で十字カーソルを呼び出し、範囲選択でクリップボードへ直接。事前起動不要。",
+    f3Title: "多言語 OCR",
+    f3Desc: "内蔵 PP-OCRv5 が ZH/EN/JA に高精度で対応。結果は編集・コピー・固定可能。",
+    f4Title: "内蔵画像エディタ",
+    f4Desc: "注釈、モザイク、切り抜き、回転、リサイズ。キャプチャ後そのまま編集、コピーや保存。",
+    f5Title: "軽量 & 省リソース",
+    f5Desc: "システムトレイに常駐し、メモリ使用量は最小限。PC の動作を妨げません。",
+    f6Title: "洗練された UI",
+    f6Desc: "ダークテーマの洗練された画面。OCR はワンクリック、メニューを掘る必要なし。"
   }
 };
 
@@ -477,6 +612,16 @@ function switchLang(lang) {
   if (taglineM)   taglineM.innerText   = dict.tagline;
   if (storeBtnM)  storeBtnM.href       = dict.storeUrl;
   if (storeTextM) storeTextM.innerText = dict.storeText;
+
+  // Privacy badge + Features
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val; };
+  set('el-features-title', dict.featuresTitle);
+  set('el-f1-title', dict.f1Title); set('el-f1-desc', dict.f1Desc);
+  set('el-f2-title', dict.f2Title); set('el-f2-desc', dict.f2Desc);
+  set('el-f3-title', dict.f3Title); set('el-f3-desc', dict.f3Desc);
+  set('el-f4-title', dict.f4Title); set('el-f4-desc', dict.f4Desc);
+  set('el-f5-title', dict.f5Title); set('el-f5-desc', dict.f5Desc);
+  set('el-f6-title', dict.f6Title); set('el-f6-desc', dict.f6Desc);
 
   renderLayout();
 }
