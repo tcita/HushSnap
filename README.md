@@ -39,10 +39,9 @@ The engine has been tested on standard screen captures (web, apps, UIs) within H
 The OCR workflow and product ideas in this project were inspired by the
 [Text-Grab](https://github.com/TheJoeFin/Text-Grab) project, which is licensed
 under the MIT License. The image editor's toolset design was referenced from
-[Pinta](https://github.com/PintaProject/Pinta) (MIT), and the project's overall
-architecture and various implementation approaches have drawn on
-[ShareX](https://github.com/ShareX/ShareX) (GPL-3.0) — see `THIRD_PARTY_NOTICES.md`
-for details.
+[Pinta](https://github.com/PintaProject/Pinta) (MIT). [ShareX](https://github.com/ShareX/ShareX)
+(GPL-3.0) served as an excellent benchmark and reference throughout development —
+see `THIRD_PARTY_NOTICES.md` for details.
 
 ## License
 
