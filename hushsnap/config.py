@@ -45,6 +45,14 @@ _close_handle.restype = wintypes.BOOL
 _ERROR_ALREADY_EXISTS = 183
 _APPMODEL_ERROR_NO_PACKAGE = 15700
 
+# Signature for GetCurrentPackageFamilyName API (MSIX package environment)
+try:
+    _get_package_family_name = _kernel32.GetCurrentPackageFamilyName
+    _get_package_family_name.argtypes = (ctypes.POINTER(wintypes.UINT32), wintypes.LPWSTR)
+    _get_package_family_name.restype = wintypes.LONG
+except AttributeError:
+    _get_package_family_name = None
+
 logger = logging.getLogger(__name__)
 
 # --- Environment Isolation ---
@@ -94,6 +102,25 @@ def is_running_as_package() -> bool:
         return False
 
 
+def get_current_package_family_name() -> str | None:
+    """Get the current package family name if running as packaged app."""
+    if _get_package_family_name is None:
+        return None
+    try:
+        length = wintypes.UINT32(0)
+        # Call once to get required length
+        _get_package_family_name(ctypes.byref(length), None)
+        if length.value == 0:
+            return None
+        buffer = ctypes.create_unicode_buffer(length.value)
+        result = _get_package_family_name(ctypes.byref(length), buffer)
+        if result == 0:  # ERROR_SUCCESS
+            return buffer.value
+    except Exception as e:
+        logger.warning(f"Failed to query package family name: {e}")
+    return None
+
+
 def resolve_physical_path(path: Path) -> Path:
     """
     Resolves any path (including virtualized paths inside MSIX sandbox)
@@ -114,22 +141,30 @@ def resolve_physical_path(path: Path) -> Path:
 # Application install directory (contains read-only assets like icon files).
 APP_DIR = Path(sys.executable).resolve().parent if _is_frozen else Path(__file__).resolve().parent.parent
 
+
 def get_user_data_dir():
     """
-    Get the user-writable data directory (%LOCALAPPDATA%\\HushSnap).
-    Uses a different folder name for development runs to avoid interference.
+    Get the user-writable data directory.
+    If running as a packaged MSIX app, returns the package's LocalState directory.
+    Otherwise, returns %LOCALAPPDATA%\\HushSnap (or fallback).
     
     Returns:
         Path: Path object for the user data directory.
     """
-    folder_name = _get_app_folder_name()
+    family_name = get_current_package_family_name()
     local_app_data = os.getenv("LOCALAPPDATA")
     
-    if local_app_data:
-        path = Path(local_app_data) / folder_name
+    if family_name and local_app_data:
+        # For MSIX, store everything inside the package's LocalState.
+        # This directory is automatically deleted by Windows upon uninstall.
+        path = Path(local_app_data) / "Packages" / family_name / "LocalState"
     else:
-        # Fallback: use a hidden folder under home if LOCALAPPDATA is unavailable.
-        path = Path.home() / f".{folder_name.lower()}"
+        folder_name = _get_app_folder_name()
+        if local_app_data:
+            path = Path(local_app_data) / folder_name
+        else:
+            # Fallback: use a hidden folder under home if LOCALAPPDATA is unavailable.
+            path = Path.home() / f".{folder_name.lower()}"
 
     # Ensure directory exists to avoid subsequent read/write errors.
     try:
