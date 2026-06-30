@@ -823,9 +823,20 @@ class CaptureWindow(QtWidgets.QWidget):
         )
 
     def mousePressEvent(self, event):
-        """Mouse press: record start point or close window."""
+        """Mouse press: record start point; right-click arms exit-on-release.
+
+        Right-click does NOT close here. Closing on press would release the
+        implicit mouse grab mid-click, and the subsequent ``WM_RBUTTONUP``
+        would fall through to whatever window is below (typically the desktop),
+        popping its context menu — the user would have to dismiss that too.
+        Accepting the press holds the grab so the matching release still
+        lands on the overlay; the actual close happens in
+        ``mouseReleaseEvent`` once both the down and the up have been
+        consumed by us.
+        """
         if event.button() == QtCore.Qt.MouseButton.RightButton:
-            self.close()
+            event.accept()
+            return
         elif event.button() == QtCore.Qt.MouseButton.LeftButton:
             if hasattr(self, 'session') and self.session and self.session.wins:
                 phys = self._global_physical_cursor()
@@ -857,6 +868,11 @@ class CaptureWindow(QtWidgets.QWidget):
 
     def mouseReleaseEvent(self, event):
         """Mouse release: choose region capture or fullscreen capture based on drag distance."""
+        if event.button() == QtCore.Qt.MouseButton.RightButton:
+            # Close on release (not press) so the right-click's down+up are
+            # both consumed by the overlay and never reach the desktop below.
+            self.close()
+            return
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
             if self.pixmap is None:
                 if not (hasattr(self, 'session') and self.session):
