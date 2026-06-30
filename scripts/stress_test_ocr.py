@@ -22,12 +22,19 @@ was in when it died — e.g. a log that ends after
 native onnxruntime crash, which faulthandler cannot capture and only a WER
 minidump (see setup_wer_dumps.ps1) can stack-trace.
 
+With ``--benchmark`` the script also collects per-round performance metrics
+(per-stage latency, peak working set, private bytes, page faults, handles,
+retention) measured entirely OUT-OF-PROCESS against the live MSIX app — no
+source changes, no repackaging. See ``scripts/stress_lib/`` for the helper
+modules (Win32 input, process sampler, log markers, reporting).
+
 Usage:
     # 1. (once, as admin) enable minidump capture:
     #    powershell -ExecutionPolicy Bypass -File scripts/setup_wer_dumps.ps1
     # 2. launch the MSIX app, leave it on a screen with text
     # 3. run:
     python scripts/stress_test_ocr.py --rounds 500
+    python scripts/stress_test_ocr.py --rounds 30 --benchmark
 
     # If the auto-detected log path is wrong, pass it explicitly:
     python scripts/stress_test_ocr.py --log "C:\\path\\to\\hushsnap.log"
@@ -37,248 +44,48 @@ pywin32) so it runs on any Windows Python.
 """
 
 import argparse
-import ctypes
-import ctypes.wintypes as wintypes
-import os
+import math
 import sys
 import time
 from pathlib import Path
 
-# ── Win32 setup ───────────────────────────────────────────────────────────────
-user32 = ctypes.windll.user32
-kernel32 = ctypes.windll.kernel32
+# Make `stress_lib` importable when run as a script (python scripts/...).
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
 
-INPUT_MOUSE = 0
-INPUT_KEYBOARD = 1
-MOUSEEVENTF_MOVE = 0x0001
-MOUSEEVENTF_LEFTDOWN = 0x0002
-MOUSEEVENTF_LEFTUP = 0x0004
-KEYEVENTF_KEYUP = 0x0002
-VK_MENU = 0x12  # Alt
-MONITORINFOF_PRIMARY = 0x0001
+from stress_lib import win32_input, process_sampler, log_markers, reporting
 
-
-class MOUSEINPUT(ctypes.Structure):
-    _fields_ = [
-        ("dx", wintypes.LONG), ("dy", wintypes.LONG),
-        ("mouseData", wintypes.DWORD), ("dwFlags", wintypes.DWORD),
-        ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.c_void_p),
-    ]
-
-
-class KEYBDINPUT(ctypes.Structure):
-    _fields_ = [
-        ("wVk", wintypes.WORD), ("wScan", wintypes.WORD),
-        ("dwFlags", wintypes.DWORD), ("time", wintypes.DWORD),
-        ("dwExtraInfo", ctypes.c_void_p),
-    ]
-
-
-class _INPUT_UNION(ctypes.Union):
-    _fields_ = [("ki", KEYBDINPUT), ("mi", MOUSEINPUT)]
-
-
-class INPUT(ctypes.Structure):
-    # Lay out { type, union{ki,mi} } with BOTH levels anonymous so that
-    # inp.type, inp.ki.wVk and inp.mi.dwFlags all resolve directly on INPUT.
-    class _INPUT(ctypes.Structure):
-        _anonymous_ = ("u",)
-        _fields_ = [("type", wintypes.DWORD), ("u", _INPUT_UNION)]
-    _anonymous_ = ("_input",)
-    _fields_ = [("_input", _INPUT)]
-
-
-# ── low-level input helpers ───────────────────────────────────────────────────
-
-def _send_mouse(flags):
-    inp = INPUT(type=INPUT_MOUSE)
-    inp.mi.dwFlags = flags
-    user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
-
-
-def click_here():
-    """Clean left click at the current cursor position (down+up, no move).
-
-    A click must move < CAPTURE_CLICK_THRESHOLD_PX (8px) between down and up,
-    otherwise the capture overlay treats it as a region selection instead of a
-    full-screen capture. We never move the cursor between down and up.
-    """
-    _send_mouse(MOUSEEVENTF_LEFTDOWN)
-    time.sleep(0.03)
-    _send_mouse(MOUSEEVENTF_LEFTUP)
-
-
-def dismiss_popup(primary_rect):
-    """Click empty desktop so the OCR popup loses focus and auto-hides.
-
-    The OCR popup (ui/ocr_popup.py:1091-1097) hides itself on
-    ActivationChange when it is not pinned and stops being the active
-    window — it does NOT respond to Esc. Clicking empty desktop steals
-    focus and dismisses the popup before the next round's Alt+Q grabs the
-    screen. Without this, the previous round's popup is captured into the
-    next screenshot, making every round's OCR input different and
-    potentially masking the rare crash's reproduction conditions.
-
-    We click the LEFT-center of the primary screen: that vertical edge is
-    empty desktop (no taskbar buttons, no icons in the middle of the side),
-    so the click lands on nothing interactive. Avoid the right side and the
-    bottom — the thumbnail/popup live bottom-right and the taskbar lives
-    bottom-center, both of which would respond to the click.
-    """
-    tx = primary_rect.left + 6
-    ty = primary_rect.top + (primary_rect.bottom - primary_rect.top) // 2
-    move_to(tx, ty)
-    time.sleep(0.1)
-    click_here()
-    time.sleep(0.2)
-
-
-def move_to(x, y):
-    """Move cursor to a physical virtual-desktop coordinate."""
-    user32.SetCursorPos(int(x), int(y))
-
-
-def _send_key(vk, up=False):
-    inp = INPUT(type=INPUT_KEYBOARD)
-    inp.ki.wVk = vk
-    inp.ki.wScan = user32.MapVirtualKeyW(vk, 0)
-    inp.ki.dwFlags = KEYEVENTF_KEYUP if up else 0
-    user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
-
-
-def send_alt_q():
-    """Press Alt+Q (the default capture hotkey) and release.
-
-    RegisterHotKey-registered global hotkeys fire from the synthesized input
-    stream, so this triggers the app's WM_HOTKEY path just like a real press.
-    """
-    _send_key(VK_MENU)
-    time.sleep(0.03)
-    _send_key(0x51)  # 'Q'
-    time.sleep(0.03)
-    _send_key(0x51, up=True)
-    time.sleep(0.03)
-    _send_key(VK_MENU, up=True)
-
-
-# ── monitor enumeration (physical coords) ─────────────────────────────────────
-
-class MONITORINFO(ctypes.Structure):
-    _fields_ = [
-        ("cbSize", wintypes.DWORD),
-        ("rcMonitor", wintypes.RECT),
-        ("rcWork", wintypes.RECT),
-        ("dwFlags", wintypes.DWORD),
-    ]
-
-
-def get_monitors():
-    """Return [(rcMonitor, is_primary), ...] in physical virtual-desktop pixels."""
-    monitors = []
-
-    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HMONITOR, wintypes.HDC, ctypes.POINTER(wintypes.RECT), wintypes.LPARAM)
-    def cb(hmon, _hdc, _lprc, _lparam):
-        mi = MONITORINFO()
-        mi.cbSize = ctypes.sizeof(MONITORINFO)
-        if user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
-            monitors.append((mi.rcMonitor, bool(mi.dwFlags & MONITORINFOF_PRIMARY)))
-        return True
-
-    user32.EnumDisplayMonitors(None, None, cb, 0)
-    return monitors
-
-
-def primary_monitor_rect():
-    for rc, is_primary in get_monitors():
-        if is_primary:
-            return rc
-    rcs = get_monitors()
-    return rcs[0][0] if rcs else wintypes.RECT(0, 0, 1920, 1080)
-
-
-# The thumbnail is NOT located by enumerating windows. It is deterministic:
-# see run_round() for the geometry derivation (primary screen bottom-right,
-# inset 140,95 physical px). A previous revision tried matching a frameless
-# Qt tool window by EnumWindows + geometry heuristics, but that was fragile
-# across multi-monitor / DPR setups.
-
-
-# ── process liveness ──────────────────────────────────────────────────────────
-
-def is_hushsnap_running():
-    """True if at least one HushSnap.exe process is alive.
-
-    Uses tasklist (always present) rather than a third-party dep.
-    """
-    import subprocess
-    try:
-        out = subprocess.check_output(
-            ["tasklist", "/FI", "IMAGENAME eq HushSnap.exe", "/NH", "/FO", "CSV"],
-            creationflags=0x08000000,  # CREATE_NO_WINDOW
-            stderr=subprocess.DEVNULL,
-            text=True,
-            timeout=10,
-        )
-    except Exception:
-        return True  # assume alive if we cannot tell — safer than a false crash
-    return "HushSnap.exe" in out
-
-
-# ── log path auto-detection ───────────────────────────────────────────────────
-
-def autodetect_log_path():
-    """Find hushsnap.log under the MSIX package data folder.
-
-    MSIX redirects %LOCALAPPDATA% writes into
-    %LOCALAPPDATA%\\Packages\\<PackageFamilyName>\\LocalCache\\Local\\HushSnap\\.
-    We glob for it so the exact PFN (with publisher hash) need not be known
-    ahead of time. Falls back to the unpackaged path %LOCALAPPDATA%\\HushSnap.
-    """
-    local = os.environ.get("LOCALAPPDATA")
-    if not local:
-        return None
-    candidates = []
-    pkg_root = Path(local) / "Packages"
-    if pkg_root.exists():
-        candidates.extend(pkg_root.glob("*HushSnap*/LocalCache/Local/HushSnap/hushsnap.log"))
-    candidates.append(Path(local) / "HushSnap" / "hushsnap.log")  # unpackaged / dev
-    for c in candidates:
-        if c.exists():
-            return c
-    return None
-
-
-# ── log tailing ───────────────────────────────────────────────────────────────
-
-CHAIN = "[OCR_CHAIN]"
-SUCCESS_MARKER = "[OCR_CHAIN] show_text done"
-
-
-def read_new_lines(log_path, offset):
-    """Return (new_text, new_offset) for bytes added since offset."""
-    try:
-        size = log_path.stat().st_size
-    except OSError:
-        return "", offset
-    if size < offset:
-        # log was rotated/truncated — start from the beginning
-        offset = 0
-    try:
-        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-            f.seek(offset)
-            text = f.read()
-            new_offset = f.tell()
-    except OSError:
-        return "", offset
-    return text, new_offset
+# Re-exported names keep run_round/main readable and match the pre-refactor API.
+primary_monitor_rect = win32_input.primary_monitor_rect
+dismiss_popup = win32_input.dismiss_popup
+move_to = win32_input.move_to
+send_alt_q = win32_input.send_alt_q
+click_here = win32_input.click_here
+is_hushsnap_running = process_sampler.is_hushsnap_running
+ExternalMemorySampler = process_sampler.ExternalMemorySampler
+autodetect_log_path = log_markers.autodetect_log_path
+read_new_lines = log_markers.read_new_lines
+classify_marker = log_markers.classify_marker
+RoundBench = log_markers.RoundBench
+finalize_bench = log_markers.finalize_bench
+CHAIN = log_markers.CHAIN
+SUCCESS_MARKER = log_markers.SUCCESS_MARKER
+save_round_log = reporting.save_round_log
+print_round_bench = reporting.print_round_bench
+print_bench_report = reporting.print_bench_report
+save_bench_results = reporting.save_bench_results
 
 
 # ── the test loop ─────────────────────────────────────────────────────────────
 
-def run_round(round_idx, log_path, start_offset, cfg):
-    """Execute one capture→OCR round. Returns (status, end_offset, detail).
+def run_round(round_idx, log_path, start_offset, cfg, sampler=None):
+    """Execute one capture→OCR round.
 
-    status ∈ {"ok", "crash", "hang"}.
+    Returns (status, end_offset, detail, round_bench). status ∈ {"ok",
+    "crash", "hang"}. round_bench is a RoundBench (populated only when
+    cfg.benchmark and a sampler is supplied; otherwise a bare shell with just
+    status).
 
     Thumbnail location is deterministic — ui/thumbnail.py:185-186 places the
     window at the bottom-right of the screen the cursor was on when capture
@@ -296,17 +103,23 @@ def run_round(round_idx, log_path, start_offset, cfg):
     """
     primary = primary_monitor_rect()
 
+    # Benchmark: snapshot baseline + peak trackers BEFORE the round starts.
+    # peak_* are updated on every poll so the OCR window's high-water mark is
+    # captured even if we crash before re-sampling.
+    bench = bool(cfg.benchmark and sampler is not None)
+    rb = RoundBench(round_idx, "ok")
+    if bench:
+        ws0, pv0, h0, pf0 = sampler.snapshot()
+        peak_ws, peak_pv = ws0, pv0
+    else:
+        ws0 = pv0 = h0 = pf0 = -1
+        peak_ws = peak_pv = -1.0
+
     # 0. Dismiss any OCR popup left over from the previous round so it is NOT
     #    captured into this round's screenshot (the popup auto-hides on losing
-    #    focus; clicking the taskbar steals focus). Keeps each round's OCR
+    #    focus; clicking empty desktop steals focus). Keeps each round's OCR
     #    input identical to the static text screen the user prepared.
-    #    SKIPPED in hammer mode: dismissing would serialize rounds and destroy
-    #    the overlap we want (round N's callback in flight while round N+1
-    #    acquires the lock). In hammer mode overlapping popups/thumbnails are
-    #    expected; the Alt+Q overlay itself steals focus and hides the old
-    #    popup when capture begins.
-    if not cfg.hammer:
-        dismiss_popup(primary)
+    dismiss_popup(primary)
 
     # 1. Resolve the capture-click point. Default to the primary screen center
     #    (where the user is expected to keep text); --capture-point overrides
@@ -335,45 +148,44 @@ def run_round(round_idx, log_path, start_offset, cfg):
     thumb_y = primary.bottom - 95
     time.sleep(cfg.thumbnail_delay)
     if not is_hushsnap_running():
-        return "crash", start_offset, "process died before thumbnail click"
+        rb.status = "crash"
+        return "crash", start_offset, "process died before thumbnail click", rb
     print(f"  [round {round_idx}] click thumbnail at {thumb_x},{thumb_y}")
     move_to(thumb_x, thumb_y)
     time.sleep(0.15)
     click_here()
 
-    # 4. Wait for the OCR result. Two modes:
-    #    - wait mode (default): tail the log until show_text done / crash / timeout.
-    #    - hammer mode: wait a FIXED interval (cfg.hammer_interval) regardless of
-    #      whether OCR finished, then proceed to the next round immediately. This
-    #      lets multiple OCR workers overlap — round N's callback emit can collide
-    #      with round N+1's lock acquisition, which is exactly the race the
-    #      pre-0019fde code (callback emitted INSIDE self._lock) crashed on.
-    #      We still tail markers + check liveness during the interval so a crash
-    #      is caught and the last marker is recorded.
+    # 4. Wait for the OCR result: tail the log until show_text done / crash /
+    #    timeout. The [OCR_CHAIN] markers are stamped as they appear so
+    #    per-stage timing can be computed on resolve; liveness is checked each
+    #    poll so a crash is caught and the last marker (the stage that halted)
+    #    is recorded.
     offset = start_offset
     last_markers = []
+    stamps = {}          # stage_key -> perf_counter() at first observation
+    # Benchmark mode tightens the tail poll so marker-detection latency (which
+    # bounds every segment's accuracy) stays well below the segments we measure.
+    poll = cfg.bench_poll if cfg.benchmark else 0.15
 
-    if cfg.hammer:
-        deadline = time.monotonic() + cfg.hammer_interval
-        while time.monotonic() < deadline:
-            text, offset = read_new_lines(log_path, offset)
-            if text:
-                for line in text.splitlines():
-                    if CHAIN in line:
-                        last_markers.append(line.split(CHAIN, 1)[1].strip())
-                        print(f"  [round {round_idx}] log: {line.split(CHAIN, 1)[1].strip()}")
-            if not is_hushsnap_running():
-                return "crash", offset, "process died during hammer interval; last marker: " + (last_markers[-1] if last_markers else "(none)")
-            time.sleep(0.1)
-        # Interval elapsed — move on. Don't dismiss popup here: in hammer mode
-        # we WANT overlapping work; dismissing would serialize it. The next
-        # round's dismiss_popup() at step 0 still runs, but only after this
-        # round's interval, so overlap window is preserved.
-        if not is_hushsnap_running():
-            return "crash", offset, "process died after hammer interval; last marker: " + (last_markers[-1] if last_markers else "(none)")
-        return "ok", offset, f"hammer tick (last: {last_markers[-1] if last_markers else '(none)'})"
+    def _stamp(msg):
+        if not bench:
+            return
+        key, seq = classify_marker(msg)
+        if key and key not in stamps:
+            stamps[key] = time.perf_counter()
+            if seq is not None and rb.seq is None:
+                rb.seq = seq
 
-    # wait mode
+    def _sample_peak():
+        nonlocal peak_ws, peak_pv
+        if not bench:
+            return
+        ws, pv, _, _ = sampler.snapshot()
+        if ws > peak_ws:
+            peak_ws = ws
+        if pv > peak_pv:
+            peak_pv = pv
+
     deadline = time.monotonic() + cfg.ocr_timeout
     while time.monotonic() < deadline:
         text, offset = read_new_lines(log_path, offset)
@@ -381,41 +193,32 @@ def run_round(round_idx, log_path, start_offset, cfg):
             for line in text.splitlines():
                 if CHAIN in line:
                     # keep just the marker portion for a compact timeline
-                    last_markers.append(line.split(CHAIN, 1)[1].strip())
-                    print(f"  [round {round_idx}] log: {line.split(CHAIN, 1)[1].strip()}")
+                    m = line.split(CHAIN, 1)[1].strip()
+                    last_markers.append(m)
+                    print(f"  [round {round_idx}] log: {m}")
+                    _stamp(m)
             if SUCCESS_MARKER in text:
+                if bench:
+                    finalize_bench(rb, stamps, sampler, ws0, pv0, h0, pf0, peak_ws, peak_pv)
                 dismiss_popup(primary)  # clean the screen for the next round
-                return "ok", offset, "show_text done"
+                rb.status = "ok"
+                return "ok", offset, "show_text done", rb
+        _sample_peak()
         if not is_hushsnap_running():
-            return "crash", offset, "process died during OCR; last marker: " + (last_markers[-1] if last_markers else "(none)")
-        time.sleep(0.15)
+            if bench:
+                finalize_bench(rb, stamps, sampler, ws0, pv0, h0, pf0, peak_ws, peak_pv)
+            rb.status = "crash"
+            return "crash", offset, "process died during OCR; last marker: " + (last_markers[-1] if last_markers else "(none)"), rb
+        time.sleep(poll)
 
     # Timed out without success marker.
+    if bench:
+        finalize_bench(rb, stamps, sampler, ws0, pv0, h0, pf0, peak_ws, peak_pv)
     if not is_hushsnap_running():
-        return "crash", offset, "process died after timeout; last marker: " + (last_markers[-1] if last_markers else "(none)")
-    return "hang", offset, "OCR did not complete; last marker: " + (last_markers[-1] if last_markers else "(none)")
-
-
-def save_round_log(log_path, round_idx, status, detail):
-    """Copy this round's log slice to results/ for offline analysis."""
-    results = Path(__file__).resolve().parent.parent / "stress_results"
-    results.mkdir(exist_ok=True)
-    stamp = time.strftime("%Y%m%d_%H%M%S")
-    dest = results / f"round_{round_idx:04d}_{status}_{stamp}.log"
-    try:
-        text = log_path.read_text(encoding="utf-8", errors="replace")
-        # Slice from the last session-start marker so the file is just this run.
-        idx = text.rfind("Logging initialized.")
-        body = text[idx:] if idx != -1 else text
-        dest.write_text(
-            f"=== stress test round {round_idx} | status={status} ===\n"
-            f"=== detail: {detail} ===\n"
-            f"=== saved {stamp} ===\n\n{body}",
-            encoding="utf-8",
-        )
-        print(f"\n  >> log slice saved: {dest}")
-    except Exception as exc:
-        print(f"\n  !! failed to save log slice: {exc}")
+        rb.status = "crash"
+        return "crash", offset, "process died after timeout; last marker: " + (last_markers[-1] if last_markers else "(none)"), rb
+    rb.status = "hang"
+    return "hang", offset, "OCR did not complete; last marker: " + (last_markers[-1] if last_markers else "(none)"), rb
 
 
 def main():
@@ -434,22 +237,27 @@ def main():
                     help="seconds to wait for OCR to complete per round in wait mode (default 20.0)")
     ap.add_argument("--cooldown", type=float, default=1.5,
                     help="seconds between rounds (default 1.5)")
-    ap.add_argument("--hammer", action="store_true",
-                    help="hammer mode: don't wait for OCR to finish — fire the next round after a fixed "
-                         "interval. Lets OCR workers overlap, exercising the lock race that the pre-0019fde "
-                         "code (callback emitted inside self._lock) crashed on. Use with --hammer-interval.")
-    ap.add_argument("--hammer-interval", type=float, default=1.5,
-                    help="seconds per round in hammer mode (default 1.5). Must be long enough for the "
-                         "thumbnail to fully appear (~1.3s from Alt+Q); the script raises it automatically "
-                         "if set lower. Lower (down to that floor) = more OCR overlap = more race pressure.")
     ap.add_argument("--no-stop-on-fail", action="store_true",
                     help="keep running after a crash/hang instead of stopping (you must restart the app manually)")
+    ap.add_argument("--benchmark", action="store_true",
+                    help="collect per-round performance metrics (latency stages, peak working set, "
+                         "private bytes, page faults, handles, retention) measured OUT-OF-PROCESS against "
+                         "the live MSIX app. Uses the existing [OCR_CHAIN] log markers + Win32 memory "
+                         "queries — zero source changes, no repackaging. Saves benchmark_<stamp>.json + "
+                         ".csv to stress_results/.")
+    ap.add_argument("--bench-poll", type=float, default=0.05,
+                    help="log-tail poll interval in seconds when --benchmark is on (default 0.05). Bounds "
+                         "the marker-detection latency that limits per-stage timing accuracy (±this value).")
+    ap.add_argument("--prep", type=float, default=3.0,
+                    help="seconds to wait before round 1 begins (default 3.0). Gives you time to minimize "
+                         "this terminal — the capture is fullscreen, so a console left over the text region "
+                         "would be OCR'd into round 1's screenshot. Set 0 to skip.")
     args = ap.parse_args()
 
     log_path = Path(args.log) if args.log else autodetect_log_path()
     if log_path is None or not log_path.exists():
         print("ERROR: could not find hushsnap.log. Pass it explicitly with --log.")
-        print("       (MSIX stores it under %LOCALAPPDATA%\\Packages\\<PFN>\\LocalCache\\Local\\HushSnap\\)")
+        print("       (MSIX stores it under %LOCALAPPDATA%\\Packages\\<PFN>\\LocalState\\)")
         return 2
     print(f"log file: {log_path}")
 
@@ -459,33 +267,18 @@ def main():
     cfg.overlay_delay = args.overlay_delay
     cfg.thumbnail_delay = args.thumbnail_delay
     cfg.ocr_timeout = args.ocr_timeout
-    cfg.hammer = args.hammer
-    cfg.hammer_interval = args.hammer_interval
     cfg.capture_point = None
-    # In hammer mode the thumbnail must still be fully shown before we click
-    # it, otherwise the click misses and the round does nothing. The thumbnail
-    # needs ~1.3s from Alt+Q (overlay_delay + capture + 300ms slide-in). We
-    # spend overlay_delay (0.8s) before the capture click, so thumbnail_delay
-    # (click→thumbnail-click gap) only needs ~0.5s in hammer mode (vs 1.0s in
-    # wait mode). Hammer interval must be >= overlay_delay + thumbnail_delay
-    # for the round to fit; clamp both so the thumbnail always gets enough
-    # time even at aggressive intervals.
-    if cfg.hammer:
-        cfg.thumbnail_delay = 0.5  # thumbnail appears ~0.5s after capture click
-        min_interval = cfg.overlay_delay + cfg.thumbnail_delay + 0.2
-        if cfg.hammer_interval < min_interval:
-            print(f"NOTE: hammer-interval {cfg.hammer_interval}s too short for the "
-                  f"thumbnail to appear; raised to {min_interval:.2f}s.")
-            cfg.hammer_interval = min_interval
+    cfg.benchmark = args.benchmark
+    cfg.bench_poll = args.bench_poll
 
-    if cfg.hammer:
-        print(f"HAMMER MODE: rounds={args.rounds}  hammer_interval={cfg.hammer_interval}s  "
-              f"thumbnail_delay={cfg.thumbnail_delay}s  cooldown={args.cooldown}s")
-        print("OCR workers will overlap — this exercises the lock race.")
-    else:
-        print(f"WAIT MODE: rounds={args.rounds}  overlay_delay={args.overlay_delay}s  "
-              f"ocr_timeout={args.ocr_timeout}s  cooldown={args.cooldown}s")
-    print("make sure the MSIX app is running and the screen shows text.\n")
+    print(f"WAIT MODE: rounds={args.rounds}  overlay_delay={args.overlay_delay}s  "
+          f"thumbnail_delay={args.thumbnail_delay}s  ocr_timeout={args.ocr_timeout}s  "
+          f"cooldown={args.cooldown}s")
+    print("make sure the MSIX app is running and the screen shows text.")
+    if args.benchmark:
+        print(f"BENCHMARK: poll={cfg.bench_poll}s (±{cfg.bench_poll*1000:.0f}ms timing accuracy), "
+              "measuring out-of-process against HushSnap.exe.")
+    print()
     if args.capture_point:
         try:
             parts = args.capture_point.split(",")
@@ -494,43 +287,77 @@ def main():
             print(f"ERROR: bad --capture-point {args.capture_point!r}; expected 'x,y'")
             return 2
 
+    # ── Prep countdown ──────────────────────────────────────────────────────
+    # The capture is FULLSCREEN, so any window covering the text region —
+    # including this console — gets OCR'd into round 1. Give the operator a
+    # moment to minimize the terminal before the first Alt+Q fires.
+    prep = max(0.0, args.prep)
+    if prep > 0:
+        print(f"starting in {math.ceil(prep)}s — MINIMIZE THIS TERMINAL NOW "
+              f"(fullscreen capture would include it).")
+        remaining = prep
+        while remaining > 0:
+            tick = min(1.0, remaining)
+            print(f"  {math.ceil(remaining)}...", flush=True)
+            time.sleep(tick)
+            remaining -= tick
+        print("  go")
+
     ok = 0
     fail = 0
-    for i in range(1, args.rounds + 1):
-        if not is_hushsnap_running():
-            print(f"\n[round {i}] HushSnap is not running. Start it and re-run, or it crashed earlier.")
-            if not args.no_stop_on_fail:
-                break
-            time.sleep(2)
-            continue
+    sampler = ExternalMemorySampler() if args.benchmark else None
+    bench_results: list[RoundBench] = []
+    try:
+        for i in range(1, args.rounds + 1):
+            if not is_hushsnap_running():
+                print(f"\n[round {i}] HushSnap is not running. Start it and re-run, or it crashed earlier.")
+                if not args.no_stop_on_fail:
+                    break
+                time.sleep(2)
+                continue
 
-        # Snapshot the log offset so we only tail this round's lines.
-        try:
-            start_offset = log_path.stat().st_size
-        except OSError:
-            start_offset = 0
+            # Snapshot the log offset so we only tail this round's lines.
+            try:
+                start_offset = log_path.stat().st_size
+            except OSError:
+                start_offset = 0
 
-        t0 = time.monotonic()
-        status, _end_offset, detail = run_round(i, log_path, start_offset, cfg)
-        dt = time.monotonic() - t0
+            t0 = time.monotonic()
+            status, _end_offset, detail, rb = run_round(i, log_path, start_offset, cfg, sampler)
+            dt = time.monotonic() - t0
+            # Fold the outcome reason into the bench record so a crash's cause
+            # (last [OCR_CHAIN] marker = the stage that halted) travels with
+            # its measurements in benchmark_*.json/csv — no need to cross-
+            # reference round_*.log by hand.
+            rb.detail = detail
+            rb.last_marker = detail.rsplit("last marker:", 1)[-1].strip() if "last marker:" in detail else ""
+            bench_results.append(rb)
 
-        if status == "ok":
-            ok += 1
-            print(f"  [round {i}] OK ({dt:.2f}s)\n")
-        else:
-            fail += 1
-            print(f"\n  [round {i}] {status.upper()} after {dt:.2f}s — {detail}")
-            save_round_log(log_path, i, status, detail)
-            print(f"  cumulative: ok={ok}  fail={fail}\n")
-            if not args.no_stop_on_fail:
-                print("Stopping. Restart the MSIX app and re-run to continue.")
-                break
-        # In hammer mode the round itself already waited hammer_interval;
-        # adding cooldown would lengthen the gap and reduce overlap pressure.
-        if not args.hammer:
+            if status == "ok":
+                ok += 1
+                if args.benchmark:
+                    print_round_bench(rb, dt)
+                else:
+                    print(f"  [round {i}] OK ({dt:.2f}s)\n")
+            else:
+                fail += 1
+                print(f"\n  [round {i}] {status.upper()} after {dt:.2f}s — {detail}")
+                if args.benchmark:
+                    print_round_bench(rb, dt)
+                save_round_log(log_path, i, status, detail)
+                print(f"  cumulative: ok={ok}  fail={fail}\n")
+                if not args.no_stop_on_fail:
+                    print("Stopping. Restart the MSIX app and re-run to continue.")
+                    break
             time.sleep(args.cooldown)
+    finally:
+        if sampler is not None:
+            sampler.close()
 
     print(f"\n=== done: ok={ok}  fail={fail} ===")
+    if args.benchmark and bench_results:
+        print_bench_report(bench_results, cfg)
+        save_bench_results(bench_results, cfg)
 
 
 if __name__ == "__main__":
