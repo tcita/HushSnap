@@ -94,6 +94,26 @@ def is_running_as_package() -> bool:
         return False
 
 
+def get_current_package_family_name() -> str | None:
+    """Get the current package family name if running as packaged app."""
+    try:
+        # Check if the API is supported on this Windows version
+        if not hasattr(_kernel32, "GetCurrentPackageFamilyName"):
+            return None
+        length = ctypes.c_uint32(0)
+        # Call once to get required length
+        _kernel32.GetCurrentPackageFamilyName(ctypes.byref(length), None)
+        if length.value == 0:
+            return None
+        buffer = ctypes.create_unicode_buffer(length.value)
+        result = _kernel32.GetCurrentPackageFamilyName(ctypes.byref(length), buffer)
+        if result == 0:  # ERROR_SUCCESS
+            return buffer.value
+    except Exception as e:
+        logger.warning(f"Failed to query package family name: {e}")
+    return None
+
+
 def resolve_physical_path(path: Path) -> Path:
     """
     Resolves any path (including virtualized paths inside MSIX sandbox)
@@ -114,22 +134,30 @@ def resolve_physical_path(path: Path) -> Path:
 # Application install directory (contains read-only assets like icon files).
 APP_DIR = Path(sys.executable).resolve().parent if _is_frozen else Path(__file__).resolve().parent.parent
 
+
 def get_user_data_dir():
     """
-    Get the user-writable data directory (%LOCALAPPDATA%\\HushSnap).
-    Uses a different folder name for development runs to avoid interference.
+    Get the user-writable data directory.
+    If running as a packaged MSIX app, returns the package's LocalState directory.
+    Otherwise, returns %LOCALAPPDATA%\\HushSnap (or fallback).
     
     Returns:
         Path: Path object for the user data directory.
     """
-    folder_name = _get_app_folder_name()
+    family_name = get_current_package_family_name()
     local_app_data = os.getenv("LOCALAPPDATA")
     
-    if local_app_data:
-        path = Path(local_app_data) / folder_name
+    if family_name and local_app_data:
+        # For MSIX, store everything inside the package's LocalState.
+        # This directory is automatically deleted by Windows upon uninstall.
+        path = Path(local_app_data) / "Packages" / family_name / "LocalState"
     else:
-        # Fallback: use a hidden folder under home if LOCALAPPDATA is unavailable.
-        path = Path.home() / f".{folder_name.lower()}"
+        folder_name = _get_app_folder_name()
+        if local_app_data:
+            path = Path(local_app_data) / folder_name
+        else:
+            # Fallback: use a hidden folder under home if LOCALAPPDATA is unavailable.
+            path = Path.home() / f".{folder_name.lower()}"
 
     # Ensure directory exists to avoid subsequent read/write errors.
     try:
