@@ -226,6 +226,17 @@ class Application(QtCore.QObject):
         self.startup_profiler.log_summary()
         QtCore.QTimer.singleShot(5000, self._initial_memory_trim)
 
+        # !! TEMPORARY CRASH TEST — REMOVE BEFORE RELEASE !!
+        # If HUSHSNAP_CRASH_TEST is set, trigger a real native access
+        # violation ~10s after startup via crashlib.dll, to verify the WinDbg
+        # JIT crash path on the real packaged MSIX. The fault happens on a
+        # native thread (no Python frame), so Python/ctypes cannot swallow
+        # it — the closest analog to the Qt6Gui use-after-free under
+        # investigation. Default off: the installed app runs normally unless
+        # the env var is set, so this is safe to leave bundled during dev.
+        if os.environ.get("HUSHSNAP_CRASH_TEST"):
+            QtCore.QTimer.singleShot(10000, self._trigger_wer_test_crash)
+
         # Show a one-time "ready" toast on the first launch after install so
         # the user learns the capture hotkey. Never shown again afterwards.
         # Wait for OCR warmup to finish (same signal that reveals the tray
@@ -606,6 +617,36 @@ class Application(QtCore.QObject):
     def _initial_memory_trim(self):
         from .system.memory_utils import trim_working_set
         trim_working_set()
+
+    def _trigger_wer_test_crash(self):
+        """TEMPORARY: force a REAL native crash via crashlib.dll to verify the
+        WinDbg JIT crash path. Remove before release.
+
+        ctypes wraps every call in SEH __try/__except, so a fault raised
+        directly on the calling thread is swallowed as OSError. crashlib.dll
+        spawns a native thread (CreateThread inside the C code) that writes
+        to NULL, so the AV (0xC0000005) fires on a thread with no Python
+        frame and Python cannot intercept it. Expected: WinDbg JIT is
+        offered the unhandled exception, process freezes at the fault site.
+        """
+        self.logger.warning("WER TEST: triggering REAL native crash via crashlib.dll now")
+        import ctypes
+        import sys as _sys
+        # crashlib.dll is bundled by PyInstaller into _internal/ (sys._MEIPASS)
+        # in --onedir mode, not next to the exe. Check both.
+        candidates = []
+        if hasattr(_sys, "_MEIPASS"):
+            candidates.append(Path(_sys._MEIPASS) / "crashlib.dll")
+        candidates.append(Path(__file__).resolve().parent / "crashlib.dll")
+        dll_path = next((p for p in candidates if p.exists()), None)
+        if dll_path is None:
+            self.logger.error("WER TEST: crashlib.dll not found")
+            return
+        try:
+            lib = ctypes.WinDLL(str(dll_path))
+            lib.trigger_crash()
+        except Exception:
+            self.logger.error("WER TEST: failed to invoke crashlib", exc_info=True)
 
 
 def main(boot_start_time=None):
