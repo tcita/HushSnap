@@ -147,8 +147,10 @@ def crashlib_path() -> str | None:
     returns None.
     """
     if getattr(sys, "frozen", False):
-        # PyInstaller: dll bundled to the exe dir (target='.')
-        candidate = Path(sys.executable).parent / "crashlib.dll"
+        # PyInstaller onedir: binaries with target='.' land in sys._MEIPASS
+        # (the _internal/ dir beside the exe), NOT next to the exe itself.
+        base = getattr(sys, "_MEIPASS", None) or Path(sys.executable).parent
+        candidate = Path(base) / "crashlib.dll"
     else:
         candidate = Path(__file__).resolve().parent.parent / "assets" / "crashlib.dll"
     return str(candidate) if candidate.exists() else None
