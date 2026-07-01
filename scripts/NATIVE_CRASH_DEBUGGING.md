@@ -27,11 +27,10 @@ for an MSIX-packaged app:
   So even with WinDbg installed, faulthandler pre-empts it.
 
 The working approach: register WinDbg as the system JIT debugger, and on
-machines where that's true AND the developer has opted in, **skip
-faulthandler entirely** so native AVs flow through WER's unhandled-exception
-dispatch straight to WinDbg, which freezes the process at the fault site.
-WinDbg then writes the full-memory dump from its own (clean) process — no
-corrupted-heap-in-dumper problem.
+machines where that's true, **skip faulthandler entirely** so native AVs flow
+through WER's unhandled-exception dispatch straight to WinDbg, which freezes
+the process at the fault site. WinDbg then writes the full-memory dump from
+its own (clean) process — no corrupted-heap-in-dumper problem.
 
 ## One-time setup (per dev machine)
 
@@ -87,8 +86,42 @@ crashlib!trigger_crash+0x...:
     mov dword ptr [rax],0DEADh ds:00000000`00000000=????????
 ```
 
-If WinDbg pops and freezes there, the chain works. A real native crash
-(anywhere in Qt6Gui/onnxruntime/etc.) is caught by the identical path.
+If WinDbg pops and freezes there, the JIT chain is wired correctly on this
+machine: WinDbg is registered as the AeDebug debugger and will attach to an
+unhandled native exception.
+
+### What this test does — and does not — cover
+
+This unpackaged test is a **prerequisite check**, not a full end-to-end proof.
+It confirms the machine-side half (WinDbg registered as JIT). It does **not**
+exercise the app-side half, because the `python -c` process never imports
+HushSnap and so never runs the code this guide exists to verify:
+
+- **`jit_debugger_configured()` is never called.** The gate that actually
+  skips faulthandler on a WinDbg machine isn't invoked, so a bug in it (e.g.
+  wrong registry path, always-False) would not be caught here.
+- **The faulthandler-skip interaction isn't exercised.** A bare `python`
+  process has faulthandler off by default, so "faulthandler is correctly
+  skipped when WinDbg is registered" can't be observed.
+- **The MSIX `MoAppCrash` pipeline isn't exercised.** A real crash inside the
+  packaged app goes through WER's `MoAppCrash` (the same pipeline that skips
+  classic LocalDumps); this test crashes a normal unpackaged process, which
+  takes the ordinary unhandled-exception path. `MoAppCrash` *can* decline to
+  auto-launch the JIT debugger for a packaged app unless it's registered under
+  WER `DebugApplications` (setup step 3) — a behavior this test cannot surface.
+
+So: passing this test means "WinDbg will catch native crashes on this machine,"
+but **not** "the packaged HushSnap app will definitely hand its native crashes
+to WinDbg." The remaining gap (does the packaged app's crash actually reach the
+JIT debugger?) is only proven by a real native crash inside the running app, or
+by temporarily bundling crashlib into the package and triggering it there.
+
+For the latter (optional, when you need to be sure the packaged path works):
+build crashlib, add a one-off `binaries=[(crashlib.dll, '.')]` entry to the
+.spec, build the MSIX, and call `trigger_crash()` from inside the running app
+via `ctypes` — the dll resolves under `sys._MEIPASS` (PyInstaller's `_internal/`
+dir), not beside the exe. If WinDbg pops from inside the MSIX, the full path is
+proven. Revert the .spec change afterward so release builds stay clean.
 
 ### Capturing a full-memory dump from the frozen WinDbg session
 

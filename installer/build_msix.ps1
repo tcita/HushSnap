@@ -252,7 +252,15 @@ function Invoke-PreBuildValidation {
     }
 
     # 1.10 ── No debug/artifact files in project tree ───────────────
-    $debugArtifacts = Get-ChildItem -Path $RootDir -Recurse -Include @("ocr_debug_*.png", "*.pdb") -ErrorAction SilentlyContinue
+    # Exclude build\crashlib\ — crashlib's diagnostic symbols (crashlib.pdb) and
+    # the MSVC linker's collateral vc140.pdb land there after build_crashlib.bat.
+    # They are never bundled (the .spec does not reference crashlib at all) and
+    # crashlib.pdb is needed by WinDbg symbol resolution
+    # (see scripts/NATIVE_CRASH_DEBUGGING.md), so they are intentional, not stray
+    # debug artifacts to clean up. This keeps the standalone crashlib tool from
+    # blocking the MSIX build when it has been built locally.
+    $debugArtifacts = Get-ChildItem -Path $RootDir -Recurse -Include @("ocr_debug_*.png", "*.pdb") -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -notmatch '\\build\\crashlib\\' }
     if ($debugArtifacts) {
         foreach ($f in $debugArtifacts) {
             Write-Fail "Debug artifact found: $($f.FullName) — delete before packaging"
