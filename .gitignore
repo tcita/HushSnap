@@ -5,6 +5,12 @@ dist/
 !HushSnap.spec
 __pycache__/
 
+# Test-only native crash trigger (built locally by native/build_crashlib.bat;
+# never shipped, never committed — crashlib is a standalone diagnostic tool,
+# not bundled by the .spec). MSVC link artifacts land in assets/ during build.
+assets/crashlib.*
+vc140.pdb
+
 # Installer build artifacts
 dist-installer/
 dist-installer-dev/
