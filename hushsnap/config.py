@@ -137,6 +137,23 @@ def jit_debugger_configured() -> bool:
         return False
 
 
+def crashlib_path() -> str | None:
+    """Resolve the path to the bundled crashlib.dll, or None if absent.
+
+    Used by the dev-only native-crash trigger (see Application.run in app.py)
+    to verify the WinDbg JIT chain end-to-end inside the packaged MSIX. The dll
+    is only present when the package was built after running
+    ``native/build_crashlib.bat``; a clean release build has no crashlib and this
+    returns None.
+    """
+    if getattr(sys, "frozen", False):
+        # PyInstaller: dll bundled to the exe dir (target='.')
+        candidate = Path(sys.executable).parent / "crashlib.dll"
+    else:
+        candidate = Path(__file__).resolve().parent.parent / "assets" / "crashlib.dll"
+    return str(candidate) if candidate.exists() else None
+
+
 def get_current_package_family_name() -> str | None:
     """Get the current package family name if running as packaged app."""
     try:

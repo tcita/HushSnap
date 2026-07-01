@@ -11,10 +11,19 @@ from PyInstaller.utils.hooks import collect_data_files
 icons_glob = [str(f) for f in (project_root / 'hushsnap' / 'ui' / 'icons').glob('*.svg')]
 bundle_datas = [('hushsnap.ico', '.')] + collect_data_files('rapidocr') + [(f, 'hushsnap/ui/icons') for f in icons_glob]
 
+# crashlib.dll — standalone native-AV trigger used to verify the WinDbg JIT
+# chain end-to-end inside the MSIX package (see scripts/NATIVE_CRASH_DEBUGGING.md).
+# Only bundled when present (built locally via native/build_crashlib.bat); a clean
+# checkout with no crashlib build produces a release package with no test dll.
+bundle_binaries = []
+_crashlib_dll = project_root / 'assets' / 'crashlib.dll'
+if _crashlib_dll.exists():
+    bundle_binaries.append((str(_crashlib_dll), '.'))
+
 a = Analysis(
     ['HushSnap.py'],
     pathex=[],
-    binaries=[],
+    binaries=bundle_binaries,
     datas=bundle_datas,
     hiddenimports=[
 	    'hushsnap',

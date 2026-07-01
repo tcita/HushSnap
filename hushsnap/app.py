@@ -11,6 +11,7 @@ from PyQt6 import QtWidgets, QtCore
 
 from .capture_session import CaptureSession
 from .config import (
+    crashlib_path,
     get_app_id,
     get_config_path,
     get_debug_enabled,
@@ -204,6 +205,7 @@ class Application(QtCore.QObject):
 
     def run(self):
         """Execute the full application lifecycle."""
+        self._maybe_trigger_native_crash()
         self.startup_profiler.log_header()
         self.startup_profiler.log_elapsed("Config loaded and logging setup")
 
@@ -237,6 +239,41 @@ class Application(QtCore.QObject):
             )
         
         return self.qt_app.exec()
+
+    def _maybe_trigger_native_crash(self):
+        """Dev-only: trigger a deterministic native AV to verify the WinDbg JIT
+        chain end-to-end inside the packaged MSIX.
+
+        Gated on HUSHSNAP_TRIGGER_NATIVE_CRASH=1 AND crashlib.dll being bundled.
+        Fires before the Qt event loop starts, after logging is up, so the
+        "about to crash" line lands in the log regardless of what the JIT
+        debugger does next. No-op on production builds (no crashlib bundled)
+        and when the env var is unset — zero behavior change for users.
+
+        See scripts/NATIVE_CRASH_DEBUGGING.md.
+        """
+        if os.environ.get("HUSHSNAP_TRIGGER_NATIVE_CRASH") != "1":
+            return
+        dll = crashlib_path()
+        if dll is None:
+            self.logger.warning(
+                "HUSHSNAP_TRIGGER_NATIVE_CRASH set but crashlib.dll not bundled; "
+                "run native/build_crashlib.bat before packaging."
+            )
+            return
+        # Import here so a missing ctypes/WinDLL never touches the hot path.
+        import ctypes
+        self.logger.warning(
+            "HUSHSNAP_TRIGGER_NATIVE_CRASH=1: loading %s and calling "
+            "trigger_crash() — expect an access violation and WinDbg JIT prompt.",
+            dll,
+        )
+        try:
+            ctypes.WinDLL(dll).trigger_crash()
+        except Exception:
+            # If trigger_crash returned without faulting (e.g. the AV was somehow
+            # swallowed), make it loud rather than letting the app limp on.
+            self.logger.error("crashlib trigger_crash() returned without faulting", exc_info=True)
 
     def translate(self, key, **kwargs):
         """App-wide translation helper."""
