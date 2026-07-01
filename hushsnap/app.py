@@ -226,6 +226,12 @@ class Application(QtCore.QObject):
         self.startup_profiler.log_summary()
         QtCore.QTimer.singleShot(5000, self._initial_memory_trim)
 
+        # !! POLLUTED BUILD — TEMPORARY CRASH TEST !!
+        # Trigger an unhandled main-thread exception ~10s after startup so the
+        # new WER fail-fast path gets exercised on a real installed build.
+        # REMOVE THIS BLOCK before any real release.
+        QtCore.QTimer.singleShot(10000, self._trigger_wer_test_crash)
+
         # Show a one-time "ready" toast on the first launch after install so
         # the user learns the capture hotkey. Never shown again afterwards.
         # Wait for OCR warmup to finish (same signal that reveals the tray
@@ -606,6 +612,14 @@ class Application(QtCore.QObject):
     def _initial_memory_trim(self):
         from .system.memory_utils import trim_working_set
         trim_working_set()
+
+    def _trigger_wer_test_crash(self):
+        """TEMPORARY: force an unhandled main-thread exception to verify the
+        WER fail-fast path on an installed build. Remove before release."""
+        self.logger.warning("WER TEST: raising intentional unhandled exception now")
+        # Raise from a named frame so the traceback line is easy to spot in
+        # the .cab's registered memory block and the local dump.
+        raise RuntimeError("HushSnap WER verification: intentional crash")
 
 
 def main(boot_start_time=None):
