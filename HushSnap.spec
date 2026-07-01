@@ -10,6 +10,14 @@ from PyInstaller.utils.hooks import collect_data_files
 # Collect SVG icons — loaded via filesystem reads (open / QIcon path), not Python imports
 icons_glob = [str(f) for f in (project_root / 'hushsnap' / 'ui' / 'icons').glob('*.svg')]
 bundle_datas = [('hushsnap.ico', '.')] + collect_data_files('rapidocr') + [(f, 'hushsnap/ui/icons') for f in icons_glob]
+# !! TEMPORARY: bundle crashlib.dll (test-only native crash trigger) so the
+# WinDbg JIT crash path can be verified on the real packaged MSIX. Built by
+# native\build_crashlib.bat. Guarded on file existence: if you don't build it,
+# the release package is clean (no test dll, no crash hook). Remove before
+# any real release.
+crashlib_src = project_root / 'assets' / 'crashlib.dll'
+if crashlib_src.exists():
+    bundle_datas.append((str(crashlib_src), '.'))
 
 a = Analysis(
     ['HushSnap.py'],

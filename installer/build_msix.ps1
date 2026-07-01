@@ -252,7 +252,12 @@ function Invoke-PreBuildValidation {
     }
 
     # 1.10 ── No debug/artifact files in project tree ───────────────
-    $debugArtifacts = Get-ChildItem -Path $RootDir -Recurse -Include @("ocr_debug_*.png", "*.pdb") -ErrorAction SilentlyContinue
+    # Exclude build output dirs (build/, dist/, dist-installer*/) — these hold
+    # transient compiler/linker/PyInstaller artifacts (.pdb, .ilk, ...) that
+    # never ship and are .gitignored. Scanning them causes false failures on a
+    # normal rebuild; the check is meant to catch stray .pdb left in source.
+    $debugArtifacts = Get-ChildItem -Path $RootDir -Recurse -Include @("ocr_debug_*.png", "*.pdb") -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -notmatch '\\(build|dist|dist-installer|dist-installer-dev)\\' }
     if ($debugArtifacts) {
         foreach ($f in $debugArtifacts) {
             Write-Fail "Debug artifact found: $($f.FullName) — delete before packaging"

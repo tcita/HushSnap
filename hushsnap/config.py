@@ -552,6 +552,36 @@ def get_debug_enabled(config_path=None):
     return bool(config_data.get("debug", not _is_frozen))
 
 
+def get_crash_test_enabled(config_path=None):
+    """Read the crash-test flag from config. DEV-ONLY — never in defaults.
+
+    When true, the app triggers a real native access violation via
+    crashlib.dll ~10s after startup, to verify the WinDbg JIT crash path on
+    the real packaged MSIX. Intentionally NOT in _CONFIG_DEFAULTS so it never
+    appears in a production config and can't be flipped on by accident — set
+    ``crash_test = true`` manually in ``hushsnap_config.toml`` to activate,
+    then remove the line (or set false) after testing.
+    """
+    if config_path is None:
+        config_path = get_config_path()
+    config_data = _load_config_data(config_path)
+    return bool(config_data.get("crash_test", False))
+
+
+def disable_crash_test(config_path=None):
+    """Persist crash_test = false. Called after the crash is triggered so a
+    crashlib load failure (no crash) or a normal restart doesn't immediately
+    crash again on the next launch. Only disables — never enables."""
+    if config_path is None:
+        config_path = get_config_path()
+    config_data = _load_config_data(config_path)
+    config_data["crash_test"] = False
+    try:
+        _write_config_data(config_path, config_data)
+    except Exception as e:
+        logger.error(f"Failed to disable crash_test: {e}")
+
+
 def get_copy_image_to_clipboard(config_path=None):
     """Read 'copy_image_to_clipboard' from config (default True)."""
     if config_path is None:
