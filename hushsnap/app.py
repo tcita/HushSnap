@@ -117,12 +117,17 @@ def _copy_log_tail(log_path):
     Finds the last occurrence of the startup marker and copies everything
     from there to end-of-file — that way the user only shares this session's
     log, not previous runs that may still be in the rotated file.
+
+    The crash dialog calls this immediately before raise_fail_fast(), which
+    hard-terminates the process without running Qt's exit cleanup. Qt's
+    clipboard normally hands its data to the OS clipboard during that
+    cleanup, so a bare setText() would be lost. We force the handoff by
+    pumping the event loop after setText(), and as a belt-and-suspenders
+    fallback write directly via the Win32 clipboard API (synchronous,
+    independent of Qt's deferred ownership mechanism).
     """
     app = QtWidgets.QApplication.instance()
     if not app:
-        return
-    clipboard = app.clipboard()
-    if not clipboard:
         return
     try:
         text = log_path.read_text(encoding="utf-8", errors="replace")
@@ -132,7 +137,67 @@ def _copy_log_tail(log_path):
     idx = text.rfind(SESSION_START_MARKER)
     if idx != -1:
         text = text[idx:]
-    clipboard.setText(text)
+
+    clipboard = app.clipboard()
+    if clipboard:
+        clipboard.setText(text)
+        # Pump pending events so Qt flushes its internal clipboard state to
+        # the OS before we terminate. processEvents() processes all queued
+        # events of the given priority and returns.
+        app.processEvents()
+
+    # Belt-and-suspenders: write directly to the Win32 clipboard. This is
+    # fully synchronous and survives an immediate hard process exit. No-op
+    # off Windows. If it fails we still have the Qt path above.
+    if sys.platform == "win32":
+        try:
+            _win32_set_clipboard_text(text)
+        except Exception:
+            logger = logging.getLogger("HushSnap")
+            logger.debug("Win32 clipboard write failed", exc_info=True)
+
+
+def _win32_set_clipboard_text(text):
+    """Write `text` to the system clipboard via the Win32 API, synchronously.
+
+    Used by _copy_log_tail as a fallback that doesn't depend on Qt's
+    deferred clipboard ownership, so the data survives an immediate
+    RaiseFailFastException.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    CF_UNICODETEXT = 13
+    GMEM_MOVEABLE = 0x0002
+
+    user32 = ctypes.WinDLL("user32")
+    kernel32 = ctypes.WinDLL("kernel32")
+
+    user32.OpenClipboard.argtypes = [wintypes.HWND]
+    user32.OpenClipboard.restype = wintypes.BOOL
+    user32.EmptyClipboard.restype = wintypes.HANDLE
+    user32.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
+    user32.SetClipboardData.restype = wintypes.HANDLE
+    user32.CloseClipboard.restype = wintypes.BOOL
+    kernel32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+    kernel32.GlobalAlloc.restype = wintypes.HGLOBAL
+    kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalLock.restype = ctypes.c_void_p
+    kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalUnlock.restype = wintypes.BOOL
+
+    data = text.encode("utf-16-le") + b"\x00\x00"
+    h = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(data))
+    if not h:
+        return
+    ptr = kernel32.GlobalLock(h)
+    if ptr:
+        ctypes.memmove(ptr, data, len(data))
+        kernel32.GlobalUnlock(h)
+    if user32.OpenClipboard(None):
+        user32.EmptyClipboard()
+        user32.SetClipboardData(CF_UNICODETEXT, h)
+        user32.CloseClipboard()
 
 
 class Application(QtCore.QObject):
@@ -225,6 +290,12 @@ class Application(QtCore.QObject):
         # --- Final Polish ---
         self.startup_profiler.log_summary()
         QtCore.QTimer.singleShot(5000, self._initial_memory_trim)
+
+        # !! POLLUTED BUILD — TEMPORARY CRASH TEST !!
+        # Trigger an unhandled main-thread exception ~10s after startup so the
+        # new WER fail-fast path gets exercised on a real installed build.
+        # REMOVE THIS BLOCK before any real release.
+        QtCore.QTimer.singleShot(10000, self._trigger_wer_test_crash)
 
         # Show a one-time "ready" toast on the first launch after install so
         # the user learns the capture hotkey. Never shown again afterwards.
@@ -606,6 +677,40 @@ class Application(QtCore.QObject):
     def _initial_memory_trim(self):
         from .system.memory_utils import trim_working_set
         trim_working_set()
+
+    def _trigger_wer_test_crash(self):
+        """TEMPORARY: force a REAL native crash via a C++ DLL (crashlib.dll)
+        to verify the procdump / WER native-crash path. Remove before release.
+
+        Earlier in-process attempts (NULL deref via ctypes.cast, RaiseException,
+        shellcode via ctypes.cast) were all swallowed by Python as OSError —
+        ctypes wraps every call in SEH __try/__except. crashlib.dll does the
+        fault on a NATIVE thread (CreateThread inside the C++ code), so the
+        AV happens with no Python frame on the crashing thread's stack and
+        Python cannot swallow it. This is the closest analog to the 6/28 Qt
+        use-after-free: a fault inside a C++ library.
+
+        Expected: access violation 0xC0000005 reaches Windows directly →
+        procdump -e catches it (full -ma dump) → WER reports MoAppCrash →
+        faulthandler logs the main-thread Python stack. raise_fail_fast() /
+        IsDebuggerPresent() never run (no Python exception reaches excepthook).
+        """
+        self.logger.warning("WER TEST: triggering REAL native crash via crashlib.dll now")
+        import ctypes
+        from .config import APP_DIR
+
+        # crashlib.dll is bundled at the package root (see HushSnap.spec).
+        dll_path = APP_DIR / "crashlib.dll"
+        if not dll_path.exists():
+            self.logger.error(f"WER TEST: crashlib.dll not found at {dll_path}")
+            return
+        try:
+            lib = ctypes.WinDLL(str(dll_path))
+            # trigger_crash() spawns a native thread that writes to NULL; the
+            # AV on that thread is not catchable by Python's ctypes SEH.
+            lib.trigger_crash()
+        except Exception:
+            self.logger.error("WER TEST: failed to invoke crashlib", exc_info=True)
 
 
 def main(boot_start_time=None):
