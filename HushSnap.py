@@ -25,22 +25,15 @@ os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 # reach the JIT debugger — the process dies before WinDbg can attach,
 # producing a silent exit with no debugger prompt. With no faulthandler
 # installed, the AV flows through WER's unhandled-exception dispatch straight
-# to WinDbg, which freezes the process at the fault site. Production user
-# machines have no JIT debugger, so faulthandler stays enabled there.
+# to WinDbg, which freezes the process at the fault site. Installing WinDbg
+# + ``windbg -I`` is a deliberate admin action no ordinary user takes, so
+# this single gate keeps the behavior off on production machines. Production
+# machines have no JIT debugger registered, so faulthandler stays enabled
+# there (preserving the Python stack in the log for silent MSIX crashes).
 import faulthandler
+from hushsnap.config import jit_debugger_configured
 
-# Skip faulthandler only when BOTH a JIT debugger (WinDbg) is registered on
-# this machine AND the developer has opted in via HUSHSNAP_NATIVE_DEBUG.
-# faulthandler's fatal-exception handler re-raises after dumping the Python
-# stack, and on Windows that re-raise does not reliably reach the JIT
-# debugger — the process dies before WinDbg can attach, producing a silent
-# exit. With no faulthandler, the AV flows through WER's unhandled-exception
-# dispatch straight to WinDbg, which freezes the process at the fault site.
-# Default (no env var, or no WinDbg): faulthandler stays enabled, preserving
-# the Python stack in the log for silent MSIX crashes.
-from hushsnap.config import native_debug_deferred_to_jit
-
-if not native_debug_deferred_to_jit():
+if not jit_debugger_configured():
     try:
         faulthandler.enable()
     except RuntimeError:

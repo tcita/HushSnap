@@ -1,10 +1,9 @@
 @echo off
 REM build_crashlib.bat - compile native/crashlib.c to assets/crashlib.dll (x64)
 REM
-REM Test-only native crash trigger for verifying the WinDbg JIT crash path on
-REM the real packaged MSIX. Run before build_msix when you want the crash test
-REM hook active. The .spec only bundles assets/crashlib.dll if it exists, so
-REM skipping this build = clean release package (no test dll, no crash hook).
+REM Standalone diagnostic only — NOT bundled by HushSnap.spec and not referenced
+REM by app code. Invoke trigger_crash() from a separate Python process to verify
+REM the WinDbg JIT crash path on this machine. See scripts/NATIVE_CRASH_DEBUGGING.md.
 REM
 REM Requires MSVC Build Tools. Locates vcvars64.bat via vswhere.
 REM

@@ -54,28 +54,12 @@ Get-ScheduledTask -TaskName "HushSnapProcdumpCrashMonitor" -ErrorAction Silently
 Get-Process procdump64 -ErrorAction SilentlyContinue | Stop-Process -Force
 ```
 
-## Opt in per session (the "password")
-
-The faulthandler-skip is gated on an env var so it only activates when you
-deliberately enable it — never on a machine that just happens to have WinDbg,
-never for other users:
-
-```powershell
-# Set once, persistently (writes HKCU\Environment). Applies to every new
-# process after you re-sign-in or restart explorer.
-setx HUSHSNAP_NATIVE_DEBUG 1
-# Then sign out and back in (or restart "Windows Explorer" in Task Manager)
-# so the new env block is picked up.
-```
-
-To turn it off: `setx HUSHSNAP_NATIVE_DEBUG ""` (and re-sign-in), or delete
-the value via System Properties → Environment Variables.
-
-`HUSHSNAP_NATIVE_DEBUG` MUST be a persistent (setx / System Properties) env
-var, NOT a transient `$env:` in a shell. MSIX activation via
-`shell:AppsFolder` does not inherit the launching shell's transient env, but
-it DOES inherit persistent user/machine env vars. (Verified: a MSIX-activated
-HushSnap process reads `HUSHSNAP_NATIVE_DEBUG` set via setx after re-sign-in.)
+That's the whole opt-in: steps 1-2 (install WinDbg, register as JIT) are a
+deliberate, admin-only action no ordinary user performs. There is no env var
+or config key to set per session — once WinDbg is the registered JIT
+debugger, native crashes defer to it automatically on every HushSnap launch.
+Production user machines have no JIT debugger registered, so they keep
+faulthandler + WER reporting unchanged.
 
 ## Verifying the chain with crashlib (standalone diagnostic)
 
@@ -90,9 +74,7 @@ native access violation. It is NOT part of the shipped app (not bundled by
 native\build_crashlib.bat
 #   -> assets\crashlib.dll  (symbols: build\crashlib\crashlib.pdb)
 
-# 2. Make sure HUSHSNAP_NATIVE_DEBUG is set and you've re-signed-in (above).
-
-# 3. Run the trigger in a separate Python process. The process will crash
+# 2. Run the trigger in a separate Python process. The process will crash
 #    with an access violation; WinDbg should pop and freeze at the fault.
 python -c "import ctypes; ctypes.WinDLL(r'assets\crashlib.dll').trigger_crash()"
 ```
@@ -137,29 +119,32 @@ call stack usually localizes the fault enough without them.)
 
 ## How it works (mechanism)
 
-Two conditions together gate the faulthandler skip
-(`hushsnap.config.native_debug_deferred_to_jit`):
+A single condition gates the faulthandler skip
+(`hushsnap.config.jit_debugger_configured`):
 
-1. `jit_debugger_configured()` — `HKLM\SOFTWARE\Microsoft\Windows NT\
-   CurrentVersion\AeDebug\Debugger` is present and non-empty (WinDbg
-   registered as JIT debugger).
-2. `HUSHSNAP_NATIVE_DEBUG` env var is non-empty (developer opt-in).
+`HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AeDebug\Debugger` is
+present and non-empty (WinDbg registered as the system JIT debugger).
 
-When both are true, `faulthandler.enable()` is skipped in `HushSnap.py` (boot)
-and `hushsnap/logging_config.py` (log redirect). Native AVs then reach WER's
+When true, `faulthandler.enable()` is skipped in `HushSnap.py` (boot) and
+`hushsnap/logging_config.py` (log redirect). Native AVs then reach WER's
 unhandled-exception dispatch → JIT debugger (WinDbg) → frozen at fault site.
 
-When either is false (production user machines have no WinDbg; dev machines
-without the env var), faulthandler stays enabled and native crashes dump the
-Python stack to the log then exit — the existing production behavior, with
-WER still reporting to Partner Center. Zero impact on non-opted-in machines.
+When false (production user machines — no JIT debugger registered),
+faulthandler stays enabled and native crashes dump the Python stack to the
+log then exit — the existing production behavior, with WER still reporting
+to Partner Center. Zero impact on machines without WinDbg.
+
+Installing WinDbg and running `windbg -I` is the deliberate opt-in: it's an
+admin action no ordinary user performs, so no separate env var or config key
+is needed. Failure is visible rather than silent — if WinDbg is installed but
+a crash is still swallowed, the cause is right here (WinDbg not registered as
+JIT), not a forgotten opt-in flag.
 
 ## Tearing it down
 
 ```powershell
-# Stop deferring to WinDbg
-setx HUSHSNAP_NATIVE_DEBUG ""          # then re-sign-in
-
-# (Optional) unregister WinDbg as JIT debugger — via System Properties or by
-# clearing HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AeDebug\Debugger
+# Unregister WinDbg as the JIT debugger — via System Properties, or by
+# clearing the registry value:
+Remove-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AeDebug" -Name Debugger -ErrorAction SilentlyContinue
 ```
+
