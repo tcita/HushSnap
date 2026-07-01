@@ -252,7 +252,13 @@ function Invoke-PreBuildValidation {
     }
 
     # 1.10 ── No debug/artifact files in project tree ───────────────
-    $debugArtifacts = Get-ChildItem -Path $RootDir -Recurse -Include @("ocr_debug_*.png", "*.pdb") -ErrorAction SilentlyContinue
+    # Exclude build\crashlib\ — crashlib's diagnostic symbols (crashlib.pdb) and
+    # the MSVC linker's collateral vc140.pdb land there. They are never bundled
+    # (the .spec copies only crashlib.dll up to assets/) and are referenced by
+    # WinDbg symbol resolution (see scripts/NATIVE_CRASH_DEBUGGING.md), so they
+    # are intentional, not stray debug artifacts to clean up.
+    $debugArtifacts = Get-ChildItem -Path $RootDir -Recurse -Include @("ocr_debug_*.png", "*.pdb") -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -notmatch '\\build\\crashlib\\' }
     if ($debugArtifacts) {
         foreach ($f in $debugArtifacts) {
             Write-Fail "Debug artifact found: $($f.FullName) — delete before packaging"
