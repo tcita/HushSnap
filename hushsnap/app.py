@@ -13,10 +13,12 @@ from .capture_session import CaptureSession
 from .config import (
     get_app_id,
     get_config_path,
+    get_crash_test_enabled,
     get_debug_enabled,
     get_onboarding_toast_shown,
     get_user_data_dir,
     is_already_running,
+    disable_crash_test,
     load_hotkey_setting,
     release_instance_lock,
     resolve_physical_path,
@@ -225,6 +227,29 @@ class Application(QtCore.QObject):
         # --- Final Polish ---
         self.startup_profiler.log_summary()
         QtCore.QTimer.singleShot(5000, self._initial_memory_trim)
+
+        # !! TEMPORARY CRASH TEST — REMOVE BEFORE RELEASE !!
+        # If crash_test = true in hushsnap_config.toml, trigger a real native
+        # access violation ~10s after startup via crashlib.dll, to verify the
+        # WinDbg JIT crash path on the real packaged MSIX. The fault happens on
+        # a native thread (no Python frame), so Python/ctypes cannot swallow
+        # it — the closest analog to the Qt6Gui use-after-free under
+        # investigation.
+        #
+        # Triggered via a config key (not an env var): MSIX activation via
+        # shell:AppsFolder does NOT inherit the launching shell's environment
+        # block, so $env:HUSHSNAP_CRASH_TEST never reached the process. The
+        # config file lives in user_data_dir (MSIX -> LocalState, unpacked ->
+        # %LOCALAPPDATA%\HushSnap) and is read regardless of how the app was
+        # launched. The key is intentionally absent from _CONFIG_DEFAULTS, so
+        # it never appears in a production config — set it manually to test,
+        # then remove the line.
+        if get_crash_test_enabled():
+            self.logger.warning(
+                "CRASH TEST: crash_test=true in config — will crash via "
+                "crashlib.dll in ~10s"
+            )
+            QtCore.QTimer.singleShot(10000, self._trigger_wer_test_crash)
 
         # Show a one-time "ready" toast on the first launch after install so
         # the user learns the capture hotkey. Never shown again afterwards.
@@ -606,6 +631,52 @@ class Application(QtCore.QObject):
     def _initial_memory_trim(self):
         from .system.memory_utils import trim_working_set
         trim_working_set()
+
+    def _trigger_wer_test_crash(self):
+        """TEMPORARY: force a REAL native crash via crashlib.dll to verify the
+        WinDbg JIT crash path. Remove before release.
+
+        ctypes wraps every call in SEH __try/__except, so a fault raised
+        directly on the calling thread is swallowed as OSError. crashlib.dll
+        spawns a native thread (CreateThread inside the C code) that writes
+        to NULL, so the AV (0xC0000005) fires on a thread with no Python
+        frame and Python cannot intercept it. Expected: WinDbg JIT is
+        offered the unhandled exception, process freezes at the fault site.
+        """
+        # Consume the trigger: flip crash_test back off in the config so a
+        # crashlib load failure (no crash) or a restart doesn't immediately
+        # crash again on the next launch.
+        try:
+            disable_crash_test()
+        except Exception:
+            pass
+        self.logger.warning("CRASH TEST: triggering REAL native crash via crashlib.dll now")
+        import ctypes
+        import sys as _sys
+        # crashlib.dll is bundled by PyInstaller into _internal/ (sys._MEIPASS)
+        # in --onedir mode, not next to the exe. Check both.
+        candidates = []
+        if hasattr(_sys, "_MEIPASS"):
+            candidates.append(Path(_sys._MEIPASS) / "crashlib.dll")
+        candidates.append(Path(__file__).resolve().parent / "crashlib.dll")
+        dll_path = next((p for p in candidates if p.exists()), None)
+        if dll_path is None:
+            self.logger.error("CRASH TEST: crashlib.dll not found")
+            return
+        try:
+            lib = ctypes.WinDLL(str(dll_path))
+            # Disable faulthandler BEFORE the crash: faulthandler installs a
+            # SIGSEGV/AV handler that prints the Python stack then re-raises.
+            # On Windows the re-raise path doesn't reliably reach WER / the
+            # JIT debugger (observed: no WinDbg prompt, no WER ReportArchive
+            # entry). faulthandler.disable() fully uninstalls its signal
+            # handlers, restoring the OS default disposition so the AV flows
+            # through WER's unhandled-exception dispatch -> JIT debugger.
+            import faulthandler
+            faulthandler.disable()
+            lib.trigger_crash()
+        except Exception:
+            self.logger.error("CRASH TEST: failed to invoke crashlib", exc_info=True)
 
 
 def main(boot_start_time=None):
