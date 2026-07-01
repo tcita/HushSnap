@@ -249,6 +249,28 @@ class OcrController:
         error = response.error
         pixmap = response.pixmap
 
+        # Use-after-free guard: ``target`` was captured in start_request at
+        # request-dispatch time (``target = self.popup``). If the active popup
+        # was since retired — _detach_if_pinned retires a pinned popup and
+        # marks it WA_DeleteOnClose, after which Qt frees the C++ OcrPopup
+        # once it closes — ``target`` may now point to a Python wrapper whose
+        # underlying C++ object is gone. Any attribute access on such a
+        # wrapper raises ``RuntimeError: wrapped C/C++ object of type OcrPopup
+        # has been deleted``; a *native* call through the dangling pointer
+        # (the 0x9fa04 / mov rax,[rcx] vtable read) crashes the process
+        # instead. Probe with a lightweight attribute access before any
+        # show_text() path touches the object; on RuntimeError, log and drop
+        # the result rather than dereference freed memory.
+        try:
+            _ = target.isVisible()
+        except RuntimeError:
+            logging.warning(
+                "[OCR_CHAIN] on_ocr_finished: target popup already deleted "
+                "(use-after-free guard) — dropping result, target=%r",
+                target_popup,
+            )
+            return
+
         if error:
             logging.error(f"OCR Error: {error}")
             logging.debug("[OCR_CHAIN] on_ocr_finished calling show_text (error)")
