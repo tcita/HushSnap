@@ -160,7 +160,44 @@ def write_traceback(text):
 def raise_fail_fast():
     """Raise a fail-fast exception. WER captures a crash dump and uploads it
     to Partner Center; the process does not continue. Falls back to a hard
-    exit if the API is missing or somehow returns."""
+    exit if the API is missing or somehow returns.
+
+    If a debugger is attached (procdump's -e monitoring on a dev machine),
+    skip fail-fast and let the debugger handle the unhandled exception
+    instead. Reason: the FIRST end-to-end test of this path (6/28-22:29)
+    showed RaiseFailFastException racing procdump — procdump intercepted
+    the exception, tried to write a dump in the already-corrupted process
+    context, and died with 0xc0000409 (stack-buffer-overrun), producing a
+    0-byte dump AND killing the monitor for any subsequent crash. A later
+    run (22:48) coexisted fine, proving the outcome is non-deterministic —
+    same code path, opposite result. We can't tolerate the monitor being
+    taken out, so when a debugger is present we defer to it entirely.
+
+    Cost: on a dev machine, a Python unhandled exception won't reach WER
+    (no Partner Center entry for that incident). That's acceptable — on a
+    dev machine you have the local log + procdump's full dump directly,
+    and don't need the Partner Center round-trip. User machines have no
+    debugger, so IsDebuggerPresent() is always False there and WER
+    reporting works exactly as intended. Verified: procdump -e attach
+    flips IsDebuggerPresent() to True within ~1.2s of process start.
+
+    Native crashes (access violations etc.) don't go through Python's
+    excepthook at all, so this branch never affects them — procdump
+    catches those unconditionally regardless of this check.
+    """
+    try:
+        if ctypes.windll.kernel32.IsDebuggerPresent():
+            logger.debug("Debugger attached — skipping fail-fast, letting "
+                         "debugger (procdump) handle the crash. WER will not "
+                         "report this incident; see local procdump dump.")
+            # The attached debugger (procdump) captures the dump when the
+            # unhandled exception reaches it. Fall through to a hard exit so
+            # the process ends without raising fail-fast.
+            os._exit(1)
+    except Exception:
+        # If the check itself fails, be conservative and fail-fast as before.
+        pass
+
     if _raise_fail_fast is not None:
         try:
             _raise_fail_fast.argtypes = [ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD]
