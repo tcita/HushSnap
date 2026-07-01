@@ -46,8 +46,12 @@ winget install Microsoft.WinDbg
 New-Item "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\DebugApplications" -Force | Out-Null
 New-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\DebugApplications" -Name HushSnap.exe -Value 1 -PropertyType DWord -Force
 
-# 4. Uninstall the procdump monitoring task if present (it would grab the debugger slot)
-powershell -ExecutionPolicy Bypass -File scripts\setup_procdump_monitoring.ps1 -Remove
+# 4. Uninstall any procdump monitoring task if present (it would grab the
+#    debugger slot and suppress WER). The setup_procdump_monitoring.ps1
+#    script was removed in favor of this WinDbg JIT approach; if a leftover
+#    "HushSnapProcdumpCrashMonitor" task exists, unregister it directly:
+Get-ScheduledTask -TaskName "HushSnapProcdumpCrashMonitor" -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false
+Get-Process procdump64 -ErrorAction SilentlyContinue | Stop-Process -Force
 ```
 
 ## Opt in per session (the "password")
