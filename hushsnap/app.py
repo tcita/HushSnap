@@ -32,9 +32,10 @@ from .ui.pinned_image import pinned_image_manager
 from .ui.tray import create_tray
 from .ui.toast import show_toast
 from .hotkey import HotkeyFilter
-from .constants import CAPTURE_DEBUG_LOG_FILENAME, SESSION_START_MARKER
+from .constants import CAPTURE_DEBUG_LOG_FILENAME, OCR_ENGINE_PPOCR, SESSION_START_MARKER
 from .logging_config import setup_logging
 from .startup_profiler import StartupProfiler
+from . import wer, __version__
 
 # Module-level state set during Application.run() so exception_hook can access
 # them.  exception_hook is installed via sys.excepthook before __init__ completes,
@@ -89,7 +90,17 @@ def exception_hook(exctype, value, tb):
             except Exception:
                 logger.exception("Failed to copy log to clipboard")
 
-    # 3. Fallback to default Python exception behavior.
+    # 3. Hand the crash to Windows Error Reporting. A plain Python unhandled
+    #    exception exits the process cleanly, which WER ignores — Partner
+    #    Center would never see it. RaiseFailFastException turns it into a
+    #    real crash that WER captures and uploads, carrying the metadata and
+    #    traceback buffer we registered at startup. The dialog above already
+    #    ran (it blocks), so the user has had their chance to save the log.
+    import traceback as _tb
+    from . import wer as _wer
+    _wer.write_traceback("".join(_tb.format_exception(exctype, value, tb)))
+    _wer.raise_fail_fast()
+    # raise_fail_fast() does not return; os._exit() is its own fallback.
     sys.__excepthook__(exctype, value, tb)
 
 
@@ -147,7 +158,7 @@ class Application(QtCore.QObject):
             force_level=logging.DEBUG if self.force_debug else None
         )
         self.logger = logging.getLogger(__name__)
-        
+
         # 3. Profiling & Diagnostics
         self.startup_profiler = StartupProfiler(
             self.logger,
@@ -156,6 +167,24 @@ class Application(QtCore.QObject):
             detailed_enabled=self.force_debug,
         )
         sys.excepthook = exception_hook
+        # Worker-thread exceptions: log only, do NOT crash the app (an OCR
+        # thread dying must not take down screenshots). See wer.py.
+        wer.install_threading_excepthook()
+
+        # 4. Windows Error Reporting registration.
+        # Done as early as possible so even an early crash carries context.
+        # These are no-ops on non-Windows / old builds. Metadata shows up in
+        # Partner Center crash .cabs; the local dump mirrors WER's own dump
+        # next to our procdump monitoring; the traceback buffer is filled in
+        # exception_hook right before fail-fast so each .cab carries the
+        # exact Python traceback that caused it.
+        try:
+            wer.register_metadata("AppVersion", __version__)
+            wer.register_metadata("OcrEngine", OCR_ENGINE_PPOCR)
+            wer.register_local_dump(str(self.user_data_dir / "wer_dumps"))
+            wer.register_traceback_buffer()
+        except Exception:
+            self.logger.debug("WER registration failed", exc_info=True)
 
         # 4. State
         self.instance_lock = None
@@ -253,6 +282,12 @@ class Application(QtCore.QObject):
             self.ui_language = resolve_ui_lang(self.config_path)
             global _translate
             _translate = self.translate
+            # Locale known late; register it now so crash .cabs can be
+            # filtered by language in Partner Center.
+            try:
+                wer.register_metadata("Locale", self.ui_language)
+            except Exception:
+                self.logger.debug("WER locale metadata failed", exc_info=True)
 
             # ── Suppress harmless Qt 6.10.x internal QFont::setPointSize(-1) warnings ──
             # Qt 6 changed QFont internals: the sentinel value -1 ("use default") is now
