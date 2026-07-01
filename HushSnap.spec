@@ -10,6 +10,10 @@ from PyInstaller.utils.hooks import collect_data_files
 # Collect SVG icons — loaded via filesystem reads (open / QIcon path), not Python imports
 icons_glob = [str(f) for f in (project_root / 'hushsnap' / 'ui' / 'icons').glob('*.svg')]
 bundle_datas = [('hushsnap.ico', '.')] + collect_data_files('rapidocr') + [(f, 'hushsnap/ui/icons') for f in icons_glob]
+# !! TEMPORARY: bundle crashlib.dll (test-only native crash trigger). Remove before release.
+crashlib_src = project_root / 'assets' / 'crashlib.dll'
+if crashlib_src.exists():
+    bundle_datas.append((str(crashlib_src), '.'))
 
 a = Analysis(
     ['HushSnap.py'],
