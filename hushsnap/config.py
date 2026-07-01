@@ -94,6 +94,64 @@ def is_running_as_package() -> bool:
         return False
 
 
+def jit_debugger_configured() -> bool:
+    """True if this machine has a JIT debugger registered with Windows Error
+    Reporting (e.g. WinDbg was installed and set with ``windbg -I``).
+
+    Presence of ``HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\AeDebug
+    \\Debugger`` (non-empty) is the authoritative signal that an unhandled
+    exception will be handed to a debugger instead of (or in addition to)
+    WER's default handling.
+    """
+    if os.name != "nt":
+        return False
+    try:
+        import winreg
+        with winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\AeDebug",
+        ) as key:
+            debugger, _ = winreg.QueryValueEx(key, "Debugger")
+            return bool(debugger and debugger.strip())
+    except FileNotFoundError:
+        # Key or value not present — no JIT debugger registered.
+        return False
+    except OSError:
+        return False
+    except Exception:
+        return False
+
+
+def native_debug_deferred_to_jit() -> bool:
+    """True iff native crashes on this run should bypass faulthandler and go
+    straight to the JIT debugger (WinDbg).
+
+    Requires BOTH:
+      1. A JIT debugger is registered on this machine (jit_debugger_configured).
+      2. The env var ``HUSHSNAP_NATIVE_DEBUG`` is set to a non-empty value.
+
+    The env var is an opt-in "password": only a developer who deliberately
+    sets it (e.g. ``setx HUSHSNAP_NATIVE_DEBUG 1``) gets WinDbg-deferred
+    native crashes. This keeps the behavior off even on machines that happen
+    to have WinDbg installed, minimizing impact on anyone else.
+
+    Why an env var and not a config key: it is set once, machine-wide, and
+    applies to every HushSnap launch without touching the per-user config
+    file. Note: MSIX activation via shell:AppsFolder does NOT inherit the
+    *launching shell's* transient env — but it DOES inherit persistent
+    user/machine env vars (set via setx or System Properties), because those
+    live in the registry environment block that explorer/activator-spawned
+    processes are created with. So setx (not $env:) is the way to set this.
+
+    When False, faulthandler stays enabled (default): native crashes dump the
+    Python stack to the log and the process exits — correct behavior when
+    there is no debugger to defer to (production user machines).
+    """
+    if not jit_debugger_configured():
+        return False
+    return bool(os.environ.get("HUSHSNAP_NATIVE_DEBUG", "").strip())
+
+
 def get_current_package_family_name() -> str | None:
     """Get the current package family name if running as packaged app."""
     try:

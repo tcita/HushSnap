@@ -76,9 +76,17 @@ def setup_logging(log_file_path: Path, force_level=None):
         # MSIX sandboxed runs have no visible stderr, so without this a
         # segfault dies silently with no trace in the log. The file handle
         # is kept open for the process lifetime; flushing happens on crash.
+        #
+        # Skip when native-debug-deferred-to-JIT is active: on such machines
+        # faulthandler is intentionally left off (see HushSnap.py) so native
+        # crashes reach WinDbg via WER instead of being re-raised-and-exited
+        # by faulthandler. Re-enabling here would undo that, so honor the same
+        # gate (requires BOTH a registered JIT debugger AND HUSHSNAP_NATIVE_DEBUG).
         try:
-            import faulthandler
-            faulthandler.enable(file=open(log_file_path, "a", encoding="utf-8"))
+            from .config import native_debug_deferred_to_jit
+            if not native_debug_deferred_to_jit():
+                import faulthandler
+                faulthandler.enable(file=open(log_file_path, "a", encoding="utf-8"))
         except Exception:
             pass
     
