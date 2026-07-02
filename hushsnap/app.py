@@ -174,14 +174,14 @@ class Application(QtCore.QObject):
         # 4. Windows Error Reporting registration.
         # Done as early as possible so even an early crash carries context.
         # These are no-ops on non-Windows / old builds. Metadata shows up in
-        # Partner Center crash .cabs; the local dump mirrors WER's own dump
-        # next to our procdump monitoring; the traceback buffer is filled in
+        # Partner Center crash .cabs; the traceback buffer is filled in
         # exception_hook right before fail-fast so each .cab carries the
         # exact Python traceback that caused it.
+        # (WerRegisterAppLocalDump was removed — unreliable for MSIX; see
+        # wer.py and scripts/NATIVE_CRASH_DEBUGGING.md.)
         try:
             wer.register_metadata("AppVersion", __version__)
             wer.register_metadata("OcrEngine", OCR_ENGINE_PPOCR)
-            wer.register_local_dump(str(self.user_data_dir / "wer_dumps"))
             wer.register_traceback_buffer()
         except Exception:
             self.logger.debug("WER registration failed", exc_info=True)

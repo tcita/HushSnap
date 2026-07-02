@@ -5,18 +5,23 @@ Goal: make the app's crashes surface in Partner Center's Health report
 accurately, and carry enough context to be useful when you inspect a
 downloaded .cab.
 
-Three pieces, all Windows-only (1809+; our MSIX MinVersion is 17763):
+Two pieces, all Windows-only (1809+; our MSIX MinVersion is 17763):
 1. WerRegisterCustomMetadata  — attach key/value pairs (version, OCR
    engine, locale) to every crash report. Visible in Partner Center when
    you open a crash and download its .cab.
-2. WerRegisterAppLocalDump    — WER also drops a local minidump copy on
-   the user's machine, alongside our own procdump monitoring.
-3. WerRegisterMemoryBlock +
+2. WerRegisterMemoryBlock +
    RaiseFailFastException      — on an unhandled *main-thread* Python
    exception we write the traceback into a pre-registered memory block
    (so it lands in the .cab) and raise a fail-fast exception. That turns
    a silent Python exit — which WER never sees — into a real
    WER-reportable crash.
+
+Notably absent: WerRegisterAppLocalDump. It was tried and removed — see
+the comment where it used to be called (app.py) and NATIVE_CRASH_DEBUGGING.md.
+In short: for an MSIX-packaged app the API returns S_OK but WER ignores the
+registered folder and writes dumps to the system-default
+%LOCALAPPDATA%\\CrashDumps instead (MoAppCrash path). Not reliable enough
+to keep.
 
 Worker-thread exceptions deliberately do NOT fail-fast: a dead OCR thread
 must not take down a still-functioning screenshot app. They are logged
@@ -69,7 +74,6 @@ def _probe(func_name):
 
 _raise_fail_fast = _probe("RaiseFailFastException")
 _wer_register_custom_metadata = _probe("WerRegisterCustomMetadata")
-_wer_register_app_local_dump = _probe("WerRegisterAppLocalDump")
 _wer_register_memory_block = _probe("WerRegisterMemoryBlock")
 
 
@@ -94,22 +98,16 @@ def register_metadata(key, value):
         return False
 
 
-def register_local_dump(folder):
-    """Ask WER to keep a local minidump copy under `folder` for this process."""
-    if _wer_register_app_local_dump is None:
-        return False
-    try:
-        os.makedirs(folder, exist_ok=True)
-        _wer_register_app_local_dump.argtypes = [wintypes.LPCWSTR]
-        _wer_register_app_local_dump.restype = ctypes.c_long
-        hr = _wer_register_app_local_dump(str(folder))
-        if hr < 0:
-            logger.debug("WerRegisterAppLocalDump hr=0x%08x", hr & 0xFFFFFFFF)
-            return False
-        return True
-    except Exception:
-        logger.debug("WerRegisterAppLocalDump failed", exc_info=True)
-        return False
+# NOTE: WerRegisterAppLocalDump was previously exposed here and called from
+# app.py to ask WER to drop a local minidump under <user_data_dir>/wer_dumps.
+# It has been removed because it is unreliable for an MSIX-packaged app:
+# the API returns S_OK, but on the MoAppCrash path WER ignores the registered
+# folder and writes dumps to the system-default %LOCALAPPDATA%\CrashDumps
+# instead. Verified empirically with a minimal packaged crash-trigger exe
+# (both relative and absolute registered paths were ignored identically).
+# The registry-based LocalDumps approach is also skipped by MoAppCrash — see
+# scripts/NATIVE_CRASH_DEBUGGING.md. For reliable native crash capture, rely
+# on the WinDbg JIT path on dev machines (also documented there).
 
 
 def register_traceback_buffer(size=_TRACEBACK_BUFFER_SIZE):
