@@ -33,7 +33,7 @@ from .ui.pinned_image import pinned_image_manager
 from .ui.tray import create_tray
 from .ui.toast import show_toast
 from .hotkey import HotkeyFilter
-from .constants import CAPTURE_DEBUG_LOG_FILENAME, OCR_ENGINE_PPOCR, SESSION_START_MARKER
+from .constants import CAPTURE_DEBUG_LOG_FILENAME, OCR_ENGINE_PPOCR
 from .logging_config import setup_logging
 from .startup_profiler import StartupProfiler
 from . import wer, __version__
@@ -50,7 +50,7 @@ def exception_hook(exctype, value, tb):
     """
     Global unhandled exception handler.
     Logs the error with stack trace and shows a message box to the user
-    with options to save or copy the log file.
+    with options to save or open the log file.
     """
     logger = logging.getLogger("HushSnap")
     # 1. Log the full traceback to the log file.
@@ -69,8 +69,8 @@ def exception_hook(exctype, value, tb):
         save_btn = msg_box.addButton(
             t("crash_save_log"), QtWidgets.QMessageBox.ButtonRole.AcceptRole
         )
-        copy_btn = msg_box.addButton(
-            t("crash_copy_log"), QtWidgets.QMessageBox.ButtonRole.ActionRole
+        open_btn = msg_box.addButton(
+            t("crash_open_log"), QtWidgets.QMessageBox.ButtonRole.ActionRole
         )
         close_btn = msg_box.addButton(
             t("crash_close"), QtWidgets.QMessageBox.ButtonRole.RejectRole
@@ -85,11 +85,11 @@ def exception_hook(exctype, value, tb):
                 _save_log_to_desktop(_log_file_path)
             except Exception:
                 logger.exception("Failed to save log to desktop")
-        elif clicked == copy_btn and _log_file_path:
+        elif clicked == open_btn and _log_file_path:
             try:
-                _copy_log_tail(_log_file_path)
+                _open_log_file(_log_file_path)
             except Exception:
-                logger.exception("Failed to copy log to clipboard")
+                logger.exception("Failed to open log file")
 
     # 3. Hand the crash to Windows Error Reporting. A plain Python unhandled
     #    exception exits the process cleanly, which WER ignores — Partner
@@ -112,28 +112,15 @@ def _save_log_to_desktop(log_path):
     shutil.copy2(log_path, dest)
 
 
-def _copy_log_tail(log_path):
-    """Copy the current-session portion of the log to the system clipboard.
-
-    Finds the last occurrence of the startup marker and copies everything
-    from there to end-of-file — that way the user only shares this session's
-    log, not previous runs that may still be in the rotated file.
-    """
-    app = QtWidgets.QApplication.instance()
-    if not app:
-        return
-    clipboard = app.clipboard()
-    if not clipboard:
-        return
-    try:
-        text = log_path.read_text(encoding="utf-8", errors="replace")
-    except Exception:
-        text = ""
-    # Slice from the LAST session start to end-of-file.
-    idx = text.rfind(SESSION_START_MARKER)
-    if idx != -1:
-        text = text[idx:]
-    clipboard.setText(text)
+def _open_log_file(log_path):
+    """Open the log file with the OS default text editor so the user can
+    inspect it and copy the relevant portion for feedback.  More reliable
+    than clipboard manipulation during a crash state."""
+    if sys.platform == "win32":
+        os.startfile(log_path)
+    else:
+        import subprocess as _sp
+        _sp.Popen(["xdg-open", str(log_path)])
 
 
 class Application(QtCore.QObject):

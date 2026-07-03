@@ -181,7 +181,7 @@ UI_TEXT = {
         "crash_body": "An unexpected error occurred and the application must close.\n\n"
                       "Log file location:\n{log_path}",
         "crash_save_log": "Save to Desktop",
-        "crash_copy_log": "Copy Log",
+        "crash_open_log": "Open Log",
         "crash_close": "Close",
     },
     UI_LANG_ZH: {
@@ -350,7 +350,7 @@ UI_TEXT = {
         "crash_title": "HushSnap - 严重错误",
         "crash_body": "程序发生意外错误，即将关闭。\n\n日志文件位置：\n{log_path}",
         "crash_save_log": "保存日志到桌面",
-        "crash_copy_log": "复制日志",
+        "crash_open_log": "打开日志",
         "crash_close": "关闭",
     },
     UI_LANG_ZH_TW: {
@@ -519,7 +519,7 @@ UI_TEXT = {
         "crash_title": "HushSnap - 嚴重錯誤",
         "crash_body": "程式發生意外錯誤，即將關閉。\n\n記錄檔位置：\n{log_path}",
         "crash_save_log": "儲存記錄檔至桌面",
-        "crash_copy_log": "複製記錄檔",
+        "crash_open_log": "開啟記錄檔",
         "crash_close": "關閉",
     },
     UI_LANG_JA: {
@@ -687,7 +687,7 @@ UI_TEXT = {
         "crash_title": "HushSnap - 重大なエラー",
         "crash_body": "予期しないエラーが発生したため、アプリケーションを終了します。\n\nログファイルの場所:\n{log_path}",
         "crash_save_log": "ログをデスクトップに保存",
-        "crash_copy_log": "ログをコピー",
+        "crash_open_log": "ログを開く",
         "crash_close": "閉じる",
     },
 }
