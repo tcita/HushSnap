@@ -15,6 +15,7 @@ from .config import (
     get_config_path,
     get_debug_enabled,
     get_onboarding_toast_shown,
+    get_show_capture_dimension_label,
     get_user_data_dir,
     is_already_running,
     load_hotkey_setting,
@@ -313,7 +314,10 @@ class Application(QtCore.QObject):
         )
 
         # 2. Capture Session
-        self.capture_session = CaptureSession(self._on_capture_completed)
+        self.capture_session = CaptureSession(
+            self._on_capture_completed,
+            show_dimension_label=get_show_capture_dimension_label(),
+        )
         self.ocr_controller.set_capture_requester(self.capture_session.request_capture)
 
         # 3. Hotkey Manager

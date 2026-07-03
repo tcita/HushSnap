@@ -11,7 +11,8 @@ logger = get_logger(__name__)
 class CaptureSession(QtCore.QObject):
     """Own the capture request bridge and the active CaptureWindow lifecycles."""
 
-    def __init__(self, on_capture_completed, window_factory=None, bridge=None):
+    def __init__(self, on_capture_completed, window_factory=None, bridge=None,
+                 show_dimension_label=True):
         super().__init__()
         self.on_capture_completed = on_capture_completed
         self.window_factory = window_factory or CaptureWindow
@@ -19,6 +20,13 @@ class CaptureSession(QtCore.QObject):
         self.wins = []
         self.global_start_pos = None
         self.global_curr_pos = None
+        # Cursor position in physical virtual-desktop pixels, refreshed on every
+        # mouse move so each overlay can render the position label only on the
+        # screen that currently contains the pointer (and skip it on siblings).
+        self.global_cursor_phys = None
+        # When False, the overlay draws neither the selection-size label nor the
+        # cursor-position label; the selection border and handles are unaffected.
+        self.show_dimension_label = show_dimension_label
 
         self.bridge.signal.connect(self.launch_capture_window)
 

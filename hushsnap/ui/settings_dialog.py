@@ -20,6 +20,8 @@ from ..config import (
     update_copy_image_to_clipboard,
     get_auto_copy_ocr_result,
     update_auto_copy_ocr_result,
+    get_show_capture_dimension_label,
+    update_show_capture_dimension_label,
     get_thumbnail_display_time,
     update_thumbnail_display_time,
 )
@@ -1152,6 +1154,17 @@ class SettingsDialogController(QtCore.QObject):
         )
         switch_copy.clicked.connect(on_copy_img)
         capture_layout.addWidget(card_copy)
+
+        # Show Size & Position label on the capture overlay
+        def on_show_dim(checked):
+            update_show_capture_dimension_label(checked, self.config_path)
+        card_dim, switch_dim = _make_startup_card(
+            self.translate("settings_show_dimension_label"),
+            self.translate("settings_show_dimension_subtitle"),
+            get_show_capture_dimension_label(self.config_path),
+        )
+        switch_dim.clicked.connect(on_show_dim)
+        capture_layout.addWidget(card_dim)
         
         capture_layout.addStretch()
         content_stack.addWidget(capture_page)

@@ -552,9 +552,17 @@ class CaptureWindow(QtWidgets.QWidget):
 
         # Initialize interaction state.
         self.setCursor(QtCore.Qt.CursorShape.CrossCursor)
+        # Receive mouseMoveEvent while hovering (no button held) so the
+        # cursor-position label can follow the pointer in real time. Without
+        # this Qt only delivers moves while a button is pressed, leaving the
+        # label frozen until a drag starts.
+        self.setMouseTracking(True)
         self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
         self.start_pos = None
         self.curr_pos = None
+        # Last seen pointer position (widget-local) for the hover position
+        # label; only used on the single-screen (non-session) path.
+        self._cursor_local = None
         self.click_threshold = CAPTURE_CLICK_THRESHOLD_PX
 
         # Capture happens on a single (frozen) screen; only that screen's
@@ -674,6 +682,7 @@ class CaptureWindow(QtWidgets.QWidget):
             else:
                 local_rect = None
 
+        show_label = bool(getattr(self.session, "show_dimension_label", True))
         if local_rect and local_rect.width() >= CAPTURE_SELECTION_MIN_PX and local_rect.height() >= CAPTURE_SELECTION_MIN_PX:
             intersected_rect = local_rect.intersected(self.rect())
             if not intersected_rect.isEmpty():
@@ -753,7 +762,7 @@ class CaptureWindow(QtWidgets.QWidget):
                     bg_rect.moveLeft(_DIMENSION_LABEL_OFFSET)
 
                 # Draw Label Background
-                if self.rect().intersects(bg_rect):
+                if show_label and self.rect().intersects(bg_rect):
                     painter.setBrush(QtGui.QColor(*_DIMENSION_LABEL_BG))
                     painter.setPen(QtCore.Qt.PenStyle.NoPen)
                     painter.drawRoundedRect(bg_rect, _DIMENSION_LABEL_RADIUS, _DIMENSION_LABEL_RADIUS)
@@ -761,6 +770,59 @@ class CaptureWindow(QtWidgets.QWidget):
                     # Draw Text
                     painter.setPen(QtCore.Qt.GlobalColor.white)
                     painter.drawText(bg_rect, QtCore.Qt.AlignmentFlag.AlignCenter, size_text)
+        elif show_label:
+            self._draw_cursor_label(painter)
+
+    def _draw_cursor_label(self, painter):
+        """Draw the cursor's desktop position next to the pointer.
+
+        Shown only while hovering (no active selection). On multi-screen
+        sessions only the screen that contains the pointer draws it; siblings
+        skip. Coordinates are logical DIP, matching the size label's readout.
+        """
+        if self.session is not None and getattr(self.session, "wins", None):
+            cursor_phys = getattr(self.session, "global_cursor_phys", None)
+            if cursor_phys is None or self.physical_rect_win is None:
+                return
+            if not self.physical_rect_win.contains(cursor_phys):
+                return  # pointer is on a sibling screen — let it draw there
+            mdpr = (self.session.max_dpr() if self.session else 1.0) or 1.0
+            ax = round((cursor_phys.x() - self.physical_top_left.x()) / self.dpr)
+            ay = round((cursor_phys.y() - self.physical_top_left.y()) / self.dpr)
+            anchor = QtCore.QPoint(ax, ay)
+            pos_text = f"{round(cursor_phys.x() / mdpr)}, {round(cursor_phys.y() / mdpr)}"
+        else:
+            if self._cursor_local is None:
+                return
+            anchor = self._cursor_local
+            origin = self.geometry().topLeft()
+            pos_text = f"{origin.x() + anchor.x()}, {origin.y() + anchor.y()}"
+
+        font = painter.font()
+        font.setPointSize(_DIMENSION_LABEL_FONT_SIZE)
+        font.setBold(True)
+        painter.setFont(font)
+        metrics = painter.fontMetrics()
+        text_w = metrics.horizontalAdvance(pos_text)
+        text_h = metrics.height()
+        bg_rect = QtCore.QRect(
+            anchor.x() + _DIMENSION_LABEL_OFFSET,
+            anchor.y() + _DIMENSION_LABEL_OFFSET,
+            text_w + _DIMENSION_LABEL_PAD_X * 2,
+            text_h + _DIMENSION_LABEL_PAD_Y * 2,
+        )
+        # Flip inside the viewport if the label would overflow the screen.
+        if bg_rect.right() > self.width():
+            bg_rect.moveRight(anchor.x() - _DIMENSION_LABEL_OFFSET)
+        if bg_rect.bottom() > self.height():
+            bg_rect.moveBottom(anchor.y() - _DIMENSION_LABEL_OFFSET)
+        if not self.rect().intersects(bg_rect):
+            return
+        painter.setBrush(QtGui.QColor(*_DIMENSION_LABEL_BG))
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(bg_rect, _DIMENSION_LABEL_RADIUS, _DIMENSION_LABEL_RADIUS)
+        painter.setPen(QtCore.Qt.GlobalColor.white)
+        painter.drawText(bg_rect, QtCore.Qt.AlignmentFlag.AlignCenter, pos_text)
 
     def _clamp_to_bounds(self, pos: QtCore.QPoint) -> QtCore.QPoint:
         """Clamp a position to the frozen screen's window bounds.
@@ -852,19 +914,28 @@ class CaptureWindow(QtWidgets.QWidget):
                 self.curr_pos = self.start_pos
 
     def mouseMoveEvent(self, event):
-        """Mouse move: update selection and trigger repaint."""
+        """Mouse move: update selection and trigger repaint.
+
+        Even while hovering (not dragging) we repaint so the cursor-position
+        label can follow the pointer; the label is itself gated by
+        ``show_dimension_label`` on the session.
+        """
         if hasattr(self, 'session') and self.session and self.session.wins:
+            phys = self._global_physical_cursor()
+            if phys is None:
+                phys = self.physical_top_left
+            # Always share the live cursor so each overlay can render the
+            # position label only on the screen that contains the pointer.
+            self.session.global_cursor_phys = phys
             if self.session.global_start_pos:
-                phys = self._global_physical_cursor()
-                if phys is None:
-                    phys = self.physical_top_left
                 self.session.global_curr_pos = self._clamp_to_physical_desktop(phys)
-                self.session.update_all_windows()
+            self.session.update_all_windows()
         else:
+            local_pos = event.position().toPoint()
+            self._cursor_local = local_pos
             if self.start_pos:
-                local_pos = event.position().toPoint()
                 self.curr_pos = self._clamp_to_bounds(local_pos)
-                self.update()
+            self.update()
 
     def mouseReleaseEvent(self, event):
         """Mouse release: choose region capture or fullscreen capture based on drag distance."""

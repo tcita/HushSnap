@@ -79,7 +79,17 @@ _CONFIG_DEFAULTS = {
     "copy_image_to_clipboard": True,
     "auto_copy_ocr_result": True,
     "thumbnail_display_time": THUMBNAIL_DISPLAY_MS,
+    "show_capture_dimension_label": True,
 }
+
+# Schema version of the on-disk config file. Bump on any breaking change to
+# an existing key's semantics (unit, enum mapping) or a forced value reset,
+# and add a matching ``if v < N`` branch in ``_migrate_config`` below.
+# ``config_version`` is intentionally NOT part of ``_CONFIG_DEFAULTS`` — it is
+# stamped by ``_migrate_config`` so pre-version files (no field) are treated as
+# v1 and run through the migration ladder, rather than being back-filled as if
+# they had always been current.
+_CONFIG_VERSION = 1
 
 
 def is_running_as_package() -> bool:
@@ -239,6 +249,27 @@ def get_state_path():
     return STATE_PATH
 
 
+def _migrate_config(config_data):
+    """Apply version-gated breaking migrations to an existing config dict.
+
+    Pre-version files (no ``config_version`` field) are treated as v1. Each
+    ``if v < N`` block performs the v(N-1)→vN migration in place; the version
+    is then stamped to current so each step runs at most once per file. Returns
+    True if anything changed.
+    """
+    changed = False
+    v = config_data.get("config_version", 1)
+    # ── v1 → v2: reserved for the first breaking change ──
+    # When needed, add:
+    #     if v < 2:
+    #         <migrate values, log a warning per change>
+    #         changed = True
+    if v != _CONFIG_VERSION or "config_version" not in config_data:
+        config_data["config_version"] = _CONFIG_VERSION
+        changed = True
+    return changed
+
+
 def _ensure_default_config_exists(config_path):
     """
     Ensure the config file exists and contains every key declared in
@@ -278,12 +309,15 @@ def _ensure_default_config_exists(config_path):
                             "Config key '%s' was empty — repaired to default.", key
                         )
 
+            if _migrate_config(config_data):
+                changed = True
             if changed:
                 _write_config_data(config_path, config_data)
             return
 
-        # Fresh install — write the full defaults set.
-        _write_config_data(config_path, dict(_CONFIG_DEFAULTS))
+        # Fresh install — write the full defaults set with the current schema
+        # version stamped in.
+        _write_config_data(config_path, {**_CONFIG_DEFAULTS, "config_version": _CONFIG_VERSION})
     except Exception as e:
         logger.debug(
             "Failed to ensure default config exists at %s: %s", config_path, e
@@ -613,6 +647,31 @@ def update_copy_image_to_clipboard(enabled, config_path=None):
         _write_config_data(config_path, config_data)
     except Exception as e:
         logger.error(f"Failed to update copy_image_to_clipboard: {e}")
+
+
+def get_show_capture_dimension_label(config_path=None):
+    """Read 'show_capture_dimension_label' from config (default True).
+
+    When True, the capture overlay shows the selection size while dragging and
+    the cursor position while hovering. When False, neither label is drawn —
+    the selection border and handles are unaffected.
+    """
+    if config_path is None:
+        config_path = get_config_path()
+    config_data = _load_config_data(config_path)
+    return bool(config_data.get("show_capture_dimension_label", True))
+
+
+def update_show_capture_dimension_label(enabled, config_path=None):
+    """Update and persist 'show_capture_dimension_label' in config."""
+    if config_path is None:
+        config_path = get_config_path()
+    config_data = _load_config_data(config_path)
+    config_data["show_capture_dimension_label"] = bool(enabled)
+    try:
+        _write_config_data(config_path, config_data)
+    except Exception as e:
+        logger.error(f"Failed to update show_capture_dimension_label: {e}")
 
 
 def get_auto_copy_ocr_result(config_path=None):
