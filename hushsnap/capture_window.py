@@ -728,12 +728,11 @@ class CaptureWindow(QtWidgets.QWidget):
 
                 # 4. Real-time Size Label
                 if self.session and self.session.global_start_pos:
-                    # global_rect is physical; report logical (DIP) size via the
-                    # session's max DPR so the label stays consistent across
-                    # screens and matches the single-screen logical readout.
-                    mdpr = self.session.max_dpr() or 1.0
-                    width_val = round(global_rect.width() / mdpr)
-                    height_val = round(global_rect.height() / mdpr)
+                    # global_rect is already in physical pixels — report those
+                    # directly so the readout matches the captured image and
+                    # Windows file properties (same behaviour as ShareX).
+                    width_val = global_rect.width()
+                    height_val = global_rect.height()
                 else:
                     width_val = local_rect.width()
                     height_val = local_rect.height()
@@ -778,7 +777,7 @@ class CaptureWindow(QtWidgets.QWidget):
 
         Shown only while hovering (no active selection). On multi-screen
         sessions only the screen that contains the pointer draws it; siblings
-        skip. Coordinates are logical DIP, matching the size label's readout.
+        skip. Coordinates are physical pixels, matching the size label's readout.
         """
         if self.session is not None and getattr(self.session, "wins", None):
             cursor_phys = getattr(self.session, "global_cursor_phys", None)
@@ -786,17 +785,17 @@ class CaptureWindow(QtWidgets.QWidget):
                 return
             if not self.physical_rect_win.contains(cursor_phys):
                 return  # pointer is on a sibling screen — let it draw there
-            mdpr = (self.session.max_dpr() if self.session else 1.0) or 1.0
             ax = round((cursor_phys.x() - self.physical_top_left.x()) / self.dpr)
             ay = round((cursor_phys.y() - self.physical_top_left.y()) / self.dpr)
             anchor = QtCore.QPoint(ax, ay)
-            pos_text = f"{round(cursor_phys.x() / mdpr)}, {round(cursor_phys.y() / mdpr)}"
+            pos_text = f"{cursor_phys.x()}, {cursor_phys.y()}"
         else:
             if self._cursor_local is None:
                 return
             anchor = self._cursor_local
-            origin = self.geometry().topLeft()
-            pos_text = f"{origin.x() + anchor.x()}, {origin.y() + anchor.y()}"
+            phys_x = self.physical_top_left.x() + round(self._cursor_local.x() * self.dpr)
+            phys_y = self.physical_top_left.y() + round(self._cursor_local.y() * self.dpr)
+            pos_text = f"{phys_x}, {phys_y}"
 
         font = painter.font()
         font.setPointSize(_DIMENSION_LABEL_FONT_SIZE)
