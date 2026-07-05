@@ -1,12 +1,19 @@
 """
 Windows Error Reporting (WER) integration.
 
-Only two pieces remain after empirically verifying that Partner Center
-Health does NOT surface per-crash detail (call stacks, .cab downloads,
-custom metadata, or registered memory blocks) for MSIX-packaged
-FullTrust applications — regardless of signature type.  See the
-test/crashlib-integration branch for the full experimental record.
+Per Microsoft's Partner Center documentation, downloadable .cab files
+are ONLY generated for crashes that occur on Windows Insider Preview
+builds.  On production (retail) Windows builds crashes are reported but
+no .cab is produced — hence no call stacks, no minidumps, and no custom
+metadata reach Partner Center.  Crash reports will always appear as
+"Uncategorized" regardless of signature type or diagnostic-data level.
 
+Consequently the detailed-WER APIs (WerRegisterCustomMetadata,
+WerRegisterMemoryBlock) and write_traceback have been removed — their
+output only exists inside .cab files that are never generated for the
+vast majority of users.
+
+What remains:
 1. raise_fail_fast             — turn an unhandled Python exception into
    a WER-reportable crash so Partner Center at least counts it.
    Without this a plain Python exit (non-zero rc) is invisible to WER.
