@@ -5,7 +5,7 @@ Defines dimensions, colors, and CSS styles for settings dialog and other UI comp
 
 # Window/dialog dimensions (pixels)
 SETTINGS_DIALOG_WIDTH = 460
-SETTINGS_CAPTURE_DIALOG_MIN_WIDTH = 340
+SETTINGS_CAPTURE_DIALOG_MIN_WIDTH = 400
 
 # Color definitions
 

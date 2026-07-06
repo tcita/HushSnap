@@ -238,42 +238,6 @@ def _is_conflict_prone_hotkey(modifier_mask, virtual_key):
     return False
 
 
-def _hotkey_frame_state(hotkey_name):
-    """Return 'warning' if the hotkey is conflict-prone, else 'safe'.
-
-    Used to tint the hotkey pills on the settings page so a risky binding
-    (e.g. Ctrl+S) keeps its amber reminder after the capture dialog closes.
-    Falls back to 'safe' on any parse error — the register path still has
-    the final say on validity.
-    """
-    try:
-        modifier_mask, virtual_key, _ = parse_hotkey(hotkey_name)
-    except Exception:
-        return "safe"
-    return "warning" if _is_conflict_prone_hotkey(modifier_mask, virtual_key) else "safe"
-
-
-# Persistent frame tint for the settings-page hotkey pills. Subtler than the
-# capture-dialog feedback frame: a thin border + faint wash that reads as a
-# standing status ("this is safe" / "watch out") rather than a fresh event.
-_HOTKEY_FRAME_STYLES = {
-    "safe": (
-        "QWidget {"
-        f"  border: 1px solid {BRAND_GREEN};"
-        "  border-radius: 6px;"
-        "  background-color: #F2FDF6;"
-        "}"
-    ),
-    "warning": (
-        "QWidget {"
-        f"  border: 1px solid {SETTINGS_WARNING_COLOR};"
-        "  border-radius: 6px;"
-        "  background-color: #FFF7EC;"
-        "}"
-    ),
-}
-
-
 def _make_kbd_pill(text):
     """Create a single kbd pill for one key."""
     pill = QtWidgets.QLabel(text)
@@ -291,19 +255,16 @@ def _make_plus_label():
     return lbl
 
 
-def _build_kbd_pills_row(hotkey_string, frame_state="safe"):
-    """Build a row of individual kbd pills separated by '+' labels.
-
-    *frame_state* tints the surrounding frame ('safe' green / 'warning' amber)
-    so a conflict-prone binding stays flagged on the settings page.
+def _build_kbd_pills_row(hotkey_string):
+    """Build a row of kbd pills separated by '+' labels (no frame).
 
     Returns (container_widget, pill_labels_list) so the caller can
     update text via setText on each pill later.
     """
     container = QtWidgets.QWidget()
-    container.setStyleSheet(_HOTKEY_FRAME_STYLES.get(frame_state, _HOTKEY_FRAME_STYLES["safe"]))
+    container.setStyleSheet("background: transparent; border: none;")
     layout = QtWidgets.QHBoxLayout(container)
-    layout.setContentsMargins(6, 3, 6, 3)
+    layout.setContentsMargins(0, 0, 0, 0)
     layout.setSpacing(2)
 
     pills = []
@@ -319,24 +280,20 @@ def _build_kbd_pills_row(hotkey_string, frame_state="safe"):
     return container, pills
 
 
-def _rebuild_kbd_pills(container, hotkey_string, frame_state="safe"):
+def _rebuild_kbd_pills(container, hotkey_string):
     """Clear container layout and rebuild all pills + plus labels from scratch.
-
-    Also re-applies the *frame_state* tint so the surrounding frame matches the
-    newly shown hotkey's risk level.
 
     Returns the new list of pill widgets.
     """
     layout = container.layout()
     if layout is None:
         return []
-    # Remove all existing widgets from the layout
     while layout.count():
         item = layout.takeAt(0)
         if item.widget():
             item.widget().deleteLater()
 
-    container.setStyleSheet(_HOTKEY_FRAME_STYLES.get(frame_state, _HOTKEY_FRAME_STYLES["safe"]))
+    container.setStyleSheet("background: transparent; border: none;")
 
     pills = []
     parts = [p.strip() for p in hotkey_string.split("+") if p.strip()]
@@ -567,7 +524,7 @@ def _make_setting_card(label_text, subtitle_text, hotkey_text, button_text):
 
     top_layout.addStretch()
 
-    pills_container, pills = _build_kbd_pills_row(hotkey_text, _hotkey_frame_state(hotkey_text))
+    pills_container, pills = _build_kbd_pills_row(hotkey_text)
     top_layout.addWidget(pills_container, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
 
     btn = _make_ghost_button(button_text)
@@ -649,47 +606,84 @@ def _make_language_card(label_text, subtitle_text, current_lang, languages_optio
 
 
 class PulseDot(QtWidgets.QWidget):
-    """A custom widget that renders a pulsing green status dot."""
+    """A flat, modern status indicator: filled core + pulsing outline ring.
+
+    Matches the app's clean, low-chrome design language — no 3D gradients,
+    no shadows, no specular highlights. Just a solid dot with a breathing
+    outline ring whose opacity pulses to signal "listening".
+
+    Colour can be switched at runtime (green = safe / recording,
+    amber = conflict warning).
+    """
+
+    _SIZE = 20   # widget size
+    _CORE_R = 5  # filled centre radius
+    _RING_R = 8  # pulsing outline radius
+    _RING_W = 2  # outline stroke width
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedSize(14, 14)
+        self.setFixedSize(self._SIZE, self._SIZE)
         self._alpha = 255
+        self._color = QtGui.QColor(BRAND_GREEN)
+
         self._anim = QtCore.QVariantAnimation(
             self,
-            startValue=100,
+            startValue=40,
             endValue=255,
-            duration=800,
-            valueChanged=self._update_alpha
+            duration=1400,
+            valueChanged=self._update_alpha,
         )
-        self._anim.setEasingCurve(QtCore.QEasingCurve.Type.InOutSine)
+        self._anim.setEasingCurve(QtCore.QEasingCurve.Type.InOutCubic)
         self._anim.finished.connect(self._toggle_direction)
         self._anim.start()
-        
+
+    # ── public API ────────────────────────────────────────────────
+
+    def set_color(self, color):
+        """Switch the dot to *color* (QColor or hex string like ``"#E8941A"``)."""
+        if isinstance(color, str):
+            color = QtGui.QColor(color)
+        self._color = QtGui.QColor(color)
+        self.update()
+
+    # ── animation callbacks ───────────────────────────────────────
+
     def _update_alpha(self, value):
         self._alpha = value
         self.update()
-        
+
     def _toggle_direction(self):
         if self._anim.direction() == QtCore.QVariantAnimation.Direction.Forward:
             self._anim.setDirection(QtCore.QVariantAnimation.Direction.Backward)
         else:
             self._anim.setDirection(QtCore.QVariantAnimation.Direction.Forward)
         self._anim.start()
-        
+
+    # ── painting ──────────────────────────────────────────────────
+
     def paintEvent(self, event):
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-        
-        # Glow outer ring
-        glow_color = QtGui.QColor(95, 201, 138, int(self._alpha * 0.35))
-        painter.setBrush(glow_color)
+
+        cx = self.width() / 2.0
+        cy = self.height() / 2.0
+
+        # ── pulsing outline ring ──────────────────────────────────
+        ring_alpha = int(self._alpha * 0.55)
+        ring_color = QtGui.QColor(self._color)
+        ring_color.setAlpha(ring_alpha)
+
+        pen = QtGui.QPen(ring_color, self._RING_W)
+        pen.setCapStyle(QtCore.Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+        painter.drawEllipse(QtCore.QPointF(cx, cy), self._RING_R, self._RING_R)
+
+        # ── solid filled core ─────────────────────────────────────
         painter.setPen(QtCore.Qt.PenStyle.NoPen)
-        painter.drawEllipse(0, 0, 14, 14)
-        
-        # Solid inner core
-        core_color = QtGui.QColor(95, 201, 138, 255)
-        painter.setBrush(core_color)
-        painter.drawEllipse(3, 3, 8, 8)
+        painter.setBrush(self._color)
+        painter.drawEllipse(QtCore.QPointF(cx, cy), self._CORE_R, self._CORE_R)
 
 
 class HotkeyCaptureDialog(QtWidgets.QDialog):
@@ -795,7 +789,7 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
             item = self.pills_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-                
+
         placeholder = QtWidgets.QLabel(self.translate("settings_hotkey_capture_placeholder"))
         placeholder.setStyleSheet(
             "color: #999999; font-size: 13px; font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
@@ -806,24 +800,29 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
         # Reset stylesheet to neutral grey border
         self._set_neutral_frame()
 
-    def _update_pills_display(self, hotkey_string):
+        # Reset dot to green "waiting" state
+        self._set_status("safe",
+            self.translate("settings_hotkey_capture_waiting"))
+
+    def _update_pills_display(self, hotkey_string, state="safe"):
         # Clear container layout
         while self.pills_layout.count():
             item = self.pills_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-                
+
+        accent = SETTINGS_WARNING_COLOR if state == "warning" else BRAND_GREEN
+
         parts = [p.strip() for p in hotkey_string.split("+") if p.strip()]
         for i, part in enumerate(parts):
             if i > 0:
                 plus = _make_plus_label()
                 self.pills_layout.addWidget(plus, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
             pill = _make_kbd_pill(part)
-            # Make the pill look gorgeous with brand green accent inside the capture dialog
             pill.setStyleSheet(
-                f"border: 1px solid {BRAND_GREEN}; border-radius: 5px; background: #FFFFFF; "
+                f"border: 1.5px solid {accent}; border-radius: 5px; background: #FFFFFF; "
                 "padding: 4px 10px; font-family: 'Consolas', 'Segoe UI', monospace; "
-                f"font-size: 13px; font-weight: bold; color: {BRAND_GREEN};"
+                f"font-size: 13px; font-weight: bold; color: {accent};"
             )
             self.pills_layout.addWidget(pill, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
 
@@ -864,11 +863,38 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
         """Set the pills frame to 'safe' (green) or 'warning' (amber)."""
         self.pills_container.setStyleSheet(self._FRAME_STYLES[state])
 
+    def _set_status(self, state, title_text):
+        """Update the pulse dot colour and status title to *state*.
+
+        ``"safe"`` → green dot, ``"warning"`` → amber dot.
+        """
+        if state == "warning":
+            self.pulse_dot.set_color(SETTINGS_WARNING_COLOR)
+            self.status_title.setStyleSheet(
+                f"font-size: 13px; font-weight: bold; color: {SETTINGS_WARNING_COLOR}; "
+                "font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", \"Segoe UI\", sans-serif; "
+                "background: transparent; border: none;"
+            )
+        else:
+            self.pulse_dot.set_color(BRAND_GREEN)
+            self.status_title.setStyleSheet(
+                f"font-size: 13px; font-weight: bold; color: {BRAND_GREEN}; "
+                "font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", \"Segoe UI\", sans-serif; "
+                "background: transparent; border: none;"
+            )
+        self.status_title.setText(title_text)
+
     def _set_feedback(self, message, is_warning=False):
         self.feedback_label.setText(message)
-        color = SETTINGS_WARNING_COLOR if is_warning else "#999"
+        if is_warning:
+            color = SETTINGS_WARNING_COLOR
+            weight = "500"
+        else:
+            color = "#777"
+            weight = "400"
         self.feedback_label.setStyleSheet(
-            f"font-size: 12px; border: none; background: transparent; color: {color};"
+            f"font-size: 12px; font-weight: {weight}; border: none;"
+            f" background: transparent; color: {color};"
             " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
         )
 
@@ -910,21 +936,30 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
             return
 
         self.captured_hotkey = canonical_hotkey
-        self._update_pills_display(canonical_hotkey)
 
         if _is_conflict_prone_hotkey(modifier_mask, virtual_key):
-            # Valid global hotkey, but the combo shadows common app/system
-            # shortcuts (Ctrl+S, F1, Alt+Space …). Soft-warn in amber, but
-            # still allow saving — the user's choice. The amber frame persists
-            # after save so the risk stays visible on the settings page.
+            state = "warning"
+        else:
+            state = "safe"
+
+        self._update_pills_display(canonical_hotkey, state)
+
+        # Status row: just the hotkey name — compact, never overflows.
+        # The dot colour + frame + pill borders already signal safe vs warning.
+        # Feedback label: the full explanatory sentence (word-wrapped).
+        if state == "warning":
+            self._set_status("warning", canonical_hotkey)
             self._set_feedback(
-                self.translate("settings_hotkey_capture_risky", hotkey=canonical_hotkey),
+                self.translate("settings_hotkey_capture_risky",
+                               hotkey=canonical_hotkey),
                 is_warning=True,
             )
             self._set_frame_style("warning")
         else:
+            self._set_status("safe", canonical_hotkey)
             self._set_feedback(
-                self.translate("settings_hotkey_capture_captured", hotkey=canonical_hotkey),
+                self.translate("settings_hotkey_capture_captured",
+                               hotkey=canonical_hotkey),
             )
             self._set_frame_style("safe")
         self.save_button.setEnabled(True)
@@ -951,8 +986,7 @@ class SettingsDialogController(QtCore.QObject):
         name = self.hotkey_manager.current_hotkey_name
         try:
             self._screenshot_pills = _rebuild_kbd_pills(
-                self._screenshot_pills_container, name, _hotkey_frame_state(name)
-            )
+                self._screenshot_pills_container, name)
         except RuntimeError:
             self._screenshot_pills_container = None
 

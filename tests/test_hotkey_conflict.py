@@ -7,8 +7,8 @@ Covers two things:
   else (Esc, Tab, Enter, Space, arrows, Backspace) returns None so the dialog
   silently ignores it — most apps don't bind those as shortcuts, so letting
   them through would only set up conflicts.
-- _is_conflict_prone_hotkey / _hotkey_frame_state: which valid combos earn a
-  soft amber warning (Ctrl+S, F1, Alt+Space, bare keys) vs. stay green.
+- _is_conflict_prone_hotkey: which valid combos earn a soft amber warning
+  (Ctrl+S, F1, Alt+Space, bare keys) vs. stay green in the capture dialog.
 """
 
 import pytest
@@ -17,7 +17,6 @@ from PyQt6 import QtCore
 from hushsnap.constants import MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN
 from hushsnap.ui.settings_dialog import (
     _is_conflict_prone_hotkey,
-    _hotkey_frame_state,
     _qt_key_to_hotkey_token,
 )
 
@@ -127,26 +126,6 @@ def test_win_letter_is_safe():
     (shell-reserved) and reports failure at register time, so the soft
     warning path is not the right signal for them."""
     assert _is_conflict_prone_hotkey(MOD_WIN, VK_Q) is False
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# _hotkey_frame_state — drives the persistent settings-page pill tint
-# ═══════════════════════════════════════════════════════════════════════
-
-def test_frame_state_safe_for_default():
-    assert _hotkey_frame_state("Alt+Q") == "safe"
-
-
-def test_frame_state_warning_for_conflict_prone():
-    """A risky binding tints the settings page amber so the reminder persists."""
-    assert _hotkey_frame_state("Ctrl+S") == "warning"
-    assert _hotkey_frame_state("F1") == "warning"
-
-
-def test_frame_state_safe_on_parse_failure():
-    """Unparseable input must not crash or falsely warn — fall back to safe."""
-    assert _hotkey_frame_state("") == "safe"
-    assert _hotkey_frame_state("garbage") == "safe"
 
 
 # ═══════════════════════════════════════════════════════════════════════
