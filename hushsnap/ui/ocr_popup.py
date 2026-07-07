@@ -278,7 +278,6 @@ class OcrPopup(QtWidgets.QWidget):
             " border: none;"
             " border-radius: 0;"
             " padding: 0px;"
-            " font-size: 14px;"
             " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
             " line-height: 1.6;"
             " selection-background-color: rgba(95, 201, 138, 80);"
