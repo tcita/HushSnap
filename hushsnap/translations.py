@@ -138,7 +138,7 @@ UI_TEXT = {
 
         "editor_undo": "Undo",
         "editor_redo": "Redo",
-        "editor_save": "Save",
+        "editor_save": "Save As",
         "editor_save_as": "Save As...",
 
         "editor_color": "Color",
@@ -308,7 +308,7 @@ UI_TEXT = {
         "editor_undo": "撤销",
 
         "editor_redo": "重做",
-        "editor_save": "保存",
+        "editor_save": "另存为",
         "editor_save_as": "另存为...",
 
         "editor_color": "颜色",
@@ -477,7 +477,7 @@ UI_TEXT = {
         "editor_undo": "復原",
 
         "editor_redo": "重做",
-        "editor_save": "儲存",
+        "editor_save": "另存為",
         "editor_save_as": "另存為...",
 
         "editor_color": "顏色",
@@ -645,7 +645,7 @@ UI_TEXT = {
 
         "editor_undo": "元に戻す",
         "editor_redo": "やり直し",
-        "editor_save": "保存",
+        "editor_save": "別名で保存",
         "editor_save_as": "名前を付けて保存...",
 
         "editor_color": "色",

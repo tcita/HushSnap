@@ -39,7 +39,7 @@ def _translate(key, **kwargs):
         "editor_title": "Test Editor",
         "editor_undo": "Undo",
         "editor_redo": "Redo",
-        "editor_save": "Save",
+        "editor_save": "Save As",
         "editor_save_as": "Save As...",
         "editor_color": "Color",
         "editor_size": "Size",
