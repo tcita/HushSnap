@@ -6,12 +6,12 @@
   Built on the same design used for the Store listing screenshots.
 -->
 <!DOCTYPE html>
-<html lang="zh-Hans">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HushSnap — Windows 离线截图 & OCR 工具</title>
-<meta name="description" content="HushSnap 是一款 Windows 离线截图与文字识别工具。流畅、私密、全本地，无需联网。支持简体中文、繁体中文、英文、日文。">
+<title>HushSnap — Windows Screenshot & Offline OCR Tool</title>
+<meta name="description" content="HushSnap is a Windows screenshot & offline OCR tool. Smooth, private, fully local. No internet required. Supports English, Chinese, Japanese.">
 <meta name="keywords" content="OCR, screenshot, Windows, offline, 截图, 文字识别, 离线, 隐私">
 <meta name="author" content="HushSnap">
 <meta name="robots" content="index, follow">
@@ -19,8 +19,8 @@
 
 <!-- Open Graph / social preview -->
 <meta property="og:type" content="website">
-<meta property="og:title" content="HushSnap — Windows 离线截图 & OCR 工具">
-<meta property="og:description" content="极简高效的截图识字助手。流畅、私密、全本地。">
+<meta property="og:title" content="HushSnap — Windows Screenshot &amp; Offline OCR Tool">
+<meta property="og:description" content="A minimal, efficient screenshot &amp; OCR utility. Smooth, private, fully local.">
 <meta property="og:image" content="https://tcita.github.io/HushSnap/og-preview.png">
 <meta property="og:url" content="https://tcita.github.io/HushSnap/">
 <meta name="twitter:card" content="summary_large_image">
@@ -90,14 +90,14 @@
     background: radial-gradient(circle at center, rgba(95,201,138,0.05) 0%, transparent 70%);
     top: -200px; right: -200px; pointer-events: none;
   }
-  .left-panel { position: relative; z-index: 10; width: 220px; flex-shrink: 0; }
-  .headline { font-size: 44px; font-weight: 800; color: #fff; line-height: 1.05; margin-bottom: 16px; letter-spacing: -2px; }
+  .left-panel { position: relative; z-index: 10; width: 260px; flex-shrink: 0; }
+  .headline { font-size: 44px; font-weight: 800; color: #fff; line-height: 1.05; margin-bottom: 10px; letter-spacing: -2px; word-break: keep-all; }
   .headline span { color: #5fc98a; }
   .app-tag {
     display: inline-block; padding: 4px 12px;
     background: rgba(95,201,138,0.1); border: 1px solid rgba(95,201,138,0.2);
     color: #5fc98a; border-radius: 100px; font-size: 11px;
-    font-weight: bold; margin-bottom: 16px; letter-spacing: 1px;
+    font-weight: bold; margin-bottom: 10px; letter-spacing: 1px;
   }
   .right-panel { position: relative; flex: 1; height: 520px; margin-left: 30px; }
   #lines-svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 50; overflow: visible; }
@@ -174,11 +174,25 @@
     display: inline-flex; align-items: center; gap: 10px;
     background: #fff; color: #111; text-decoration: none;
     padding: 10px 20px; border-radius: 10px; font-weight: 600;
-    font-size: 13px; margin-top: 18px;
+    font-size: 13px; margin-top: 36px; white-space: nowrap;
     transition: transform 0.15s, box-shadow 0.15s;
   }
   .store-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(95,201,138,0.25); }
   .store-btn svg { width: 18px; height: 18px; flex-shrink: 0; }
+
+  .demo-btn {
+    display: flex; align-items: center; gap: 8px; width: fit-content;
+    background: rgba(255,255,255,0.04); color: #ccc; text-decoration: none;
+    padding: 10px 18px; border-radius: 10px; font-weight: 600;
+    font-size: 13px; margin-top: 16px; white-space: nowrap;
+    border: 1px solid rgba(255,255,255,0.12);
+    transition: transform 0.15s, border-color 0.15s, background 0.15s, color 0.15s;
+  }
+  .demo-btn:hover {
+    transform: translateY(-1px);
+    border-color: #ff4444; background: rgba(255,0,0,0.1); color: #ff4444;
+  }
+  .demo-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
 
   /* ── Footer ── */
   .site-footer {
@@ -270,8 +284,8 @@
 <body>
 
 <div class="lang-switcher">
-  <button class="lang-btn" onclick="switchLang('en')">English</button>
-  <button class="lang-btn active" onclick="switchLang('zh')">简体中文</button>
+  <button class="lang-btn active" onclick="switchLang('en')">English</button>
+  <button class="lang-btn" onclick="switchLang('zh')">简体中文</button>
   <button class="lang-btn" onclick="switchLang('tw')">繁體中文</button>
   <button class="lang-btn" onclick="switchLang('ja')">日本語</button>
 </div>
@@ -283,7 +297,7 @@
     <div class="left-panel">
       <div class="app-tag">HUSHSNAP</div>
       <div class="headline" id="el-headline">截图.<br><span>识字.</span><br>搞定.</div>
-      <p style="color:#94a3b8; font-size:13px; line-height:1.6; margin-top:14px;" id="el-tagline">
+      <p style="color:#94a3b8; font-size:13px; line-height:1.6; margin-top:28px;" id="el-tagline">
         Windows 离线截图与文字识别工具。流畅、私密、全本地。
       </p>
       <a class="store-btn"
@@ -291,6 +305,13 @@
          id="el-store-btn">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z"/></svg>
         <span id="el-store-text">从 Microsoft Store 下载</span>
+      </a>
+      <a class="demo-btn"
+         href="https://youtu.be/untWW6_Ea3M"
+         target="_blank" rel="noopener"
+         id="el-demo-btn">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+        <span id="el-demo-text">Watch Demo</span>
       </a>
     </div>
 
@@ -365,6 +386,13 @@
     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z"/></svg>
     <span id="el-store-text-m">从 Microsoft Store 下载</span>
   </a>
+  <a class="demo-btn"
+     href="https://youtu.be/untWW6_Ea3M"
+     target="_blank" rel="noopener"
+     id="el-demo-btn-m">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+    <span id="el-demo-text-m">Watch Demo</span>
+  </a>
 </div>
 
 <!-- ── Features ── -->
@@ -428,6 +456,10 @@
   <span>&copy; 2026 HushSnap</span>
   <a href="https://github.com/tcita/HushSnap">GitHub</a>
   <a href="https://tcita.github.io/HushSnap/PRIVACY">Privacy</a>
+  <a href="https://youtu.be/untWW6_Ea3M" target="_blank" rel="noopener" title="Watch demo on YouTube" style="display:inline-flex;align-items:center;gap:4px;">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:middle;"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+    Demo
+  </a>
 </footer>
 
 <script>
@@ -444,6 +476,7 @@ const dictionary = {
     lblClick: "Left-click",
     storeText: "Download from Microsoft Store",
     storeUrl: "https://apps.microsoft.com/detail/9p0qzv5z8njz?hl=en-us&gl=US",
+    demoText: "Watch Demo",
     privacy: "Screenshots and OCR results never leave your device",
     featuresTitle: "Why HushSnap",
     f1Title: "Local · Zero Network",
@@ -471,6 +504,7 @@ const dictionary = {
     lblClick: "左键单击",
     storeText: "从 Microsoft Store 下载",
     storeUrl: "https://apps.microsoft.com/detail/9p0qzv5z8njz?hl=zh-cn&gl=CN",
+    demoText: "观看演示",
     privacy: "截图与识别结果永不离开你的设备",
     featuresTitle: "为什么选择 HushSnap",
     f1Title: "全本地 · 零联网",
@@ -498,6 +532,7 @@ const dictionary = {
     lblClick: "左鍵單擊",
     storeText: "從 Microsoft Store 下載",
     storeUrl: "https://apps.microsoft.com/detail/9p0qzv5z8njz?hl=zh-tw&gl=TW",
+    demoText: "觀看演示",
     privacy: "截圖與辨識結果永不離開你的裝置",
     featuresTitle: "為什麼選擇 HushSnap",
     f1Title: "全本機 · 零聯網",
@@ -525,6 +560,7 @@ const dictionary = {
     lblClick: "左クリック",
     storeText: "Microsoft Store からダウンロード",
     storeUrl: "https://apps.microsoft.com/detail/9p0qzv5z8njz?hl=ja-jp&gl=JP",
+    demoText: "デモを見る",
     privacy: "スクリーンショットも認識結果もデバイスから外に出しません",
     featuresTitle: "HushSnap を選ぶ理由",
     f1Title: "ローカル ・ 完全オフライン",
@@ -542,7 +578,7 @@ const dictionary = {
   }
 };
 
-let currentLang = 'zh';
+let currentLang = 'en';
 
 function renderLayout() {
   const rp  = document.getElementById('rp');
@@ -621,8 +657,10 @@ function switchLang(lang) {
   currentLang = lang;
 
   const buttons = document.querySelectorAll('.lang-btn');
-  buttons.forEach(btn => btn.classList.remove('active'));
-  event.target.classList.add('active');
+  buttons.forEach(btn => {
+    btn.classList.toggle('active', btn.textContent.trim().startsWith(
+      lang === 'en' ? 'English' : lang === 'zh' ? '简体' : lang === 'tw' ? '繁體' : '日本'));
+  });
 
   const dict = dictionary[lang];
 
@@ -648,6 +686,9 @@ function switchLang(lang) {
   if (storeBtnEl)    storeBtnEl.href       = dict.storeUrl;
   if (storeTextEl)   storeTextEl.innerText = dict.storeText;
 
+  const demoTextEl   = document.getElementById('el-demo-text');
+  if (demoTextEl)    demoTextEl.innerText  = dict.demoText;
+
   const lblCaptureEl = document.getElementById('lbl-capture');
   const lblHubEl     = document.getElementById('lbl-hub');
   const lblResultEl  = document.getElementById('lbl-result');
@@ -666,6 +707,9 @@ function switchLang(lang) {
   if (taglineM)   taglineM.innerText   = dict.tagline;
   if (storeBtnM)  storeBtnM.href       = dict.storeUrl;
   if (storeTextM) storeTextM.innerText = dict.storeText;
+
+  const demoTextM   = document.getElementById('el-demo-text-m');
+  if (demoTextM)    demoTextM.innerText  = dict.demoText;
 
   // Privacy badge + Features
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val; };
@@ -704,6 +748,7 @@ function resetFeatureTimer() {
 }
 
 window.addEventListener('load', function() {
+  switchLang('en'); // apply English as default on first load
   document.querySelectorAll('#feature-dots .feature-dot').forEach(dot => {
     dot.addEventListener('click', function() {
       showFeature(parseInt(this.dataset.index));
