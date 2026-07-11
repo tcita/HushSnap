@@ -561,10 +561,13 @@ def compose_ppocr_structures(blocks: list[dict]) -> list[OcrLine]:
     Pipeline::
 
       1. Normalize raw blocks (filter empty / zero-size)
-      2. Hierarchical recursive XY-Cut -> reading order
+      2. Hierarchical recursive XY-Cut → left→right, top→bottom reading order
       3. Group ordered blocks into OcrLine objects (center_y proximity)
       4. Separate paragraphs by Y-gap threshold
       5. Post-process CJK-Latin spacing (pangu-style safety net)
+
+    Vertical text is handled upstream in recognize_ppocr_qimage by rotating
+    the image 90° CCW before detection, so blocks always arrive horizontal.
     """
     # Step 1 - normalize
     normalized = _normalize_blocks(blocks)
@@ -732,6 +735,76 @@ def release_engine():
                  fmt_memory(), ws_exit - ws_entry)
 
 
+# -- vertical text ordering -----------------------------------------------
+
+# -- text orientation detection -------------------------------------------
+
+_VERTICAL_BOX_RATIO = 1.3          # h/w threshold for a "tall" (vertical) text box
+_VERTICAL_MAJORITY_FRAC = 0.5      # fraction of boxes that must be tall to trigger rotation
+_NOISE_AREA_FRAC = 0.05             # boxes smaller than 5 % of the largest box are noise
+_NOISE_AREA_FLOOR = 500             # absolute floor — never filter below this many px²
+
+
+def _is_vertical_json(json_data: list[dict]) -> bool:
+    """Return True if majority of *substantial* detection boxes are tall (h > w × ratio).
+
+    Noise filtering uses a relative area threshold (5 % of the largest
+    detection box) with a 500 px² floor.  This is a straightforward
+    relative-size heuristic: on a small crop (e.g. 150×200) the cutoff
+    is proportionally lower than on a full screenshot (2000×1500), so
+    the same parameter works across resolutions without tuning.
+
+    Reference: Roboflow Supervision — relative area filtering
+    (``detections[detections.area > image_area * pct]``).
+    https://supervision.roboflow.com/latest/how_to/filter_detections/
+    """
+    if not json_data:
+        return False
+
+    areas = []
+    for item in json_data:
+        box = item.get("box", [])
+        if not box:
+            continue
+        xs = [p[0] for p in box]
+        ys = [p[1] for p in box]
+        w = max(xs) - min(xs)
+        h = max(ys) - min(ys)
+        if w > 0:
+            areas.append(w * h)
+    if not areas:
+        return False
+
+    noise_threshold = max(max(areas) * _NOISE_AREA_FRAC, _NOISE_AREA_FLOOR)
+
+    tall = 0
+    substantial = 0
+    for item in json_data:
+        box = item.get("box", [])
+        if not box:
+            continue
+        xs = [p[0] for p in box]
+        ys = [p[1] for p in box]
+        w = max(xs) - min(xs)
+        h = max(ys) - min(ys)
+        if w <= 0:
+            continue
+        if w * h < noise_threshold:
+            continue
+        substantial += 1
+        if h > w * _VERTICAL_BOX_RATIO:
+            tall += 1
+    return tall > 0 and substantial > 0 and (tall / substantial) >= _VERTICAL_MAJORITY_FRAC
+
+
+def _rotate_ccw(arr: "np.ndarray") -> "np.ndarray":
+    """Rotate a BGR image array 90° counterclockwise and return a contiguous copy."""
+    import cv2
+    return cv2.rotate(arr, cv2.ROTATE_90_COUNTERCLOCKWISE)
+
+
+
+
 # -- public API --------------------------------------------------------
 
 def _recognize_without_detection(engine, arr) -> OcrRecognition:
@@ -865,13 +938,53 @@ def recognize_ppocr_qimage(image_or_result, language_tag: str = "") -> OcrRecogn
         finally:
             _release_request()
 
+        # ── vertical text rotation retry ──────────────────────────────────
+        # PP-OCR is trained for horizontal LTR text.  When detection boxes are
+        # predominantly tall (h > w × 1.3), the image likely contains vertical
+        # CJK text.  Rotating 90° CCW turns vertical columns into horizontal
+        # lines, which the detector and XY-Cut handle correctly.
+        #
+        # Edge cases handled by majority-rule (> 50 % tall boxes):
+        #   All vertical   → rotate  (obvious win)
+        #   All horizontal → skip   (no overhead)
+        #   Mixed 60v/40h  → rotate  → 60 % become horizontal → better overall
+        #   Mixed 40v/60h  → skip    → 60 % stay horizontal  → better overall
+        #   50/50          → skip    → neither orientation dominates
+        if not json_data or _is_vertical_json(json_data):
+            logger.debug(
+                "PP-OCR: %s — retrying with 90° CCW rotation",
+                "empty detection" if not json_data else "vertical text detected",
+            )
+            rotated_arr = _rotate_ccw(arr)
+            _acquire_request()
+            try:
+                rotated_result = engine(rotated_arr)
+                rotated_json = rotated_result.to_json()
+            finally:
+                _release_request()
+
+            if rotated_json and (
+                not json_data
+                or len(rotated_json) >= len(json_data)
+                or not _is_vertical_json(rotated_json)
+            ):
+                logger.debug(
+                    "PP-OCR: rotation improved detection (%d → %d blocks)",
+                    len(json_data) if json_data else 0, len(rotated_json),
+                )
+                json_data = rotated_json
+                arr = rotated_arr
+                del rotated_result, rotated_arr
+            else:
+                logger.debug("PP-OCR: rotation did not improve; keeping original")
+
         if not json_data:
             logger.debug("PP-OCR detection returned empty - falling back to recognition-only")
-            
+
             if width > original_size.width() or height > original_size.height():
                 y_off = (height - original_size.height()) // 2
                 x_off = (width - original_size.width()) // 2
-                fallback_arr = arr[y_off : y_off + original_size.height(), 
+                fallback_arr = arr[y_off : y_off + original_size.height(),
                                    x_off : x_off + original_size.width()].copy()
             else:
                 fallback_arr = arr
@@ -882,7 +995,7 @@ def recognize_ppocr_qimage(image_or_result, language_tag: str = "") -> OcrRecogn
         blocks = [{"text": item["txt"], "box": item["box"]} for item in json_data]
         lines = compose_ppocr_structures(blocks)
         text = "\n".join(line.text for line in lines).rstrip()
-        
+
         return OcrRecognition(
             text=text,
             lines=lines,
