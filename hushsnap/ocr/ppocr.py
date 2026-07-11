@@ -1,18 +1,46 @@
 """
 PP-OCR Engine Implementation — parameter choices vs RapidOCR defaults.
 
-Models: PP-OCRv6 det=tiny + rec=small, PP-OCRv4 (cls, disabled).
-Upgraded from PP-OCRv5 in Jul 2026 (RapidOCR ≥ 3.9.1).
-  Detection uses TINY (1.8 MB, language-agnostic) — faster and often
-  more accurate than SMALL for Latin text.  Recognition uses SMALL
-  (21 MB, 50-language dictionary including Japanese).  This hybrid
-  keeps full 50-language coverage while being faster on all scripts.
+Models
+  Detection:  PP-OCRv6 TINY  (1.8 MB) — language-agnostic, only locates text
+              regions; does not recognise characters.
+  Recognition: PP-OCRv6 SMALL (21 MB) — 50-language dictionary including
+              Japanese, Traditional Chinese, and extended Unicode symbols.
+  Classifier:  PP-OCRv4 (disabled — saves ~10 % latency, only needed for
+              180° rotated images).
+
+  Upgraded from PP-OCRv5 in Jul 2026 (RapidOCR ≥ 3.9.1).
+
+Why TINY det + SMALL rec
+  ───────────────────────
+  Det and rec are independent ONNX models — any det size can pair with any
+  rec size.  The three PP-OCRv6 sizes (tiny/small/medium) differ only in
+  channel width, not architecture; they share the same PPLCNetV4 backbone.
+
+  Det choice — TINY over SMALL:
+    End-to-end benchmarks against SMALL det (both with SMALL rec) show TINY
+    det is faster in most cases and matches or exceeds end-to-end accuracy on
+    English, Chinese, and Japanese text.  PaddleOCR's official detection-only
+    Hmean favours SMALL det, but that metric does not account for the downstream
+    recogniser's behaviour on the resulting crops.
+
+  Rec choice — SMALL over TINY:
+    TINY rec (1.1M parameters) lacks Japanese entirely and shows significant
+    errors on Traditional Chinese characters outside the simplified set.  It
+    also confuses visually similar symbols (e.g. oxygen atom O vs digit 0)
+    and degrades on superscripts/subscripts and uncommon Unicode.  On modern
+    Simplified Chinese and English, TINY rec and SMALL rec are comparable.
+    SMALL rec is chosen for full script coverage, not for speed.
 
 Pipeline: det+rec → fallback rec-only.
-  Detection provides reading-order layout (XY-cut) for multi-line / multi-column
+  Detection provides reading-order layout (XY-cut) for horizontal left-to-right
   text.  When the detector finds no boxes, the engine falls back to recognition-
   only on the raw image (via _recognize_without_detection, which crops back to
   the original content area before recognising).
+
+  Known limitation: PP-OCR is trained for horizontal LTR text.  Vertical text
+  and multi-column layouts produce unreliable results — this is a model-level
+  constraint, not a parameter choice.
 
   Pad-to-960 pre-processing was removed in Jul 2026.  The padding was originally
   introduced to work around RapidOCR v5's detector behaviour: when an image's
@@ -26,28 +54,29 @@ Pipeline: det+rec → fallback rec-only.
   pixels consistently outperforms detection in these cases down to ~15 px short
   side, so the simpler pipeline without padding is more reliable overall.
 
-- Global.max_side_len = 1280 (default 2000): Verified against v6 small models
-  (Jul 2026); remains the knee of the accuracy-vs-latency curve.  Values above
-  1600 degrade both accuracy and speed due to detector feature-map aliasing.
+Parameter choices vs RapidOCR defaults
+  ────────────────────────────────────
+  Global.max_side_len = 1280 (default 2000)
+      Verified against v6 small models (Jul 2026); remains the knee of the
+      accuracy-vs-latency curve.  Values above 1600 degrade both.
 
-- Rec.rec_batch_num = 1 (default 6): Recognition runs sequentially on CPU, so
-  batching only adds threading overhead and allocates extra inference buffers
-  that are never used.  Single-batch avoids both costs.
+  Rec.rec_batch_num = 1 (default 6)
+      Recognition runs sequentially on CPU — batching only adds threading
+      overhead without parallelism.
 
-- intra_op_num_threads = 8 (default -1): Verified against v6 small models
-  (Jul 2026); the U-curve still bottoms at 8 threads.  Beyond that,
-  thread-scheduling overhead and cache contention overtake remaining
-  compute throughput.
+  intra_op_num_threads = 8 (default -1)
+      U-curve bottoms at 8 threads on consumer CPUs.  Beyond that, scheduling
+      overhead and cache contention overtake remaining throughput.
 
-- inter_op_num_threads = 1 (default -1): The Det → Cls → Rec pipeline is
-  strictly sequential — only one model runs at a time — so inter-op
-  parallelism has nothing to schedule.
+  inter_op_num_threads = 1 (default -1)
+      Det → Rec pipeline is strictly sequential; inter-op parallelism has
+      nothing to schedule.
 
-- enable_cpu_mem_arena = False (ONNX default is True; RapidOCR ships with
-  this set to False in their config.yaml — made explicit here for clarity).
-  ONNX's arena allocator pools large blocks and never releases them, causing
-  the working set to stay at peak after OCR completes.  Disabling it lets the
-  OS reclaim pages immediately, which matters for a long-running tray app.
+  enable_cpu_mem_arena = False (ONNX default: True)
+      ONNX's arena allocator pools large blocks without releasing them,
+      keeping the working set at peak after OCR completes.  Disabling it
+      lets the OS reclaim pages immediately — important for a long-running
+      tray app.
 """
 
 import logging
