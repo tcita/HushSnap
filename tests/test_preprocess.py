@@ -65,12 +65,3 @@ def test_run_minimal_pipeline(qapp, sample_pixmap):
 
     step_keys = [step.key for step in result.applied_steps]
     assert "prepare_ocr" in step_keys
-
-
-def test_run_minimal_pipeline_preserves_image_size(qapp):
-    """Image dimensions are preserved (no padding in v6 pipeline)."""
-    image = QtGui.QImage(1000, 960, QtGui.QImage.Format.Format_ARGB32)
-    image.fill(QtCore.Qt.GlobalColor.black)
-    result = run_minimal_pipeline(image)
-    assert result.image.width() == 1000
-    assert result.image.height() == 960

@@ -256,7 +256,7 @@ QComboBox#settingsCombo {{
     padding: 6px 12px;
     font-size: 13px;
     color: {SETTINGS_LABEL_COLOR};
-    min-width: 140px;
+    min-width: 120px;
     font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
 }}
 QComboBox#settingsCombo:hover {{
