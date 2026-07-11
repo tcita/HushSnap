@@ -45,7 +45,7 @@ powershell -ExecutionPolicy Bypass -Command ^
     "$outDir = '%OUT_DIR%';" ^
     "if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir | Out-Null }" ^
     "Copy-Item '%MSIX_SRC%' '%MSIX_DST%' -Force;" ^
-    "& $signtool sign /fd SHA256 /s My /sm /sha1 $cert.Thumbprint '%MSIX_DST%';" ^
+    "& $signtool sign /fd SHA256 /td SHA256 /s My /sm /sha1 $cert.Thumbprint '%MSIX_DST%';" ^
     "if ($LASTEXITCODE -eq 0) {" ^
     "    Write-Host '';" ^
     "    Write-Host '[OK] Signed package saved to: dist-installer-test\HushSnap_Test_Signed.msix' -ForegroundColor Green;" ^
@@ -57,7 +57,7 @@ set SIGN_RC=%errorLevel%
 echo.
 if "%SIGN_RC%"=="0" (
     echo Signing succeeded. This window will close in 3 seconds...
-    timeout /t 3 /nobreak >nul
+    timeout /t 5 /nobreak
 ) else (
     echo Signing FAILED ^(exit code %SIGN_RC%^). Press any key to close...
     pause >nul
