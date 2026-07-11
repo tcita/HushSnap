@@ -1,8 +1,12 @@
 """
 PP-OCR Engine Implementation — parameter choices vs RapidOCR defaults.
 
-Models: PP-OCRv6 small (det + rec), PP-OCRv4 (cls, disabled).
+Models: PP-OCRv6 det=tiny + rec=small, PP-OCRv4 (cls, disabled).
 Upgraded from PP-OCRv5 in Jul 2026 (RapidOCR ≥ 3.9.1).
+  Detection uses TINY (1.8 MB, language-agnostic) — faster and often
+  more accurate than SMALL for Latin text.  Recognition uses SMALL
+  (21 MB, 50-language dictionary including Japanese).  This hybrid
+  keeps full 50-language coverage while being faster on all scripts.
 
 Pipeline: det+rec → fallback rec-only.
   Detection provides reading-order layout (XY-cut) for multi-line / multi-column
@@ -653,7 +657,7 @@ def _get_engine() -> "PPOCR":
                 # on correctly-oriented or slightly tilted input.
                 params = {
                     "Det.ocr_version": local_OCRVersion.PPOCRV6,
-                    "Det.model_type": local_ModelType.SMALL,
+                    "Det.model_type": local_ModelType.TINY,
                     "Rec.ocr_version": local_OCRVersion.PPOCRV6,
                     "Rec.model_type": local_ModelType.SMALL,
                     "Global.use_cls": False,
