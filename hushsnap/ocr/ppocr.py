@@ -85,11 +85,17 @@ import statistics
 import threading
 import time
 
-# Defer ppocr library import to optimize application startup time
+import cv2
+
+# Import ppocr library at startup to ensure thread-safe loading of C/C++ extensions.
+# Importing at module level (not inside functions / background threads) prevents
+# Python 3.13 JIT + C-extension loader race conditions on the first OCR call.
+from rapidocr import RapidOCR, OCRVersion, ModelType
+
+# Alias kept for backward compatibility (tests monkeypatch ppocr_module.PPOCR).
+PPOCR = RapidOCR
+
 from PyQt6 import QtCore, QtGui
-PPOCR = None
-OCRVersion = None
-ModelType = None
 
 from .models import OcrBox, OcrLine, OcrRecognition, OcrWord
 from .preprocess import OcrPreprocessResult
@@ -662,20 +668,6 @@ def _get_engine() -> "PPOCR":
         logger.debug("[PPOCR] _get_engine: Initializing new engine instance...")
         with _engine_lock:
             if _engine is None:
-                global PPOCR, OCRVersion, ModelType
-                if PPOCR is not None:
-                    local_ppocr = PPOCR
-                else:
-                    logger.debug("[PPOCR] Importing PP-OCR library...")
-                    from rapidocr import RapidOCR as local_ppocr
-                if OCRVersion is not None and ModelType is not None:
-                    local_OCRVersion = OCRVersion
-                    local_ModelType = ModelType
-                else:
-                    logger.debug("[PPOCR] Importing OCRVersion / ModelType...")
-                    from rapidocr import OCRVersion as local_OCRVersion
-                    from rapidocr import ModelType as local_ModelType
-                
                 ws_before = get_working_set_mb()
                 logger.info("[PPOCR] Initializing engine singleton (models loading)...")
                 
@@ -685,10 +677,10 @@ def _get_engine() -> "PPOCR":
                 # Saves ~10% latency + ~6 MB memory with no accuracy impact
                 # on correctly-oriented or slightly tilted input.
                 params = {
-                    "Det.ocr_version": local_OCRVersion.PPOCRV6,
-                    "Det.model_type": local_ModelType.TINY,
-                    "Rec.ocr_version": local_OCRVersion.PPOCRV6,
-                    "Rec.model_type": local_ModelType.SMALL,
+                    "Det.ocr_version": OCRVersion.PPOCRV6,
+                    "Det.model_type": ModelType.TINY,
+                    "Rec.ocr_version": OCRVersion.PPOCRV6,
+                    "Rec.model_type": ModelType.SMALL,
                     "Global.use_cls": False,
                     **_DEFAULT_ENGINE_PARAMS,
                 }
@@ -696,7 +688,7 @@ def _get_engine() -> "PPOCR":
                     params.update(_engine_params_override)
                     logger.info("[PPOCR] Applying engine params override: %s",
                                 {k: v for k, v in _engine_params_override.items()})
-                _engine = local_ppocr(params=params)
+                _engine = PPOCR(params=params)
                 
                 ws_after = get_working_set_mb()
                 logger.debug(
