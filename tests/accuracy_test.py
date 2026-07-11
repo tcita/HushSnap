@@ -68,11 +68,13 @@ def block_tokens(blocks: list[str]) -> set[str]:
 
 # ── Run both ──────────────────────────────────────────────────────────
 
-from rapidocr import RapidOCR, OCRVersion
+from rapidocr import RapidOCR, OCRVersion, ModelType
 
 BASE = {
-    "Det.ocr_version": OCRVersion.PPOCRV5,
-    "Rec.ocr_version": OCRVersion.PPOCRV5,
+    "Det.ocr_version": OCRVersion.PPOCRV6,
+    "Det.model_type": ModelType.SMALL,
+    "Rec.ocr_version": OCRVersion.PPOCRV6,
+    "Rec.model_type": ModelType.SMALL,
     "Rec.rec_batch_num": 1,
     "EngineConfig.onnxruntime.intra_op_num_threads": 8,
     "EngineConfig.onnxruntime.inter_op_num_threads": 1,

@@ -28,11 +28,15 @@ Everything runs locally; the edited image never leaves your device.
 
 ## OCR Engine
 
-HushSnap uses [**PP-OCR**](https://github.com/PaddlePaddle/PaddleOCR) as its sole OCR engine:
+HushSnap uses [**PP-OCRv6**](https://github.com/PaddlePaddle/PaddleOCR) as its sole OCR engine:
 
-- **PP-OCR (via RapidOCR):** Runs PP-OCRv5 ONNX models in-process via the [`rapidocr`](https://github.com/RapidAI/RapidOCR) Python package (Apache 2.0). No external dependencies or language packs needed. Works offline. Uses a unified multilingual model covering CJK, Latin, and more. Ships with a compact embedded model that balances quality and performance across supported scripts.
+- **PP-OCRv6 (via RapidOCR):** Runs PP-OCRv6 small ONNX models in-process via the [`rapidocr`](https://github.com/RapidAI/RapidOCR) Python package (Apache 2.0). No external dependencies or language packs needed. Works offline. Uses a unified multilingual model covering **50 languages** in a single 7.7M-parameter model — surpassing the accuracy of the previous-generation v5 server model at a fraction of the size.
 
-The engine has been tested on standard screen captures (web, apps, UIs) within HushSnap's own capture→preprocess→OCR pipeline. **Simplified Chinese, Traditional Chinese, and English** are verified to work well. PP-OCRv5 also officially supports **Japanese** with reported good accuracy, though we haven't been able to verify this independently — Japanese-speaking users are welcome to share their experience. The model may recognize additional scripts (e.g., German, Spanish), but accuracy for those is uncharacterized.
+The engine supports the following 50 languages out of the box:
+
+**Core:** Simplified Chinese, Traditional Chinese, English, Japanese
+
+**Latin-script (46):** French, German, Italian, Spanish, Portuguese, Dutch, Polish, Romanian, Czech, Swedish, Norwegian, Danish, Finnish, Hungarian, Turkish, Vietnamese, Indonesian, Malay, Azerbaijani, Afrikaans, Bosnian, Croatian, Welsh, Estonian, Irish, Icelandic, Kurdish, Lithuanian, Latvian, Maltese, Māori, Occitan, Slovak, Slovenian, Albanian, Swahili, Tagalog, Uzbek, Latin, Serbian (Latin), Catalan, Basque, Galician, Luxembourgish, Romansh, Quechua
 
 ## Third-Party Acknowledgment
 

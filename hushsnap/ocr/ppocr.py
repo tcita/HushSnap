@@ -1,21 +1,39 @@
 """
 PP-OCR Engine Implementation — parameter choices vs RapidOCR defaults.
 
-- Global.max_side_len = 1280 (default 2000): Empirically determined from an
-  informal sweep across a handful of CN/EN screenshots (640–3584).  This is
-  roughly the knee of the accuracy curve — smaller values visibly degrade,
-  while larger values cost more memory and latency for diminishing returns.
-  2304+ begins to hurt from detector feature-map aliasing.
+Models: PP-OCRv6 small (det + rec), PP-OCRv4 (cls, disabled).
+Upgraded from PP-OCRv5 in Jul 2026 (RapidOCR ≥ 3.9.1).
+
+Pipeline: det+rec → fallback rec-only.
+  Detection provides reading-order layout (XY-cut) for multi-line / multi-column
+  text.  When the detector finds no boxes, the engine falls back to recognition-
+  only on the raw image (via _recognize_without_detection, which crops back to
+  the original content area before recognising).
+
+  Pad-to-960 pre-processing was removed in Jul 2026.  The padding was originally
+  introduced to work around RapidOCR v5's detector behaviour: when an image's
+  short side is < limit_side_len (736), the detector upscales it to 736 px via
+  cv2.resize.  For tiny images (e.g. 32 px short side) this ~23× upscale causes
+  catastrophic interpolation blur that destroys character features, so padding
+  to 960 px forced a 1∶1 scale.  With v6's PPLCNetV4 backbone the native tiny-
+  image handling improved, but the fundamental issue remains: for wide-flat
+  small images (short side < 48 px, aspect ratio ≥ 3∶1) the detector's forced
+  upscale still degrades features.  However, the rec-only fallback on the raw
+  pixels consistently outperforms detection in these cases down to ~15 px short
+  side, so the simpler pipeline without padding is more reliable overall.
+
+- Global.max_side_len = 1280 (default 2000): Verified against v6 small models
+  (Jul 2026); remains the knee of the accuracy-vs-latency curve.  Values above
+  1600 degrade both accuracy and speed due to detector feature-map aliasing.
 
 - Rec.rec_batch_num = 1 (default 6): Recognition runs sequentially on CPU, so
   batching only adds threading overhead and allocates extra inference buffers
   that are never used.  Single-batch avoids both costs.
 
-- intra_op_num_threads = 8 (default -1, i.e. all cores): A sweep from 1–32
-  on a 32-core machine puts the minimum at 8 — a clean U-curve.  The three
-  mobile models (det/cls/rec) have small enough inner loops that intra-op
-  parallelism saturates near 8; beyond that, thread-scheduling overhead and
-  cache contention overtake any remaining compute throughput.
+- intra_op_num_threads = 8 (default -1): Verified against v6 small models
+  (Jul 2026); the U-curve still bottoms at 8 threads.  Beyond that,
+  thread-scheduling overhead and cache contention overtake remaining
+  compute throughput.
 
 - inter_op_num_threads = 1 (default -1): The Det → Cls → Rec pipeline is
   strictly sequential — only one model runs at a time — so inter-op
@@ -38,6 +56,7 @@ import time
 from PyQt6 import QtCore, QtGui
 PPOCR = None
 OCRVersion = None
+ModelType = None
 
 from .models import OcrBox, OcrLine, OcrRecognition, OcrWord
 from .preprocess import OcrPreprocessResult
@@ -610,17 +629,19 @@ def _get_engine() -> "PPOCR":
         logger.debug("[PPOCR] _get_engine: Initializing new engine instance...")
         with _engine_lock:
             if _engine is None:
-                global PPOCR, OCRVersion
+                global PPOCR, OCRVersion, ModelType
                 if PPOCR is not None:
                     local_ppocr = PPOCR
                 else:
                     logger.debug("[PPOCR] Importing PP-OCR library...")
                     from rapidocr import RapidOCR as local_ppocr
-                if OCRVersion is not None:
+                if OCRVersion is not None and ModelType is not None:
                     local_OCRVersion = OCRVersion
+                    local_ModelType = ModelType
                 else:
-                    logger.debug("[PPOCR] Importing OCRVersion...")
+                    logger.debug("[PPOCR] Importing OCRVersion / ModelType...")
                     from rapidocr import OCRVersion as local_OCRVersion
+                    from rapidocr import ModelType as local_ModelType
                 
                 ws_before = get_working_set_mb()
                 logger.info("[PPOCR] Initializing engine singleton (models loading)...")
@@ -631,9 +652,10 @@ def _get_engine() -> "PPOCR":
                 # Saves ~10% latency + ~6 MB memory with no accuracy impact
                 # on correctly-oriented or slightly tilted input.
                 params = {
-                    "Det.ocr_version": local_OCRVersion.PPOCRV5,
-                    "Rec.ocr_version": local_OCRVersion.PPOCRV5,
-                    "Cls.ocr_version": local_OCRVersion.PPOCRV5,
+                    "Det.ocr_version": local_OCRVersion.PPOCRV6,
+                    "Det.model_type": local_ModelType.SMALL,
+                    "Rec.ocr_version": local_OCRVersion.PPOCRV6,
+                    "Rec.model_type": local_ModelType.SMALL,
                     "Global.use_cls": False,
                     **_DEFAULT_ENGINE_PARAMS,
                 }

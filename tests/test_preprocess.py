@@ -65,18 +65,12 @@ def test_run_minimal_pipeline(qapp, sample_pixmap):
 
     step_keys = [step.key for step in result.applied_steps]
     assert "prepare_ocr" in step_keys
-    # 32x32 < 960 min side, so safe_pad should fire
-    assert "safe_pad" in step_keys
-    assert result.image.width() >= 960
-    assert result.image.height() >= 960
 
 
-def test_safe_pad_skips_when_already_large_enough(qapp):
-    """Safe pad is skipped when both sides >= 960 px."""
+def test_run_minimal_pipeline_preserves_image_size(qapp):
+    """Image dimensions are preserved (no padding in v6 pipeline)."""
     image = QtGui.QImage(1000, 960, QtGui.QImage.Format.Format_ARGB32)
     image.fill(QtCore.Qt.GlobalColor.black)
     result = run_minimal_pipeline(image)
-    step_keys = [step.key for step in result.applied_steps]
-    assert "safe_pad" not in step_keys
     assert result.image.width() == 1000
     assert result.image.height() == 960

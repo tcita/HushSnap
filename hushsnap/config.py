@@ -984,6 +984,11 @@ def _get_system_ui_language():
             return UI_LANG_ZH
         if primary_lang == 0x11:  # LANG_JAPANESE
             return UI_LANG_JA
+        # English and anything else we don't explicitly handle — the Win32
+        # API is the authoritative source; don't fall through to the
+        # unreliable locale.getdefaultlocale() codepath which can return
+        # a mismatched locale on systems with East-Asian language packs.
+        return UI_LANG_EN
     except Exception as e:
         logger.debug(f"Failed to get system UI language via GetUserDefaultUILanguage: {e}")
 
@@ -1007,10 +1012,12 @@ def _get_system_ui_language():
 
 def resolve_ui_lang(config_path):
     """
-    Resolve the final UI language.
-    Priority: config file > system default > English fallback.
+    Resolve the final UI language to a concrete locale.
+    Priority: config file (auto → system) > system default > English fallback.
     """
     config_language = _read_ui_lang_from_config(config_path)
+    if config_language == UI_LANG_AUTO:
+        config_language = _get_system_ui_language()
     if config_language in SUPPORTED_LANGUAGES:
         return config_language
 
