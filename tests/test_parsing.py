@@ -10,10 +10,9 @@ from hushsnap.ocr.parsing import (
     compute_line_box,
     parse_box,
     parse_line,
-    parse_ocr_payload,
     parse_word,
 )
-from hushsnap.ocr.models import OcrBox, OcrLine, OcrRecognition, OcrWord
+from hushsnap.ocr.models import OcrBox, OcrLine, OcrWord
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -240,87 +239,3 @@ def test_parse_line_words_contains_invalid_entries():
     assert len(line.words) == 2
     assert line.words[0].text == "ok"
     assert line.words[1].text == "also ok"
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# parse_ocr_payload
-# ═══════════════════════════════════════════════════════════════════════
-
-def test_parse_ocr_payload_basic():
-    payload = {
-        "Text": "Hello world\nThis is line 2",
-        "Lines": [
-            {"Text": "Hello world", "BoundingBox": {"x": 10, "y": 20, "width": 200, "height": 30}},
-            {"Text": "This is line 2", "BoundingBox": {"x": 10, "y": 60, "width": 180, "height": 30}},
-        ],
-        "Angle": 0.5,
-        "RequestedLanguageSupported": True,
-        "UsedUserProfileFallback": False,
-        "EngineLanguageTag": "en-US",
-    }
-    result = parse_ocr_payload(payload)
-    assert result.text == "Hello world\nThis is line 2"
-    assert len(result.lines) == 2
-    assert result.lines[0].text == "Hello world"
-    assert result.lines[1].text == "This is line 2"
-    assert result.angle == 0.5
-    assert result.requested_language_supported is True
-    assert result.used_user_profile_fallback is False
-    assert result.engine_language_tag == "en-US"
-
-
-def test_parse_ocr_payload_empty():
-    result = parse_ocr_payload({})
-    assert result.text == ""
-    assert result.lines == []
-    assert result.angle == 0.0
-
-
-def test_parse_ocr_payload_none_and_invalid():
-    result = parse_ocr_payload(None)
-    assert result == OcrRecognition()
-    result = parse_ocr_payload("not a dict")
-    assert result == OcrRecognition()
-
-
-def test_parse_ocr_payload_missing_top_text():
-    """When top-level Text is missing but lines exist."""
-    payload = {
-        "Lines": [
-            {"Text": "line from structure", "BoundingBox": {"x": 0, "y": 0, "width": 100, "height": 20}},
-        ],
-    }
-    result = parse_ocr_payload(payload)
-    assert result.text == ""
-
-
-def test_parse_ocr_payload_lines_is_none():
-    payload = {"Text": "flat text only", "Lines": None}
-    result = parse_ocr_payload(payload)
-    assert result.text == "flat text only"
-    assert result.lines == []
-
-
-def test_parse_ocr_payload_angle_null():
-    payload = {"Angle": None}
-    result = parse_ocr_payload(payload)
-    assert result.angle == 0.0
-
-
-def test_parse_ocr_payload_requested_language_supported_null():
-    """When not present, should be None (distinct from False)."""
-    result = parse_ocr_payload({"Text": "test"})
-    assert result.requested_language_supported is None
-
-
-def test_parse_ocr_payload_engine_language_tag_missing():
-    result = parse_ocr_payload({"Text": "test"})
-    assert result.engine_language_tag == ""
-
-
-def test_parse_ocr_payload_user_profile_fallback_types():
-    """UsedUserProfileFallback should be coerced to bool."""
-    result = parse_ocr_payload({"UsedUserProfileFallback": "true"})  # truthy string
-    assert result.used_user_profile_fallback is True
-    result = parse_ocr_payload({"UsedUserProfileFallback": ""})
-    assert result.used_user_profile_fallback is False

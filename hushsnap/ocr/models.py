@@ -29,9 +29,6 @@ class OcrRecognition:
     text: str = ""
     lines: list[OcrLine] = field(default_factory=list)
     angle: float = 0.0
-    requested_language_supported: bool | None = None
-    used_user_profile_fallback: bool = False
-    engine_language_tag: str = ""
     engine_type: str = ""
 
 

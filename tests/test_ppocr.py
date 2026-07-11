@@ -314,7 +314,6 @@ def test_recognize_ppocr_qimage_blank_image(monkeypatch, qapp):
 
     result = recognize_ppocr_qimage(img)
     assert result.engine_type == OCR_ENGINE_PPOCR
-    assert result.requested_language_supported is True
     assert result.text == ""
 
 

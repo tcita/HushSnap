@@ -1,6 +1,6 @@
 from typing import Any
 
-from .models import OcrBox, OcrLine, OcrRecognition, OcrWord
+from .models import OcrBox, OcrLine, OcrWord
 
 
 def parse_box(obj: Any) -> OcrBox:
@@ -57,23 +57,3 @@ def parse_line(line_obj: Any) -> OcrLine | None:
         bounding_box=line_box,
     )
 
-
-def parse_ocr_payload(payload: Any) -> OcrRecognition:
-    """Parse Windows OCR JSON payload into internal dataclasses."""
-    if not isinstance(payload, dict):
-        return OcrRecognition()
-
-    lines: list[OcrLine] = []
-    for line_obj in payload.get("Lines", []) or []:
-        parsed_line = parse_line(line_obj)
-        if parsed_line is not None:
-            lines.append(parsed_line)
-
-    return OcrRecognition(
-        text=str(payload.get("Text", "") or ""),
-        lines=lines,
-        angle=float(payload.get("Angle", 0.0) or 0.0),
-        requested_language_supported=payload.get("RequestedLanguageSupported"),
-        used_user_profile_fallback=bool(payload.get("UsedUserProfileFallback", False)),
-        engine_language_tag=str(payload.get("EngineLanguageTag", "") or ""),
-    )

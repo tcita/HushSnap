@@ -757,8 +757,6 @@ def _recognize_without_detection(engine, arr) -> OcrRecognition:
         if not txts or not txts[0] or not txts[0].strip():
             logger.debug("PP-OCR recognition-only fallback returned no text")
             return OcrRecognition(
-                requested_language_supported=True,
-                engine_language_tag="zh-CN",
                 engine_type=OCR_ENGINE_PPOCR,
             )
 
@@ -767,8 +765,6 @@ def _recognize_without_detection(engine, arr) -> OcrRecognition:
 
         return OcrRecognition(
             text=recognized_text,
-            requested_language_supported=True,
-            engine_language_tag="zh-CN",
             engine_type=OCR_ENGINE_PPOCR,
         )
     finally:
@@ -865,8 +861,6 @@ def recognize_ppocr_qimage(image_or_result, language_tag: str = "") -> OcrRecogn
         return OcrRecognition(
             text=text,
             lines=lines,
-            requested_language_supported=True,
-            engine_language_tag="zh-CN",
             engine_type=OCR_ENGINE_PPOCR,
         )
     except Exception:
