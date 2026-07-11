@@ -740,45 +740,27 @@ def release_engine():
 # -- text orientation detection -------------------------------------------
 
 _VERTICAL_BOX_RATIO = 1.3          # h/w threshold for a "tall" (vertical) text box
-_VERTICAL_MAJORITY_FRAC = 0.5      # fraction of boxes that must be tall to trigger rotation
-_NOISE_AREA_FRAC = 0.05             # boxes smaller than 5 % of the largest box are noise
-_NOISE_AREA_FLOOR = 500             # absolute floor — never filter below this many px²
+_VERTICAL_WEIGHTED_THRESHOLD = 0.5  # weighted tall-area fraction to trigger rotation
 
 
 def _is_vertical_json(json_data: list[dict]) -> bool:
-    """Return True if majority of *substantial* detection boxes are tall (h > w × ratio).
+    """Return True if text is predominantly vertical (tall boxes by area).
 
-    Noise filtering uses a relative area threshold (5 % of the largest
-    detection box) with a 500 px² floor.  This is a straightforward
-    relative-size heuristic: on a small crop (e.g. 150×200) the cutoff
-    is proportionally lower than on a full screenshot (2000×1500), so
-    the same parameter works across resolutions without tuning.
+    Uses area-weighted voting: each box votes for "vertical" or "horizontal"
+    in proportion to its pixel area.  Small fragments (stray chars, labels)
+    contribute negligible weight (< 1 % of a real text column), so no
+    explicit noise-filter threshold is needed — the weighting is inherently
+    robust to outliers.
 
-    Reference: Roboflow Supervision — relative area filtering
-    (``detections[detections.area > image_area * pct]``).
-    https://supervision.roboflow.com/latest/how_to/filter_detections/
+    This replaces the earlier ad-hoc approach of filtering by a percentage
+    of the largest box's area (5 %) with an absolute floor (500 px²), which
+    required tuning per image resolution.
     """
     if not json_data:
         return False
 
-    areas = []
-    for item in json_data:
-        box = item.get("box", [])
-        if not box:
-            continue
-        xs = [p[0] for p in box]
-        ys = [p[1] for p in box]
-        w = max(xs) - min(xs)
-        h = max(ys) - min(ys)
-        if w > 0:
-            areas.append(w * h)
-    if not areas:
-        return False
-
-    noise_threshold = max(max(areas) * _NOISE_AREA_FRAC, _NOISE_AREA_FLOOR)
-
-    tall = 0
-    substantial = 0
+    total_area = 0.0
+    tall_area = 0.0
     for item in json_data:
         box = item.get("box", [])
         if not box:
@@ -789,12 +771,14 @@ def _is_vertical_json(json_data: list[dict]) -> bool:
         h = max(ys) - min(ys)
         if w <= 0:
             continue
-        if w * h < noise_threshold:
-            continue
-        substantial += 1
+        area = w * h
+        total_area += area
         if h > w * _VERTICAL_BOX_RATIO:
-            tall += 1
-    return tall > 0 and substantial > 0 and (tall / substantial) >= _VERTICAL_MAJORITY_FRAC
+            tall_area += area
+
+    if total_area == 0.0:
+        return False
+    return (tall_area / total_area) >= _VERTICAL_WEIGHTED_THRESHOLD
 
 
 def _rotate_ccw(arr: "np.ndarray") -> "np.ndarray":
