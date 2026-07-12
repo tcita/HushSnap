@@ -380,34 +380,43 @@ def _xy_cut(
 
 def _build_lines_from_ordered_blocks(
     ordered_blocks: list[dict],
+    is_vertical: bool = False,
 ) -> list[OcrLine]:
-    """Group reading-order blocks into OcrLine objects via center_y proximity.
+    """Group reading-order blocks into OcrLine objects.
 
-    Within each line, blocks are joined left->right using *word_separator*
-    (one space or nothing, based on character-class boundaries).
-    Geometric-gap spacing has been intentionally removed - it was fragile
-    across varying DPI, font sizes, and OCR detection granularities.
+    Horizontal text (default): group consecutive blocks by center_y proximity;
+    within each line, join left→right using *word_separator*.
+
+    Vertical CJK text (*is_vertical*): each tall detection box is already a
+    complete vertical column — no Y-grouping is needed (adjacent columns
+    share the same center_y and would be incorrectly merged).  Each block
+    becomes its own OcrLine; reading order (right→left, top→bottom) is
+    already established by _leaf_reading_order.
     """
     if not ordered_blocks:
         return []
 
-    heights = [b["height"] for b in ordered_blocks]
-    med_h = statistics.median(heights) if heights else _FALLBACK_MEDIAN
+    if is_vertical:
+        # Each block is its own vertical line — no center_y grouping.
+        line_groups = [[b] for b in ordered_blocks]
+    else:
+        heights = [b["height"] for b in ordered_blocks]
+        med_h = statistics.median(heights) if heights else _FALLBACK_MEDIAN
 
-    # Group consecutive blocks whose center_y is within tolerance of median height
-    line_groups: list[list[dict]] = []
-    current_line = [ordered_blocks[0]]
+        # Group consecutive blocks whose center_y is within tolerance of median height
+        line_groups: list[list[dict]] = []
+        current_line = [ordered_blocks[0]]
 
-    for block in ordered_blocks[1:]:
-        avg_y = sum(b["center_y"] for b in current_line) / len(current_line)
-        avg_h = sum(b["height"] for b in current_line) / len(current_line)
-        if abs(block["center_y"] - avg_y) < avg_h * _LINE_Y_TOLERANCE:
-            current_line.append(block)
-        else:
-            line_groups.append(current_line)
-            current_line = [block]
+        for block in ordered_blocks[1:]:
+            avg_y = sum(b["center_y"] for b in current_line) / len(current_line)
+            avg_h = sum(b["height"] for b in current_line) / len(current_line)
+            if abs(block["center_y"] - avg_y) < avg_h * _LINE_Y_TOLERANCE:
+                current_line.append(block)
+            else:
+                line_groups.append(current_line)
+                current_line = [block]
 
-    line_groups.append(current_line)
+        line_groups.append(current_line)
 
     # Build OcrLine objects - simple character-class spacing only
     result: list[OcrLine] = []
@@ -555,19 +564,22 @@ def _separate_paragraphs(lines: list[OcrLine]) -> list[OcrLine]:
 # -- public API ------------------------------------------------------------
 
 
-def compose_ppocr_structures(blocks: list[dict]) -> list[OcrLine]:
+def compose_ppocr_structures(blocks: list[dict], is_vertical: bool = False) -> list[OcrLine]:
     """Convert PP-OCR detection blocks into ordered OcrLines.
 
     Pipeline::
 
       1. Normalize raw blocks (filter empty / zero-size)
-      2. Hierarchical recursive XY-Cut → left→right, top→bottom reading order
-      3. Group ordered blocks into OcrLine objects (center_y proximity)
+      2. Hierarchical recursive XY-Cut → reading order
+      3. Group ordered blocks into OcrLine objects
       4. Separate paragraphs by Y-gap threshold
       5. Post-process CJK-Latin spacing (pangu-style safety net)
 
-    Vertical text is handled upstream in recognize_ppocr_qimage by rotating
-    the image 90° CCW before detection, so blocks always arrive horizontal.
+    When *is_vertical* is True, the image contains predominantly vertical
+    CJK text (tall boxes, h > w × 1.3).  PP-OCRv6 handles upright CJK
+    characters in vertical columns natively — no rotation needed.  The
+    XY-cut + _leaf_reading_order pipeline already produces correct
+    right→left column, top→bottom ordering for tall boxes.
     """
     # Step 1 - normalize
     normalized = _normalize_blocks(blocks)
@@ -577,8 +589,8 @@ def compose_ppocr_structures(blocks: list[dict]) -> list[OcrLine]:
     # Step 2 - recursive XY-Cut -> ordered blocks in reading order
     ordered = _xy_cut(normalized, direction="y", depth=0)
 
-    # Step 3 - group into OcrLine objects (character-class spacing only)
-    lines = _build_lines_from_ordered_blocks(ordered)
+    # Step 3 - group into OcrLine objects
+    lines = _build_lines_from_ordered_blocks(ordered, is_vertical=is_vertical)
     if not lines:
         return []
 
@@ -781,14 +793,6 @@ def _is_vertical_json(json_data: list[dict]) -> bool:
     return (tall_area / total_area) >= _VERTICAL_WEIGHTED_THRESHOLD
 
 
-def _rotate_ccw(arr: "np.ndarray") -> "np.ndarray":
-    """Rotate a BGR image array 90° counterclockwise and return a contiguous copy."""
-    import cv2
-    return cv2.rotate(arr, cv2.ROTATE_90_COUNTERCLOCKWISE)
-
-
-
-
 # -- public API --------------------------------------------------------
 
 def _recognize_without_detection(engine, arr) -> OcrRecognition:
@@ -922,45 +926,16 @@ def recognize_ppocr_qimage(image_or_result, language_tag: str = "") -> OcrRecogn
         finally:
             _release_request()
 
-        # ── vertical text rotation retry ──────────────────────────────────
-        # PP-OCR is trained for horizontal LTR text.  When detection boxes are
-        # predominantly tall (h > w × 1.3), the image likely contains vertical
-        # CJK text.  Rotating 90° CCW turns vertical columns into horizontal
-        # lines, which the detector and XY-Cut handle correctly.
-        #
-        # Edge cases handled by majority-rule (> 50 % tall boxes):
-        #   All vertical   → rotate  (obvious win)
-        #   All horizontal → skip   (no overhead)
-        #   Mixed 60v/40h  → rotate  → 60 % become horizontal → better overall
-        #   Mixed 40v/60h  → skip    → 60 % stay horizontal  → better overall
-        #   50/50          → skip    → neither orientation dominates
-        if not json_data or _is_vertical_json(json_data):
-            logger.debug(
-                "PP-OCR: %s — retrying with 90° CCW rotation",
-                "empty detection" if not json_data else "vertical text detected",
-            )
-            rotated_arr = _rotate_ccw(arr)
-            _acquire_request()
-            try:
-                rotated_result = engine(rotated_arr)
-                rotated_json = rotated_result.to_json()
-            finally:
-                _release_request()
-
-            if rotated_json and (
-                not json_data
-                or len(rotated_json) >= len(json_data)
-                or not _is_vertical_json(rotated_json)
-            ):
-                logger.debug(
-                    "PP-OCR: rotation improved detection (%d → %d blocks)",
-                    len(json_data) if json_data else 0, len(rotated_json),
-                )
-                json_data = rotated_json
-                arr = rotated_arr
-                del rotated_result, rotated_arr
-            else:
-                logger.debug("PP-OCR: rotation did not improve; keeping original")
+        # ── vertical CJK layout ──────────────────────────────────────────
+        # PP-OCRv6 SMALL handles upright CJK characters in vertical columns
+        # natively — rotating 90° CCW is counterproductive (empirically:
+        # rotation introduces garbage detections, merges short text, and
+        # loses 5–20 % of CJK characters).  Instead, detect vertical text
+        # with the area-weighted tall-box heuristic and route through a
+        # vertical-aware line builder that respects column boundaries.
+        is_vertical = _is_vertical_json(json_data) if json_data else False
+        if is_vertical:
+            logger.debug("PP-OCR: vertical CJK text detected — using vertical layout")
 
         if not json_data:
             logger.debug("PP-OCR detection returned empty - falling back to recognition-only")
@@ -977,7 +952,7 @@ def recognize_ppocr_qimage(image_or_result, language_tag: str = "") -> OcrRecogn
             return final_res
 
         blocks = [{"text": item["txt"], "box": item["box"]} for item in json_data]
-        lines = compose_ppocr_structures(blocks)
+        lines = compose_ppocr_structures(blocks, is_vertical=is_vertical)
         text = "\n".join(line.text for line in lines).rstrip()
 
         return OcrRecognition(
