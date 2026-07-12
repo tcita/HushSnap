@@ -57,7 +57,7 @@ set SIGN_RC=%errorLevel%
 echo.
 if "%SIGN_RC%"=="0" (
     echo Signing succeeded. This window will close in 3 seconds...
-    timeout /t 5 /nobreak
+    timeout /t 3 /nobreak
 ) else (
     echo Signing FAILED ^(exit code %SIGN_RC%^). Press any key to close...
     pause >nul

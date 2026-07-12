@@ -107,7 +107,7 @@ logger = logging.getLogger(__name__)
 # Fallback median block dimension when no text blocks are available.
 _FALLBACK_MEDIAN = 15.0
 # Column-detection multiplier applied to median block width.
-_COLUMN_WIDTH_MULTIPLIER = 2.0
+_COLUMN_WIDTH_MULTIPLIER = 1.0
 # Overlap threshold fraction for merging columns.
 _COLUMN_OVERLAP_FRAC = 0.8
 # Line-grouping vertical-centre tolerance (fraction of average height).
@@ -271,7 +271,7 @@ def _leaf_reading_order(
 
     # -- detect vertical CJK ------------------------------------------
     tall_count = sum(1 for b in blocks if b["height"] > b["width"] * 1.3)
-    is_vertical_cjk = len(blocks) >= 3 and tall_count / len(blocks) > 0.5
+    is_vertical_cjk = tall_count / len(blocks) > 0.5
 
     if is_vertical_cjk:
         # Are blocks clustered at a single X position or spread across columns?
