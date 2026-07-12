@@ -106,9 +106,7 @@ logger = logging.getLogger(__name__)
 # ── Fallback / tuning constants ──────────────────────────────────────────────
 # Fallback median block dimension when no text blocks are available.
 _FALLBACK_MEDIAN = 15.0
-# Column-detection multiplier applied to median block width.
-_COLUMN_WIDTH_MULTIPLIER = 1.0
-# Overlap threshold fraction for merging columns.
+# Overlap threshold fraction for merging boxes into the same column.
 _COLUMN_OVERLAP_FRAC = 0.8
 # Line-grouping vertical-centre tolerance (fraction of average height).
 _LINE_Y_TOLERANCE = 0.6
@@ -275,46 +273,38 @@ def _leaf_reading_order(
         return list(blocks)
 
     if is_vertical:
-        # Are blocks clustered at a single X position or spread across columns?
-        x_centers = sorted(b["center_x"] for b in blocks)
-        x_span = x_centers[-1] - x_centers[0]
-        widths = [b["width"] for b in blocks]
-        med_w = statistics.median(widths) if widths else _FALLBACK_MEDIAN
+        # Vertical CJK: cluster by X into columns, sort right->left,
+        # top->bottom within each column.  Single-column text naturally
+        # degrades to top->bottom since all boxes share similar center_x.
+        blocks.sort(key=lambda b: b["center_x"])
 
-        if x_span > med_w * _COLUMN_WIDTH_MULTIPLIER:
-            # Multi-column vertical CJK -> traditional right->left column order.
-            blocks.sort(key=lambda b: b["center_x"])
+        columns: list[list[dict]] = []
+        for block in blocks:
+            if not columns:
+                columns.append([block])
+                continue
+            last = columns[-1]
+            avg_cx = sum(b["center_x"] for b in last) / len(last)
+            avg_w = sum(b["width"] for b in last) / len(last)
+            if (
+                abs(block["center_x"] - avg_cx)
+                <= max(avg_w, block["width"]) * _COLUMN_OVERLAP_FRAC
+            ):
+                last.append(block)
+            else:
+                columns.append([block])
 
-            columns: list[list[dict]] = []
-            for block in blocks:
-                if not columns:
-                    columns.append([block])
-                    continue
-                last = columns[-1]
-                avg_cx = sum(b["center_x"] for b in last) / len(last)
-                avg_w = sum(b["width"] for b in last) / len(last)
-                if (
-                    abs(block["center_x"] - avg_cx)
-                    <= max(avg_w, block["width"]) * _COLUMN_OVERLAP_FRAC
-                ):
-                    last.append(block)
-                else:
-                    columns.append([block])
+        # Sort columns right->left (larger center_x = further right)
+        columns.sort(
+            key=lambda col: -sum(b["center_x"] for b in col) / len(col)
+        )
 
-            # Sort columns right->left (larger center_x = further right)
-            columns.sort(
-                key=lambda col: -sum(b["center_x"] for b in col) / len(col)
-            )
-
-            # Sort top->bottom within each column
-            result: list[dict] = []
-            for col in columns:
-                col.sort(key=lambda b: b["center_y"])
-                result.extend(col)
-            blocks = result
-        else:
-            # Single-column vertical -> top->bottom only (X order irrelevant)
-            blocks.sort(key=lambda b: b["center_y"])
+        # Sort top->bottom within each column
+        result: list[dict] = []
+        for col in columns:
+            col.sort(key=lambda b: b["center_y"])
+            result.extend(col)
+        blocks = result
     else:
         # Standard horizontal: top->bottom, left->right
         blocks.sort(key=lambda b: (b["center_y"], b["left"]))
