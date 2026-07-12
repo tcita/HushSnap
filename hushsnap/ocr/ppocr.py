@@ -511,10 +511,9 @@ def _apply_indentation(lines: list[OcrLine]) -> list[OcrLine]:
     not indentation.
 
     The indent *unit* is the smallest non-jitter offset from baseline.
-    Each line gets ``level × 2`` leading spaces, where ``level = round(offset / unit)``.
+    Each line gets ``level × 4`` leading spaces, where ``level = round(offset / unit)``.
     Multi-level indentation (code, nested quotes, outlines) is handled
-    without any per-language constants — the unit is whatever the document
-    actually uses.
+    without any per-language constants.
     """
     if len(lines) <= 1:
         return lines
@@ -542,7 +541,7 @@ def _apply_indentation(lines: list[OcrLine]) -> list[OcrLine]:
         offset = line.bounding_box.x - baseline
         if offset > threshold:
             level = max(round(offset / unit), 1)
-            line.text = ("  " * level) + line.text
+            line.text = ("    " * level) + line.text
 
     return lines
 

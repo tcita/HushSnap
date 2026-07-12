@@ -495,3 +495,36 @@ def test_compose_ppocr_structures_cjk_spacing_applied():
     ]
     lines = compose_ppocr_structures(blocks)
     assert lines[0].text == "中文 hello"
+
+
+def test_apply_indentation():
+    from hushsnap.ocr.ppocr import _apply_indentation
+    from hushsnap.ocr.models import OcrLine, OcrBox
+
+    # Test case 1: Monospace code with 4-space indent
+    # Line 1: 'offsets = sorted(set(' -> 21 characters, width 245
+    # Line 2: '    round(line.bounding_box.x) - baseline for line in lines' -> 56 characters, width 633
+    # offset is 45, which is 4-space width (11.5px/char)
+    lines = [
+        OcrLine(text="offsets = sorted(set(", bounding_box=OcrBox(x=33.0, y=0.0, width=245.0, height=30.0)),
+        OcrLine(text="round(line.bounding_box.x) - baseline for line in lines", bounding_box=OcrBox(x=78.0, y=35.0, width=633.0, height=30.0)),
+        OcrLine(text="if round(line.bounding_box.x) - baseline > threshold", bounding_box=OcrBox(x=79.0, y=70.0, width=598.0, height=30.0)),
+    ]
+    result = _apply_indentation(lines)
+    assert result[0].text == "offsets = sorted(set("
+    assert result[1].text == "    round(line.bounding_box.x) - baseline for line in lines"
+    assert result[2].text == "    if round(line.bounding_box.x) - baseline > threshold"
+
+    # Test case 2: CJK text with 2-character indent (roughly 4 space widths)
+    # Line 1: CJK text starting at x=0
+    # Line 2: CJK text starting at x=40 (approx 2 CJK characters = 4 latin chars)
+    # Average CJK character width is 20px, so char_w (latin equivalence) is 10px.
+    # Offset is 40px -> 4 spaces.
+    cjk_lines = [
+        OcrLine(text="这是一个正常的段落首行。", bounding_box=OcrBox(x=10.0, y=0.0, width=240.0, height=20.0)),
+        OcrLine(text="缩进两汉字宽度的行。", bounding_box=OcrBox(x=50.0, y=25.0, width=200.0, height=20.0)),
+    ]
+    cjk_result = _apply_indentation(cjk_lines)
+    assert cjk_result[0].text == "这是一个正常的段落首行。"
+    assert cjk_result[1].text == "    缩进两汉字宽度的行。"
+

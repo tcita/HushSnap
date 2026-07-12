@@ -96,6 +96,7 @@ def _build_controller(monkeypatch, qapp, tmp_path, service=None):
         save_debug_image=True,
         popup=popup,
         service=service or FakeService(),
+        warmup=False,
     )
     tray_icon = FakeTrayIcon()
     controller.tray_icon = tray_icon

@@ -35,6 +35,7 @@ class OcrController:
         save_debug_image=False,
         popup=None,
         service=None,
+        warmup=True,
     ):
         self.app = app
         self.translate = translate
@@ -64,8 +65,9 @@ class OcrController:
         self._trim_timer.timeout.connect(self._trim_current_engine)
 
         # Warm up background engine
-        logging.debug("[OcrController] Scheduling background warmup on event loop start...")
-        QtCore.QTimer.singleShot(0, self._background_warmup)
+        if warmup:
+            logging.debug("[OcrController] Scheduling background warmup on event loop start...")
+            QtCore.QTimer.singleShot(0, self._background_warmup)
 
     def set_capture_requester(self, capture_requester):
         """Set callback used to request screenshot captures on demand."""

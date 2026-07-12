@@ -193,7 +193,15 @@ def normalize_ocr_text(text: str) -> str:
             cleaned_lines.append("")
             continue
         cleaned_lines.append(cleaned_line)
-    return "\n".join(cleaned_lines).strip()
+    
+    # Trim leading/trailing blank lines but preserve indentation of the first non-empty line
+    start = 0
+    while start < len(cleaned_lines) and not cleaned_lines[start]:
+        start += 1
+    end = len(cleaned_lines)
+    while end > start and not cleaned_lines[end - 1]:
+        end -= 1
+    return "\n".join(cleaned_lines[start:end])
 
 
 def matches_chinese(language_tag: str) -> bool:
@@ -263,7 +271,15 @@ def _postprocess_layout_text(text: str) -> str:
             result.append("")  # truly blank line
             continue
         result.append(cleaned)
-    return "\n".join(result).strip()
+
+    # Trim leading/trailing blank lines but preserve indentation of the first non-empty line
+    start = 0
+    while start < len(result) and not result[start]:
+        start += 1
+    end = len(result)
+    while end > start and not result[end - 1]:
+        end -= 1
+    return "\n".join(result[start:end])
 
 
 def compose_text_from_result(result: OcrRecognition, language_tag: str = "") -> str:

@@ -319,18 +319,13 @@ def test_postprocess_whitespace_only_lines_become_empty():
 
 
 def test_postprocess_preserves_indentation():
-    """Non-empty lines keep their leading whitespace during line processing.
-
-    Note: the final .strip() on the full text removes leading whitespace from
-    the first line and trailing from the last, but internal indentation on
-    middle lines is preserved.
-    """
+    """Non-empty lines keep their leading whitespace during line processing, including the first line."""
     text = "  first line\n  middle line\n  last line"
     result = _postprocess_layout_text(text)
-    # First line loses indent (final .strip()), middle keeps it
-    assert "first line" in result
+    # First line and all middle/last lines keep their indent
+    assert "  first line" in result
     assert "  middle line" in result
-    assert "last line" in result
+    assert "  last line" in result
 
 
 def test_postprocess_empty_and_none():
