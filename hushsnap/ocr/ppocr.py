@@ -681,7 +681,7 @@ def _get_engine() -> "PPOCR":
                 # on correctly-oriented or slightly tilted input.
                 params = {
                     "Det.ocr_version": OCRVersion.PPOCRV6,
-                    "Det.model_type": ModelType.TINY,
+                    "Det.model_type": ModelType.SMALL,
                     "Rec.ocr_version": OCRVersion.PPOCRV6,
                     "Rec.model_type": ModelType.SMALL,
                     "Global.use_cls": False,
