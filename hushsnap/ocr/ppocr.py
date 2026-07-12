@@ -165,9 +165,16 @@ def word_separator(left: str, right: str) -> str:
         return ""
     if is_cjk_or_fullwidth(left[-1]) and is_cjk_or_fullwidth(right[0]):
         return ""
-    if left[-1] == "-":
+    if left[-1] in "-—–…」』":
         return ""
-    if right[0] in ",.;:!?)]}，。；：！？）】》":
+    if right[0] in (
+        ",.;:!?)]}"
+        "，。、；：！？"
+        "）】》〉〕｝"
+        "…—–·"
+        "\"'”’"
+        "」』"
+    ):
         return ""
     return " "
 
