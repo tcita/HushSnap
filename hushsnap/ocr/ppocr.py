@@ -255,7 +255,7 @@ def _detect_gaps(
 
 
 def _leaf_reading_order(
-    blocks: list[dict], came_from: str
+    blocks: list[dict], came_from: str, is_vertical: bool = False
 ) -> list[dict]:
     """Sort blocks within a terminal (leaf) region for reading order.
 
@@ -265,15 +265,16 @@ def _leaf_reading_order(
       * Multiple columns - traditional convention: right->left, top->bottom
 
     Horizontal text (default): top->bottom, left->right.
+
+    Direction is determined by the caller (*is_vertical*) — this function
+    does NOT re-detect orientation.  A single global decision avoids the
+    two-detector problem where _is_vertical_json and _leaf_reading_order
+    could disagree on the same set of blocks.
     """
     if len(blocks) <= 1:
         return list(blocks)
 
-    # -- detect vertical CJK ------------------------------------------
-    tall_count = sum(1 for b in blocks if b["height"] > b["width"] * 1.3)
-    is_vertical_cjk = tall_count / len(blocks) > 0.5
-
-    if is_vertical_cjk:
+    if is_vertical:
         # Are blocks clustered at a single X position or spread across columns?
         x_centers = sorted(b["center_x"] for b in blocks)
         x_span = x_centers[-1] - x_centers[0]
@@ -322,7 +323,8 @@ def _leaf_reading_order(
 
 
 def _xy_cut(
-    blocks: list[dict], direction: str, depth: int = 0
+    blocks: list[dict], direction: str, depth: int = 0,
+    is_vertical: bool = False,
 ) -> list[dict]:
     """Recursive XY-Cut: partition blocks by alternating Y/X projection gaps.
 
@@ -331,7 +333,7 @@ def _xy_cut(
     * Y-cut first (top-level) -> separate horizontal regions (header / body / footer)
     * X-cut within each region -> separate columns
     * Y-cut within each column -> separate text lines
-    * Terminal: sort for reading direction (handles CJK vertical text)
+    * Terminal: sort for reading direction (respects *is_vertical* from global detection)
     """
     if len(blocks) <= 1:
         return list(blocks)
@@ -361,7 +363,7 @@ def _xy_cut(
 
     if not gaps:
         # Terminal: no significant gaps -> leaf region
-        return _leaf_reading_order(sorted_blocks, direction)
+        return _leaf_reading_order(sorted_blocks, direction, is_vertical)
 
     # Split at the largest gap
     gaps.sort(key=lambda g: -g[1])
@@ -373,8 +375,8 @@ def _xy_cut(
     next_dir = "x" if direction == "y" else "y"
 
     result: list[dict] = []
-    result.extend(_xy_cut(group1, next_dir, depth + 1))
-    result.extend(_xy_cut(group2, next_dir, depth + 1))
+    result.extend(_xy_cut(group1, next_dir, depth + 1, is_vertical))
+    result.extend(_xy_cut(group2, next_dir, depth + 1, is_vertical))
     return result
 
 
@@ -587,7 +589,7 @@ def compose_ppocr_structures(blocks: list[dict], is_vertical: bool = False) -> l
         return []
 
     # Step 2 - recursive XY-Cut -> ordered blocks in reading order
-    ordered = _xy_cut(normalized, direction="y", depth=0)
+    ordered = _xy_cut(normalized, direction="y", depth=0, is_vertical=is_vertical)
 
     # Step 3 - group into OcrLine objects
     lines = _build_lines_from_ordered_blocks(ordered, is_vertical=is_vertical)
