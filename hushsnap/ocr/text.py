@@ -144,7 +144,7 @@ def cleanup_ocr_text_line(text: str) -> str:
     """Normalize spacing around punctuation.
 
     CJK space-stripping is intentionally NOT done here — the layout engine
-    (ppocr._build_lines_from_ordered_blocks + _apply_cjk_spacing) is the
+    (ppocr._greedy_line_cluster + _apply_cjk_spacing) is the
     authority on inter-word spacing via word_separator() and pangu-style
     CJK↔Latin regexes.  Stripping spaces here would undo that work.
 

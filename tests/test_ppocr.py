@@ -10,7 +10,6 @@ from hushsnap.ocr.ppocr import (
     _apply_cjk_spacing,
     _get_engine,
     _normalize_blocks,
-    _region_metrics,
     _separate_paragraphs,
     compose_ppocr_structures,
     compose_ppocr_text,
@@ -420,25 +419,6 @@ def test_normalize_blocks_missing_box_gives_minimal_placement():
     assert len(result) == 1
     assert result[0]["width"] == 1.0
     assert result[0]["height"] == 1.0
-
-
-# ── _region_metrics ─────────────────────────────────────────────────
-
-def test_region_metrics_median():
-    blocks = [
-        {"height": 20, "width": 50, "text": "a"},
-        {"height": 30, "width": 60, "text": "b"},
-        {"height": 10, "width": 40, "text": "c"},
-    ]
-    m = _region_metrics(blocks)
-    assert m["med_h"] == 20.0
-    assert m["med_w"] == 50.0
-
-
-def test_region_metrics_empty():
-    m = _region_metrics([])
-    assert m["med_h"] == 15.0
-    assert m["med_w"] == 15.0
 
 
 # ── _apply_cjk_spacing ──────────────────────────────────────────────

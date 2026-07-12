@@ -33,8 +33,9 @@ Why TINY det + SMALL rec
     SMALL rec is chosen for full script coverage, not for speed.
 
 Pipeline: det+rec → fallback rec-only.
-  Detection provides reading-order layout (XY-cut) for horizontal left-to-right
-  text.  When the detector finds no boxes, the engine falls back to recognition-
+  Detection provides reading-order layout (overlap-based clustering) for
+  horizontal left-to-right and vertical right-to-left text.  When the
+  detector finds no boxes, the engine falls back to recognition-
   only on the raw image (via _recognize_without_detection, which crops back to
   the original content area before recognising).
 
@@ -104,12 +105,11 @@ from ..system.memory_utils import get_working_set_mb, fmt_memory, trim_working_s
 logger = logging.getLogger(__name__)
 
 # ── Fallback / tuning constants ──────────────────────────────────────────────
-# Fallback median block dimension when no text blocks are available.
-_FALLBACK_MEDIAN = 15.0
-# Overlap threshold fraction for merging boxes into the same column.
-_COLUMN_OVERLAP_FRAC = 0.8
-# Line-grouping vertical-centre tolerance (fraction of average height).
-_LINE_Y_TOLERANCE = 0.6
+# Overlap threshold for greedy line/column clustering.  Two boxes whose
+# vertical (or horizontal) overlap exceeds 50 % of the shorter box's
+# height (or width) are considered to belong to the same line (or column).
+# This is a normalised, font-agnostic metric — the only layout threshold.
+_OVERLAP_THRESHOLD = 0.5
 # Paragraph-separation gap multiplier applied to median block height.
 _PARA_GAP_MULTIPLIER = 1.6
 # Minimum contrast range for recognition-without-detection fallback.
@@ -172,24 +172,16 @@ def word_separator(left: str, right: str) -> str:
     return " "
 
 
-# -- XY-Cut layout engine -----------------------------------------------
-# Hierarchical recursive XY-Cut with adaptive per-region thresholds.
+# -- Overlap-based line clustering --------------------------------------
+# Greedy overlap-based clustering replaces the old recursive XY-Cut
+# pipeline.  The single _OVERLAP_THRESHOLD (0.5) governs all grouping
+# decisions — no DPI-, font-size-, or line-spacing-dependent constants.
 #
-# Design (synthesised from three canonical variants):
-#   1. CC-based XY-Cut   (Ha, Haralick & Phillips 1995) - bbox input, recursive alternation
-#   2. ARXYC              (Sylwester 2001)              - gap-ratio threshold, locally adaptive
-#   3. Augmented XY-Cut   (Gu et al. 2022)              - sorted-adjacency gap detection
-#
-# Thresholds are multiples of local character metrics -> DPI- and font-agnostic.
-
-# Gap thresholds expressed as multiples of local character metrics.
-# These are unitless ratios - they scale automatically with DPI and font size.
-_GAP_RATIO_H_REGION = 2.5   # Y-gap > 2.5x char_h -> horizontal region (header/body/footer)
-_GAP_RATIO_H_LINE   = 0.4   # Y-gap > 0.4x char_h -> text line separator
-_GAP_RATIO_V_COLUMN = 3.5   # X-gap > 3.5x char_w -> column separator
-
-# Minimum gap in pixels to avoid splitting on sub-pixel noise
-_MIN_GAP_PX = 2.0
+# Horizontal text: sort by y_top, greedily group into lines by vertical
+#   overlap → sort lines top→bottom, within-line left→right.
+# Vertical CJK text: sort by x_right descending, greedily group into
+#   columns by horizontal overlap → sort columns right→left, within-
+#   column top→bottom.
 
 # ---------------------------------------------------------------------------
 
@@ -225,210 +217,143 @@ def _normalize_blocks(blocks: list[dict]) -> list[dict]:
     return normalized
 
 
-def _region_metrics(blocks: list[dict]) -> dict:
-    """Compute per-region adaptive metrics (median height / width)."""
-    heights = [b["height"] for b in blocks]
-    widths = [b["width"] for b in blocks]
-    return {
-        "med_h": statistics.median(heights) if heights else _FALLBACK_MEDIAN,
-        "med_w": statistics.median(widths) if widths else _FALLBACK_MEDIAN,
-    }
+def _greedy_line_cluster(
+    blocks: list[dict], threshold: float = _OVERLAP_THRESHOLD,
+) -> list[list[dict]]:
+    """Greedy line clustering for horizontal LTR text.
 
+    1. Sort boxes by y_top (top → bottom)
+    2. Greedy: if box overlaps current line's y-range by > *threshold*,
+       add to current line and update y-range to union.
+    3. Within each line: sort by x_left (left → right)
+    4. Between lines: sort by average y_center (top → bottom)
 
-def _detect_gaps(
-    sorted_blocks: list[dict], direction: str, threshold: float
-) -> list[tuple[int, float]]:
-    """Find gaps between adjacent blocks along *direction* that exceed *threshold*."""
-    gaps: list[tuple[int, float]] = []
-    for i in range(len(sorted_blocks) - 1):
-        curr = sorted_blocks[i]
-        nxt = sorted_blocks[i + 1]
-        if direction == "y":
-            gap = nxt["center_y"] - curr["center_y"]
-        else:
-            gap = nxt["left"] - curr["right"]
-        if gap > threshold:
-            gaps.append((i, gap))
-    return gaps
+    The overlap ratio is *intersection over min-height*::
 
+        overlap = max(0, min(bottom_a, bottom_b) − max(top_a, top_b))
+        ratio   = overlap ÷ min(height_a, height_b)
 
-def _leaf_reading_order(
-    blocks: list[dict], came_from: str, is_vertical: bool = False
-) -> list[dict]:
-    """Sort blocks within a terminal (leaf) region for reading order.
-
-    Vertical CJK text (e.g. sidebars, traditional documents)::
-
-      * Single column - only top->bottom order matters (column direction irrelevant)
-      * Multiple columns - traditional convention: right->left, top->bottom
-
-    Horizontal text (default): top->bottom, left->right.
-
-    Direction is determined by the caller (*is_vertical*) — this function
-    does NOT re-detect orientation.  A single global decision avoids the
-    two-detector problem where _is_vertical_json and _leaf_reading_order
-    could disagree on the same set of blocks.
+    A box whose vertical overlap with the line's representative y-range
+    exceeds 50 % of the shorter side is considered to share the same
+    baseline — a font-agnostic decision that holds across CJK, Latin,
+    and mixed scripts.
     """
-    if len(blocks) <= 1:
-        return list(blocks)
-
-    if is_vertical:
-        # Vertical CJK: cluster by X into columns, sort right->left,
-        # top->bottom within each column.  Single-column text naturally
-        # degrades to top->bottom since all boxes share similar center_x.
-        blocks.sort(key=lambda b: b["center_x"])
-
-        columns: list[list[dict]] = []
-        for block in blocks:
-            if not columns:
-                columns.append([block])
-                continue
-            last = columns[-1]
-            avg_cx = sum(b["center_x"] for b in last) / len(last)
-            avg_w = sum(b["width"] for b in last) / len(last)
-            if (
-                abs(block["center_x"] - avg_cx)
-                <= max(avg_w, block["width"]) * _COLUMN_OVERLAP_FRAC
-            ):
-                last.append(block)
-            else:
-                columns.append([block])
-
-        # Sort columns right->left (larger center_x = further right)
-        columns.sort(
-            key=lambda col: -sum(b["center_x"] for b in col) / len(col)
-        )
-
-        # Sort top->bottom within each column
-        result: list[dict] = []
-        for col in columns:
-            col.sort(key=lambda b: b["center_y"])
-            result.extend(col)
-        blocks = result
-    else:
-        # Standard horizontal: top->bottom, left->right
-        blocks.sort(key=lambda b: (b["center_y"], b["left"]))
-
-    return blocks
-
-
-def _xy_cut(
-    blocks: list[dict], direction: str, depth: int = 0,
-    is_vertical: bool = False,
-) -> list[dict]:
-    """Recursive XY-Cut: partition blocks by alternating Y/X projection gaps.
-
-    Returns blocks in reading order:
-
-    * Y-cut first (top-level) -> separate horizontal regions (header / body / footer)
-    * X-cut within each region -> separate columns
-    * Y-cut within each column -> separate text lines
-    * Terminal: sort for reading direction (respects *is_vertical* from global detection)
-    """
-    if len(blocks) <= 1:
-        return list(blocks)
-
-    m = _region_metrics(blocks)
-    med_h = m["med_h"]
-    med_w = m["med_w"]
-
-    # -- gap threshold: coarse at top level, fine at deeper levels ----
-    if direction == "y":
-        threshold = med_h * (
-            _GAP_RATIO_H_REGION if depth == 0 else _GAP_RATIO_H_LINE
-        )
-    else:
-        # X direction: column gaps only (never split individual words)
-        threshold = med_w * _GAP_RATIO_V_COLUMN
-
-    threshold = max(threshold, _MIN_GAP_PX)
-
-    # -- sort + detect gaps -------------------------------------------
-    if direction == "y":
-        sorted_blocks = sorted(blocks, key=lambda b: (b["center_y"], b["left"]))
-    else:
-        sorted_blocks = sorted(blocks, key=lambda b: (b["left"], b["center_y"]))
-
-    gaps = _detect_gaps(sorted_blocks, direction, threshold)
-
-    if not gaps:
-        # Terminal: no significant gaps -> leaf region
-        return _leaf_reading_order(sorted_blocks, direction, is_vertical)
-
-    # Split at the largest gap
-    gaps.sort(key=lambda g: -g[1])
-    split_idx, _best_gap = gaps[0]
-
-    group1 = sorted_blocks[:split_idx + 1]
-    group2 = sorted_blocks[split_idx + 1:]
-
-    next_dir = "x" if direction == "y" else "y"
-
-    result: list[dict] = []
-    result.extend(_xy_cut(group1, next_dir, depth + 1, is_vertical))
-    result.extend(_xy_cut(group2, next_dir, depth + 1, is_vertical))
-    return result
-
-
-def _build_lines_from_ordered_blocks(
-    ordered_blocks: list[dict],
-    is_vertical: bool = False,
-) -> list[OcrLine]:
-    """Group reading-order blocks into OcrLine objects.
-
-    Horizontal text (default): group consecutive blocks by center_y proximity;
-    within each line, join left→right using *word_separator*.
-
-    Vertical CJK text (*is_vertical*): each tall detection box is already a
-    complete vertical column — no Y-grouping is needed (adjacent columns
-    share the same center_y and would be incorrectly merged).  Each block
-    becomes its own OcrLine; reading order (right→left, top→bottom) is
-    already established by _leaf_reading_order.
-    """
-    if not ordered_blocks:
+    if not blocks:
         return []
 
-    if is_vertical:
-        # Each block is its own vertical line — no center_y grouping.
-        line_groups = [[b] for b in ordered_blocks]
-    else:
-        heights = [b["height"] for b in ordered_blocks]
-        med_h = statistics.median(heights) if heights else _FALLBACK_MEDIAN
+    sorted_blocks = sorted(blocks, key=lambda b: b["top"])
 
-        # Group consecutive blocks whose center_y is within tolerance of median height
-        line_groups: list[list[dict]] = []
-        current_line = [ordered_blocks[0]]
+    lines: list[list[dict]] = []
+    current = [sorted_blocks[0]]
+    line_top = sorted_blocks[0]["top"]
+    line_bottom = sorted_blocks[0]["bottom"]
 
-        for block in ordered_blocks[1:]:
-            avg_y = sum(b["center_y"] for b in current_line) / len(current_line)
-            avg_h = sum(b["height"] for b in current_line) / len(current_line)
-            if abs(block["center_y"] - avg_y) < avg_h * _LINE_Y_TOLERANCE:
-                current_line.append(block)
-            else:
-                line_groups.append(current_line)
-                current_line = [block]
+    for box in sorted_blocks[1:]:
+        overlap = max(0.0, min(line_bottom, box["bottom"]) - max(line_top, box["top"]))
+        min_h = min(line_bottom - line_top, box["height"])
+        ratio = overlap / min_h if min_h > 0 else 0.0
 
-        line_groups.append(current_line)
+        if ratio > threshold:
+            current.append(box)
+            line_top = min(line_top, box["top"])
+            line_bottom = max(line_bottom, box["bottom"])
+        else:
+            lines.append(current)
+            current = [box]
+            line_top = box["top"]
+            line_bottom = box["bottom"]
 
-    # Build OcrLine objects - simple character-class spacing only
+    lines.append(current)
+
+    # Step 3: sort within each line left → right
+    for line in lines:
+        line.sort(key=lambda b: b["left"])
+
+    # Step 4: sort lines top → bottom by average y_center
+    lines.sort(key=lambda ln: sum(b["center_y"] for b in ln) / len(ln))
+
+    return lines
+
+
+def _greedy_column_cluster(
+    blocks: list[dict], threshold: float = _OVERLAP_THRESHOLD,
+) -> list[list[dict]]:
+    """Greedy column clustering for vertical RTL text (CJK).
+
+    The mirror of _greedy_line_cluster with x/y roles swapped and sort
+    directions reversed:
+
+    1. Sort boxes by x_right descending (right → left)
+    2. Greedy: if box overlaps current column's x-range by > *threshold*,
+       add to current column and update x-range to union.
+    3. Within each column: sort by y_top (top → bottom)
+    4. Between columns: sort by average x_center descending (right → left)
+    """
+    if not blocks:
+        return []
+
+    # Step 1: sort right → left
+    sorted_blocks = sorted(blocks, key=lambda b: -b["right"])
+
+    columns: list[list[dict]] = []
+    current = [sorted_blocks[0]]
+    col_left = sorted_blocks[0]["left"]
+    col_right = sorted_blocks[0]["right"]
+
+    for box in sorted_blocks[1:]:
+        overlap = max(0.0, min(col_right, box["right"]) - max(col_left, box["left"]))
+        min_w = min(col_right - col_left, box["width"])
+        ratio = overlap / min_w if min_w > 0 else 0.0
+
+        if ratio > threshold:
+            current.append(box)
+            col_left = min(col_left, box["left"])
+            col_right = max(col_right, box["right"])
+        else:
+            columns.append(current)
+            current = [box]
+            col_left = box["left"]
+            col_right = box["right"]
+
+    columns.append(current)
+
+    # Step 3: sort within each column top → bottom
+    for col in columns:
+        col.sort(key=lambda b: b["top"])
+
+    # Step 4: sort columns right → left by average x_center
+    columns.sort(
+        key=lambda col: -sum(b["center_x"] for b in col) / len(col)
+    )
+
+    return columns
+
+
+def _build_lines_from_clusters(
+    clusters: list[list[dict]],
+) -> list[OcrLine]:
+    """Convert clustered blocks into OcrLine objects.
+
+    Each cluster (a line for horizontal text, or a column for vertical
+    CJK) becomes one OcrLine.  Blocks within a cluster are already sorted
+    in reading order (left→right for horizontal, top→bottom for vertical).
+    """
     result: list[OcrLine] = []
-    for group in line_groups:
-        group.sort(key=lambda b: b["left"])
+    for cluster in clusters:
         text_parts: list[str] = []
         words: list[OcrWord] = []
         prev_block = None
 
-        min_l = min(b["left"] for b in group)
-        min_t = min(b["top"] for b in group)
-        max_r = max(b["right"] for b in group)
-        max_b = max(b["bottom"] for b in group)
+        min_l = min(b["left"] for b in cluster)
+        min_t = min(b["top"] for b in cluster)
+        max_r = max(b["right"] for b in cluster)
+        max_b = max(b["bottom"] for b in cluster)
 
-        for block in group:
+        for block in cluster:
             if prev_block:
                 sep = word_separator(prev_block["text"], block["text"])
                 if sep:
                     text_parts.append(sep)
-
             text_parts.append(block["text"])
             words.append(OcrWord(
                 text=block["text"],
@@ -562,27 +487,28 @@ def compose_ppocr_structures(blocks: list[dict], is_vertical: bool = False) -> l
     Pipeline::
 
       1. Normalize raw blocks (filter empty / zero-size)
-      2. Hierarchical recursive XY-Cut → reading order
-      3. Group ordered blocks into OcrLine objects
+      2. Greedy overlap-based clustering → reading order
+      3. Build OcrLine objects from clusters
       4. Separate paragraphs by Y-gap threshold
       5. Post-process CJK-Latin spacing (pangu-style safety net)
 
     When *is_vertical* is True, the image contains predominantly vertical
-    CJK text (tall boxes, h > w × 1.3).  PP-OCRv6 handles upright CJK
-    characters in vertical columns natively — no rotation needed.  The
-    XY-cut + _leaf_reading_order pipeline already produces correct
-    right→left column, top→bottom ordering for tall boxes.
+    CJK text (tall boxes, h > w × 1.3).  Column clustering detects
+    vertical columns; reading order is right→left, top→bottom.
     """
     # Step 1 - normalize
     normalized = _normalize_blocks(blocks)
     if not normalized:
         return []
 
-    # Step 2 - recursive XY-Cut -> ordered blocks in reading order
-    ordered = _xy_cut(normalized, direction="y", depth=0, is_vertical=is_vertical)
+    # Step 2 - overlap-based clustering into reading order
+    if is_vertical:
+        clusters = _greedy_column_cluster(normalized)
+    else:
+        clusters = _greedy_line_cluster(normalized)
 
-    # Step 3 - group into OcrLine objects
-    lines = _build_lines_from_ordered_blocks(ordered, is_vertical=is_vertical)
+    # Step 3 - build OcrLine objects from clusters
+    lines = _build_lines_from_clusters(clusters)
     if not lines:
         return []
 
