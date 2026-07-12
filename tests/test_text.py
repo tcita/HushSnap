@@ -448,8 +448,8 @@ def test_compose_text_paragraph_break_via_double_newline():
 
 
 def test_compose_text_paragraph_break_preserved():
-    """A trailing \\n on a line (e.g. from _separate_paragraphs) survives
-    through the compose pipeline and creates a paragraph break in the final text.
+    """A trailing \\n on a line survives through the compose pipeline
+    and creates a paragraph break in the final text.
     The \\n is NOT stripped — trailing whitespace cleanup is deferred to
     normalize_ocr_text in finalize_text, which handles it line-by-line."""
     result = OcrRecognition(

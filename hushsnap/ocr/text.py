@@ -163,9 +163,8 @@ def normalize_token_text(token: str) -> str:
 
 
 def compose_default_line_text(line: OcrLine) -> str:
-    # Strip trailing spaces/tabs (OCR noise) but preserve \n paragraph markers
-    # placed by _separate_paragraphs.  normalize_ocr_text (finalize_text) handles
-    # full line-by-line cleanup after join.
+    # Strip trailing spaces/tabs (OCR noise) but preserve \n line separators.
+    # normalize_ocr_text (finalize_text) handles full line-by-line cleanup after join.
     return cleanup_ocr_text_line((line.text or "").rstrip(" \t"))
 
 

@@ -211,6 +211,12 @@ class OcrPopup(QtWidgets.QWidget):
         # Bottom margin leaves room for the floating copy button.
         self.text_edit.setViewportMargins(16, 12, 16, 30)
 
+        # Match the measurement document (which uses documentMargin 0) so the
+        # actual available text width equals the calculated width — otherwise
+        # Qt's default 4 px document margin eats 8 px of horizontal space and
+        # the longest line wraps inside the window.
+        self.text_edit.document().setDocumentMargin(0)
+
         self.bubble_layout.addWidget(self.text_edit, 1)
 
         # Install event filter on text_edit viewport so edge cursor

@@ -82,7 +82,6 @@ Parameter choices vs RapidOCR defaults
 
 import logging
 import re
-import statistics
 import threading
 import time
 
@@ -110,8 +109,6 @@ logger = logging.getLogger(__name__)
 # height (or width) are considered to belong to the same line (or column).
 # This is a normalised, font-agnostic metric — the only layout threshold.
 _OVERLAP_THRESHOLD = 0.5
-# Paragraph-separation gap multiplier applied to median block height.
-_PARA_GAP_MULTIPLIER = 1.6
 # Minimum contrast range for recognition-without-detection fallback.
 _MIN_CONTRAST_RANGE = 80
 
@@ -461,30 +458,6 @@ def _apply_cjk_spacing(text: str) -> str:
     return apply_outside_urls(text, _space_runs)
 
 
-def _separate_paragraphs(lines: list[OcrLine]) -> list[OcrLine]:
-    """Insert a trailing blank-line marker on lines whose Y-gap to the
-    next line exceeds 1.6x median line height (simple paragraph boundary)."""
-    if len(lines) <= 1:
-        return list(lines)
-
-    heights = [l.bounding_box.height for l in lines if l.bounding_box.height > 0]
-    if not heights:
-        return list(lines)
-    med_h = statistics.median(heights)
-
-    for i in range(1, len(lines)):
-        prev = lines[i - 1]
-        curr = lines[i]
-        prev_bottom = prev.bounding_box.y + prev.bounding_box.height
-        curr_top = curr.bounding_box.y
-        gap = curr_top - prev_bottom
-
-        if gap > med_h * _PARA_GAP_MULTIPLIER:
-            lines[i - 1].text = lines[i - 1].text.rstrip() + "\n"
-
-    return lines
-
-
 # -- public API ------------------------------------------------------------
 
 
@@ -496,8 +469,7 @@ def compose_ppocr_structures(blocks: list[dict], is_vertical: bool = False) -> l
       1. Normalize raw blocks (filter empty / zero-size)
       2. Greedy overlap-based clustering → reading order
       3. Build OcrLine objects from clusters
-      4. Separate paragraphs by Y-gap threshold
-      5. Post-process CJK-Latin spacing (pangu-style safety net)
+      4. Post-process CJK-Latin spacing (pangu-style safety net)
 
     When *is_vertical* is True, the image contains predominantly vertical
     CJK text (tall boxes, h > w × 1.3).  Column clustering detects
@@ -519,12 +491,58 @@ def compose_ppocr_structures(blocks: list[dict], is_vertical: bool = False) -> l
     if not lines:
         return []
 
-    # Step 4 - simple paragraph separation by Y-gap
-    lines = _separate_paragraphs(lines)
-
-    # Step 5 - CJK spacing safety net (pangu-inspired regex)
+    # Step 4 - CJK spacing safety net (pangu-inspired regex)
     for line in lines:
         line.text = _apply_cjk_spacing(line.text)
+
+    # Step 5 - detect indentation from left-edge clustering
+    # (horizontal text only — indentation is meaningless for vertical text)
+    if not is_vertical:
+        lines = _apply_indentation(lines)
+
+    return lines
+
+
+def _apply_indentation(lines: list[OcrLine]) -> list[OcrLine]:
+    """Apply leading spaces to indented lines.
+
+    Baseline is the leftmost box edge.  Jitter threshold is
+    0.5× average line height — smaller differences are detection noise,
+    not indentation.
+
+    The indent *unit* is the smallest non-jitter offset from baseline.
+    Each line gets ``level × 2`` leading spaces, where ``level = round(offset / unit)``.
+    Multi-level indentation (code, nested quotes, outlines) is handled
+    without any per-language constants — the unit is whatever the document
+    actually uses.
+    """
+    if len(lines) <= 1:
+        return lines
+
+    # Baseline: leftmost box — the body text / heading edge
+    baseline = min(line.bounding_box.x for line in lines)
+
+    heights = [line.bounding_box.height for line in lines
+               if line.bounding_box.height > 0]
+    if not heights:
+        return lines
+    avg_h = sum(heights) / len(heights)
+    threshold = avg_h * 0.5
+
+    # Indent unit: smallest offset that is clearly not jitter
+    offsets = sorted(set(
+        round(line.bounding_box.x) - baseline for line in lines
+        if round(line.bounding_box.x) - baseline > threshold
+    ))
+    if not offsets:
+        return lines
+    unit = offsets[0]
+
+    for line in lines:
+        offset = line.bounding_box.x - baseline
+        if offset > threshold:
+            level = max(round(offset / unit), 1)
+            line.text = ("  " * level) + line.text
 
     return lines
 

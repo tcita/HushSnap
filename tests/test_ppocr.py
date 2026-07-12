@@ -10,7 +10,6 @@ from hushsnap.ocr.ppocr import (
     _apply_cjk_spacing,
     _get_engine,
     _normalize_blocks,
-    _separate_paragraphs,
     compose_ppocr_structures,
     compose_ppocr_text,
     is_cjk_or_fullwidth,
@@ -162,8 +161,8 @@ def test_compose_ppocr_text_two_lines():
         _make_block("line1", [[0, 0], [50, 0], [50, 20], [0, 20]]),
         _make_block("line2", [[0, 100], [50, 100], [50, 120], [0, 120]]),
     ]
-    # 100 px gap ≫ 1.6× line height → paragraph break with blank line
-    assert compose_ppocr_text(blocks) == "line1\n\nline2"
+    # Far apart y → separate lines, one \n per line
+    assert compose_ppocr_text(blocks) == "line1\nline2"
 
 
 def test_compose_ppocr_text_cjk_no_spaces():
@@ -468,40 +467,6 @@ def test_cjk_spacing_still_spaces_cjk_latin_outside_url():
     assert _apply_cjk_spacing("访问 example.com 看看") == "访问 example.com 看看"
     # No URL scheme here, so the CJK↔Latin boundaries are spaced as usual.
     assert _apply_cjk_spacing("中文hello") == "中文 hello"
-
-
-# ── _separate_paragraphs ────────────────────────────────────────────
-
-def _make_line(text, y, h=20, w=100):
-    return OcrLine(text=text, bounding_box=OcrBox(x=0, y=y, width=w, height=h))
-
-
-def test_separate_paragraphs_adds_blank_line_on_large_gap():
-    lines = [
-        _make_line("line1", y=0),
-        _make_line("line2", y=100),   # gap=80 ≫ 1.6×20 → paragraph break
-    ]
-    result = _separate_paragraphs(lines)
-    assert result[0].text == "line1\n"
-
-
-def test_separate_paragraphs_no_break_on_small_gap():
-    lines = [
-        _make_line("line1", y=0),
-        _make_line("line2", y=30),
-    ]
-    result = _separate_paragraphs(lines)
-    assert result[0].text == "line1"
-
-
-def test_separate_paragraphs_single_line():
-    lines = [_make_line("only", y=0)]
-    result = _separate_paragraphs(lines)
-    assert result[0].text == "only"
-
-
-def test_separate_paragraphs_empty():
-    assert _separate_paragraphs([]) == []
 
 
 # ── compose_ppocr_structures (public API integration) ───────────────
