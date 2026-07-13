@@ -200,8 +200,10 @@ def test_compose_ppocr_text_none_text():
 
 
 def test_compose_ppocr_text_no_box():
+    """Blocks without a valid bounding box are skipped — we cannot place
+    them in reading order without coordinates (see _normalize_blocks)."""
     blocks = [{"text": "hello"}]
-    assert compose_ppocr_text(blocks) == "hello"
+    assert compose_ppocr_text(blocks) == ""
 
 
 def test_compose_ppocr_text_missing_text_key():
