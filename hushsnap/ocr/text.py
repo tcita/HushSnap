@@ -291,7 +291,7 @@ def compose_text_from_result(result: OcrRecognition, language_tag: str = "") -> 
     built_lines: list[str] = []
     for line in result.lines:
         joined = adapter.compose_line(line)
-        if joined:
+        if joined or line.paragraph_break:
             built_lines.append(joined)
 
     if not built_lines:

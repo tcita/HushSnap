@@ -22,6 +22,10 @@ class OcrLine:
     text: str = ""
     words: list[OcrWord] = field(default_factory=list)
     bounding_box: OcrBox = field(default_factory=OcrBox)
+    paragraph_break: bool = False
+    """True when this line is an explicit paragraph separator inserted by the
+    layout engine (gap >= 1× line height).  The text is empty but the line
+    should survive compose-time filtering to produce a blank line."""
 
 
 @dataclass

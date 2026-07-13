@@ -406,6 +406,21 @@ def test_compose_text_empty_lines_filtered():
     assert text == "valid"
 
 
+def test_compose_text_paragraph_break_line_survives_filter():
+    """A line with paragraph_break=True survives the empty-line filter
+    even though its text is empty — this is the layout engine's explicit
+    paragraph separator (gap >= 1× line height)."""
+    result = OcrRecognition(
+        lines=[
+            OcrLine(text="Para 1", bounding_box=OcrBox(0, 0, 100, 20)),
+            OcrLine(text="", bounding_box=OcrBox(), paragraph_break=True),
+            OcrLine(text="Para 2", bounding_box=OcrBox(0, 100, 100, 20)),
+        ]
+    )
+    text = compose_text_from_result(result, language_tag="en-US")
+    assert text == "Para 1\n\nPara 2"
+
+
 def test_compose_text_all_lines_empty_falls_back_to_flat():
     """When all lines compose to empty, fall back to flat text."""
     result = OcrRecognition(

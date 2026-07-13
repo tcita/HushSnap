@@ -15,16 +15,16 @@ from .styles import BRAND_GREEN
 # Minimum window size to prevent collapsing to zero
 WINDOW_MIN_WIDTH = 280
 WINDOW_MIN_HEIGHT = 180
-OUTER_MARGIN = 28  # Matches RESIZE_HIT — creates a clear "window chrome" ring
-RESIZE_HIT = 28
+OUTER_MARGIN = 36  # Width of the transparent margin ring around the card
+RESIZE_HIT = 36
 CORNER_HIT = 52  # Wide corner zone — corners are point targets, need the extra room
 
 # ── Size-adjustment layout constants ─────────────────────────────────────────
 # Chrome estimates: outer margins + borders + viewport paddings + scrollbar.
-_CHROME_WIDTH = 100
-_CHROME_HEIGHT = 48
+_CHROME_WIDTH = 136
+_CHROME_HEIGHT = 82
 # Viewport reduction = outer_margins + panel_padding + viewport_margins + borders.
-_VP_WIDTH_REDUCTION = 72
+_VP_WIDTH_REDUCTION = 104
 # Text width padding inside the viewport (16+16).
 _TEXT_WIDTH_PAD = 32
 # Minimum unwrapped line width before wrapping kicks in.
@@ -209,7 +209,7 @@ class OcrPopup(QtWidgets.QWidget):
         
         # Use viewport margins to simulate padding inside the card.
         # Bottom margin leaves room for the floating copy button.
-        self.text_edit.setViewportMargins(16, 12, 16, 30)
+        self.text_edit.setViewportMargins(24, 24, 24, 36)
 
         # Match the measurement document (which uses documentMargin 0) so the
         # actual available text width equals the calculated width — otherwise
@@ -293,12 +293,12 @@ class OcrPopup(QtWidgets.QWidget):
             " background-color: transparent;"
             "}"
 
-            "/* ── floating overlay buttons ── */"
+            "/* ── floating overlay buttons (subdued, transparent background) ── */"
             "#ocrCopyBtn {"
             " color: #5fc98a;"
-            " border: 1px solid rgba(255, 255, 255, 20);"
+            " border: 1px solid rgba(255, 255, 255, 12);"
             " border-radius: 6px;"
-            " background: #2a2a2a;"
+            " background: rgba(42, 42, 42, 140);"
             " padding: 0;"
             " font-size: 12px;"
             " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
@@ -306,10 +306,10 @@ class OcrPopup(QtWidgets.QWidget):
             "#ocrCopyBtn:hover { background: #333333; border-color: #5fc98a; }"
 
             "#ocrPinBtn {"
-            " color: #999999;"
+            " color: rgba(255, 255, 255, 100);"
             " border: none;"
             " border-radius: 12px;"
-            " background: rgba(0, 0, 0, 100);"
+            " background: rgba(0, 0, 0, 60);"
             " font-size: 13px;"
             " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
             "}"
@@ -317,10 +317,10 @@ class OcrPopup(QtWidgets.QWidget):
             "#ocrPinBtn[pin=\"true\"] { color: #5fc98a; background: rgba(95, 201, 138, 30); }"
 
             "#ocrCloseBtn {"
-            " color: #999999;"
+            " color: rgba(255, 255, 255, 100);"
             " border: none;"
             " border-radius: 12px;"
-            " background: rgba(0, 0, 0, 100);"
+            " background: rgba(0, 0, 0, 60);"
             " font-size: 14px;"
             " font-weight: bold;"
             "}"
@@ -1028,19 +1028,26 @@ class OcrPopup(QtWidgets.QWidget):
         self.move(x, y)
 
     def _update_button_positions(self):
-        """Position floating overlay buttons on the card."""
-        ox, oy = OUTER_MARGIN, OUTER_MARGIN
-        btn_margin = 6
-        # Pin — top-left
-        self.pin_btn.move(ox + btn_margin, oy + btn_margin)
+        """Position buttons: pin & close straddle the card border (~⅓ out, ~⅔ in);
+        copy sits fully inside the card, right/bottom edges flush with its border."""
+        bw, bh = self.pin_btn.width(), self.pin_btn.height()       # 24×24
+        cw, ch = self.copy_btn.width(), self.copy_btn.height()      # 28×24
+        border = OUTER_MARGIN
+        out = bw // 3   # ~8 px outside the border
+
+        # Pin — top-left, ⅓ in margin, ⅔ on card
+        self.pin_btn.move(border - out, border - out)
         # Close — top-right
-        close_x = self.width() - ox - self.close_btn.width() - btn_margin
-        self.close_btn.move(close_x, oy + btn_margin)
-        # Copy — bottom-right
-        copy_x = self.width() - ox - self.copy_btn.width() - btn_margin
-        copy_y = self.height() - oy - self.copy_btn.height() - btn_margin
-        self.copy_btn.move(copy_x, copy_y)
-        # Ensure overlay buttons stay on top of text_block
+        self.close_btn.move(
+            self.width() - border - out,
+            border - out,
+        )
+        # Copy — inside card, bottom-right corner, flush with card edges
+        self.copy_btn.move(
+            self.width() - border - cw,
+            self.height() - border - ch,
+        )
+
         self.pin_btn.raise_()
         self.close_btn.raise_()
         self.copy_btn.raise_()

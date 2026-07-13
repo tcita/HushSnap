@@ -127,6 +127,7 @@ def main():
         _build_lines_from_clusters,
         _apply_cjk_spacing,
         _apply_indentation,
+        _apply_paragraph_breaks,
         compose_ppocr_structures,
         _recognize_without_detection,
         ppocr_box_to_bbox,
@@ -287,8 +288,13 @@ def main():
         for line in lines:
             line.text = _apply_cjk_spacing(line.text)
 
-        # Indentation
+        # Paragraph breaks + Indentation (horizontal only)
         if not is_vertical:
+            before_pb = len(lines)
+            lines = _apply_paragraph_breaks(lines)
+            blank_count = len(lines) - before_pb
+            if blank_count:
+                print(f"\n  _apply_paragraph_breaks: {blank_count} blank line(s) inserted")
             lines = _apply_indentation(lines)
 
         print(f"\n  Final reading order ({len(lines)} {cluster_name}):")

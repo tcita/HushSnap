@@ -193,9 +193,9 @@ def word_separator(left: str, right: str) -> str:
 def _normalize_blocks(blocks: list[dict]) -> list[dict]:
     """Convert raw PP-OCR detection blocks to internal representation; filter junk.
 
-    Blocks without a valid bounding box get a minimal placeholder so their
-    text is preserved in the output (the detector may occasionally return
-    text without proper box coordinates in edge cases).
+    Blocks without a valid bounding box are skipped — without real
+    coordinates we cannot place them in reading order, and a fabricated
+    box would distort line clustering.
     """
     empty_skipped = 0
     invalid_skipped = 0
@@ -461,6 +461,46 @@ def _build_lines_from_clusters(
     return result
 
 
+def _apply_paragraph_breaks(lines: list[OcrLine]) -> list[OcrLine]:
+    """Insert a single blank line between lines whose vertical gap exceeds
+    0.6× average line height.
+
+    Only meaningful for horizontal text.  Gap magnitude beyond the threshold
+    does not produce additional blank lines — there is no concept of
+    "multi-level" paragraph spacing; a paragraph separator is binary.
+    """
+    if len(lines) <= 1:
+        return lines
+
+    heights = [ln.bounding_box.height for ln in lines if ln.bounding_box.height > 0]
+    if not heights:
+        return lines
+    avg_h = sum(heights) / len(heights)
+    threshold = avg_h * 0.6
+
+    result: list[OcrLine] = []
+    breaks = 0
+    for i, line in enumerate(lines):
+        result.append(line)
+        if i < len(lines) - 1:
+            cur_bottom = line.bounding_box.y + line.bounding_box.height
+            next_top = lines[i + 1].bounding_box.y
+            gap = next_top - cur_bottom
+            if gap >= threshold:
+                result.append(OcrLine(
+                    text="", bounding_box=OcrBox(), paragraph_break=True,
+                ))
+                breaks += 1
+
+    if breaks:
+        logger.debug(
+            "[DET] _apply_paragraph_breaks: avg_h=%.1f  %d blank lines inserted (%d lines → %d)",
+            avg_h, breaks, len(lines), len(result),
+        )
+
+    return result
+
+
 # -- CJK spacing post-processing (core patterns from pangu.py) ----------
 # Applied as a final safety net: PP-OCR sometimes merges CJK+Latin into
 # a single detection block, so block-level word_separator() misses those
@@ -554,6 +594,8 @@ def compose_ppocr_structures(blocks: list[dict], is_vertical: bool = False) -> l
       2. Greedy overlap-based clustering → reading order
       3. Build OcrLine objects from clusters
       4. Post-process CJK-Latin spacing (pangu-style safety net)
+      5. Paragraph breaks (horizontal only: blank line when gap >= 1× line height)
+      6. Indentation (horizontal only: left-edge clustering)
 
     When *is_vertical* is True, the image contains predominantly vertical
     CJK text (tall boxes, h > w × 1.3).  Column clustering detects
@@ -579,9 +621,10 @@ def compose_ppocr_structures(blocks: list[dict], is_vertical: bool = False) -> l
     for line in lines:
         line.text = _apply_cjk_spacing(line.text)
 
-    # Step 5 - detect indentation from left-edge clustering
-    # (horizontal text only — indentation is meaningless for vertical text)
+    # Step 5 - paragraph breaks (horizontal text only)
+    # Step 6 - detect indentation from left-edge clustering
     if not is_vertical:
+        lines = _apply_paragraph_breaks(lines)
         lines = _apply_indentation(lines)
 
     return lines

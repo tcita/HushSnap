@@ -20,6 +20,7 @@ from hushsnap.ocr.ppocr import (
     _normalize_blocks,
     _is_vertical_json,
     _apply_indentation,
+    _apply_paragraph_breaks,
     compose_ppocr_structures,
     ppocr_box_to_bbox,
     word_separator,
@@ -586,3 +587,135 @@ class TestApplyCjkSpacing:
 
     def test_pure_cjk_unchanged(self):
         assert _apply_cjk_spacing("純中文測試") == "純中文測試"
+
+
+# ===================================================================
+# _apply_paragraph_breaks
+# ===================================================================
+
+class TestApplyParagraphBreaks:
+
+    def test_single_line_no_break(self):
+        lines = [_line("hello", x=0, y=0, w=40, h=14)]
+        result = _apply_paragraph_breaks(lines)
+        assert len(result) == 1
+        assert result[0].text == "hello"
+
+    def test_normal_spacing_no_break(self):
+        """Lines with tight spacing (same paragraph) -> no blank line."""
+        lines = [
+            _line("Line1", x=0, y=0,  w=40, h=14),
+            _line("Line2", x=0, y=18, w=40, h=14),  # gap = 18-14 = 4 < 14
+            _line("Line3", x=0, y=36, w=40, h=14),  # gap = 36-32 = 4 < 14
+        ]
+        result = _apply_paragraph_breaks(lines)
+        assert len(result) == 3  # no blank lines inserted
+        assert all(ln.text for ln in result)
+
+    def test_paragraph_break_inserted(self):
+        """Large gap (>= 1x line height) -> single blank line inserted."""
+        lines = [
+            _line("Para1", x=0, y=0,  w=50, h=14),
+            _line("Para2", x=0, y=60, w=50, h=14),  # gap = 60-14 = 46 >= 14
+        ]
+        result = _apply_paragraph_breaks(lines)
+        assert len(result) == 3  # Para1, blank, Para2
+        assert result[0].text == "Para1"
+        assert result[1].text == ""
+        assert result[2].text == "Para2"
+
+    def test_mixed_paragraphs(self):
+        """Two paragraphs with multiple lines each."""
+        lines = [
+            _line("A1", x=0, y=0,  w=30, h=14),   # para A
+            _line("A2", x=0, y=18, w=30, h=14),   # para A (gap=4)
+            _line("B1", x=0, y=60, w=30, h=14),   # para B (gap=42 >= 14)
+            _line("B2", x=0, y=78, w=30, h=14),   # para B (gap=4)
+        ]
+        result = _apply_paragraph_breaks(lines)
+        assert len(result) == 5  # A1, A2, blank, B1, B2
+        assert result[2].text == ""  # blank line between paragraphs
+
+    def test_edge_case_gap_equals_threshold(self):
+        """Gap exactly == 0.6× average height -> triggers break."""
+        lines = [
+            _line("Top",    x=0, y=0,  w=40, h=20),
+            # gap = 32 - 20 = 12 == 0.6 × 20 → break
+            _line("Bottom", x=0, y=32, w=40, h=20),
+        ]
+        result = _apply_paragraph_breaks(lines)
+        assert len(result) == 3  # blank line inserted
+
+    def test_edge_case_gap_just_below_threshold(self):
+        """Gap just under 0.6× average height -> no break."""
+        lines = [
+            _line("Top",    x=0, y=0,  w=40, h=20),
+            # gap = 31 - 20 = 11 < 12 (0.6 × 20) → no break
+            _line("Bottom", x=0, y=31, w=40, h=20),
+        ]
+        result = _apply_paragraph_breaks(lines)
+        assert len(result) == 2  # no blank line
+
+    def test_variable_line_heights(self):
+        """Average height computed from actual line heights, not a constant."""
+        lines = [
+            _line("Title", x=0, y=0,  w=60, h=24),   # tall title
+            _line("Body1", x=0, y=60, w=50, h=14),   # gap=36, avg_h=(24+14+14)/3=17.3
+            _line("Body2", x=0, y=78, w=50, h=14),   # gap=78-74=4
+        ]
+        result = _apply_paragraph_breaks(lines)
+        # gap between Title and Body1 = 60-24 = 36 >= 17.3 -> break
+        assert len(result) == 4
+        assert result[1].text == ""  # blank after title
+
+    def test_no_break_with_large_boxes_small_gap(self):
+        """Tall boxes with small gap still don't trigger false break."""
+        lines = [
+            _line("Big1", x=0, y=0,  w=100, h=30),
+            _line("Big2", x=0, y=34, w=100, h=30),  # gap = 34-30 = 4 < 30
+        ]
+        result = _apply_paragraph_breaks(lines)
+        assert len(result) == 2
+
+    def test_huge_gap_still_single_blank(self):
+        """Very large gap -> still only one blank line (binary separator)."""
+        lines = [
+            _line("Top",    x=0, y=0,   w=40, h=14),
+            _line("Bottom", x=0, y=200, w=40, h=14),  # gap = 186 >> 14
+        ]
+        result = _apply_paragraph_breaks(lines)
+        assert len(result) == 3  # exactly one blank line, not multiple
+
+    def test_empty_input(self):
+        assert _apply_paragraph_breaks([]) == []
+
+    def test_zero_height_ignored(self):
+        """Lines with zero height are excluded from the average."""
+        lines = [
+            _line("A", x=0, y=0,  w=40, h=0),   # zero height -> excluded
+            _line("B", x=0, y=0,  w=40, h=14),
+            _line("C", x=0, y=30, w=40, h=14),  # gap = 30-14 = 16 >= 14
+        ]
+        result = _apply_paragraph_breaks(lines)
+        assert len(result) >= 3
+
+    def test_compose_integration_horizontal(self):
+        """compose_ppocr_structures includes paragraph breaks for horizontal text."""
+        blocks = [
+            _raw_block("Title", [[0, 0],  [40, 0],  [40, 14], [0, 14]]),
+            _raw_block("Body",  [[0, 60], [40, 60], [40, 74], [0, 74]]),
+        ]
+        lines = compose_ppocr_structures(blocks, is_vertical=False)
+        # Title (y=0..14), gap=46 >= avg_h=14 -> blank line, Body (y=60..74)
+        assert len(lines) >= 2
+        assert any(ln.text == "" for ln in lines), "blank-line separator expected"
+
+    def test_compose_integration_vertical_no_breaks(self):
+        """Paragraph breaks do NOT apply to vertical CJK text."""
+        blocks = [
+            _raw_block("右", [[0, 0],  [14, 0],  [14, 60], [0, 60]]),
+            _raw_block("左", [[50, 0], [64, 0], [64, 60], [50, 60]]),
+        ]
+        lines = compose_ppocr_structures(blocks, is_vertical=True)
+        # Vertical text should NOT get paragraph breaks
+        assert not any(ln.text == "" for ln in lines)

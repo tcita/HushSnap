@@ -157,12 +157,23 @@ def test_compose_ppocr_text_same_line():
 
 
 def test_compose_ppocr_text_two_lines():
+    """Two lines with normal (tight) spacing → single \\n separator."""
     blocks = [
         _make_block("line1", [[0, 0], [50, 0], [50, 20], [0, 20]]),
-        _make_block("line2", [[0, 100], [50, 100], [50, 120], [0, 120]]),
+        _make_block("line2", [[0, 24], [50, 24], [50, 44], [0, 44]]),
     ]
-    # Far apart y → separate lines, one \n per line
+    # gap = 24 - 20 = 4 < avg_h(20) → same paragraph, one \n
     assert compose_ppocr_text(blocks) == "line1\nline2"
+
+
+def test_compose_ppocr_text_paragraph_break():
+    """Two lines far apart (gap >= 1× line height) → \\n\\n paragraph break."""
+    blocks = [
+        _make_block("para1", [[0, 0], [50, 0], [50, 20], [0, 20]]),
+        _make_block("para2", [[0, 100], [50, 100], [50, 120], [0, 120]]),
+    ]
+    # gap = 100 - 20 = 80 >= 0.6*avg_h(12) → paragraph break
+    assert compose_ppocr_text(blocks) == "para1\n\npara2"
 
 
 def test_compose_ppocr_text_cjk_no_spaces():
@@ -414,12 +425,12 @@ def test_normalize_blocks_none():
     assert _normalize_blocks(None) == []
 
 
-def test_normalize_blocks_missing_box_gives_minimal_placement():
+def test_normalize_blocks_missing_box_skipped():
+    """Blocks without a valid bounding box are skipped — without coordinates
+    we cannot place them in reading order (see commit 79ed5b2)."""
     blocks = [{"text": "text-no-box"}]
     result = _normalize_blocks(blocks)
-    assert len(result) == 1
-    assert result[0]["width"] == 1.0
-    assert result[0]["height"] == 1.0
+    assert len(result) == 0
 
 
 # ── _apply_cjk_spacing ──────────────────────────────────────────────
