@@ -22,9 +22,12 @@ CORNER_HIT = 52  # Wide corner zone — corners are point targets, need the extr
 # ── Size-adjustment layout constants ─────────────────────────────────────────
 # Chrome estimates: outer margins + borders + viewport paddings + scrollbar.
 _CHROME_WIDTH = 136
-_CHROME_HEIGHT = 82
-# Viewport reduction = outer_margins + panel_padding + viewport_margins + borders.
-_VP_WIDTH_REDUCTION = 104
+# OUTER_MARGIN*2 + viewport_top + viewport_bottom + borders - _BUBBLE_PAD
+# 36*2 + 24 + 36 + 4 - 22 = 114
+_CHROME_HEIGHT = 114
+# Viewport reduction = outer_margins + viewport_margins + scrollbar + borders.
+# 36*2 + 24*2 + 4 = 124
+_VP_WIDTH_REDUCTION = 124
 # Text width padding inside the viewport (16+16).
 _TEXT_WIDTH_PAD = 32
 # Minimum unwrapped line width before wrapping kicks in.
