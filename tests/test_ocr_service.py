@@ -26,7 +26,7 @@ def sample_pixmap(qapp):
 def test_ocr_service_sync_success(monkeypatch, sample_pixmap):
     register_engine(
         OCR_ENGINE_PPOCR,
-        recognize=lambda *args, **kwargs: ocr.OcrRecognition(text=" hello world "),
+        recognize=lambda *args, **kwargs: ocr.OcrRecognition(text="hello world"),
     )
 
     service = ocr.OcrService()

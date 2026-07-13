@@ -197,13 +197,16 @@ def _normalize_blocks(blocks: list[dict]) -> list[dict]:
     text is preserved in the output (the detector may occasionally return
     text without proper box coordinates in edge cases).
     """
+    empty_skipped = 0
+    invalid_skipped = 0
     normalized: list[dict] = []
     for block in (blocks or []):
         raw_text = str(block.get("text", "") or "")
         # Filter out truly empty or whitespace-only blocks
         if not raw_text.strip():
+            empty_skipped += 1
             continue
-            
+
         left, top, right, bottom = ppocr_box_to_bbox(block.get("box"))
         w = right - left
         h = bottom - top
@@ -211,7 +214,9 @@ def _normalize_blocks(blocks: list[dict]) -> list[dict]:
             # Block has text but no valid bounding box — skip it.
             # Without real coordinates we cannot place it in reading order,
             # and a fabricated box at (0,0) would distort line clustering.
-            logger.debug("PP-OCR: skipping block with invalid bbox: %r", raw_text[:80])
+            invalid_skipped += 1
+            logger.debug("[DET] _normalize_blocks: skip invalid bbox (w=%.1f h=%.1f) %r",
+                         w, h, raw_text[:80])
             continue
         normalized.append({
             "text": raw_text,
@@ -221,6 +226,9 @@ def _normalize_blocks(blocks: list[dict]) -> list[dict]:
             "center_x": (left + right) / 2,
             "center_y": (top + bottom) / 2,
         })
+    if empty_skipped or invalid_skipped:
+        logger.debug("[DET] _normalize_blocks: %d blocks → %d valid (empty=%d invalid=%d)",
+                     len(blocks or []), len(normalized), empty_skipped, invalid_skipped)
     return normalized
 
 
@@ -230,30 +238,24 @@ def _greedy_line_cluster(
     """Greedy line clustering for horizontal LTR text.
 
     1. Sort boxes by y_top (top → bottom)
-    2. Greedy: if box overlaps current line's y-range by > *threshold*,
+    2. Greedy: if box overlaps current line's y-range by > *threshold*
+       AND its center_y is close to the line's median center_y,
        add to current line and update y-range to union.
     3. Within each line: sort by x_left (left → right)
     4. Between lines: sort by average y_center (top → bottom)
 
-    The overlap ratio is *intersection over min-height*::
+    Two conditions must hold for a box to join a line:
 
-        overlap = max(0, min(bottom_a, bottom_b) − max(top_a, top_b))
-        ratio   = overlap ÷ min(height_a, height_b)
+    1. overlap / min(current_h, box_h) > threshold  (same as before)
+    2. abs(box_center_y - line_median_center_y)
+       < 0.4 * line_median_height
 
-    A box whose vertical overlap with the line's representative y-range
-    exceeds 50 % of the shorter side is considered to share the same
-    baseline — a font-agnostic decision that holds across CJK, Latin,
-    and mixed scripts.
-
-    .. note::
-       The union of ``[line_top, line_bottom]`` grows monotonically as
-       boxes are added, which could theoretically bridge adjacent lines
-       if a box is much taller than the rest of the line (e.g. a vertical
-       bracket or large inline graphic).  No guard is added because the
-       algorithm's design boundary is clean single-orientation screenshots:
-       in that regime every box on a line has roughly the same height,
-       and inter-line spacing dominates intra-line height variance, so
-       the union never reaches the next line.
+    Condition (2) is the anti-bridging guard: the union y-range grows
+    monotonically and a tall box can create spurious overlap with a
+    short adjacent line, but the tall box also pulls the *center_y*
+    median toward itself — a short box on a different line will have
+    a noticeably different center_y, rejecting the merge without any
+    pixel-absolute or font-size-dependent magic numbers.
     """
     if not blocks:
         return []
@@ -261,22 +263,49 @@ def _greedy_line_cluster(
     sorted_blocks = sorted(blocks, key=lambda b: b["top"])
 
     lines: list[list[dict]] = []
-    current = [sorted_blocks[0]]
+    current: list[dict] = [sorted_blocks[0]]
     line_top = sorted_blocks[0]["top"]
     line_bottom = sorted_blocks[0]["bottom"]
+    # Per-line rolling state for median computation (centre & height).
+    line_centers: list[float] = [sorted_blocks[0]["center_y"]]
+    line_heights: list[float] = [sorted_blocks[0]["height"]]
 
     for box in sorted_blocks[1:]:
         overlap = max(0.0, min(line_bottom, box["bottom"]) - max(line_top, box["top"]))
         min_h = min(line_bottom - line_top, box["height"])
-        ratio = overlap / min_h if min_h > 0 else 0.0
+        overlap_ok = (overlap / min_h) > threshold if min_h > 0 else False
 
-        if ratio > threshold:
+        # Anti-bridging: a box genuinely on the same line will have a
+        # centre close to the existing line members' median centre-y,
+        # scaled by the line's typical character height.
+        sorted_centers = sorted(line_centers)
+        n = len(sorted_centers)
+        median_center = sorted_centers[n // 2]
+        sorted_h = sorted(line_heights)
+        median_h = sorted_h[n // 2]
+        center_ok = abs(box["center_y"] - median_center) < 0.4 * median_h
+
+        if overlap_ok and center_ok:
             current.append(box)
+            line_centers.append(box["center_y"])
+            line_heights.append(box["height"])
             line_top = min(line_top, box["top"])
             line_bottom = max(line_bottom, box["bottom"])
         else:
+            if overlap_ok and not center_ok:
+                logger.debug(
+                    "[DET]   anti-bridging: overlap=%.3f OK but "
+                    "|center_y(%.0f) - median(%.0f)| = %.0f "
+                    ">= 0.4 × median_h(%d) = %.0f → split",
+                    overlap / min_h if min_h > 0 else 0.0,
+                    box["center_y"], median_center,
+                    abs(box["center_y"] - median_center),
+                    int(median_h), 0.4 * median_h,
+                )
             lines.append(current)
             current = [box]
+            line_centers = [box["center_y"]]
+            line_heights = [box["height"]]
             line_top = box["top"]
             line_bottom = box["bottom"]
 
@@ -289,6 +318,14 @@ def _greedy_line_cluster(
     # Step 4: sort lines top → bottom by average y_center
     lines.sort(key=lambda ln: sum(b["center_y"] for b in ln) / len(ln))
 
+    logger.debug("[DET] _greedy_line_cluster: %d blocks → %d lines",
+                 len(blocks), len(lines))
+    for i, ln in enumerate(lines):
+        ys = sorted({b["top"] for b in ln})
+        texts = [b["text"][:30] for b in ln]
+        logger.debug("[DET]   line[%d]: %d boxes  y_range=%s  texts=%s",
+                     i, len(ln), ys[:6], texts)
+
     return lines
 
 
@@ -297,21 +334,17 @@ def _greedy_column_cluster(
 ) -> list[list[dict]]:
     """Greedy column clustering for vertical RTL text (CJK).
 
-    The mirror of _greedy_line_cluster with x/y roles swapped and sort
-    directions reversed:
+    Mirror of :func:`_greedy_line_cluster` with x/y roles swapped and
+    sort directions reversed:
 
     1. Sort boxes by x_right descending (right → left)
-    2. Greedy: if box overlaps current column's x-range by > *threshold*,
+    2. Greedy: if box overlaps current column's x-range by > *threshold*
+       AND its center_x is close to the column's median center_x,
        add to current column and update x-range to union.
     3. Within each column: sort by y_top (top → bottom)
     4. Between columns: sort by average x_center descending (right → left)
 
-    .. note::
-       The same bridging caveat as :func:`_greedy_line_cluster` applies:
-       the column x-range union grows monotonically, but in clean
-       single-orientation screenshots every box in a column has roughly
-       equal width, so the union never reaches the next column.
-    """
+    Same anti-bridging guard as the line variant, adapted for width."""
     if not blocks:
         return []
 
@@ -322,19 +355,43 @@ def _greedy_column_cluster(
     current = [sorted_blocks[0]]
     col_left = sorted_blocks[0]["left"]
     col_right = sorted_blocks[0]["right"]
+    col_centers: list[float] = [sorted_blocks[0]["center_x"]]
+    col_widths: list[float] = [sorted_blocks[0]["width"]]
 
     for box in sorted_blocks[1:]:
         overlap = max(0.0, min(col_right, box["right"]) - max(col_left, box["left"]))
         min_w = min(col_right - col_left, box["width"])
-        ratio = overlap / min_w if min_w > 0 else 0.0
+        overlap_ok = (overlap / min_w) > threshold if min_w > 0 else False
 
-        if ratio > threshold:
+        # Anti-bridging (x-axis mirror)
+        sorted_centers = sorted(col_centers)
+        n = len(sorted_centers)
+        median_center = sorted_centers[n // 2]
+        sorted_w = sorted(col_widths)
+        median_w = sorted_w[n // 2]
+        center_ok = abs(box["center_x"] - median_center) < 0.4 * median_w
+
+        if overlap_ok and center_ok:
             current.append(box)
+            col_centers.append(box["center_x"])
+            col_widths.append(box["width"])
             col_left = min(col_left, box["left"])
             col_right = max(col_right, box["right"])
         else:
+            if overlap_ok and not center_ok:
+                logger.debug(
+                    "[DET]   anti-bridging (col): overlap=%.3f OK but "
+                    "|center_x(%.0f) - median(%.0f)| = %.0f "
+                    ">= 0.4 × median_w(%d) = %.0f → split",
+                    overlap / min_w if min_w > 0 else 0.0,
+                    box["center_x"], median_center,
+                    abs(box["center_x"] - median_center),
+                    int(median_w), 0.4 * median_w,
+                )
             columns.append(current)
             current = [box]
+            col_centers = [box["center_x"]]
+            col_widths = [box["width"]]
             col_left = box["left"]
             col_right = box["right"]
 
@@ -348,6 +405,14 @@ def _greedy_column_cluster(
     columns.sort(
         key=lambda col: -sum(b["center_x"] for b in col) / len(col)
     )
+
+    logger.debug("[DET] _greedy_column_cluster: %d blocks → %d columns",
+                 len(blocks), len(columns))
+    for i, col in enumerate(columns):
+        xs = sorted({b["left"] for b in col})
+        texts = [b["text"][:30] for b in col]
+        logger.debug("[DET]   column[%d]: %d boxes  x_range=%s  texts=%s",
+                     i, len(col), xs[:6], texts)
 
     return columns
 
@@ -547,20 +612,34 @@ def _apply_indentation(lines: list[OcrLine]) -> list[OcrLine]:
     avg_h = sum(heights) / len(heights)
     threshold = avg_h * 0.5
 
+    logger.debug("[DET] _apply_indentation: baseline=%.1f  avg_h=%.1f  "
+                 "jitter_threshold=%.1f  n_lines=%d",
+                 baseline, avg_h, threshold, len(lines))
+
     # Indent unit: smallest offset that is clearly not jitter
     offsets = sorted(set(
         round(line.bounding_box.x) - baseline for line in lines
         if round(line.bounding_box.x) - baseline > threshold
     ))
     if not offsets:
+        logger.debug("[DET] _apply_indentation: no offsets > threshold → no indent")
         return lines
     unit = offsets[0]
 
+    logger.debug("[DET] _apply_indentation: indent_unit=%d px  offsets=%s", unit, offsets)
+
+    indented = 0
     for line in lines:
         offset = line.bounding_box.x - baseline
         if offset > threshold:
             level = max(round(offset / unit), 1)
             line.text = ("    " * level) + line.text
+            indented += 1
+            logger.debug("[DET]   indent L%d: offset=%d px → level=%d (%d spaces)  %r",
+                         indented, int(offset), level, level * 4, line.text[:60])
+
+    if indented:
+        logger.debug("[DET] _apply_indentation: %d/%d lines indented", indented, len(lines))
 
     return lines
 
@@ -751,7 +830,12 @@ def _is_vertical_json(json_data: list[dict]) -> bool:
 
     if total_area == 0.0:
         return False
-    return (tall_area / total_area) >= _VERTICAL_WEIGHTED_THRESHOLD
+    ratio = tall_area / total_area
+    is_vert = ratio >= _VERTICAL_WEIGHTED_THRESHOLD
+    logger.debug("[DET] _is_vertical_json: tall_area_ratio=%.2f (threshold=%.2f) "
+                 "total_area=%d → vertical=%s",
+                 ratio, _VERTICAL_WEIGHTED_THRESHOLD, int(total_area), is_vert)
+    return is_vert
 
 
 # -- public API --------------------------------------------------------
@@ -884,6 +968,22 @@ def recognize_ppocr_qimage(image_or_result, language_tag: str = "") -> OcrRecogn
             if hasattr(result, "elapse_list"):
                 logger.debug("[ANCHOR] ELAPSE_DETAIL: %s", result.elapse_list)
             json_data = result.to_json()
+            # DET debug: raw detection summary
+            n_raw = len(json_data) if json_data else 0
+            n_valid_raw = 0
+            if json_data:
+                for item in json_data:
+                    box = item.get("box", [])
+                    txt = item.get("txt", "") or ""
+                    if box and txt.strip():
+                        left, top, right, bottom = ppocr_box_to_bbox(box)
+                        if right > left and bottom > top:
+                            n_valid_raw += 1
+            logger.debug("[DET] engine returned %d raw blocks (%d with valid box+text)",
+                         n_raw, n_valid_raw)
+            if json_data and n_valid_raw < n_raw:
+                logger.debug("[DET] %d/%d blocks have invalid/missing box → will be filtered",
+                             n_raw - n_valid_raw, n_raw)
         finally:
             _release_request()
 
@@ -897,9 +997,12 @@ def recognize_ppocr_qimage(image_or_result, language_tag: str = "") -> OcrRecogn
         is_vertical = _is_vertical_json(json_data) if json_data else False
         if is_vertical:
             logger.debug("PP-OCR: vertical CJK text detected — using vertical layout")
+        else:
+            logger.debug("[DET] layout direction: horizontal (vertical not detected)")
 
         if not json_data:
-            logger.debug("PP-OCR detection returned empty - falling back to recognition-only")
+            logger.debug("[DET] FALLBACK TRIGGERED: json_data empty → _recognize_without_detection()")
+            logger.debug("[DET]   reason: PP-OCR detector found zero text regions")
 
             if width > original_size.width() or height > original_size.height():
                 y_off = (height - original_size.height()) // 2
@@ -915,6 +1018,14 @@ def recognize_ppocr_qimage(image_or_result, language_tag: str = "") -> OcrRecogn
         blocks = [{"text": item["txt"], "box": item["box"]} for item in json_data]
         lines = compose_ppocr_structures(blocks, is_vertical=is_vertical)
         text = "\n".join(line.text for line in lines).rstrip()
+
+        logger.debug("[DET] compose_ppocr_structures → %d OcrLines, %d chars total",
+                     len(lines), len(text))
+        for i, ln in enumerate(lines):
+            b = ln.bounding_box
+            logger.debug("[DET]   L%d: (%d,%d %dx%d) text=%r",
+                         i, int(b.x), int(b.y), int(b.width), int(b.height),
+                         ln.text[:80])
 
         return OcrRecognition(
             text=text,
