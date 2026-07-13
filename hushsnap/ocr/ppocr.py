@@ -208,13 +208,16 @@ def _normalize_blocks(blocks: list[dict]) -> list[dict]:
         w = right - left
         h = bottom - top
         if w <= 0 or h <= 0:
-            # Block has text but no valid bbox - give it a minimal placement
-            w, h = 1.0, 1.0
+            # Block has text but no valid bounding box — skip it.
+            # Without real coordinates we cannot place it in reading order,
+            # and a fabricated box at (0,0) would distort line clustering.
+            logger.debug("PP-OCR: skipping block with invalid bbox: %r", raw_text[:80])
+            continue
         normalized.append({
             "text": raw_text,
             "left": left, "top": top,
             "right": right, "bottom": bottom,
-            "width": max(w, 0.0), "height": max(h, 0.0),
+            "width": w, "height": h,
             "center_x": (left + right) / 2,
             "center_y": (top + bottom) / 2,
         })
@@ -241,6 +244,16 @@ def _greedy_line_cluster(
     exceeds 50 % of the shorter side is considered to share the same
     baseline — a font-agnostic decision that holds across CJK, Latin,
     and mixed scripts.
+
+    .. note::
+       The union of ``[line_top, line_bottom]`` grows monotonically as
+       boxes are added, which could theoretically bridge adjacent lines
+       if a box is much taller than the rest of the line (e.g. a vertical
+       bracket or large inline graphic).  No guard is added because the
+       algorithm's design boundary is clean single-orientation screenshots:
+       in that regime every box on a line has roughly the same height,
+       and inter-line spacing dominates intra-line height variance, so
+       the union never reaches the next line.
     """
     if not blocks:
         return []
@@ -292,6 +305,12 @@ def _greedy_column_cluster(
        add to current column and update x-range to union.
     3. Within each column: sort by y_top (top → bottom)
     4. Between columns: sort by average x_center descending (right → left)
+
+    .. note::
+       The same bridging caveat as :func:`_greedy_line_cluster` applies:
+       the column x-range union grows monotonically, but in clean
+       single-orientation screenshots every box in a column has roughly
+       equal width, so the union never reaches the next column.
     """
     if not blocks:
         return []
