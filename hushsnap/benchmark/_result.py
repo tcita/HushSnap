@@ -49,6 +49,7 @@ class BenchmarkResult:
     total_handle_delta: int = 0
     text_consistency: str = ""
     text_preview: str = ""
+    text_full: str = ""        # complete OCR text from first distinct result
     warnings: list[str] = field(default_factory=list)
 
     def summary(self) -> str:

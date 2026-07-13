@@ -119,6 +119,10 @@ _DEFAULT_ENGINE_PARAMS: dict = {
     "EngineConfig.onnxruntime.intra_op_num_threads": 8,
     "EngineConfig.onnxruntime.inter_op_num_threads": 1,
     "EngineConfig.onnxruntime.enable_cpu_mem_arena": False,
+    # kNextPowerOfTwo reduces malloc/free churn vs the default kSameAsRequested.
+    # Extra arena memory is reclaimed by _trim_working_set() after each OCR call,
+    # so the memory trade-off is contained to the active inference window.
+    "EngineConfig.onnxruntime.cpu_ep_cfg.arena_extend_strategy": "kNextPowerOfTwo",
 }
 
 
@@ -646,7 +650,7 @@ def _get_engine() -> "PPOCR":
             if _engine is None:
                 ws_before = get_working_set_mb()
                 logger.info("[PPOCR] Initializing engine singleton (models loading)...")
-                
+
                 # Optimized for desktop CPU inference (see module header for details)
                 # CLS (direction classifier) disabled by default — only useful
                 # for 180° flipped images (e.g. phone held upside-down).
@@ -665,7 +669,7 @@ def _get_engine() -> "PPOCR":
                     logger.info("[PPOCR] Applying engine params override: %s",
                                 {k: v for k, v in _engine_params_override.items()})
                 _engine = PPOCR(params=params)
-                
+
                 ws_after = get_working_set_mb()
                 logger.debug(
                     "[PPOCR] Engine created. %s (delta=%.1f MB)",

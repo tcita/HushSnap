@@ -406,7 +406,9 @@ class BenchmarkRunner:
         else:
             result.text_consistency = f"varied ({len(texts_seen)} distinct)"
         if texts_seen:
-            result.text_preview = list(texts_seen)[0][:80].replace('\n', ' ')
+            first_text = list(texts_seen)[0]
+            result.text_preview = first_text[:80].replace('\n', ' ')
+            result.text_full = first_text
 
         # ── Warnings ──────────────────────────────────────────────
         if warm_retentions and all(r > 0.7 for r in warm_retentions):
