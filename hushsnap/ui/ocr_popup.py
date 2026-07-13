@@ -23,8 +23,8 @@ CORNER_HIT = 52  # Wide corner zone — corners are point targets, need the extr
 # Chrome estimates: outer margins + borders + viewport paddings + scrollbar.
 _CHROME_WIDTH = 136
 # OUTER_MARGIN*2 + viewport_top + viewport_bottom + borders - _BUBBLE_PAD
-# 36*2 + 24 + 36 + 4 - 22 = 114
-_CHROME_HEIGHT = 114
+# 36*2 + 24 + 28 + 4 - 22 = 106
+_CHROME_HEIGHT = 106
 # Viewport reduction = outer_margins + viewport_margins + scrollbar + borders.
 # 36*2 + 24*2 + 4 = 124
 _VP_WIDTH_REDUCTION = 124
@@ -35,7 +35,7 @@ _MIN_LINE_WIDTH = 200
 # Minimum text height (prevents collapsing to an invisible sliver).
 _MIN_TEXT_HEIGHT = 40
 # Line-spacing buffer added to the measured QTextDocument height.
-_LINE_SPACING_BUFFER = 8
+_LINE_SPACING_BUFFER = 4
 # Bubble padding: space between the text block and the bubble frame.
 _BUBBLE_PAD = 22
 # Screen-edge margins for clamping the final geometry.
@@ -212,7 +212,7 @@ class OcrPopup(QtWidgets.QWidget):
         
         # Use viewport margins to simulate padding inside the card.
         # Bottom margin leaves room for the floating copy button.
-        self.text_edit.setViewportMargins(24, 24, 24, 36)
+        self.text_edit.setViewportMargins(24, 24, 24, 28)
 
         # Match the measurement document (which uses documentMargin 0) so the
         # actual available text width equals the calculated width — otherwise
@@ -588,6 +588,9 @@ class OcrPopup(QtWidgets.QWidget):
         bubble_h = text_h + _BUBBLE_PAD
 
         total_h = _CHROME_HEIGHT + bubble_h
+        # Safety margin: QTextDocument measurement vs QPlainTextEdit rendering
+        # can differ by a few px (font hinting, wrap rounding).
+        total_h += 4
         total_h = max(total_h, WINDOW_MIN_HEIGHT)
 
         screen = QtWidgets.QApplication.screenAt(self.pos())
