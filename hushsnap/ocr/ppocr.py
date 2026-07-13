@@ -119,10 +119,6 @@ _DEFAULT_ENGINE_PARAMS: dict = {
     "EngineConfig.onnxruntime.intra_op_num_threads": 8,
     "EngineConfig.onnxruntime.inter_op_num_threads": 1,
     "EngineConfig.onnxruntime.enable_cpu_mem_arena": False,
-    # kNextPowerOfTwo reduces malloc/free churn vs the default kSameAsRequested.
-    # Extra arena memory is reclaimed by _trim_working_set() after each OCR call,
-    # so the memory trade-off is contained to the active inference window.
-    "EngineConfig.onnxruntime.cpu_ep_cfg.arena_extend_strategy": "kNextPowerOfTwo",
 }
 
 
@@ -875,7 +871,7 @@ def recognize_ppocr_qimage(image_or_result, language_tag: str = "") -> OcrRecogn
         height = image.height()
         ptr = image.bits()
         ptr.setsize(image.sizeInBytes())
-        # [:, :, :3] drops the X/A channel → contiguous BGR array for ONNX.
+        # [:, :, :3] drops the X/A channel; .copy() makes it contiguous for ONNX.
         arr = np.frombuffer(ptr, dtype=np.uint8).reshape((height, width, 4))[:, :, :3].copy()
         logger.debug("[ANCHOR] IMAGE_CONVERT_END")
 
