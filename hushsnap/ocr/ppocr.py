@@ -104,11 +104,12 @@ from ..system.memory_utils import get_working_set_mb, fmt_memory, trim_working_s
 logger = logging.getLogger(__name__)
 
 # ── Fallback / tuning constants ──────────────────────────────────────────────
-# Overlap threshold for greedy line/column clustering.  Two boxes whose
-# vertical (or horizontal) overlap exceeds 50 % of the shorter box's
-# height (or width) are considered to belong to the same line (or column).
-# This is a normalised, font-agnostic metric — the only layout threshold.
-_OVERLAP_THRESHOLD = 0.5
+# Centre-distance ratio for greedy line/column clustering.  A box joins
+# the current line when its centre is within 0.4 × median_height of the
+# line's median centre (or 0.4 × median_width for vertical columns).
+# This single font-agnostic condition replaces the previous two-condition
+# (overlap + centre) approach — at 0.4 the overlap check is implied.
+_CENTER_RATIO = 0.4
 # Minimum contrast range for recognition-without-detection fallback.
 _MIN_CONTRAST_RANGE = 80
 
@@ -176,16 +177,57 @@ def word_separator(left: str, right: str) -> str:
     return " "
 
 
-# -- Overlap-based line clustering --------------------------------------
-# Greedy overlap-based clustering replaces the old recursive XY-Cut
-# pipeline.  The single _OVERLAP_THRESHOLD (0.5) governs all grouping
+# -- Centre-distance line clustering ------------------------------------
+# Greedy centre-distance clustering replaces the old recursive XY-Cut
+# pipeline.  The single _CENTER_RATIO (0.4) governs all grouping
 # decisions — no DPI-, font-size-, or line-spacing-dependent constants.
 #
-# Horizontal text: sort by y_top, greedily group into lines by vertical
-#   overlap → sort lines top→bottom, within-line left→right.
+# Horizontal text: sort by y_top, greedily group into lines by centre
+#   distance → sort lines top→bottom, within-line left→right.
 # Vertical CJK text: sort by x_right descending, greedily group into
-#   columns by horizontal overlap → sort columns right→left, within-
+#   columns by centre distance → sort columns right→left, within-
 #   column top→bottom.
+#
+# Design rationale — why a single centre-distance condition is enough.
+#
+# 1.  The previous two-condition approach (overlap + centre) was
+#     redundant: at the 0.4 threshold, |Δcenter| < 0.4 × median_h
+#     mathematically implies overlap_ratio > 0.5.  Dropping overlap
+#     removes ~20 lines of ref-band / min()-denominator computation
+#     with zero behavioural change.
+#
+#     This follows from a simple duality.  For a box satisfying the
+#     centre condition |δ| < k × H, the worst-case overlap ratio
+#     against the ref band [M − 0.5H, M + 0.5H] is::
+#
+#         overlap / min(box_h, H)  ≥  ((box_h + H)/2 − k × H) / min(box_h, H)
+#                                 =  1 − k      (when box_h → 0 or box_h ≫ H)
+#
+#     (k ≥ 0.5 is physically impossible — the box centre would lie
+#     outside the ref band entirely; the two boxes are on different
+#     lines.  So we only ever consider k < 0.5.)
+#
+#     Therefore centre ⇒ overlap holds when 1 − k ≥ m, i.e. k + m ≤ 1.0.
+#     Our pair (k=0.4, m=0.5) gives 0.4 + 0.5 = 0.9 < 1.0: centre
+#     strictly implies overlap.  If k is ever raised past 0.5 the sum
+#     crosses 1.0 and overlap must be reintroduced.
+#
+# 2.  PP-OCR v6 small rarely fragments punctuation or CJK characters
+#     into separate small boxes (verified on ~10 test images with
+#     mixed Chinese/Latin/symbol text).  The "fragment-first" edge
+#     case — a tiny detection box blocking subsequent normal boxes
+#     from joining a line — can be triggered only with deliberate
+#     special-symbol placement (™, •, ®).  Even then the fragmentation
+#     is unstable: ±1 px viewport offset or 0.1× scale change reshapes
+#     the fragment set entirely.  Optimising the denominator formula
+#     for inputs that are not reproducible is not worthwhile.
+#
+# 3.  Zebra's word→line centreDistanceRatio (0.6) and height-averaged
+#     denominator are designed for a pairwise (word vs word) model.
+#     Our median-based (box vs line) model has different statistical
+#     properties; the 0.4 threshold was tuned on real screenshots.
+#     Importing Zebra's constants without Zebra's pairwise architecture
+#     would be cargo-cult tuning.
 
 # ---------------------------------------------------------------------------
 
@@ -232,33 +274,23 @@ def _normalize_blocks(blocks: list[dict]) -> list[dict]:
     return normalized
 
 
-def _greedy_line_cluster(
-    blocks: list[dict], threshold: float = _OVERLAP_THRESHOLD,
-) -> list[list[dict]]:
+def _greedy_line_cluster(blocks: list[dict]) -> list[list[dict]]:
     """Greedy line clustering for horizontal LTR text.
 
     1. Sort boxes by y_top (top → bottom)
-    2. Greedy: if box overlaps the line's median reference band by
-       > *threshold* AND its centre is close to the line's median
-       centre, add to current line.
+    2. Greedy: if box centre is close to the line's median centre,
+       add to current line.
     3. Within each line: sort by x_left (left → right)
     4. Between lines: sort by average y_center (top → bottom)
 
-    The reference band is anchored to the line's "typical" character,
-    not the union of all boxes::
+    Single condition::
 
-        ref_top    = median(center_y) - 0.5 × median(height)
-        ref_bottom = median(center_y) + 0.5 × median(height)
+        abs(box.center_y - median_center) < 0.4 × median_height
 
-    Two conditions must hold for a box to join::
-
-        1. overlap(box, ref) / min(box.height, median_height) > threshold
-        2. abs(box.center_y - median_center) < 0.4 × median_height
-
-    Condition (1) uses the stable ref-band — it does NOT suffer from
-    the union-range bootstrapping problem.  Condition (2) catches the
-    edge case where a short box hangs off the edge of a wide ref band.
-    The two guard against different failure modes and are complementary.
+    This centre-distance check alone is functionally equivalent to the
+    previous two-condition (overlap + centre) approach: at the 0.4
+    threshold the overlap check is mathematically implied and therefore
+    redundant.
     """
     if not blocks:
         return []
@@ -271,22 +303,13 @@ def _greedy_line_cluster(
     line_heights: list[float] = [sorted_blocks[0]["height"]]
 
     for box in sorted_blocks[1:]:
-        # Median reference band — stable, not union-expanding.
         sorted_centers = sorted(line_centers)
         n = len(sorted_centers)
         median_center = sorted_centers[n // 2]
         sorted_h = sorted(line_heights)
         median_h = sorted_h[n // 2]
 
-        ref_top = median_center - 0.5 * median_h
-        ref_bottom = median_center + 0.5 * median_h
-
-        overlap = max(0.0, min(ref_bottom, box["bottom"]) - max(ref_top, box["top"]))
-        min_h = min(median_h, box["height"])
-        overlap_ok = (overlap / min_h) > threshold if min_h > 0 else False
-        center_ok = abs(box["center_y"] - median_center) < 0.4 * median_h
-
-        if overlap_ok and center_ok:
+        if abs(box["center_y"] - median_center) < 0.4 * median_h:
             current.append(box)
             line_centers.append(box["center_y"])
             line_heights.append(box["height"])
@@ -316,22 +339,19 @@ def _greedy_line_cluster(
     return lines
 
 
-def _greedy_column_cluster(
-    blocks: list[dict], threshold: float = _OVERLAP_THRESHOLD,
-) -> list[list[dict]]:
+def _greedy_column_cluster(blocks: list[dict]) -> list[list[dict]]:
     """Greedy column clustering for vertical RTL text (CJK).
 
     Mirror of :func:`_greedy_line_cluster` with x/y roles swapped and
     sort directions reversed:
 
     1. Sort boxes by x_right descending (right → left)
-    2. Greedy: if box overlaps the column's median reference band by
-       > *threshold*, add to current column.
+    2. Greedy: if box centre is close to the column's median centre,
+       add to current column.
     3. Within each column: sort by y_top (top → bottom)
     4. Between columns: sort by average x_center descending (right → left)
 
-    Uses the same median-reference-band approach as
-    :func:`_greedy_line_cluster` — two complementary conditions."""
+    Same single centre-distance condition as the line variant."""
     if not blocks:
         return []
 
@@ -344,22 +364,13 @@ def _greedy_column_cluster(
     col_widths: list[float] = [sorted_blocks[0]["width"]]
 
     for box in sorted_blocks[1:]:
-        # Median reference band (x-axis mirror of the line variant).
         sorted_centers = sorted(col_centers)
         n = len(sorted_centers)
         median_center = sorted_centers[n // 2]
         sorted_w = sorted(col_widths)
         median_w = sorted_w[n // 2]
 
-        ref_left = median_center - 0.5 * median_w
-        ref_right = median_center + 0.5 * median_w
-
-        overlap = max(0.0, min(ref_right, box["right"]) - max(ref_left, box["left"]))
-        min_w = min(median_w, box["width"])
-        overlap_ok = (overlap / min_w) > threshold if min_w > 0 else False
-        center_ok = abs(box["center_x"] - median_center) < 0.4 * median_w
-
-        if overlap_ok and center_ok:
+        if abs(box["center_x"] - median_center) < 0.4 * median_w:
             current.append(box)
             col_centers.append(box["center_x"])
             col_widths.append(box["width"])
