@@ -618,9 +618,13 @@ def compose_ppocr_structures(blocks: list[dict], is_vertical: bool = False) -> l
 def _apply_indentation(lines: list[OcrLine]) -> list[OcrLine]:
     """Apply leading spaces to indented lines.
 
-    Baseline is the leftmost box edge.  Jitter threshold is
-    0.5× average line height — smaller differences are detection noise,
-    not indentation.
+    Baseline is the leftmost box edge.  Each line uses its own height as
+    denominator: ``indent_ratio = (x - baseline) / line_height``.
+    When the ratio exceeds 1.0 the line is considered intentionally
+    indented; smaller offsets are treated as detection jitter.  Per-line
+    thresholds handle mixed-height text correctly — a tall title with a
+    small absolute offset is not falsely flagged, and a short body line
+    with the same offset is properly recognised.
 
     The indent *unit* is the smallest non-jitter offset from baseline.
     Each line gets ``level × 4`` leading spaces, where ``level = round(offset / unit)``.
@@ -633,38 +637,40 @@ def _apply_indentation(lines: list[OcrLine]) -> list[OcrLine]:
     # Baseline: leftmost box — the body text / heading edge
     baseline = min(line.bounding_box.x for line in lines)
 
-    heights = [line.bounding_box.height for line in lines
-               if line.bounding_box.height > 0]
-    if not heights:
-        return lines
-    avg_h = sum(heights) / len(heights)
-    threshold = avg_h * 0.5
-
-    logger.debug("[DET] _apply_indentation: baseline=%.1f  avg_h=%.1f  "
-                 "jitter_threshold=%.1f  n_lines=%d",
-                 baseline, avg_h, threshold, len(lines))
+    def _is_indented(line: OcrLine) -> bool:
+        """Offset exceeds jitter threshold relative to this line's own height."""
+        h = line.bounding_box.height
+        if h <= 0:
+            return False
+        indent_ratio = (line.bounding_box.x - baseline) / h
+        return indent_ratio > 1.0
 
     # Indent unit: smallest offset that is clearly not jitter
     offsets = sorted(set(
         round(line.bounding_box.x) - baseline for line in lines
-        if round(line.bounding_box.x) - baseline > threshold
+        if _is_indented(line)
     ))
     if not offsets:
-        logger.debug("[DET] _apply_indentation: no offsets > threshold → no indent")
+        logger.debug("[DET] _apply_indentation: no offsets > per-line "
+                     "threshold → no indent  (baseline=%.1f  n_lines=%d)",
+                     baseline, len(lines))
         return lines
     unit = offsets[0]
 
-    logger.debug("[DET] _apply_indentation: indent_unit=%d px  offsets=%s", unit, offsets)
+    logger.debug("[DET] _apply_indentation: baseline=%.1f  indent_unit=%d px  "
+                 "offsets=%s  n_lines=%d",
+                 baseline, unit, offsets, len(lines))
 
     indented = 0
     for line in lines:
-        offset = line.bounding_box.x - baseline
-        if offset > threshold:
-            level = max(round(offset / unit), 1)
-            line.text = ("    " * level) + line.text
-            indented += 1
-            logger.debug("[DET]   indent L%d: offset=%d px → level=%d (%d spaces)  %r",
-                         indented, int(offset), level, level * 4, line.text[:60])
+        if not _is_indented(line):
+            continue
+        offset = round(line.bounding_box.x) - baseline
+        level = max(round(offset / unit), 1)
+        line.text = ("    " * level) + line.text
+        indented += 1
+        logger.debug("[DET]   indent L%d: offset=%d px → level=%d (%d spaces)  %r",
+                     indented, offset, level, level * 4, line.text[:60])
 
     if indented:
         logger.debug("[DET] _apply_indentation: %d/%d lines indented", indented, len(lines))
