@@ -4,8 +4,6 @@ HushSnap is a lightweight screenshot & OCR tool that lives in your system tray. 
 
 [HushSnap Website](https://tcita.github.io/HushSnap/)
 
-[Microsoft Store](https://apps.microsoft.com/detail/9p0qzv5z8njz) 
-
 [Demo Video](https://youtu.be/untWW6_Ea3M)
 
 After capture, a thumbnail slides in at the bottom-right corner of your screen. This thumbnail is the heart of HushSnap's post-capture flow:
@@ -97,7 +95,7 @@ The build requires HEAD at a git tag (e.g. `v0.3.0`). For local testing, `sign_f
 
 ## Installation
 
-HushSnap is distributed exclusively through the **Microsoft Store**. Search for "HushSnap" in the Store app or visit the product page to install.
+HushSnap is distributed exclusively through the [Microsoft Store](https://apps.microsoft.com/detail/9p0qzv5z8njz).
 
 ---
 
