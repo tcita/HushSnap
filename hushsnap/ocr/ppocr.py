@@ -238,24 +238,27 @@ def _greedy_line_cluster(
     """Greedy line clustering for horizontal LTR text.
 
     1. Sort boxes by y_top (top → bottom)
-    2. Greedy: if box overlaps current line's y-range by > *threshold*
-       AND its center_y is close to the line's median center_y,
-       add to current line and update y-range to union.
+    2. Greedy: if box overlaps the line's median reference band by
+       > *threshold* AND its centre is close to the line's median
+       centre, add to current line.
     3. Within each line: sort by x_left (left → right)
     4. Between lines: sort by average y_center (top → bottom)
 
-    Two conditions must hold for a box to join a line:
+    The reference band is anchored to the line's "typical" character,
+    not the union of all boxes::
 
-    1. overlap / min(current_h, box_h) > threshold  (same as before)
-    2. abs(box_center_y - line_median_center_y)
-       < 0.4 * line_median_height
+        ref_top    = median(center_y) - 0.5 × median(height)
+        ref_bottom = median(center_y) + 0.5 × median(height)
 
-    Condition (2) is the anti-bridging guard: the union y-range grows
-    monotonically and a tall box can create spurious overlap with a
-    short adjacent line, but the tall box also pulls the *center_y*
-    median toward itself — a short box on a different line will have
-    a noticeably different center_y, rejecting the merge without any
-    pixel-absolute or font-size-dependent magic numbers.
+    Two conditions must hold for a box to join::
+
+        1. overlap(box, ref) / min(box.height, median_height) > threshold
+        2. abs(box.center_y - median_center) < 0.4 × median_height
+
+    Condition (1) uses the stable ref-band — it does NOT suffer from
+    the union-range bootstrapping problem.  Condition (2) catches the
+    edge case where a short box hangs off the edge of a wide ref band.
+    The two guard against different failure modes and are complementary.
     """
     if not blocks:
         return []
@@ -264,50 +267,34 @@ def _greedy_line_cluster(
 
     lines: list[list[dict]] = []
     current: list[dict] = [sorted_blocks[0]]
-    line_top = sorted_blocks[0]["top"]
-    line_bottom = sorted_blocks[0]["bottom"]
-    # Per-line rolling state for median computation (centre & height).
     line_centers: list[float] = [sorted_blocks[0]["center_y"]]
     line_heights: list[float] = [sorted_blocks[0]["height"]]
 
     for box in sorted_blocks[1:]:
-        overlap = max(0.0, min(line_bottom, box["bottom"]) - max(line_top, box["top"]))
-        min_h = min(line_bottom - line_top, box["height"])
-        overlap_ok = (overlap / min_h) > threshold if min_h > 0 else False
-
-        # Anti-bridging: a box genuinely on the same line will have a
-        # centre close to the existing line members' median centre-y,
-        # scaled by the line's typical character height.
+        # Median reference band — stable, not union-expanding.
         sorted_centers = sorted(line_centers)
         n = len(sorted_centers)
         median_center = sorted_centers[n // 2]
         sorted_h = sorted(line_heights)
         median_h = sorted_h[n // 2]
+
+        ref_top = median_center - 0.5 * median_h
+        ref_bottom = median_center + 0.5 * median_h
+
+        overlap = max(0.0, min(ref_bottom, box["bottom"]) - max(ref_top, box["top"]))
+        min_h = min(median_h, box["height"])
+        overlap_ok = (overlap / min_h) > threshold if min_h > 0 else False
         center_ok = abs(box["center_y"] - median_center) < 0.4 * median_h
 
         if overlap_ok and center_ok:
             current.append(box)
             line_centers.append(box["center_y"])
             line_heights.append(box["height"])
-            line_top = min(line_top, box["top"])
-            line_bottom = max(line_bottom, box["bottom"])
         else:
-            if overlap_ok and not center_ok:
-                logger.debug(
-                    "[DET]   anti-bridging: overlap=%.3f OK but "
-                    "|center_y(%.0f) - median(%.0f)| = %.0f "
-                    ">= 0.4 × median_h(%d) = %.0f → split",
-                    overlap / min_h if min_h > 0 else 0.0,
-                    box["center_y"], median_center,
-                    abs(box["center_y"] - median_center),
-                    int(median_h), 0.4 * median_h,
-                )
             lines.append(current)
             current = [box]
             line_centers = [box["center_y"]]
             line_heights = [box["height"]]
-            line_top = box["top"]
-            line_bottom = box["bottom"]
 
     lines.append(current)
 
@@ -338,13 +325,13 @@ def _greedy_column_cluster(
     sort directions reversed:
 
     1. Sort boxes by x_right descending (right → left)
-    2. Greedy: if box overlaps current column's x-range by > *threshold*
-       AND its center_x is close to the column's median center_x,
-       add to current column and update x-range to union.
+    2. Greedy: if box overlaps the column's median reference band by
+       > *threshold*, add to current column.
     3. Within each column: sort by y_top (top → bottom)
     4. Between columns: sort by average x_center descending (right → left)
 
-    Same anti-bridging guard as the line variant, adapted for width."""
+    Uses the same median-reference-band approach as
+    :func:`_greedy_line_cluster` — two complementary conditions."""
     if not blocks:
         return []
 
@@ -353,47 +340,34 @@ def _greedy_column_cluster(
 
     columns: list[list[dict]] = []
     current = [sorted_blocks[0]]
-    col_left = sorted_blocks[0]["left"]
-    col_right = sorted_blocks[0]["right"]
     col_centers: list[float] = [sorted_blocks[0]["center_x"]]
     col_widths: list[float] = [sorted_blocks[0]["width"]]
 
     for box in sorted_blocks[1:]:
-        overlap = max(0.0, min(col_right, box["right"]) - max(col_left, box["left"]))
-        min_w = min(col_right - col_left, box["width"])
-        overlap_ok = (overlap / min_w) > threshold if min_w > 0 else False
-
-        # Anti-bridging (x-axis mirror)
+        # Median reference band (x-axis mirror of the line variant).
         sorted_centers = sorted(col_centers)
         n = len(sorted_centers)
         median_center = sorted_centers[n // 2]
         sorted_w = sorted(col_widths)
         median_w = sorted_w[n // 2]
+
+        ref_left = median_center - 0.5 * median_w
+        ref_right = median_center + 0.5 * median_w
+
+        overlap = max(0.0, min(ref_right, box["right"]) - max(ref_left, box["left"]))
+        min_w = min(median_w, box["width"])
+        overlap_ok = (overlap / min_w) > threshold if min_w > 0 else False
         center_ok = abs(box["center_x"] - median_center) < 0.4 * median_w
 
         if overlap_ok and center_ok:
             current.append(box)
             col_centers.append(box["center_x"])
             col_widths.append(box["width"])
-            col_left = min(col_left, box["left"])
-            col_right = max(col_right, box["right"])
         else:
-            if overlap_ok and not center_ok:
-                logger.debug(
-                    "[DET]   anti-bridging (col): overlap=%.3f OK but "
-                    "|center_x(%.0f) - median(%.0f)| = %.0f "
-                    ">= 0.4 × median_w(%d) = %.0f → split",
-                    overlap / min_w if min_w > 0 else 0.0,
-                    box["center_x"], median_center,
-                    abs(box["center_x"] - median_center),
-                    int(median_w), 0.4 * median_w,
-                )
             columns.append(current)
             current = [box]
             col_centers = [box["center_x"]]
             col_widths = [box["width"]]
-            col_left = box["left"]
-            col_right = box["right"]
 
     columns.append(current)
 

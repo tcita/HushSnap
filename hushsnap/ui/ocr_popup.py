@@ -1034,18 +1034,18 @@ class OcrPopup(QtWidgets.QWidget):
         self.move(x, y)
 
     def _update_button_positions(self):
-        """Position buttons: pin & close straddle the card border (~⅓ out, ~⅔ in);
-        copy sits fully inside the card, right/bottom edges flush with its border."""
+        """Position buttons: pin & close peek just over the card border
+        (symmetric ~¼ out, ~¾ in); copy sits fully inside the card."""
         bw, bh = self.pin_btn.width(), self.pin_btn.height()       # 24×24
         cw, ch = self.copy_btn.width(), self.copy_btn.height()      # 28×24
         border = OUTER_MARGIN
-        out = bw // 3   # ~8 px outside the border
+        out = bw // 4   # ~6 px — subtle corner protrusion
 
-        # Pin — top-left, ⅓ in margin, ⅔ on card
+        # Pin — top-left
         self.pin_btn.move(border - out, border - out)
-        # Close — top-right
+        # Close — top-right (symmetric with pin: right edge = width - border + out)
         self.close_btn.move(
-            self.width() - border - out,
+            self.width() - border - bw + out,
             border - out,
         )
         # Copy — inside card, bottom-right corner, flush with card edges
