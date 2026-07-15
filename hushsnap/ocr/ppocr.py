@@ -426,6 +426,14 @@ def _build_lines_from_clusters(
         for block in cluster:
             if prev_block:
                 sep = word_separator(prev_block["text"], block["text"])
+                # ── inline gap spacing (same principle as _apply_indentation) ──
+                gap = block["left"] - prev_block["right"]
+                est_h = min(prev_block["height"], block["height"])
+                if est_h > 0:
+                    gap_ratio = gap / est_h
+                    if gap_ratio > 1.0:
+                        n = max(1, round(gap_ratio))
+                        sep = (sep or "") + (" " * n)
                 if sep:
                     text_parts.append(sep)
             text_parts.append(block["text"])
