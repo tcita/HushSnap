@@ -12,16 +12,93 @@ from .text import compose_text_from_result
 logger = logging.getLogger(__name__)
 
 
-def _save_debug_preprocessed_image(image: QtGui.QImage, debug_dir: str | Path | None) -> None:
-    """Best-effort debug image dump; failures are logged but non-fatal."""
-    if not debug_dir:
+def _save_debug_word_boxes(
+    image: QtGui.QImage,
+    recognition,
+    debug_dir: str | Path | None,
+) -> None:
+    """Draw raw PP-OCR detector word boxes on the preprocessed image.
+    Red filled rects + text labels — shows what the detector found before clustering.
+    Failures are logged but non-fatal."""
+    if not debug_dir or not recognition or not recognition.lines:
         return
     try:
-        debug_path = Path(debug_dir) / "ocr_debug_preprocessed.png"
-        image.save(str(debug_path), "PNG")
-        logger.debug(f"Saved OCR debug image to: {debug_path}")
+        canvas = QtGui.QImage(image)
+        painter = QtGui.QPainter(canvas)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, False)
+
+        font = painter.font()
+        font.setPixelSize(max(10, min(16, int(canvas.height() * 0.012))))
+        painter.setFont(font)
+
+        fill = QtGui.QColor(220, 40, 40, 50)
+        pen = QtGui.QPen(QtGui.QColor(220, 40, 40), 2)
+
+        for line in recognition.lines:
+            for word in line.words:
+                b = word.bounding_box
+                x, y, w, h = int(b.x), int(b.y), int(b.width), int(b.height)
+                if w <= 0 or h <= 0:
+                    continue
+                painter.fillRect(x, y, w, h, fill)
+                painter.setPen(pen)
+                painter.drawRect(x, y, w, h)
+
+        painter.end()
+        debug_path = Path(debug_dir) / "ocr_debug_words.png"
+        canvas.save(str(debug_path), "PNG")
+        logger.debug(f"Saved OCR word-box debug image to: {debug_path}")
     except Exception as exc:
-        logger.warning(f"Failed to save OCR debug image: {exc}")
+        logger.warning(f"Failed to save OCR word-box debug image: {exc}")
+
+
+def _save_debug_line_boxes(
+    image: QtGui.QImage,
+    recognition,
+    debug_dir: str | Path | None,
+) -> None:
+    """Draw post-clustering line boxes on the preprocessed image.
+    Green rects with L0/L1/… badges — shows the final lines after greedy clustering.
+    Failures are logged but non-fatal."""
+    if not debug_dir or not recognition or not recognition.lines:
+        return
+    try:
+        canvas = QtGui.QImage(image)
+        painter = QtGui.QPainter(canvas)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, False)
+
+        font = painter.font()
+        font.setPixelSize(max(10, min(16, int(canvas.height() * 0.012))))
+        painter.setFont(font)
+
+        pen = QtGui.QPen(QtGui.QColor(40, 200, 40), 2)
+        painter.setPen(pen)
+
+        for i, line in enumerate(recognition.lines):
+            b = line.bounding_box
+            x, y, w, h = int(b.x), int(b.y), int(b.width), int(b.height)
+            if w <= 0 or h <= 0:
+                continue
+            painter.drawRect(x, y, w, h)
+
+            # Line index badge — top-right corner
+            badge = f"L{i}"
+            fm = painter.fontMetrics()
+            bw = fm.horizontalAdvance(badge) + 6
+            bh = fm.height() + 2
+            bx = x + w - bw if x + w - bw > 0 else x
+            by = y
+            painter.fillRect(bx, by, bw, bh, QtGui.QColor(40, 200, 40, 180))
+            painter.setPen(QtGui.QColor(255, 255, 255))
+            painter.drawText(bx + 3, by + fm.ascent() + 1, badge)
+            painter.setPen(pen)
+
+        painter.end()
+        debug_path = Path(debug_dir) / "ocr_debug_lines.png"
+        canvas.save(str(debug_path), "PNG")
+        logger.debug(f"Saved OCR line-box debug image to: {debug_path}")
+    except Exception as exc:
+        logger.warning(f"Failed to save OCR line-box debug image: {exc}")
 
 
 class OcrService:
@@ -49,9 +126,6 @@ class OcrService:
             # Shared preprocessing pipeline
             preprocess_result = run_minimal_pipeline(request.pixmap)
 
-            # Debug save
-            _save_debug_preprocessed_image(preprocess_result.image, request.debug_dir)
-
             # Engine receives the preprocessed QImage directly
             logger.info("[OCR_CHAIN] recognize() engine call begin, engine=%s", engine_id)
             recognition = recognize_fn(
@@ -61,6 +135,9 @@ class OcrService:
             logger.info("[OCR_CHAIN] recognize() engine call end, engine=%s", engine_id)
             if recognition:
                 recognition.engine_type = engine_id
+
+            _save_debug_word_boxes(preprocess_result.image, recognition, request.debug_dir)
+            _save_debug_line_boxes(preprocess_result.image, recognition, request.debug_dir)
 
             text = compose_text_from_result(recognition, language_tag=request.language_tag)
             return OcrResponse(

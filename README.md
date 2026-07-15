@@ -78,9 +78,12 @@ To enable debug mode, set `debug = true` in `hushsnap_config.toml` (the `--debug
 - **Isolation:** Running from source uses `%LOCALAPPDATA%\HushSnap_Dev`, ensuring your production settings remain untouched.
 - **Traceability:** Sets log level to `DEBUG` and opens the log folder immediately upon startup.
 - **Live Output:** Real-time logs are streamed to the terminal via the logging console handler (`StreamHandler`).
-- **OCR Inspection:** Debug mode saves the preprocessed OCR image to `ocr_debug_preprocessed.png` in the data directory. Right-click the tray icon → "Config Folder" to open this location directly.
-  - Source run: `%LOCALAPPDATA%\HushSnap_Dev\ocr_debug_preprocessed.png`
-  - Packaged run: `%LOCALAPPDATA%\HushSnap\ocr_debug_preprocessed.png`
+- **OCR Inspection:** Debug mode saves detection-box images to the data directory. Right-click the tray icon → "Config Folder" to open this location directly.
+  - `ocr_debug_words.png` — raw PP-OCR detector word boxes (red)
+  - `ocr_debug_lines.png` — post-clustering line boxes (green, L0/L1/… badges)
+  - Source run: `%LOCALAPPDATA%\HushSnap_Dev\`
+  - Packaged run (MSIX): `%LOCALAPPDATA%\Packages\<PackageFamilyName>\LocalState\`
+  - Packaged run (PyInstaller standalone): `%LOCALAPPDATA%\HushSnap\`
 
 ## Building (MSIX)
 
