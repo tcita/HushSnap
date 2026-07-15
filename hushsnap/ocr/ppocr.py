@@ -86,6 +86,7 @@ import threading
 import time
 
 import cv2
+import numpy as np
 
 # Import ppocr library at startup to ensure thread-safe loading of C/C++ extensions.
 # Importing at module level (not inside functions / background threads) prevents
@@ -882,8 +883,6 @@ def _recognize_without_detection(engine, arr) -> OcrRecognition:
     fixed-height input window.
     """
     from ..constants import OCR_ENGINE_PPOCR
-    import cv2
-    import numpy as np
 
     orig_det = engine.use_det
     orig_cls = engine.use_cls
@@ -978,7 +977,6 @@ def recognize_ppocr_qimage(image_or_result, language_tag: str = "") -> OcrRecogn
     
     try:
         logger.debug("[ANCHOR] IMAGE_CONVERT_START")
-        import numpy as np
         # Callers must pass a QImage whose format stores [B, G, R] in the
         # first three bytes on this platform (RGB32 / ARGB32 / ARGB32_PM on
         # little-endian).  prepare_ocr_image() in preprocess.py guarantees

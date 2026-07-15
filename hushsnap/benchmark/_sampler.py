@@ -6,6 +6,7 @@ import time
 import threading
 
 import psutil
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +130,6 @@ class MemorySampler:
         try:
             above_bl = [max(1e-6, v - ws_baseline) for v in tail]
             if len(above_bl) >= 5 and max(above_bl) > 1.0:
-                import numpy as np
                 y = np.log(above_bl)
                 x = np.array(tail_t) - tail_t[0]
                 slope, intercept = np.polyfit(x, y, 1)
