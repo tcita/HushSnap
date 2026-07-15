@@ -1,0 +1,1 @@
+CORRECTION: The root cause is NOT Python 3.13 Copy-and-Patch JIT, which is not compiled into official Windows builds. The actual issue is a thread-safety race when LoadLibrary/DllMain runs on a background thread during deferred C-extension imports. The fix (hoisting imports to module level on the main thread) remains correct.
