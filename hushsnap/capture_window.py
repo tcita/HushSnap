@@ -7,7 +7,6 @@ import ctypes
 import logging
 import sys
 import traceback
-from ctypes import wintypes
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
@@ -36,15 +35,6 @@ logger = get_logger(__name__)
 FLOAT_UP_PX = 20
 FLOAT_DURATION_MS = 600
 
-# ── Win32 window-manipulation constants ──────────────────────────────────────
-# Used by _force_topmost_hard() for foreground escalation.
-_WM_CANCELMODE = 0x001F
-_SMTO_ABORTIFHUNG = 0x0002
-_SW_SHOW = 5
-_HWND_TOPMOST = -1
-# SWP_SHOWWINDOW | SWP_NOMOVE | SWP_NOSIZE
-_SWP_TOPMOST_FLAGS = 0x0043
-_WM_CANCELMODE_TIMEOUT_MS = 200
 
 # ── Selection-handle / dimension-label drawing constants ─────────────────────
 _SELECTION_HANDLE_SIZE = 10
@@ -76,68 +66,28 @@ _HINT_BOTTOM_OFFSET = 56
 # unrecoverable in-process — Task Manager is the only floor.
 HINT_DELAY_MS = 30000   # show the "Esc / right-click" hint after this long
 
-# ── Window-foreground strategy (ShareX-style, with fallback) ────────────────
+# ── Window-foreground strategy (ShareX-style) ────────────────────────────────
 #
 # The capture overlay must reach the foreground so keyboard input (Esc) and
 # the frozen background land on the right window. ShareX — a mature, battle-
-# tested tool — handles this for its region-capture overlay with nothing more
-# than ``TopMost=true`` + ``Activate()`` + ``BringToFront()`` on the Shown
-# event, relying on the WM_HOTKEY foreground privilege the hotkey thread
-# receives. We mirror that as the *primary* path: it is what works in the
-# common case, costs no P/Invoke, and does not disturb other windows.
+# tested tool with tens of millions of users — handles this for its region-
+# capture overlay with nothing more than ``TopMost=true`` + ``Activate()`` +
+# ``BringToFront()`` on the Shown event, relying on the WM_HOTKEY foreground
+# privilege the hotkey thread receives. We mirror exactly that: ``raise_`` +
+# ``activateWindow``, with TopMost already guaranteed by the
+# WindowStaysOnTopHint flag set at construction.
 #
-# Where HushSnap diverges from ShareX is the multi-window, mixed-DPR reality:
-# each monitor gets its own overlay window (Qt's logical coords are
-# discontinuous across mixed-DPR monitors, so one spanning window would
-# mis-map), and a fullscreen app can strip topmost. For those cases we keep
-# the previous escalation (WM_CANCELMODE + SetWindowPos TOPMOST +
-# SetForegroundWindow, verified, then AttachThreadInput if still denied) as a
-# *fallback* invoked only when the light path fails verification — so the
-# heavy, side-effecting AttachThreadInput runs far less often, and windows no
-# longer fight each other for the foreground (only the cursor's screen, the
-# "primary" overlay, ever claims foreground; siblings stay topmost-only).
+# There is deliberately NO hard fallback (SetForegroundWindow,
+# AttachThreadInput, etc.). ShareX does not use any of those — not because
+# they never fail, but because AttachThreadInput carries real risk (deadlock
+# with a busy thread, input-state corruption if the process terminates mid-
+# attach, false-positive anti-cheat detection) and the light path has proven
+# sufficient across ShareX's entire user base. HushSnap cannot match that
+# scale of testing, so we stay on the well-trodden road.
 #
-# Failure is detected by *verification*, not by API return values:
-# ``SetForegroundWindow``'s BOOL is documented as unreliable, so every path
-# checks ``GetForegroundWindow() == hwnd`` afterwards. The verification is
-# delayed one event-loop tick because ``activateWindow()`` is asynchronous —
-# checking immediately would yield false negatives and over-trigger fallback.
-
-# Delay before verifying whether the light foreground claim took effect.
-# activateWindow() is asynchronous — Qt processes the focus change on the
-# next event-loop iterations. Measured latency (scratch/probe_activate_delay.py,
-# 25 trials, same Tool/Frameless/StaysOnTop flags as the overlay):
-#   min 1.5ms, median 2.8ms, p95 4.6ms, max 6.6ms.
-# 15ms is ~3x p95 — covers normal jitter with margin, while still escalating
-# quickly when the light path genuinely fails (a fullscreen app holding
-# foreground). Larger values only delay the fallback for no benefit, since
-# the light path either takes effect within a few ms or not at all.
-_ACTIVATE_VERIFY_DELAY_MS = 15
-
-
-def _declare_win32_topmost_signatures():
-    """Set strict ctypes signatures once per process to avoid 64-bit handle
-    truncation. Idempotent — safe to call from every entry point."""
-    if sys.platform != "win32":
-        return
-    user32 = ctypes.windll.user32
-    user32.GetForegroundWindow.restype = wintypes.HWND
-    user32.IsHungAppWindow.argtypes = [wintypes.HWND]
-    user32.IsHungAppWindow.restype = wintypes.BOOL
-    user32.SendMessageTimeoutW.argtypes = [
-        wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM,
-        wintypes.UINT, wintypes.UINT, ctypes.POINTER(wintypes.DWORD),
-    ]
-    user32.SendMessageTimeoutW.restype = wintypes.LPARAM
-    user32.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
-    user32.AttachThreadInput.restype = wintypes.BOOL
-    user32.SetWindowPos.argtypes = [
-        wintypes.HWND, wintypes.HWND,
-        ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.UINT,
-    ]
-    user32.SetForegroundWindow.argtypes = [wintypes.HWND]
-    user32.SetActiveWindow.argtypes = [wintypes.HWND]
-    user32.SetFocus.argtypes = [wintypes.HWND]
+# A delayed audit (``GetForegroundWindow() == hwnd``) logs whether the light
+# path won foreground; the log is the signal for whether this strategy holds
+# in practice. No escalation is performed — the log is informational only.
 
 
 def _is_foreground(hwnd) -> bool:
@@ -150,103 +100,18 @@ def _is_foreground(hwnd) -> bool:
         return False
 
 
-def _force_topmost_hard(hwnd, old_fg_hwnd):
-    """Escalation fallback: force *hwnd* to the foreground.
-
-    Mirrors the previously-verified 3-stage routine (WM_CANCELMODE to the
-    old foreground → TOPMOST + SetForegroundWindow → AttachThreadInput if
-    still denied), gated on the old window not being hung. Returns True if
-    *hwnd* ended up foreground.
-    """
-    if sys.platform != "win32" or not hwnd:
-        return False
-    _declare_win32_topmost_signatures()
-    user32 = ctypes.windll.user32
-    kernel32 = ctypes.windll.kernel32
-
-    try:
-        # Cancel the old foreground's modal state so it releases focus.
-        if old_fg_hwnd and old_fg_hwnd != hwnd:
-            unused = wintypes.DWORD()
-            user32.SendMessageTimeoutW(
-                old_fg_hwnd, _WM_CANCELMODE, 0, 0,
-                _SMTO_ABORTIFHUNG, _WM_CANCELMODE_TIMEOUT_MS,
-                ctypes.byref(unused),
-            )
-
-        user32.ShowWindow(hwnd, _SW_SHOW)
-        user32.SetWindowPos(
-            hwnd, _HWND_TOPMOST, 0, 0, 0, 0, _SWP_TOPMOST_FLAGS,
-        )
-        user32.SetForegroundWindow(hwnd)
-        user32.SetActiveWindow(hwnd)
-        user32.SetFocus(hwnd)
-        if _is_foreground(hwnd):
-            return True
-
-        if not old_fg_hwnd:
-            return False
-        # Don't block attaching to a hung window.
-        if user32.IsHungAppWindow(old_fg_hwnd):
-            logger.warning(
-                f"topmost_warn | old foreground {old_fg_hwnd} is HUNG; "
-                f"skipping AttachThreadInput"
-            )
-            return False
-
-        curr_tid = kernel32.GetCurrentThreadId()
-        fg_tid = user32.GetWindowThreadProcessId(old_fg_hwnd, None)
-        if not fg_tid or fg_tid == curr_tid:
-            return _is_foreground(hwnd)
-
-        attached = False
-        try:
-            attached = bool(user32.AttachThreadInput(curr_tid, fg_tid, True))
-        except Exception as e:
-            logger.debug(f"topmost_warn | AttachThreadInput failed: {e}")
-
-        try:
-            if attached:
-                user32.SetForegroundWindow(hwnd)
-                user32.SetActiveWindow(hwnd)
-                user32.SetFocus(hwnd)
-        finally:
-            if attached:
-                user32.AttachThreadInput(curr_tid, fg_tid, False)
-        return _is_foreground(hwnd)
-    except Exception:
-        logger.error(f"topmost_err | {traceback.format_exc().strip()}")
-        return False
-
-
 def claim_foreground(widget, *, primary: bool = True):
-    """Bring *widget* to the foreground, ShareX-style, with a fallback.
+    """Bring *widget* to the foreground, ShareX-style.
 
-    This is the single entry point for the capture overlay's focus/topmost
-    strategy. It runs in two roles:
+    This mirrors ShareX's ``ForceActivate``: ``raise_`` + ``activateWindow``,
+    with TopMost already guaranteed by the WindowStaysOnTopHint flag set at
+    construction. Only the cursor's screen (``primary=True``) claims the
+    foreground; sibling overlays on other monitors stay topmost-only so the
+    N overlay windows do not fight each other for focus.
 
-    - ``primary=True`` (the cursor's screen — the one the user interacts
-      with): claim the *foreground* so keyboard input lands here. Tries the
-      light ShareX path (``raise_`` + ``activateWindow``) first; if
-      verification after a short async delay shows it did not take, escalates
-      to the Win32 hard path (``_force_topmost_hard``).
-    - ``primary=False`` (sibling overlays on other monitors): stay *topmost*
-      only — ``raise_`` so the frozen background stays above other windows,
-      but do NOT claim the foreground. This is what stops the N overlay
-      windows from fighting each other for focus: only one window (the
-      cursor's) ever claims foreground, the rest just stay visible on top.
-
-    The light path mirrors ShareX's ``ForceActivate`` (Activate +
-    BringToFront on the shown window, with TopMost already set via the
-    WindowStaysOnTopHint flag at construction). The hard fallback preserves
-    the previous, separately-verified escalation for the cases ShareX does
-    not face (fullscreen apps stripping topmost, mixed-DPR multi-window
-    z-order contention).
+    A delayed audit logs whether the foreground claim succeeded. No hard
+    escalation is attempted — see the module-level strategy comment.
     """
-    # Light path — always applied, both roles. raise_() keeps the window
-    # above siblings and other apps; activateWindow() claims foreground
-    # (ignored by the OS for non-primary windows effectively, since only one
-    # foreground exists — but harmless).
     try:
         widget.raise_()
         if primary:
@@ -254,9 +119,7 @@ def claim_foreground(widget, *, primary: bool = True):
     except Exception:
         logger.debug("claim_foreground: light raise/activate failed", exc_info=True)
 
-    # Non-Windows or sibling overlay: light path is all we do. Topmost is
-    # already guaranteed by the WindowStaysOnTopHint flag set at construction;
-    # siblings deliberately do not escalate to the hard path.
+    # Non-Windows or sibling overlay: light path is all we do.
     if sys.platform != "win32" or not primary:
         return
 
@@ -264,36 +127,19 @@ def claim_foreground(widget, *, primary: bool = True):
     if not hwnd:
         return
 
-    # Capture the current foreground *before* the light claim so the hard
-    # path can WM_CANCELMODE it if needed. Verify asynchronously —
-    # activateWindow() takes effect on the next event-loop iteration.
-    old_fg = None
-    try:
-        old_fg = ctypes.windll.user32.GetForegroundWindow()
-    except Exception:
-        logger.debug("capture: GetForegroundWindow failed", exc_info=True)
-
-    def _verify_and_escalate():
+    def _audit():
         if _is_foreground(hwnd):
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug("topmost_audit | light path succeeded")
-            return
-        # Light path failed (e.g. fullscreen app holds foreground). Escalate.
-        # Logged at INFO (not DEBUG) so the fallback trigger rate is visible
-        # in normal runs — this is the signal for whether the ShareX-style
-        # light path is sufficient in practice or escalation is frequently
-        # needed. If this fires often, the light path is not enough and the
-        # delay/strategy may need tuning.
-        logger.info("topmost_fallback | light path did not win foreground; escalating to hard path")
-        if _force_topmost_hard(hwnd, old_fg):
-            logger.info("topmost_fallback | hard path succeeded")
+            logger.debug("topmost_audit | foreground claim succeeded")
         else:
-            logger.warning(
-                "topmost_warn | foreground claim failed after escalation; "
-                "overlay may not receive keyboard input (Esc)"
+            logger.info(
+                "topmost_audit | foreground claim did not win; "
+                "overlay may not receive keyboard input (Esc). "
+                "No hard fallback is attempted — see module docstring."
             )
 
-    QtCore.QTimer.singleShot(_ACTIVATE_VERIFY_DELAY_MS, _verify_and_escalate)
+    # 15 ms delay: activateWindow() is async; checking immediately would
+    # yield false negatives. Measured latency ~3 ms median, 15 ms is ~3x p95.
+    QtCore.QTimer.singleShot(15, _audit)
 
 
 
@@ -602,9 +448,9 @@ class CaptureWindow(QtWidgets.QWidget):
         """Window show event: claim foreground/topmost and arm housekeeping."""
         super().showEvent(event)
         # Defer so the native window handle is fully ready, then claim focus
-        # via the ShareX-style light path (with hard fallback for the primary
-        # overlay). Sibling overlays pass primary=False so they stay topmost
-        # without fighting the cursor's screen for the foreground.
+        # via the ShareX-style light path. Sibling overlays pass primary=False
+        # so they stay topmost without fighting the cursor's screen for the
+        # foreground.
         is_primary = not getattr(self, "_is_sibling_overlay", False)
         QtCore.QTimer.singleShot(0, lambda: claim_foreground(self, primary=is_primary))
 
