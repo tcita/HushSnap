@@ -5,10 +5,10 @@ evaluate against ground truth.
 
 Typical usage (pytest)::
 
-    from tests.ocr_layout.cases import make_line_clustering_cases
-    from tests.ocr_layout.render import render_case
-    from tests.ocr_layout.pipeline import run_pipeline
-    from tests.ocr_layout.evaluate import check_clustering
+    from scripts.ocr_layout.cases import make_line_clustering_cases
+    from scripts.ocr_layout.render import render_case
+    from scripts.ocr_layout.pipeline import run_pipeline
+    from scripts.ocr_layout.evaluate import check_clustering
 
     @pytest.mark.parametrize("case", make_line_clustering_cases())
     def test_line_clustering(case, browser, engine):
@@ -19,9 +19,9 @@ Typical usage (pytest)::
 
 Standalone (no pytest)::
 
-    from tests.ocr_layout.render import render_cases, RenderCase
-    from tests.ocr_layout.pipeline import run_pipeline, get_engine
-    from tests.ocr_layout.evaluate import check_clustering
+    from scripts.ocr_layout.render import render_cases, RenderCase
+    from scripts.ocr_layout.pipeline import run_pipeline, get_engine
+    from scripts.ocr_layout.evaluate import check_clustering
 
     engine = get_engine()
     for case in [...]:

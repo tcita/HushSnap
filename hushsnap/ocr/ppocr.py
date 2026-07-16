@@ -197,21 +197,30 @@ def word_separator(left: str, right: str) -> str:
 #     removes ~20 lines of ref-band / min()-denominator computation
 #     with zero behavioural change.
 #
-#     This follows from a simple duality.  For a box satisfying the
-#     centre condition |δ| < k × H, the worst-case overlap ratio
-#     against the ref band [M − 0.5H, M + 0.5H] is::
+#     The overlap-ratio check (the standard approach in layout analysis)
+#     tests whether a candidate box sufficiently overlaps the reference
+#     line's vertical band [M − ½H, M + ½H]:
 #
-#         overlap / min(box_h, H)  ≥  ((box_h + H)/2 − k × H) / min(box_h, H)
-#                                 =  1 − k      (when box_h → 0 or box_h ≫ H)
+#         overlap / min(box_h, H)  >  r      (e.g. r = 0.5)
 #
-#     (k ≥ 0.5 is physically impossible — the box centre would lie
-#     outside the ref band entirely; the two boxes are on different
-#     lines.  So we only ever consider k < 0.5.)
+#     The centre-distance gate tests a simpler condition:
 #
-#     Therefore centre ⇒ overlap holds when 1 − k ≥ m, i.e. k + m ≤ 1.0.
-#     Our pair (k=0.4, m=0.5) gives 0.4 + 0.5 = 0.9 < 1.0: centre
-#     strictly implies overlap.  If k is ever raised past 0.5 the sum
-#     crosses 1.0 and overlap must be reintroduced.
+#         |box.center_y − M|  <  k × H       (e.g. k = 0.4)
+#
+#     These two gates have a clean logical relationship.  Provided
+#     k ≤ min(½, 1−r), whenever the centre-distance gate accepts a pair,
+#     the overlap-ratio gate is *guaranteed* to accept it too.  In other
+#     words, under this parameter regime centre-distance is a stricter
+#     (more conservative) sufficient condition for overlap-ratio —
+#     filtering by centre-distance never produces a false negative (it
+#     won't reject a pair that overlap-ratio would accept), while
+#     side-stepping overlap-ratio's sensitivity to detection-box
+#     precision.
+#
+#     Our pair (k=0.4, r=0.5) satisfies 0.4 ≤ min(0.5, 0.5), so
+#     centre-distance ⇒ overlap-ratio holds unconditionally.  If k is
+#     ever raised past 0.5, the overlap-ratio check must be
+#     reintroduced as a second gate.
 #
 # 2.  PP-OCR v6 small rarely fragments punctuation or CJK characters
 #     into separate small boxes (verified on ~10 test images with
@@ -231,35 +240,37 @@ def word_separator(left: str, right: str) -> str:
 #     would be cargo-cult tuning.
 #
 # 4.  PP-OCR detection boxes are systematically taller than the actual
-#     font-size — empirically measured at +36 % (≈ +13 px constant
-#     padding; see scripts/ocr_box_height_study.py).  This box-height
-#     inflation affects overlap-based gating more severely than
-#     centre-distance, independently of the mathematical redundancy
-#     proved in §1:
+#     font-size (see scripts/measure_box_inflation.py).  Measured across
+#     8–64 px, Latin + CJK, n ≈ 2700:
 #
-#       • centre-distance — the denominator (median_h) is inflated,
-#         softening the threshold from 0.4 × fs to ≈ 0.55 × fs.
-#         Single amplification; remains safe at normal line spacing
-#         (≥ 1.0 × fs).
+#         ratio = box_h / font_size
+#         Latin:  median 1.23×   stdev 0.17×   p5–p95  1.00–1.56×
+#         CJK:    median 1.19×   stdev 0.14×   p5–p95  1.00–1.43×
+#         delta = box_h − font_size
+#         Latin:  median +5.0 px           CJK:    median +4.0 px
 #
-#       • overlap — both the ref-band width (0.5 × median_h) and the
-#         overlap-ratio denominator are inflated.  This double
-#         amplification widens the ref band and inflates the computed
-#         overlap ratio simultaneously, making the gate falsely pass at
-#         line spacing as wide as 0.68 × fs — well into normal UI text
-#         territory.
+#     The ratio is not a simple function of font-size — the within-size
+#     variance (stdev ≈ 0.14–0.17×) dominates any systematic trend.
+#     This means you cannot reliably recover the original typesetting
+#     intent from box dimensions: box height is an unreliable proxy for
+#     font-size, and therefore any gate built on box height (ref-band
+#     width, overlap denominator) is gated by a quantity that is
+#     systematically decoupled from the actual text.  Centre-distance
+#     is structurally immune: the box centre is determined by the real
+#     text position on the page, not by the detector's bounding-box
+#     padding.  You don't need to know the font-size to know whether
+#     two words sit on the same baseline.
 #
 #     So even if k were raised past 0.5 and overlap had to be
-#     reintroduced as a second gate, the inflated-box-height regime
-#     would make it a *less reliable* gate than centre-distance, not a
+#     reintroduced as a second gate, the height-inflation problem would
+#     make overlap a *less reliable* gate than centre-distance, not a
 #     complementary one.  Centre-distance wins on two independent
-#     grounds: it is mathematically sufficient (no overlap needed at
-#     k=0.4), and it is more robust to the detector's systematic
-#     box-height bias.
+#     grounds: it is mathematically sufficient (§1, no overlap needed
+#     at k=0.4), and it does not depend on box-height estimates that
+#     are systematically decoupled from font-size.
 #
-#     If the detector model is upgraded in the future, re-measure the
-#     box-inflation factor — a change in the padding constant directly
-#     affects the effective thresholds above.
+#     If the detector model is upgraded in the future, re-measure —
+#     the ratio distribution above is model-specific.
 
 # ---------------------------------------------------------------------------
 
