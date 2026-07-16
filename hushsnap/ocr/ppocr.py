@@ -229,6 +229,37 @@ def word_separator(left: str, right: str) -> str:
 #     properties; the 0.4 threshold was tuned on real screenshots.
 #     Importing Zebra's constants without Zebra's pairwise architecture
 #     would be cargo-cult tuning.
+#
+# 4.  PP-OCR detection boxes are systematically taller than the actual
+#     font-size — empirically measured at +36 % (≈ +13 px constant
+#     padding; see scripts/ocr_box_height_study.py).  This box-height
+#     inflation affects overlap-based gating more severely than
+#     centre-distance, independently of the mathematical redundancy
+#     proved in §1:
+#
+#       • centre-distance — the denominator (median_h) is inflated,
+#         softening the threshold from 0.4 × fs to ≈ 0.55 × fs.
+#         Single amplification; remains safe at normal line spacing
+#         (≥ 1.0 × fs).
+#
+#       • overlap — both the ref-band width (0.5 × median_h) and the
+#         overlap-ratio denominator are inflated.  This double
+#         amplification widens the ref band and inflates the computed
+#         overlap ratio simultaneously, making the gate falsely pass at
+#         line spacing as wide as 0.68 × fs — well into normal UI text
+#         territory.
+#
+#     So even if k were raised past 0.5 and overlap had to be
+#     reintroduced as a second gate, the inflated-box-height regime
+#     would make it a *less reliable* gate than centre-distance, not a
+#     complementary one.  Centre-distance wins on two independent
+#     grounds: it is mathematically sufficient (no overlap needed at
+#     k=0.4), and it is more robust to the detector's systematic
+#     box-height bias.
+#
+#     If the detector model is upgraded in the future, re-measure the
+#     box-inflation factor — a change in the padding constant directly
+#     affects the effective thresholds above.
 
 # ---------------------------------------------------------------------------
 
