@@ -1,4 +1,6 @@
+import ctypes
 import logging
+import sys
 from PyQt6 import QtCore, QtGui, QtWidgets
 from PIL import Image
 import io
@@ -32,8 +34,9 @@ class PinnedImageWindow(QtWidgets.QWidget):
         )
         dpr = screen.devicePixelRatio() if screen else current_dpr()
 
-        # 2. Fix pixmap scaling for High-DPI rendering
-        self.pixmap.setDevicePixelRatio(dpr)
+        # 2. Keep pixmap at default DPR 1.0 so that QPixmap.scaled(w, h)
+        #    treats w/h as physical pixels — this keeps paintEvent scaling
+        #    correct regardless of which screen the window is on.
         
         self.setWindowFlags(
             QtCore.Qt.WindowType.FramelessWindowHint |
@@ -78,6 +81,10 @@ class PinnedImageWindow(QtWidgets.QWidget):
 
         # The window size includes shadow padding
         self.resize(int(img_w + 2 * self.shadow_width), int(img_h + 2 * self.shadow_width))
+
+        # Immutable physical content size — the anchor for cross-DPI resizing.
+        self._ref_phys_w = img_w * dpr
+        self._ref_phys_h = img_h * dpr
 
         # Position on the right side, vertically centered on the target screen
         right_margin = 40
@@ -126,26 +133,31 @@ class PinnedImageWindow(QtWidgets.QWidget):
             start_geom = self._morph_source
             target_geom = self.geometry()
             self._morph_source = None
-            
+
             self.setWindowOpacity(0.2)
             self._show_anim = QtCore.QParallelAnimationGroup(self)
-            
+
             fade = QtCore.QPropertyAnimation(self, b"windowOpacity")
             fade.setDuration(250)
             fade.setStartValue(0.2)
             fade.setEndValue(1.0)
             fade.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
-            
+
             morph = QtCore.QPropertyAnimation(self, b"geometry")
             morph.setDuration(300)
             morph.setStartValue(start_geom)
             morph.setEndValue(target_geom)
             morph.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
-            
+
             self._show_anim.addAnimation(fade)
             self._show_anim.addAnimation(morph)
+
+            # setWindowOpacity(0.2 → 1.0) toggles WS_EX_LAYERED; Qt may
+            # drop WS_EX_TOPMOST while resetting extended styles.
+            self._show_anim.finished.connect(self._ensure_topmost)
             self._show_anim.start()
         super().showEvent(event)
+        self._ensure_topmost()
 
     def _get_content_rect(self) -> QtCore.QRect:
         """Returns the rectangle for the actual image content, excluding shadow padding."""
@@ -159,6 +171,54 @@ class PinnedImageWindow(QtWidgets.QWidget):
         close_x = self.width() - 28
         close_y = 4
         self.close_btn.move(close_x, close_y)
+
+    def _fit_to_screen(self):
+        """Animate to the correct physical size for the current screen.
+
+        Uses the immutable ``_ref_phys_w/h`` baseline so repeated crossings
+        never accumulate drift.  A short animation masks the resize instead
+        of snapping abruptly.
+        """
+        dpr = self.devicePixelRatio()
+        target_cw = self._ref_phys_w / dpr
+        target_ch = self._ref_phys_h / dpr
+        target_size = QtCore.QSize(
+            int(round(target_cw + 2 * self.shadow_width)),
+            int(round(target_ch + 2 * self.shadow_width)),
+        )
+        current_size = self.size()
+        if current_size == target_size:
+            return
+
+        anim = QtCore.QPropertyAnimation(self, b"size")
+        anim.setDuration(180)
+        anim.setStartValue(current_size)
+        anim.setEndValue(target_size)
+        anim.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
+        # Keep a reference so the animation isn't garbage-collected mid-run.
+        self._fit_anim = anim
+        anim.start()
+
+    def _ensure_topmost(self):
+        """Hard-assert WS_EX_TOPMOST via Win32 ``SetWindowPos``.
+
+        ``setWindowOpacity()`` in the morph animation toggles
+        ``WS_EX_LAYERED``, and Qt's internal style reset can silently drop
+        ``WS_EX_TOPMOST`` — which is why some pinned windows lose their
+        stay-on-top behaviour.  This call re-applies the topmost flag at
+        the OS level, bypassing Qt's window-flag machinery.
+        """
+        if sys.platform != "win32":
+            self.raise_()
+            return
+        try:
+            hwnd = int(self.winId())
+            # HWND_TOPMOST = -1, SWP_NOSIZE | SWP_NOMOVE | SWP_SHOWWINDOW
+            ctypes.windll.user32.SetWindowPos(
+                hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040,
+            )
+        except Exception:
+            self.raise_()
 
     def enterEvent(self, event):
         self._update_ui_positions()
@@ -203,6 +263,8 @@ class PinnedImageWindow(QtWidgets.QWidget):
                 self._is_resizing = True
             else:
                 self._drag_offset = event.globalPosition().toPoint() - self.pos()
+                # Prevent Qt's WM_DPICHANGED from resizing mid-drag.
+                self.setFixedSize(self.size())
             event.accept()
         elif event.button() == QtCore.Qt.MouseButton.RightButton:
             self._show_context_menu(event.globalPosition().toPoint())
@@ -256,8 +318,16 @@ class PinnedImageWindow(QtWidgets.QWidget):
                 self.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
 
     def mouseReleaseEvent(self, event):
+        was_resizing = self._is_resizing
         self._is_resizing = False
         self._active_edge = None
+        # Release the size lock set in mousePressEvent.
+        self.setMinimumSize(0, 0)
+        self.setMaximumSize(16777215, 16777215)  # QWIDGETSIZE_MAX
+        # After a cross-screen drag (not a corner resize), smoothly
+        # correct the size to match the new screen's DPR.
+        if not was_resizing:
+            self._fit_to_screen()
         super().mouseReleaseEvent(event)
 
     def resizeEvent(self, event):
@@ -273,6 +343,9 @@ class PinnedImageWindow(QtWidgets.QWidget):
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform)
         content_rect = self._get_content_rect()
+        # self.pixmap deliberately has no DPR set (default 1.0), so
+        # QPixmap.scaled(w, h) interprets w/h as physical pixels —
+        # matching what logical_to_physical_size() produces.
         for i in range(1, self.shadow_width + 1):
             alpha = int(40 * (1.0 - (i / float(self.shadow_width))))
             painter.setPen(QtGui.QPen(QtGui.QColor(0, 0, 0, alpha), 1))
@@ -362,6 +435,7 @@ class PinnedImageManager(QtCore.QObject):
             win.ocr_requested.connect(self.ocr_requested.emit)
             win.edit_requested.connect(self.edit_requested.emit)
             win.show()
+            win.raise_()  # bump to front of topmost Z-band
             from .thumbnail import thumbnail_manager
             thumbnail_manager.dismiss_current()
             self._windows.append(win)
