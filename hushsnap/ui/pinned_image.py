@@ -324,9 +324,17 @@ class PinnedImageWindow(QtWidgets.QWidget):
         # Release the size lock set in mousePressEvent.
         self.setMinimumSize(0, 0)
         self.setMaximumSize(16777215, 16777215)  # QWIDGETSIZE_MAX
-        # After a cross-screen drag (not a corner resize), smoothly
-        # correct the size to match the new screen's DPR.
-        if not was_resizing:
+        if was_resizing:
+            # User manually resized the window — re-anchor the physical
+            # baseline so subsequent cross-screen moves use the new size
+            # rather than reverting to the original capture dimensions.
+            dpr = self.devicePixelRatio()
+            cr = self._get_content_rect()
+            self._ref_phys_w = cr.width() * dpr
+            self._ref_phys_h = cr.height() * dpr
+        else:
+            # After a cross-screen drag (not a corner resize), smoothly
+            # correct the size to match the new screen's DPR.
             self._fit_to_screen()
         super().mouseReleaseEvent(event)
 
