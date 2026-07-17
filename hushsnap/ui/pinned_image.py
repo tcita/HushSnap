@@ -1,4 +1,5 @@
 import ctypes
+from ctypes import wintypes
 import logging
 import sys
 from PyQt6 import QtCore, QtGui, QtWidgets
@@ -9,6 +10,11 @@ from pathlib import Path
 from .styles import MODERN_MENU_STYLE, apply_menu_shadow
 from .toast import show_toast
 from ..dpi import current_dpr, cursor_screen, logical_to_physical_size, physical_to_logical_size
+
+# Win32 constants for nativeEvent topmost guard
+GWL_EXSTYLE = -20
+WS_EX_TOPMOST = 0x00000008
+WM_WINDOWPOSCHANGED = 0x0047
 
 logger = logging.getLogger(__name__)
 
@@ -219,6 +225,46 @@ class PinnedImageWindow(QtWidgets.QWidget):
             )
         except Exception:
             self.raise_()
+
+    def nativeEvent(self, eventType, message):
+        """Re-assert WS_EX_TOPMOST whenever Windows repositions this window.
+
+        Qt ``Tool`` windows (``WS_EX_TOOLWINDOW``) are owned by an implicit
+        owner window.  When an external application is minimized (e.g. the
+        Photos app after viewing a debug screenshot on another monitor),
+        Windows broadcasts ``WM_ACTIVATEAPP`` to this process.  Qt's
+        internal activation handler can silently strip ``WS_EX_TOPMOST``
+        from owned tool windows during Z-order reconciliation — the pinned
+        window then drops behind normal windows on every monitor.
+
+        We catch ``WM_WINDOWPOSCHANGED`` (fired after *every* window
+        move/size/Z-order change) and re-apply the topmost flag if it was
+        stripped.  ``GetWindowLongW`` is essentially free (a window-property
+        read); ``SetWindowPos`` with ``SWP_NOSIZE | SWP_NOMOVE`` is a no-op
+        when the window is already topmost, so the hot path costs one
+        syscall per window-message.
+        """
+        if sys.platform != "win32":
+            return False, 0
+        if eventType != b"windows_generic_MSG":
+            return False, 0
+        try:
+            msg = wintypes.MSG.from_address(int(message))
+        except Exception:
+            return False, 0
+        if msg.message != WM_WINDOWPOSCHANGED:
+            return False, 0
+        # Guard: only call _ensure_topmost when the flag is actually missing.
+        # _ensure_topmost itself calls SetWindowPos, which triggers another
+        # WM_WINDOWPOSCHANGED — but by then the flag is already set, so we
+        # don't re-enter.
+        try:
+            hwnd = msg.hwnd
+            if hwnd and not (ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST):
+                self._ensure_topmost()
+        except Exception:
+            pass
+        return False, 0
 
     def enterEvent(self, event):
         self._update_ui_positions()
