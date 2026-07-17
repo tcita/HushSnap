@@ -270,14 +270,15 @@ def create_tray(
     # Tray is shown after OCR warmup completes (see app.py).
     # Delaying the tray gives a subtle "still loading" signal to the user.
 
-    # Style QMenu window with modern light theme, translucent corners, and margin for shadow
+    # Flat light theme: solid card, rounded corners, 1px hairline border.
+    # No drop shadow / transparent margin - see WA_TranslucentBackground note
+    # below for why (Qt 6.11 QGraphicsDropShadowEffect alpha bug).
     tray_menu.setStyleSheet("""
         QMenu {
             background-color: #FFFFFF;
             border: 1px solid #E5E5E5;
             border-radius: 10px;
             padding: 8px;
-            margin: 10px;
             font-size: 13px;
             font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
         }
@@ -291,14 +292,17 @@ def create_tray(
             margin: 3px 8px;
         }
     """)
+    # WA_TranslucentBackground keeps the rounded corners transparent outside
+    # the card. There is NO transparent margin anymore: the old code reserved
+    # a 10px margin to paint a QGraphicsDropShadowEffect soft shadow into, but
+    # that effect forces an offscreen texture whose alpha channel is dropped
+    # by Qt 6.11's DWM compositing on some GPU/driver combos (notably dual-GPU
+    # laptops), so the margin composites as a solid black ring around the
+    # menu. The shadow was purely decorative, so both margin and effect were
+    # removed. AB-confirmed: Qt 6.11.1 shows the black ring on the same
+    # recipe, Qt 6.10.2 does not - so this is a Qt 6.11 regression, worked
+    # around here by not using the effect at all.
     tray_menu.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
-
-    # Create a premium soft drop shadow effect
-    shadow = QtWidgets.QGraphicsDropShadowEffect(tray_menu)
-    shadow.setBlurRadius(15)
-    shadow.setColor(QtGui.QColor(0, 0, 0, 45))
-    shadow.setOffset(0, 3)
-    tray_menu.setGraphicsEffect(shadow)
 
     # Resolve local icon directory paths
     icons_dir = Path(__file__).resolve().parent / "icons"

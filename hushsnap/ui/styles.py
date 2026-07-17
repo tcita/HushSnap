@@ -343,7 +343,6 @@ QMenu {
     border: 1px solid rgba(255, 255, 255, 30);
     border-radius: 10px;
     padding: 6px 0px;
-    margin: 12px;
 }
 QMenu::item {
     padding: 8px 32px 8px 16px;
@@ -370,15 +369,14 @@ QMenu::separator {
 
 
 def apply_menu_shadow(menu):
-    """Attach the standard soft drop shadow to a styled QMenu.
+    """No-op kept for call-site compatibility.
 
-    Shared by the thumbnail and pinned-image context menus, which use the
-    same MODERN_MENU_STYLE and need identical shadow tuning.
+    The drop shadow used to be painted into a transparent 12px margin via
+    QGraphicsDropShadowEffect. On some DWM/GPU combos that transparent
+    margin (and the offscreen texture the effect forces) composites as solid
+    black, producing a black ring around the menu, so the shadow and its
+    margin were removed (see MODERN_MENU_STYLE - no margin). Callers still
+    invoke this for uniformity; it now does nothing.
     """
-    from PyQt6 import QtGui, QtWidgets
-    shadow = QtWidgets.QGraphicsDropShadowEffect(menu)
-    shadow.setBlurRadius(15)
-    shadow.setColor(QtGui.QColor(0, 0, 0, 80))
-    shadow.setOffset(0, 4)
-    menu.setGraphicsEffect(shadow)
+    return
 
