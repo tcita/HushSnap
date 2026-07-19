@@ -3,6 +3,7 @@ Unit tests for the configuration module.
 Covers hotkey parsing, path resolution, and UI text translations.
 """
 
+import logging
 import tomllib
 import pytest
 from pathlib import Path
@@ -16,6 +17,14 @@ from hushsnap.config import (
     ui_text,
     get_configured_ui_lang,
     update_ui_lang_in_config,
+    get_debug_enabled,
+    get_copy_image_to_clipboard,
+    get_auto_copy_ocr_result,
+    get_show_capture_dimension_label,
+    get_thumbnail_display_time,
+    get_ocr_engine,
+    get_ocr_font_size,
+    get_onboarding_toast_shown,
 )
 from hushsnap.constants import MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN
 
@@ -253,4 +262,188 @@ def test_editor_window_size_rejects_too_small(tmp_path):
     state_path = tmp_path / "hushsnap_state.toml"
     set_editor_window_size(100, 100, state_path)
     assert get_editor_window_size(state_path) is None
+
+
+# ── Bad-value fallback: corrupt config values fall back to defaults + log ──
+# Each pair: a valid value is returned as-is (no warning), a bad value falls
+# back to the default and emits a WARNING so it's traceable in logs without
+# crashing or nagging the user.
+
+
+def _write_config(path, body):
+    path.write_text(body, encoding="utf-8")
+
+
+def test_debug_enabled_valid_value_no_warning(tmp_path, caplog):
+    config_path = tmp_path / "hushsnap_config.toml"
+    _write_config(config_path, "debug = false\n")
+    with caplog.at_level(logging.WARNING, logger="hushsnap.config"):
+        assert get_debug_enabled(config_path) is False
+    assert not any("debug" in r.message for r in caplog.records)
+
+
+def test_debug_enabled_bad_value_falls_back_and_logs(tmp_path, caplog):
+    config_path = tmp_path / "hushsnap_config.toml"
+    _write_config(config_path, 'debug = "apple"\n')  # string, not bool
+    with caplog.at_level(logging.WARNING, logger="hushsnap.config"):
+        result = get_debug_enabled(config_path)
+    # Falls back to the dev default (True in tests, since not frozen).
+    assert result is True
+    assert any("debug" in r.message and "apple" in r.message
+               and r.levelno == logging.WARNING for r in caplog.records)
+
+
+def test_copy_image_to_clipboard_bad_value_falls_back(tmp_path, caplog):
+    config_path = tmp_path / "hushsnap_config.toml"
+    _write_config(config_path, 'copy_image_to_clipboard = "yes"\n')
+    with caplog.at_level(logging.WARNING, logger="hushsnap.config"):
+        assert get_copy_image_to_clipboard(config_path) is True  # default
+    assert any("copy_image_to_clipboard" in r.message for r in caplog.records)
+
+
+def test_auto_copy_ocr_result_bad_value_falls_back(tmp_path, caplog):
+    config_path = tmp_path / "hushsnap_config.toml"
+    _write_config(config_path, "auto_copy_ocr_result = 123\n")  # int, not bool
+    with caplog.at_level(logging.WARNING, logger="hushsnap.config"):
+        assert get_auto_copy_ocr_result(config_path) is True  # default
+    assert any("auto_copy_ocr_result" in r.message for r in caplog.records)
+
+
+def test_show_capture_dimension_label_bad_value_falls_back(tmp_path, caplog):
+    config_path = tmp_path / "hushsnap_config.toml"
+    _write_config(config_path, "show_capture_dimension_label = []\n")  # array
+    with caplog.at_level(logging.WARNING, logger="hushsnap.config"):
+        assert get_show_capture_dimension_label(config_path) is True  # default
+    assert any("show_capture_dimension_label" in r.message for r in caplog.records)
+
+
+def test_thumbnail_display_time_bad_value_falls_back_no_crash(tmp_path, caplog):
+    """The old int(raw) path raised ValueError on a non-numeric value and
+    crashed the caller. It must now fall back to the default and log."""
+    config_path = tmp_path / "hushsnap_config.toml"
+    _write_config(config_path, 'thumbnail_display_time = "apple"\n')
+    with caplog.at_level(logging.WARNING, logger="hushsnap.config"):
+        result = get_thumbnail_display_time(config_path)
+    assert result == 12000  # default, not a crash
+    assert any("thumbnail_display_time" in r.message and "apple" in r.message
+               for r in caplog.records)
+
+
+def test_thumbnail_display_time_valid_value(tmp_path, caplog):
+    config_path = tmp_path / "hushsnap_config.toml"
+    _write_config(config_path, "thumbnail_display_time = 5000\n")
+    with caplog.at_level(logging.WARNING, logger="hushsnap.config"):
+        assert get_thumbnail_display_time(config_path) == 5000
+    assert not any("thumbnail_display_time" in r.message for r in caplog.records)
+
+
+def test_ocr_engine_bad_value_falls_back(tmp_path, caplog):
+    state_path = tmp_path / "hushsnap_state.toml"
+    _write_config(state_path, 'ocr_engine = "apple"\n')
+    with caplog.at_level(logging.WARNING, logger="hushsnap.config"):
+        assert get_ocr_engine(state_path) == "ppocr"  # default
+    assert any("ocr_engine" in r.message and "apple" in r.message
+               for r in caplog.records)
+
+
+def test_ocr_engine_missing_key_no_warning(tmp_path, caplog):
+    """A missing key is the normal migration/first-run case - it must NOT
+    log a warning (only genuinely bad values do)."""
+    state_path = tmp_path / "hushsnap_state.toml"
+    _write_config(state_path, "ocr_font_size = 16\n")  # no ocr_engine key
+    with caplog.at_level(logging.WARNING, logger="hushsnap.config"):
+        assert get_ocr_engine(state_path) == "ppocr"  # default, silently
+    assert not any("ocr_engine" in r.message for r in caplog.records)
+
+
+def test_ocr_font_size_out_of_range_falls_back(tmp_path, caplog):
+    state_path = tmp_path / "hushsnap_state.toml"
+    _write_config(state_path, "ocr_font_size = 999\n")  # out of 8..48
+    with caplog.at_level(logging.WARNING, logger="hushsnap.config"):
+        from hushsnap.config import DEFAULT_OCR_FONT_SIZE
+        assert get_ocr_font_size(state_path) == DEFAULT_OCR_FONT_SIZE
+    assert any("ocr_font_size" in r.message for r in caplog.records)
+
+
+def test_ui_lang_bad_value_falls_back_to_auto(tmp_path, caplog):
+    config_path = tmp_path / "hushsnap_config.toml"
+    _write_config(config_path, 'language = "klingon"\n')
+    with caplog.at_level(logging.WARNING, logger="hushsnap.config"):
+        assert get_configured_ui_lang(config_path) == "auto"  # default
+    assert any("language" in r.message and "klingon" in r.message
+               for r in caplog.records)
+
+
+def test_ui_lang_missing_key_no_warning(tmp_path, caplog):
+    """A missing language key is normal - must not log."""
+    config_path = tmp_path / "hushsnap_config.toml"
+    _write_config(config_path, "debug = true\n")  # no language key
+    with caplog.at_level(logging.WARNING, logger="hushsnap.config"):
+        assert get_configured_ui_lang(config_path) == "auto"
+    assert not any("language" in r.message for r in caplog.records)
+
+
+def test_onboarding_toast_shown_bad_value_falls_back(tmp_path, caplog):
+    """A non-boolean state value falls back to False and logs - matching the
+    boolean-field handling in config, since the state file lives right next
+    to the config file and is equally reachable to a user editing by hand."""
+    state_path = tmp_path / "hushsnap_state.toml"
+    _write_config(state_path, 'onboarding_toast_shown = "yes"\n')
+    with caplog.at_level(logging.WARNING, logger="hushsnap.config"):
+        assert get_onboarding_toast_shown(state_path) is False  # default
+    assert any("onboarding_toast_shown" in r.message for r in caplog.records)
+
+
+# ── Whole-file TOML syntax error (e.g. ``key = cat`` with no quotes) ──────
+# A broken file makes _load_config_data return {}, so every field falls back
+# to its default. The failure itself is logged once at WARNING - we don't
+# classify the cause, just signal "config is unusable, defaults in use".
+
+
+def test_config_unusable_logs_warning_and_falls_back(tmp_path, caplog):
+    """A present-but-broken config logs a single WARNING and yields defaults."""
+    config_path = tmp_path / "hushsnap_config.toml"
+    # `thumbnail_display_time = cat` is invalid TOML (bare word as value).
+    _write_config(config_path, 'thumbnail_display_time = cat\n')
+
+    with caplog.at_level(logging.WARNING, logger="hushsnap.config"):
+        assert get_thumbnail_display_time(config_path) == 12000  # default
+
+    assert any(
+        r.levelno == logging.WARNING and "config data" in r.message
+        for r in caplog.records
+    )
+
+
+# ── Hotkey reload: parse failure stays silent (no toast) ──────────────────
+
+
+def test_hotkey_reload_parse_failure_no_status_toast(tmp_path):
+    """When the watcher reloads and the config is unparseable (a genuinely
+    broken hotkey OR an editor's save-midway state), it must NOT emit a
+    status toast - just keep the current hotkey and log. This is the bug
+    where editing unrelated keys (e.g. debug) popped 'Invalid config'."""
+    from hushsnap.system.hotkey_manager import HotkeyManager
+
+    config_path = tmp_path / "hushsnap_config.toml"
+    _write_config(config_path, 'hotkey = "Ctrl+Alt+!!!"\n')  # unparseable
+
+    calls = []
+    hm = HotkeyManager.__new__(HotkeyManager)  # bypass Qt/ctypes init
+    hm.config_path = config_path
+    hm.current_hotkey_modifier = MOD_ALT
+    hm.current_hotkey_virtual_key = ord("Q")
+    hm.current_hotkey_name = "Alt+Q"
+    hm.tray_icon = None
+    hm._request_status_msg = lambda *a, **k: calls.append((a, k))
+
+    # _apply_hotkey_reload_core also calls _ensure_watch_targets; stub it so
+    # the test isolates the parse path without a real QFileSystemWatcher.
+    hm._ensure_watch_targets = lambda: None
+
+    hm._apply_hotkey_reload_core()
+
+    # No status/toast emitted; current hotkey kept as-is.
+    assert calls == []
+    assert hm.current_hotkey_name == "Alt+Q"
 

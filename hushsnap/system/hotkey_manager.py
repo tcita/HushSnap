@@ -181,13 +181,16 @@ class HotkeyManager(QtCore.QObject):
                 read_hotkey_text_from_config(self.config_path)
             )
         except Exception as exc:
-            logger.exception(f"Failed to reload hotkey from config {self.config_path}: {exc}")
-            self._request_status_msg(
-                "hotkey_not_updated_title",
-                "hotkey_invalid_config",
-                is_error=True,
-                hotkey=self.current_hotkey_name,
-            )
+            # Manual edits are the user's responsibility per the config file
+            # header ("If you modify this manually, ensure the syntax is valid
+            # TOML"). On a parse failure - whether a genuinely-broken hotkey or
+            # an editor's save-midway state - just keep the currently-registered
+            # hotkey unchanged and log it. No toast: a transient bad read would
+            # otherwise nag the user mid-edit, and a durably-broken file is
+            # self-correcting once the user fixes and re-saves. Stays silent
+            # like nginx/K8s config reloads - bad config doesn't take effect,
+            # good config does.
+            logger.warning(f"Failed to reload hotkey from config, keeping current hotkey: {exc}")
             return
 
         # Skip if hotkey settings are unchanged.

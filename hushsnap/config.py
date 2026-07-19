@@ -425,13 +425,22 @@ def parse_hotkey(hotkey_text):
 
 
 def _load_config_data(config_path):
-    """Load TOML config data from disk."""
+    """Load TOML config data from disk.
+
+    Returns {} on any failure so callers' ``.get(key, default)`` falls back to
+    defaults. Any failure (missing file, syntax error) is logged at WARNING
+    as a single "config is unusable" signal - we don't classify the cause,
+    because a manually-broken file can break in uncountable ways and guessing
+    the category isn't worth the branching. Per-field bad-value handling
+    (``get_*`` isinstance / int guards) covers the case where the file parses
+    fine but a single value has the wrong type.
+    """
     try:
         config_data = tomllib.loads(config_path.read_text(encoding="utf-8"))
         if isinstance(config_data, dict):
             return config_data
     except Exception as e:
-        logger.debug(f"Failed to load config data from {config_path}: {e}")
+        logger.warning(f"Failed to load config data from {config_path}: {e}")
     return {}
 
 
@@ -521,7 +530,7 @@ def update_hotkey_in_config(config_path, hotkey_text):
 # ── Internal state file (OCR engine + language persistence) ──────────
 
 def _load_state_data(state_path=None):
-    """Load TOML state data from disk."""
+    """Load TOML state data from disk. See _load_config_data."""
     if state_path is None:
         state_path = STATE_PATH
     try:
@@ -529,7 +538,7 @@ def _load_state_data(state_path=None):
         if isinstance(data, dict):
             return data
     except Exception as e:
-        logger.debug(f"Failed to load state data from {state_path}: {e}")
+        logger.warning(f"Failed to load state data from {state_path}: {e}")
     return {}
 
 
@@ -626,7 +635,14 @@ def get_debug_enabled(config_path=None):
     if config_path is None:
         config_path = get_config_path()
     config_data = _load_config_data(config_path)
-    return bool(config_data.get("debug", not _is_frozen))
+    raw = config_data.get("debug", not _is_frozen)
+    if not isinstance(raw, bool):
+        logger.warning(
+            "Config key 'debug' has non-boolean value %r; falling back to default %r.",
+            raw, not _is_frozen,
+        )
+        return not _is_frozen
+    return raw
 
 
 def get_copy_image_to_clipboard(config_path=None):
@@ -634,7 +650,14 @@ def get_copy_image_to_clipboard(config_path=None):
     if config_path is None:
         config_path = get_config_path()
     config_data = _load_config_data(config_path)
-    return bool(config_data.get("copy_image_to_clipboard", True))
+    raw = config_data.get("copy_image_to_clipboard", True)
+    if not isinstance(raw, bool):
+        logger.warning(
+            "Config key 'copy_image_to_clipboard' has non-boolean value %r; falling back to default True.",
+            raw,
+        )
+        return True
+    return raw
 
 
 def update_copy_image_to_clipboard(enabled, config_path=None):
@@ -659,7 +682,14 @@ def get_show_capture_dimension_label(config_path=None):
     if config_path is None:
         config_path = get_config_path()
     config_data = _load_config_data(config_path)
-    return bool(config_data.get("show_capture_dimension_label", True))
+    raw = config_data.get("show_capture_dimension_label", True)
+    if not isinstance(raw, bool):
+        logger.warning(
+            "Config key 'show_capture_dimension_label' has non-boolean value %r; falling back to default True.",
+            raw,
+        )
+        return True
+    return raw
 
 
 def update_show_capture_dimension_label(enabled, config_path=None):
@@ -679,7 +709,14 @@ def get_auto_copy_ocr_result(config_path=None):
     if config_path is None:
         config_path = get_config_path()
     config_data = _load_config_data(config_path)
-    return bool(config_data.get("auto_copy_ocr_result", True))
+    raw = config_data.get("auto_copy_ocr_result", True)
+    if not isinstance(raw, bool):
+        logger.warning(
+            "Config key 'auto_copy_ocr_result' has non-boolean value %r; falling back to default True.",
+            raw,
+        )
+        return True
+    return raw
 
 
 def update_auto_copy_ocr_result(enabled, config_path=None):
@@ -708,6 +745,17 @@ def get_last_save_directory(config_path=None):
         path = Path(raw.strip())
         if path.is_dir():
             return str(path)
+        # String present but not an existing dir - could be a typo, a moved
+        # folder, or a malformed value. Log so it's traceable, then fall back.
+        logger.warning(
+            "Config key 'last_save_directory' = %r is not an existing directory; falling back to Desktop.",
+            raw,
+        )
+    elif raw is not None:
+        logger.warning(
+            "Config key 'last_save_directory' has non-string value %r; falling back to Desktop.",
+            raw,
+        )
     desktop = Path.home() / "Desktop"
     if desktop.is_dir():
         return str(desktop)
@@ -731,7 +779,16 @@ def get_thumbnail_display_time(config_path=None):
     if config_path is None:
         config_path = get_config_path()
     config_data = _load_config_data(config_path)
-    return int(config_data.get("thumbnail_display_time", 12000))
+    raw = config_data.get("thumbnail_display_time", 12000)
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            "Config key 'thumbnail_display_time' has non-integer value %r; falling back to default 12000.",
+            raw,
+        )
+        return 12000
+    return value
 
 
 def update_thumbnail_display_time(ms, config_path=None):
@@ -752,9 +809,17 @@ def get_ocr_engine(state_path=None, config_path=None):
         state_path = STATE_PATH
     _ensure_default_state_exists(state_path)
     state_data = _load_state_data(state_path)
-    engine = _normalize_ocr_engine(state_data.get("ocr_engine"))
+    raw = state_data.get("ocr_engine")
+    engine = _normalize_ocr_engine(raw)
     if engine:
         return engine
+    if raw is not None:
+        # Value present but unrecognized - a real user error worth logging.
+        # (A missing key is the normal migration case, not logged here.)
+        logger.warning(
+            "State key 'ocr_engine' has unrecognized value %r; falling back to default %r.",
+            raw, OCR_ENGINE_PPOCR,
+        )
     # Migration: try old config location
     state_data = _migrate_ocr_from_config(state_data, config_path or get_config_path())
     engine = _normalize_ocr_engine(state_data.get("ocr_engine"))
@@ -785,6 +850,10 @@ def get_ocr_font_size(state_path=None):
     font_size = state_data.get("ocr_font_size", DEFAULT_OCR_FONT_SIZE)
     if isinstance(font_size, int) and 8 <= font_size <= 48:
         return font_size
+    logger.warning(
+        "State key 'ocr_font_size' has out-of-range value %r (need int in 8..48); falling back to default %d.",
+        font_size, DEFAULT_OCR_FONT_SIZE,
+    )
     return DEFAULT_OCR_FONT_SIZE
 
 
@@ -812,7 +881,14 @@ def get_onboarding_toast_shown(state_path=None):
         state_path = STATE_PATH
     _ensure_default_state_exists(state_path)
     state_data = _load_state_data(state_path)
-    return bool(state_data.get("onboarding_toast_shown", False))
+    raw = state_data.get("onboarding_toast_shown", False)
+    if not isinstance(raw, bool):
+        logger.warning(
+            "State key 'onboarding_toast_shown' has non-boolean value %r; falling back to default False.",
+            raw,
+        )
+        return False
+    return raw
 
 
 def set_onboarding_toast_shown(state_path=None):
@@ -904,6 +980,13 @@ def _read_ui_lang_from_config(config_path):
         normalized_language = _normalize_ui_language_code(configured_language, allow_auto=True)
         if normalized_language:
             return normalized_language
+        if configured_language is not None:
+            # Value present but unrecognized - log it. (A missing key falls
+            # through to UI_LANG_AUTO silently, which is the normal default.)
+            logger.warning(
+                "Config key 'language' has unrecognized value %r; falling back to %r.",
+                configured_language, UI_LANG_AUTO,
+            )
     except Exception as e:
         logger.debug(f"Failed to read UI language from config: {e}")
     return UI_LANG_AUTO
