@@ -447,6 +447,7 @@ def _greedy_column_cluster(blocks: list[dict]) -> list[list[dict]]:
 
 def _build_lines_from_clusters(
     clusters: list[list[dict]],
+    is_vertical: bool = False,
 ) -> list[OcrLine]:
     """Convert clustered blocks into OcrLine objects.
 
@@ -468,11 +469,20 @@ def _build_lines_from_clusters(
         for block in cluster:
             if prev_block:
                 sep = word_separator(prev_block["text"], block["text"])
-                # ── inline gap spacing (same principle as _apply_indentation) ──
-                gap = block["left"] - prev_block["right"]
-                est_h = min(prev_block["height"], block["height"])
-                if est_h > 0:
-                    gap_ratio = gap / est_h
+                # ── inline gap spacing ──
+                # Geometry is mirrored for vertical text: gap measured along
+                # y (column stack) and normalised by box width, vs. x + box
+                # height for horizontal.  Same ratio threshold & round rule -
+                # a large visual gap between adjacent blocks becomes leading
+                # spaces in the output regardless of orientation.
+                if is_vertical:
+                    gap = block["top"] - prev_block["bottom"]
+                    est = min(prev_block["width"], block["width"])
+                else:
+                    gap = block["left"] - prev_block["right"]
+                    est = min(prev_block["height"], block["height"])
+                if est > 0:
+                    gap_ratio = gap / est
                     if gap_ratio > 1.0:
                         n = max(1, round(gap_ratio))
                         sep = (sep or "") + (" " * n)
@@ -649,7 +659,7 @@ def compose_ppocr_structures(blocks: list[dict], is_vertical: bool = False) -> l
         clusters = _greedy_line_cluster(normalized)
 
     # Step 3 - build OcrLine objects from clusters
-    lines = _build_lines_from_clusters(clusters)
+    lines = _build_lines_from_clusters(clusters, is_vertical=is_vertical)
     if not lines:
         return []
 
