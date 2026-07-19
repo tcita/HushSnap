@@ -1,6 +1,6 @@
 # HushSnap
 
-HushSnap is a lightweight screenshot & OCR tool that lives in your system tray. Press a hotkey and a crosshair overlay appears instantly — select a region or click for the full screen, and the shot lands on your clipboard immediately. No pre-launching menus or windows; the UI surfaces only when you need it.
+HushSnap is an offline screenshot & OCR tool - lightweight, local, fully offline. Your screenshots and OCR results never leave your device. It lives in your system tray. Press a hotkey and a crosshair overlay appears instantly — select a region or click for the full screen, and the shot lands on your clipboard immediately. No pre-launching menus or windows; the UI surfaces only when you need it.
 
 [HushSnap Website](https://tcita.github.io/HushSnap/)
 
