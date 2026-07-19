@@ -1055,7 +1055,7 @@ def _normalize_ocr_engine(raw_value):
 
 
 def _get_system_ui_language():
-    """Get the user's default system UI language code ('zh', 'zh-TW', or 'en')."""
+    """Get the user's default system UI language code ('zh', 'zh-TW', 'ja', or 'en')."""
     try:
         # GetUserDefaultUILanguage returns the LCID (Language Identifier)
         lcid = ctypes.windll.kernel32.GetUserDefaultUILanguage()
