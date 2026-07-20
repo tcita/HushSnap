@@ -937,6 +937,17 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._update_status()
         self._resize_canvas()
 
+    # Pasteboard padding around the image. The canvas is always this much
+    # larger than the viewport on every side, so the Pan tool can push the
+    # image to any viewport edge/corner at any zoom - including fit, where
+    # the image otherwise fills the viewport and the scrollbars would be
+    # welded at centre (zero travel).  Sized relative to the VIEWPORT (not
+    # the image) so the usable travel is predictable regardless of image
+    # size, and large enough that the image isn't "welded but barely
+    # movable" - the previous 15 %-of-max(viewport,image) gave ~30 % travel
+    # at fit, too small to position the image against an edge for annotation.
+    _PASTEBOARD_FRAC = 0.5
+
     def _resize_canvas(self) -> None:
         pm = self._rendered_display_pixmap()
         if not pm:
@@ -950,10 +961,14 @@ class ImageEditorWindow(QtWidgets.QWidget):
         scale = self._effective_scale()
         iw = int(pm.width() * scale)
         ih = int(pm.height() * scale)
-        pad_w = max(vw, iw) * 0.15
-        pad_h = max(vh, ih) * 0.15
-        cw = max(int(vw * 1.05), iw + int(pad_w) * 2)
-        ch = max(int(vh * 1.05), ih + int(pad_h) * 2)
+        # Canvas = the larger of (image + pasteboard) or (viewport + pasteboard).
+        # The pasteboard is viewport-relative so a fit image still gets the full
+        # travel; when the image is zoomed past the viewport, image overflow
+        # dominates and the pasteboard is a minor extra.
+        pad_w = int(vw * self._PASTEBOARD_FRAC)
+        pad_h = int(vh * self._PASTEBOARD_FRAC)
+        cw = max(iw + pad_w * 2, vw + pad_w * 2)
+        ch = max(ih + pad_h * 2, vh + pad_h * 2)
         self._canvas.resize(cw, ch)
         text_tool = self._tools.get("text")
         if text_tool:
@@ -986,8 +1001,10 @@ class ImageEditorWindow(QtWidgets.QWidget):
         """Scale the image to fit within the viewport with 10% visual margin.
 
         Small images are capped at effective 1.0 (no upscaling).
-        The canvas pasteboard (15 % padding per side in _resize_canvas)
-        ensures the Pan tool has scroll range even at fit zoom.
+        The canvas pasteboard (viewport-relative padding per side in
+        _resize_canvas) gives the Pan tool enough travel to push the image
+        to any viewport edge/corner even at fit zoom, when the image would
+        otherwise fill the viewport and weld the scrollbars at centre.
         """
         pm = self._rendered_display_pixmap()
         if not pm:
