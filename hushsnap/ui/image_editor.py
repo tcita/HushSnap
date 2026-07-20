@@ -46,8 +46,11 @@ logger = logging.getLogger(__name__)
 # Window sizing. The minimum leaves enough vertical room for the title bar,
 # two toolbar rows, and the status bar (~162 px of chrome) plus a usable
 # canvas (~250 px); narrower than this and the tool buttons crowd together.
+# There is no "default size" constant: the real opening size is computed in
+# show_image_editor as 80 % of the cursor screen's available area (or the
+# remembered size, clamped to that), so the resize() in __init__ below is
+# just a placeholder that gets overwritten on show().
 _EDITOR_MIN_W, _EDITOR_MIN_H = 640, 520
-_EDITOR_DEFAULT_W, _EDITOR_DEFAULT_H = 960, 700
 # Fraction of the cursor screen's available area used as the size fallback
 # (no remembered size yet) and as the upper clamp on a remembered size.
 _EDITOR_SCREEN_FRAC = 0.8
@@ -147,7 +150,9 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self.setStyleSheet(EDITOR_WINDOW_STYLE)
         self.setWindowTitle(self._tr("editor_title"))
         self.setMinimumSize(_EDITOR_MIN_W, _EDITOR_MIN_H)
-        self.resize(_EDITOR_DEFAULT_W, _EDITOR_DEFAULT_H)
+        # Placeholder geometry - overwritten by show_image_editor's computed
+        # size (80 % of the cursor screen) before the window is shown.
+        self.resize(_EDITOR_MIN_W, _EDITOR_MIN_H)
 
         main_layout = QtWidgets.QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
