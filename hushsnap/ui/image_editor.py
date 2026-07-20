@@ -559,6 +559,9 @@ class ImageEditorWindow(QtWidgets.QWidget):
         layout.addWidget(self._zoom_out_btn)
 
         self._zoom_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        # Range 10..500 mirrors the wheel's effective [0.10, 5.0] so both
+        # zoom entries bottom/top out at the same scale. The 10 % floor is a
+        # product decision - see _set_zoom_effective for why it isn't lower.
         self._zoom_slider.setRange(10, 500)
         self._zoom_slider.setValue(100)
         self._zoom_slider.setFixedWidth(120)
@@ -1061,7 +1064,9 @@ class ImageEditorWindow(QtWidgets.QWidget):
             vh * 0.90 / pm.height(),
             1.0,  # don't upscale small images
         )
-        # Effective range [0.10 … 5.0].
+        # Floor 0.10 matches _set_zoom_effective's clamp (same product
+        # decision - a safety floor, see the comment there). fit_effective
+        # is already clamped to <= 1.0 above, so only the lower bound applies.
         self._scale = max(0.10, fit_effective) * self._dpr
         self._resize_canvas()
         self._center_image_on_canvas()
@@ -1371,6 +1376,20 @@ class ImageEditorWindow(QtWidgets.QWidget):
         """
         if new_effective is None:
             return
+        # Zoom range [0.10, 5.0] effective (10 %–500 %).
+        #
+        # Lower bound 10 % is a product decision, not a tuning guess: it is a
+        # pure safety floor, never a zoom level a user reaches on purpose.
+        # fit-to-viewport already computes the smallest scale that shows the
+        # whole image, and for any real screenshot that value is well above
+        # 10 % (even an extreme 7680x4320 DPR-2 capture fits at ~10 % in the
+        # default 960x700 window).  Below fit the image is already fully
+        # visible, so shrinking further has no purpose - the editor has no
+        # bird's-eye/navigator panel, so a 1 % image is an uneditable dot.
+        # 10 % is kept instead of aligning to Windows Photo Viewer's lower
+        # ~1 % because (a) nobody drives the slider below fit, and (b) a
+        # linear slider down to 1 % would crowd the handle into the far left,
+        # making the useful 100-500 % region hard to grab.
         new_effective = max(0.10, min(new_effective, 5.0))
         new_scale = new_effective * self._dpr
         if abs(new_scale - self._scale) < 0.001:
