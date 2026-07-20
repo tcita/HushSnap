@@ -571,6 +571,33 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._zoom_slider.setValue(100)
         self._zoom_slider.setFixedWidth(120)
         self._zoom_slider.setMaximumHeight(16)
+        # Filled (left-of-handle) portion in brand green; the Qt default is a
+        # blue that clashes with the editor's green accent. Keep the unfilled
+        # portion and groove in the status-bar's dark grey so the slider reads
+        # as a progress bar of "how zoomed-in".
+        self._zoom_slider.setStyleSheet(f"""
+            QSlider::groove:horizontal {{
+                height: 4px;
+                background: #3a3a3a;
+                border-radius: 2px;
+            }}
+            QSlider::sub-page:horizontal {{
+                background: {BRAND_GREEN};
+                border-radius: 2px;
+            }}
+            QSlider::add-page:horizontal {{
+                background: #3a3a3a;
+                border-radius: 2px;
+            }}
+            QSlider::handle:horizontal {{
+                width: 10px;
+                height: 10px;
+                margin: -4px 0;
+                background: #ddd;
+                border-radius: 5px;
+            }}
+            QSlider::handle:horizontal:hover {{ background: #fff; }}
+        """)
         self._zoom_slider.setToolTip(self._tr("editor_zoom_out"))
         self._zoom_slider.valueChanged.connect(self._on_zoom_slider_changed)
         layout.addWidget(self._zoom_slider)
