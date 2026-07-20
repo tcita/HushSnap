@@ -1742,6 +1742,117 @@ class TestFitToViewport:
         assert editor._zoom_label.cursor().shape() == Qt.CursorShape.PointingHandCursor
 
 
+class TestZoomControl:
+    """Status-bar zoom slider + +/- buttons (Windows-photo-viewer style).
+
+    Three zoom sources (wheel / slider / buttons) funnel through
+    _set_zoom_effective; _update_zoom_label writes the slider back with
+    blockSignals so there is no feedback loop.  Range mirrors the wheel's
+    effective [0.10, 5.0] -> slider 10..500.
+    """
+
+    def _setup_viewport(self, editor, vw=400, vh=300):
+        """Give the scroll area a real-ish viewport so _resize_canvas runs."""
+        from unittest.mock import MagicMock
+        mock_vp = MagicMock()
+        mock_vp.width.return_value = vw
+        mock_vp.height.return_value = vh
+        editor._scroll_area.viewport = MagicMock(return_value=mock_vp)
+        # Real-ish scrollbar so setValue clamps without raising.
+        h_bar = MagicMock()
+        v_bar = MagicMock()
+        h_bar.minimum.return_value = 0
+        h_bar.maximum.return_value = max(0, vw)
+        v_bar.minimum.return_value = 0
+        v_bar.maximum.return_value = max(0, vh)
+        editor._scroll_area.horizontalScrollBar = MagicMock(return_value=h_bar)
+        editor._scroll_area.verticalScrollBar = MagicMock(return_value=v_bar)
+        editor._dpr = 1.0
+        editor._scale = 1.0
+        editor._resize_canvas()
+
+    def test_slider_range_matches_wheel(self, editor):
+        """Slider range is 10..500, mirroring the wheel's effective [0.10,5.0]."""
+        assert editor._zoom_slider.minimum() == 10
+        assert editor._zoom_slider.maximum() == 500
+
+    def test_slider_sets_effective_scale(self, editor):
+        """Dragging the slider to 200 sets effective scale to 2.0."""
+        self._setup_viewport(editor)
+        editor._zoom_slider.setValue(200)
+        assert abs(editor._effective_scale() - 2.0) < 0.001
+
+    def test_zoom_in_button_multiplies(self, editor):
+        """+ button multiplies effective scale by 1.1."""
+        self._setup_viewport(editor)
+        editor._zoom_slider.setValue(100)  # effective 1.0
+        editor._zoom_in_btn.click()
+        assert abs(editor._effective_scale() - 1.1) < 0.01
+
+    def test_zoom_out_button_divides(self, editor):
+        """- button divides effective scale by 1.1."""
+        self._setup_viewport(editor)
+        editor._zoom_slider.setValue(100)
+        editor._zoom_out_btn.click()
+        assert abs(editor._effective_scale() - (1.0 / 1.1)) < 0.01
+
+    def test_clamps_to_upper_bound(self, editor):
+        """Slider value above 500 clamps effective scale to 5.0."""
+        self._setup_viewport(editor)
+        editor._zoom_slider.setValue(999)
+        assert abs(editor._effective_scale() - 5.0) < 0.001
+        # Slider itself is capped at 500 by setRange, so value reads 500.
+        assert editor._zoom_slider.value() == 500
+
+    def test_clamps_to_lower_bound(self, editor):
+        """Slider value below 10 clamps effective scale to 0.10."""
+        self._setup_viewport(editor)
+        editor._zoom_slider.setValue(1)
+        assert abs(editor._effective_scale() - 0.10) < 0.001
+
+    def test_zoom_out_at_floor_stays(self, editor):
+        """- button at the floor does not go below 0.10."""
+        self._setup_viewport(editor)
+        editor._zoom_slider.setValue(10)  # effective 0.10
+        editor._zoom_out_btn.click()
+        assert abs(editor._effective_scale() - 0.10) < 0.001
+
+    def test_slider_sync_after_button(self, editor):
+        """After + button, the slider handle is updated to the new %."""
+        self._setup_viewport(editor)
+        editor._zoom_slider.setValue(100)
+        editor._zoom_in_btn.click()
+        # 1.0 * 1.1 = 1.1 -> 110 %
+        assert editor._zoom_slider.value() == 110
+
+    def test_slider_valuechanged_no_loop(self, editor):
+        """Slider-triggered zoom does not re-enter _set_zoom_effective.
+
+        _update_zoom_label writes the slider with blockSignals; if that
+        guard regressed, a slider change would recurse (or double-apply).
+        We assert the scale lands on the requested value exactly once.
+        """
+        self._setup_viewport(editor)
+        call_count = {"n": 0}
+        orig = editor._set_zoom_effective
+
+        def counting(new_effective, anchor=None):
+            call_count["n"] += 1
+            return orig(new_effective, anchor=anchor)
+
+        editor._set_zoom_effective = counting
+        editor._on_zoom_slider_changed(200)
+        assert call_count["n"] == 1
+        assert abs(editor._effective_scale() - 2.0) < 0.001
+
+    def test_zoom_label_shows_percent(self, editor):
+        """Zoom label text reflects the current effective percentage."""
+        self._setup_viewport(editor)
+        editor._zoom_slider.setValue(250)
+        text = editor._zoom_label.text()
+        assert "250" in text
+
+
 class TestInlineEditorFocus:
     """The inline text editor's commit policy is explicit-only.
 

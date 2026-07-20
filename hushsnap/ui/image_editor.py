@@ -531,6 +531,82 @@ class ImageEditorWindow(QtWidgets.QWidget):
         layout.setContentsMargins(12, 0, 10, 0)
         layout.setSpacing(6)
 
+        # ── Zoom control group (Windows-photo-viewer style) ──────────────
+        # [zoom-out] [slider] [zoom-in] [percentage]. The slider is the
+        # explicit, continuously-draggable zoom entry that complements the
+        # mouse-wheel zoom (which needs the cursor on the canvas). The
+        # percentage label doubles as the fit-to-viewport button (click).
+        # Range mirrors the wheel's effective [0.10, 5.0] -> 10..500 %.
+        zoom_btn_style = """
+            QToolButton {
+                background: transparent;
+                border: none;
+                border-radius: 8px;
+                padding: 2px;
+            }
+            QToolButton:hover { background: #2d2d2d; }
+            QToolButton:pressed { background: #222; }
+            QToolButton:disabled { color: #555; }
+        """
+        self._zoom_out_btn = QtWidgets.QToolButton()
+        self._zoom_out_btn.setIcon(_load_editor_icon("zoom_out"))
+        self._zoom_out_btn.setIconSize(QtCore.QSize(16, 16))
+        self._zoom_out_btn.setFixedSize(24, 24)
+        self._zoom_out_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self._zoom_out_btn.setToolTip(self._tr("editor_zoom_out"))
+        self._zoom_out_btn.setStyleSheet(zoom_btn_style)
+        self._zoom_out_btn.clicked.connect(self._zoom_out)
+        layout.addWidget(self._zoom_out_btn)
+
+        self._zoom_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self._zoom_slider.setRange(10, 500)
+        self._zoom_slider.setValue(100)
+        self._zoom_slider.setFixedWidth(120)
+        self._zoom_slider.setMaximumHeight(16)
+        self._zoom_slider.setToolTip(self._tr("editor_zoom_out"))
+        self._zoom_slider.valueChanged.connect(self._on_zoom_slider_changed)
+        layout.addWidget(self._zoom_slider)
+
+        self._zoom_in_btn = QtWidgets.QToolButton()
+        self._zoom_in_btn.setIcon(_load_editor_icon("zoom_in"))
+        self._zoom_in_btn.setIconSize(QtCore.QSize(16, 16))
+        self._zoom_in_btn.setFixedSize(24, 24)
+        self._zoom_in_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self._zoom_in_btn.setToolTip(self._tr("editor_zoom_in"))
+        self._zoom_in_btn.setStyleSheet(zoom_btn_style)
+        self._zoom_in_btn.clicked.connect(self._zoom_in)
+        layout.addWidget(self._zoom_in_btn)
+
+        # Percentage label: click = fit-to-viewport (the "reset to fit" exit).
+        # Sits right of the zoom-in button so the whole group reads as one
+        # control: [−] ━━●━━ [+] 50%.
+        self._zoom_label = QtWidgets.QPushButton()
+        self._zoom_label.setObjectName("zoomLabel")
+        self._zoom_label.setFlat(True)
+        self._zoom_label.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self._zoom_label.setToolTip(self._tr("editor_fit_tooltip"))
+        self._zoom_label.setStyleSheet(f"""
+            QPushButton#zoomLabel {{
+                background: transparent;
+                border: 1px solid transparent;
+                border-radius: 10px;
+                color: #999;
+                font-size: 11px;
+                padding: 2px 10px;
+            }}
+            QPushButton#zoomLabel:hover {{
+                background: #2d2d2d;
+                border-color: #4a4a4a;
+                color: #ccc;
+            }}
+            QPushButton#zoomLabel:pressed {{
+                background: #222;
+                border-color: {BRAND_GREEN};
+            }}
+        """)
+        self._zoom_label.clicked.connect(self._fit_to_viewport)
+        layout.addWidget(self._zoom_label)
+
         self._status_label = QtWidgets.QLabel()
         self._status_label.setObjectName("statusLabel")
         self._status_label.setStyleSheet(EDITOR_STATUS_STYLE)
@@ -589,33 +665,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
         """)
         save_btn.clicked.connect(self._save_as)
         layout.addWidget(save_btn)
-
-        self._zoom_label = QtWidgets.QPushButton()
-        self._zoom_label.setObjectName("zoomLabel")
-        self._zoom_label.setFlat(True)
-        self._zoom_label.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-        self._zoom_label.setToolTip(self._tr("editor_fit_tooltip"))
-        self._zoom_label.setStyleSheet(f"""
-            QPushButton#zoomLabel {{
-                background: transparent;
-                border: 1px solid transparent;
-                border-radius: 10px;
-                color: #999;
-                font-size: 11px;
-                padding: 2px 10px;
-            }}
-            QPushButton#zoomLabel:hover {{
-                background: #2d2d2d;
-                border-color: #4a4a4a;
-                color: #ccc;
-            }}
-            QPushButton#zoomLabel:pressed {{
-                background: #222;
-                border-color: {BRAND_GREEN};
-            }}
-        """)
-        self._zoom_label.clicked.connect(self._fit_to_viewport)
-        layout.addWidget(self._zoom_label)
 
         # Frameless resize is handled by window-level mouse events
         # (edge/corner detection in mousePressEvent/mouseMoveEvent) — no
@@ -1291,7 +1340,83 @@ class ImageEditorWindow(QtWidgets.QWidget):
     def _update_zoom_label(self) -> None:
         pct = round(self._effective_scale() * 100)
         label = self._tr("editor_zoom_label", zoom=pct)
-        self._zoom_label.setText(f"⊞  {label}")
+        self._zoom_label.setText(label)
+        # Keep the slider handle in sync with the current zoom without
+        # re-triggering valueChanged (which would call _set_zoom_effective
+        # again and loop). round() to 1 %: slider is integer-stepped, so
+        # wheel/button zoom values that land between steps (e.g. 55 % from
+        # x1.1) snap the handle to the nearest tick - the actual _scale is
+        # preserved, only the handle's visual position quantises.
+        self._zoom_slider.blockSignals(True)
+        self._zoom_slider.setValue(pct)
+        self._zoom_slider.blockSignals(False)
+
+    # ── Zoom control (single entry for wheel / slider / buttons) ──────────
+    #
+    # Three sources change zoom: the mouse wheel (cursor-anchored), the
+    # status-bar slider (image-centre-anchored, no cursor), and the +/- buttons
+    # (×1.1 step). All funnel through _set_zoom_effective so clamping,
+    # canvas resize, recentering and control sync happen in one place.
+    # _sync_zoom_controls writes the slider/label with blockSignals so the
+    # writeback never re-enters _set_zoom_effective (no feedback loop).
+
+    def _set_zoom_effective(
+        self, new_effective: float, anchor: Optional[QtCore.QPointF] = None
+    ) -> None:
+        """Apply *new_effective* (logical scale), clamped to [0.10, 5.0].
+
+        When *anchor* (a canvas-local point) is given the zoom keeps that
+        image point under the cursor (wheel behaviour); otherwise the image
+        is re-centred on the canvas (slider / button behaviour).
+        """
+        if new_effective is None:
+            return
+        new_effective = max(0.10, min(new_effective, 5.0))
+        new_scale = new_effective * self._dpr
+        if abs(new_scale - self._scale) < 0.001:
+            return
+
+        old_effective = self._scale / self._dpr
+        sa = self._scroll_area
+        h_bar = sa.horizontalScrollBar()
+        v_bar = sa.verticalScrollBar()
+
+        # Map the anchor to image-pixel coords at the OLD scale (before
+        # _scale changes), so we can re-land that image point under the
+        # cursor after resize. None -> centring, no anchor to preserve.
+        if anchor is not None:
+            offset = self._canvas._image_offset()
+            img_x = (anchor.x() - offset.x()) / old_effective
+            img_y = (anchor.y() - offset.y()) / old_effective
+            old_scroll_x = h_bar.value()
+            old_scroll_y = v_bar.value()
+
+        self._scale = new_scale
+        self._resize_canvas()
+
+        if anchor is not None:
+            new_offset = self._canvas._image_offset()
+            # Scroll so the anchored image point lands back under the cursor:
+            #   scroll = img_point * new_scale + new_offset - cursor
+            new_scroll_x = int(img_x * new_effective + new_offset.x() - anchor.x() + old_scroll_x)
+            new_scroll_y = int(img_y * new_effective + new_offset.y() - anchor.y() + old_scroll_y)
+            h_bar.setValue(max(h_bar.minimum(), min(new_scroll_x, h_bar.maximum())))
+            v_bar.setValue(max(v_bar.minimum(), min(new_scroll_y, v_bar.maximum())))
+        else:
+            self._center_image_on_canvas()
+
+        self._update_zoom_label()
+        self._canvas.update()
+
+    def _on_zoom_slider_changed(self, value: int) -> None:
+        """Slider drag: zoom to value/100, centred on the image (no cursor)."""
+        self._set_zoom_effective(value / 100.0)
+
+    def _zoom_in(self) -> None:
+        self._set_zoom_effective(self._effective_scale() * 1.10)
+
+    def _zoom_out(self) -> None:
+        self._set_zoom_effective(self._effective_scale() / 1.10)
 
     # ── Save / Close ──────────────────────────────────────────────────────
 

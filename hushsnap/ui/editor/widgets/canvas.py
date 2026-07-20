@@ -220,7 +220,12 @@ class EditorCanvas(QtWidgets.QWidget):
             super().mouseDoubleClickEvent(event)
 
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:
-        """Zoom in/out centered on cursor position."""
+        """Zoom in/out centered on cursor position.
+
+        Delegates to the editor's single zoom entry (_set_zoom_effective)
+        with the cursor as the anchor, so the image point under the cursor
+        stays put - the same effect the slider/buttons get via centring.
+        """
         editor = self._editor
         if not editor._rendered_display_pixmap():
             event.ignore()
@@ -231,36 +236,8 @@ class EditorCanvas(QtWidgets.QWidget):
             event.ignore()
             return
 
-        cursor_pos = event.position()
-        old_offset = self._image_offset()
-
-        old_effective = editor._effective_scale()
-        img_x = (cursor_pos.x() - old_offset.x()) / old_effective
-        img_y = (cursor_pos.y() - old_offset.y()) / old_effective
-
         factor = 1.10 if delta > 0 else 1.0 / 1.10
-        new_scale = editor._scale * factor
-        new_scale = max(0.10, min(new_scale, 5.0))
-        if abs(new_scale - editor._scale) < 0.001:
-            event.accept()
-            return
-        editor._scale = new_scale
-        editor._resize_canvas()
-
-        old_scroll_x = editor._scroll_area.horizontalScrollBar().value()
-        old_scroll_y = editor._scroll_area.verticalScrollBar().value()
-        new_offset = self._image_offset()
-        new_effective = editor._effective_scale()
-        new_scroll_x = int(img_x * new_effective + new_offset.x() - cursor_pos.x() + old_scroll_x)
-        new_scroll_y = int(img_y * new_effective + new_offset.y() - cursor_pos.y() + old_scroll_y)
-
-        h_bar = editor._scroll_area.horizontalScrollBar()
-        v_bar = editor._scroll_area.verticalScrollBar()
-        h_bar.setValue(max(h_bar.minimum(), min(new_scroll_x, h_bar.maximum())))
-        v_bar.setValue(max(v_bar.minimum(), min(new_scroll_y, v_bar.maximum())))
-
-        self.update()
-        editor._update_zoom_label()
+        editor._set_zoom_effective(editor._effective_scale() * factor, anchor=event.position())
         event.accept()
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
