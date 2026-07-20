@@ -610,6 +610,13 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._zoom_label.clicked.connect(self._fit_to_viewport)
         layout.addWidget(self._zoom_label)
 
+        # Image dimensions sit centred between the zoom group (left) and the
+        # copy/save actions (right) - three clusters separated by stretches so
+        # the dimension number doesn't stick to the zoom percentage (both are
+        # numeric text and read as one blob when adjacent). Centred, it reads
+        # as the card's "title": what this image is.
+        layout.addStretch()
+
         self._status_label = QtWidgets.QLabel()
         self._status_label.setObjectName("statusLabel")
         self._status_label.setStyleSheet(EDITOR_STATUS_STYLE)
