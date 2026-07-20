@@ -937,16 +937,21 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._update_status()
         self._resize_canvas()
 
-    # Pasteboard padding around the image. The canvas is always this much
-    # larger than the viewport on every side, so the Pan tool can push the
-    # image to any viewport edge/corner at any zoom - including fit, where
-    # the image otherwise fills the viewport and the scrollbars would be
-    # welded at centre (zero travel).  Sized relative to the VIEWPORT (not
-    # the image) so the usable travel is predictable regardless of image
-    # size, and large enough that the image isn't "welded but barely
-    # movable" - the previous 15 %-of-max(viewport,image) gave ~30 % travel
-    # at fit, too small to position the image against an edge for annotation.
-    _PASTEBOARD_FRAC = 0.5
+    # Pasteboard padding around the image, as a fraction of the viewport.
+    # Sized so a fit-to-viewport image can be dragged until its edge meets
+    # the opposite viewport edge - i.e. the image pushed fully to one side
+    # leaves the other half of the viewport free for annotation.
+    #
+    # Geometry: scrollbar travel = canvas - viewport = 2 * pad (at fit, where
+    # the image ~= viewport and canvas = viewport + 2*pad).  For the image's
+    # near edge to reach the viewport's far edge, pad must be >= image width.
+    # At fit image ~= viewport, so pad = 1.0 * viewport gives exactly that:
+    # the image slides from centred to fully pressed against any edge/corner,
+    # half the viewport left clear.  Smaller fractions leave the image's corner
+    # still showing when the scrollbar bottoms out (the "still露出比较多" feel).
+    # When zoomed past the viewport the image overflow dominates the travel
+    # and this padding is just extra headroom, so it never regresses zoom.
+    _PASTEBOARD_FRAC = 1.0
 
     def _resize_canvas(self) -> None:
         pm = self._rendered_display_pixmap()
