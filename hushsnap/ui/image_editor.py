@@ -937,22 +937,6 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._update_status()
         self._resize_canvas()
 
-    # Pasteboard padding around the image, as a fraction of the viewport.
-    # Sized so a fit-to-viewport image can be dragged until its edge meets
-    # the opposite viewport edge - i.e. the image pushed fully to one side
-    # leaves the other half of the viewport free for annotation.
-    #
-    # Geometry: scrollbar travel = canvas - viewport = 2 * pad (at fit, where
-    # the image ~= viewport and canvas = viewport + 2*pad).  For the image's
-    # near edge to reach the viewport's far edge, pad must be >= image width.
-    # At fit image ~= viewport, so pad = 1.0 * viewport gives exactly that:
-    # the image slides from centred to fully pressed against any edge/corner,
-    # half the viewport left clear.  Smaller fractions leave the image's corner
-    # still showing when the scrollbar bottoms out (the "still露出比较多" feel).
-    # When zoomed past the viewport the image overflow dominates the travel
-    # and this padding is just extra headroom, so it never regresses zoom.
-    _PASTEBOARD_FRAC = 1.0
-
     def _resize_canvas(self) -> None:
         pm = self._rendered_display_pixmap()
         if not pm:
@@ -966,14 +950,18 @@ class ImageEditorWindow(QtWidgets.QWidget):
         scale = self._effective_scale()
         iw = int(pm.width() * scale)
         ih = int(pm.height() * scale)
-        # Canvas = the larger of (image + pasteboard) or (viewport + pasteboard).
-        # The pasteboard is viewport-relative so a fit image still gets the full
-        # travel; when the image is zoomed past the viewport, image overflow
-        # dominates and the pasteboard is a minor extra.
-        pad_w = int(vw * self._PASTEBOARD_FRAC)
-        pad_h = int(vh * self._PASTEBOARD_FRAC)
-        cw = max(iw + pad_w * 2, vw + pad_w * 2)
-        ch = max(ih + pad_h * 2, vh + pad_h * 2)
+        # Canvas = the larger of the image or the viewport.  No pasteboard:
+        # when the image fits the viewport (fit zoom, or a small screenshot)
+        # the canvas equals the viewport, the scrollbars weld at centre and
+        # the image cannot be dragged - which is the intended signal that the
+        # image is fully visible and needs no panning.  Pan becomes possible
+        # only once the image is zoomed past the viewport, where panning is a
+        # genuine need (to see the occluded parts).  Allowing drag at fit had
+        # no clear purpose: it contradicted fit's "see the whole image" intent,
+        # and annotation headroom is better obtained by zooming or resizing the
+        # window - both of which already give real travel.
+        cw = max(iw, vw)
+        ch = max(ih, vh)
         self._canvas.resize(cw, ch)
         text_tool = self._tools.get("text")
         if text_tool:
@@ -1005,11 +993,10 @@ class ImageEditorWindow(QtWidgets.QWidget):
     def _fit_to_viewport(self) -> None:
         """Scale the image to fit within the viewport with 10% visual margin.
 
-        Small images are capped at effective 1.0 (no upscaling).
-        The canvas pasteboard (viewport-relative padding per side in
-        _resize_canvas) gives the Pan tool enough travel to push the image
-        to any viewport edge/corner even at fit zoom, when the image would
-        otherwise fill the viewport and weld the scrollbars at centre.
+        Small images are capped at effective 1.0 (no upscaling).  After fit the
+        image sits inside the viewport, so the canvas equals the viewport and
+        the scrollbars weld at centre - the image cannot be panned until the
+        user zooms in past the viewport (see _resize_canvas).
         """
         pm = self._rendered_display_pixmap()
         if not pm:
