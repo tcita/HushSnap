@@ -2,27 +2,28 @@
 PP-OCR Engine Implementation — parameter choices vs RapidOCR defaults.
 
 Models
-  Detection:  PP-OCRv6 TINY  (1.8 MB) — language-agnostic, only locates text
+  Detection:  PP-OCRv6 SMALL (~10 MB) — language-agnostic, only locates text
               regions; does not recognise characters.
   Recognition: PP-OCRv6 SMALL (21 MB) — 50-language dictionary including
               Japanese, Traditional Chinese, and extended Unicode symbols.
   Classifier:  PP-OCRv4 (disabled — saves ~10 % latency, only needed for
               180° rotated images).
 
-  Upgraded from PP-OCRv5 in Jul 2026 (RapidOCR ≥ 3.9.1).
+  Requires RapidOCR ≥ 3.9.1 (PP-OCRv6 model support).
 
-Why TINY det + SMALL rec
+Why SMALL det + SMALL rec
   ───────────────────────
   Det and rec are independent ONNX models — any det size can pair with any
   rec size.  The three PP-OCRv6 sizes (tiny/small/medium) differ only in
   channel width, not architecture; they share the same PPLCNetV4 backbone.
 
-  Det choice — TINY over SMALL:
-    End-to-end benchmarks against SMALL det (both with SMALL rec) show TINY
-    det is faster in most cases and matches or exceeds end-to-end accuracy on
-    English, Chinese, and Japanese text.  PaddleOCR's official detection-only
-    Hmean favours SMALL det, but that metric does not account for the downstream
-    recogniser's behaviour on the resulting crops.
+  Det choice — SMALL over TINY:
+    TINY det underperforms on scripts beyond Simplified Chinese and English —
+    most visibly it fragments vertical Japanese into many small square boxes
+    that defeat column reconstruction.  SMALL det returns clean text regions
+    across all supported scripts (incl. Traditional Chinese and Japanese), so
+    it is used despite a small latency cost.  The detection-only Hmean
+    benchmark (PaddleOCR) also favours SMALL det.
 
   Rec choice — SMALL over TINY:
     TINY rec (1.1M parameters) lacks Japanese entirely and shows significant
@@ -39,9 +40,11 @@ Pipeline: det+rec → fallback rec-only.
   only on the raw image (via _recognize_without_detection, which crops back to
   the original content area before recognising).
 
-  Known limitation: PP-OCR is trained for horizontal LTR text.  Vertical text
-  and multi-column layouts produce unreliable results — this is a model-level
-  constraint, not a parameter choice.
+  Vertical CJK needs no rotation: PP-OCRv6 SMALL recognises upright CJK
+  characters in vertical columns natively, so a 90° rotation (which loses
+  5–20 % of CJK characters) is avoided.  Vertical text is detected via an
+  area-weighted tall-box heuristic and rebuilt through a vertical-aware line
+  builder.  Rotated/angled non-CJK text remains a model-level limitation.
 
   Pad-to-960 pre-processing was removed in Jul 2026.  The padding was originally
   introduced to work around RapidOCR v5's detector behaviour: when an image's
