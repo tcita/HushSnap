@@ -615,12 +615,20 @@ class ImageEditorWindow(QtWidgets.QWidget):
         self._zoom_label.clicked.connect(self._fit_to_viewport)
         layout.addWidget(self._zoom_label)
 
-        # Image dimensions sit centred between the zoom group (left) and the
-        # copy/save actions (right) - three clusters separated by stretches so
-        # the dimension number doesn't stick to the zoom percentage (both are
-        # numeric text and read as one blob when adjacent). Centred, it reads
-        # as the card's "title": what this image is.
-        layout.addStretch()
+        # Image dimensions join the zoom group: [−] ━━●━━ [+] 50% | 1920×1080.
+        # Both are status of this image (zoom level + native size), so they
+        # read as one cluster. Keeping them together (vs. centring the
+        # dimension label with stretches around it) also keeps the layout
+        # stable when the window is resized - a centred label would drift as
+        # the stretches redistribute, which looked jittery. A thin separator
+        # distinguishes the two numeric texts so "50%" and "1920×1080" don't
+        # read as one blob.
+        sep = QtWidgets.QFrame()
+        sep.setFrameShape(QtWidgets.QFrame.Shape.VLine)
+        sep.setStyleSheet("background-color: rgba(255,255,255,25); border: none;")
+        sep.setFixedWidth(1)
+        sep.setFixedHeight(16)
+        layout.addWidget(sep)
 
         self._status_label = QtWidgets.QLabel()
         self._status_label.setObjectName("statusLabel")
