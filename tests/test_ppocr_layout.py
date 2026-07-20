@@ -59,6 +59,37 @@ def _line(text, x, y, w, h):
     return OcrLine(text=text, bounding_box=OcrBox(x=x, y=y, width=w, height=h))
 
 
+def _h_blocks(text_a, text_b, w, h, gap, top=0):
+    """Two blocks on one horizontal line (equal centre_y), `gap` px apart.
+
+    Both blocks share height *h* and width *w* and sit at the same y, so
+    they cluster into a single line; the inter-block gap is exactly *gap*.
+    """
+    a = _raw_block(text_a, [[0, top], [w, top], [w, top + h], [0, top + h]])
+    b_left = w + gap
+    b = _raw_block(text_b, [
+        [b_left, top], [b_left + w, top],
+        [b_left + w, top + h], [b_left, top + h],
+    ])
+    return [a, b]
+
+
+def _v_blocks(text_a, text_b, w, h, gap, left=0):
+    """Two blocks in one vertical column (equal centre_x), `gap` px apart.
+
+    Both blocks share width *w* and height *h* and sit at the same x, so
+    they cluster into a single column; the inter-block gap (along y) is
+    exactly *gap*.
+    """
+    a = _raw_block(text_a, [[left, 0], [left + w, 0], [left + w, h], [left, h]])
+    b_top = h + gap
+    b = _raw_block(text_b, [
+        [left, b_top], [left + w, b_top],
+        [left + w, b_top + h], [left, b_top + h],
+    ])
+    return [a, b]
+
+
 # ===================================================================
 # _greedy_line_cluster
 # ===================================================================
@@ -163,6 +194,58 @@ class TestGreedyLineCluster:
         assert lines[0][0]["text"] == "Top"
         assert lines[1][0]["text"] == "Bottom"
 
+    # ── centre-distance threshold boundaries ───────────────────────────
+    # The single gate is  abs(box.center_y - median_center) < 0.4 * median_h
+    # (strict <, threshold scales with the running median height).  These
+    # tests pin both the strictness and the median-height scaling so a
+    # refactor cannot silently change the threshold constant or the
+    # comparison operator.
+
+    def test_centre_distance_exactly_at_threshold_splits(self):
+        """abs(delta) == 0.4 * median_h -> SPLIT (strict <).
+
+        Two equal-height boxes (h=40).  Box B centre is exactly
+        0.4 * 40 = 16 px from the running median (20).  16 < 16 is False,
+        so B opens a new line.
+        """
+        blocks = [
+            _box("A", top=0,  bottom=40, left=0,  right=20),   # center_y=20, h=40
+            _box("B", top=16, bottom=56, left=0,  right=20),   # center_y=36, h=40
+        ]                                                      # |36-20| = 16 == threshold
+        lines = _greedy_line_cluster(blocks)
+        assert len(lines) == 2
+        assert [b["text"] for b in lines[0]] == ["A"]
+        assert [b["text"] for b in lines[1]] == ["B"]
+
+    def test_centre_distance_just_below_threshold_merges(self):
+        """abs(delta) = 15 < 16 -> MERGE (same line).
+
+        Box B centre 1 px closer than the split case above.
+        """
+        blocks = [
+            _box("A", top=0,  bottom=40, left=0, right=20),   # center_y=20, h=40
+            _box("B", top=15, bottom=55, left=0, right=20),   # center_y=35, h=40
+        ]                                                      # |35-20| = 15 < 16
+        lines = _greedy_line_cluster(blocks)
+        assert len(lines) == 1
+        assert [b["text"] for b in lines[0]] == ["A", "B"]
+
+    def test_threshold_scales_with_median_height(self):
+        """A tall drop-cap raises the threshold so an offset box merges.
+
+        Box A is a tall drop-cap (h=100, center_y=50); Box B is offset to
+        center_y=80 (delta=30).  threshold = 0.4 * 100 = 40, so 30 < 40
+        merges.  Had the threshold been 0.4 * Box B's own height (0.4*20=8)
+        B would split -- this pins the *median*-height denominator.
+        """
+        blocks = [
+            _box("A", top=0,  bottom=100, left=0,  right=40, height=100),  # drop-cap
+            _box("B", top=70, bottom=90,  left=50, right=90, height=20),   # center_y=80, delta=30
+        ]
+        lines = _greedy_line_cluster(blocks)
+        assert len(lines) == 1
+        assert [b["text"] for b in lines[0]] == ["A", "B"]
+
 
 # ===================================================================
 # _greedy_column_cluster
@@ -239,6 +322,67 @@ class TestGreedyColumnCluster:
         columns = _greedy_column_cluster(blocks)
         assert columns[0][0]["text"] == "B"  # rightmost first
         assert columns[1][0]["text"] == "A"  # leftmost second
+
+    # ── centre-distance threshold boundaries (mirror of the horizontal) ─
+    # Gate:  abs(box.center_x - median_center) < 0.4 * median_w  (strict <,
+    # threshold scales with running median WIDTH).  These mirror the
+    # horizontal threshold tests above so the vertical path is not an
+    # unverified copy of the horizontal one.
+
+    def test_centre_distance_exactly_at_threshold_splits(self):
+        """abs(delta) == 0.4 * median_w -> SPLIT (strict <).
+
+        Two equal-width columns (w=40).  Box B centre is exactly
+        0.4 * 40 = 16 px from the running median (36).  16 < 16 is False,
+        so B opens a new column.
+
+        Sort is by -right: B (right=56) precedes A (right=40), so B is the
+        first column anchor.
+        """
+        blocks = [
+            _box("A", top=0, bottom=14, left=0,  right=40),   # center_x=20, w=40
+            _box("B", top=0, bottom=14, left=16, right=56),   # center_x=36, w=40
+        ]                                                       # |20-36| = 16 == threshold
+        columns = _greedy_column_cluster(blocks)
+        assert len(columns) == 2
+        assert [b["text"] for b in columns[0]] == ["B"]
+        assert [b["text"] for b in columns[1]] == ["A"]
+
+    def test_centre_distance_just_below_threshold_merges(self):
+        """abs(delta) = 15 < 16 -> MERGE (same column)."""
+        blocks = [
+            _box("A", top=0, bottom=14, left=0,  right=40),   # center_x=20, w=40
+            _box("B", top=0, bottom=14, left=15, right=55),   # center_x=35, w=40
+        ]                                                       # |20-35| = 15 < 16
+        columns = _greedy_column_cluster(blocks)
+        assert len(columns) == 1
+        assert [b["text"] for b in columns[0]] == ["B", "A"]
+
+    def test_threshold_scales_with_median_width(self):
+        """A wide anchor raises the threshold so an offset box merges.
+
+        Box A is a wide anchor (w=100, center_x=50); Box B is offset to
+        center_x=80 (delta=30).  threshold = 0.4 * 100 = 40, so 30 < 40
+        merges.  Pins the *median*-width denominator (not Box B's own width).
+        """
+        blocks = [
+            _box("A", top=0, bottom=14, left=0,  right=100, width=100),  # wide anchor
+            _box("B", top=0, bottom=14, left=70, right=90,  width=20),  # center_x=80, delta=30
+        ]
+        columns = _greedy_column_cluster(blocks)
+        assert len(columns) == 1
+        assert [b["text"] for b in columns[0]] == ["A", "B"]
+
+    def test_three_columns_sorted_right_to_left(self):
+        """Three well-separated single-box columns -> three columns, RTL."""
+        blocks = [
+            _box("左", top=0, bottom=14, left=0,   right=20),    # leftmost
+            _box("中", top=0, bottom=14, left=100, right=120),   # middle
+            _box("右", top=0, bottom=14, left=200, right=220),   # rightmost
+        ]
+        columns = _greedy_column_cluster(blocks)
+        assert len(columns) == 3
+        assert [c[0]["text"] for c in columns] == ["右", "中", "左"]
 
 
 # ===================================================================
@@ -317,19 +461,39 @@ class TestIsVerticalJson:
         assert _is_vertical_json(data) is False
 
     def test_mixed_but_horizontal_dominant(self):
-        """One tall box among many wide ones -> horizontal (area-weighted)."""
+        """One tall box dwarfed by a wide box -> horizontal (area-weighted).
+
+        tall 14x50=700 px², wide 100x14=1400 px².
+        tall/total = 700/2100 = 0.33 < 0.5 -> horizontal.
+        """
         data = [
-            {"box": [[0, 0], [100, 0], [100, 14], [0, 14]]},   # wide:   1400 px²
-            {"box": [[0, 20], [100, 0], [100, 14], [0, 34]]},  # wide:   1400 px² -- hmm this is wrong
-            # Let me use proper coordinates
+            {"box": [[0, 0],  [14, 0],  [14, 50],  [0, 50]]},   # 14x50=700, tall
+            {"box": [[20, 0], [120, 0], [120, 14], [20, 14]]},  # 100x14=1400, wide
         ]
-        # Redo: tall box 14×50=700 px², wide box 100×14=1400 px²
-        # tall/total = 700/2100 = 0.33 < 0.5 -> horizontal
-        data2 = [
-            {"box": [[0, 0], [14, 0], [14, 50], [0, 50]]},     # 14×50=700, tall
-            {"box": [[20, 0], [120, 0], [120, 14], [20, 14]]}, # 100×14=1400, wide
+        assert _is_vertical_json(data) is False
+
+    def test_threshold_at_exactly_half_is_vertical(self):
+        """tall_area/total == 0.5 exactly -> vertical (>= is inclusive).
+
+        tall 10x100=1000, wide 100x10=1000.  ratio = 0.5 >= 0.5 -> True.
+        Pins the `>=` operator: a strict `>` would classify this as horizontal.
+        """
+        data = [
+            {"box": [[0, 0], [10, 0], [10, 100], [0, 100]]},   # 10x100=1000, tall
+            {"box": [[0, 0], [100, 0], [100, 10], [0, 10]]},   # 100x10=1000, wide
         ]
-        assert _is_vertical_json(data2) is False
+        assert _is_vertical_json(data) is True
+
+    def test_threshold_just_below_half_is_horizontal(self):
+        """tall_area/total just under 0.5 -> horizontal.
+
+        tall 10x100=1000, wide 110x10=1100.  ratio = 1000/2100 = 0.476 < 0.5.
+        """
+        data = [
+            {"box": [[0, 0], [10, 0],  [10, 100],  [0, 100]]},  # 10x100=1000, tall
+            {"box": [[0, 0], [110, 0], [110, 10],  [0, 10]]},   # 110x10=1100, wide
+        ]
+        assert _is_vertical_json(data) is False
 
     def test_mixed_vertical_dominant(self):
         """Tall boxes dominate by area -> vertical."""
@@ -365,26 +529,58 @@ class TestApplyIndentation:
         assert result[0].text == "hello"
 
     def test_indented_line(self):
-        """One line is offset from the left baseline -> gets leading spaces."""
+        """One line is offset from the left baseline -> exactly 4 spaces.
+
+        indent unit = 40 (smallest offset), level = round(40/40) = 1
+        -> 1 * 4 = 4 leading spaces.  Asserts the EXACT count, not just
+        startswith("    "): a regression that doubled the spaces would
+        still pass startswith.
+        """
         lines = [
             _line("body",  x=0,  y=0,  w=40, h=14),  # baseline
-            _line("indent", x=40, y=20, w=40, h=14),  # offset
+            _line("indent", x=40, y=20, w=40, h=14),  # offset 40, ratio 40/14≈2.86 > 1
         ]
         result = _apply_indentation(lines)
-        # indent unit = 40, level = 1 -> 4 spaces
-        assert result[1].text.startswith("    ")
-        assert "indent" in result[1].text
+        assert result[0].text == "body"
+        assert result[1].text == "    indent"  # exactly 4 spaces
 
     def test_multi_level_indent(self):
-        """Two different indent levels."""
+        """Two different indent levels -> 4 and 8 spaces exactly.
+
+        unit = 20 (smallest offset > threshold).  L1 offset=20 -> level 1
+        -> 4 spaces.  L2 offset=40 -> level round(40/20)=2 -> 8 spaces.
+        """
         lines = [
             _line("L0", x=0,  y=0,  w=30, h=14),   # baseline
-            _line("L1", x=20, y=20, w=30, h=14),   # level 1
-            _line("L2", x=40, y=40, w=30, h=14),   # level 2
+            _line("L1", x=20, y=20, w=30, h=14),   # offset 20, ratio 20/14≈1.43 > 1
+            _line("L2", x=40, y=40, w=30, h=14),   # offset 40, ratio 40/14≈2.86 > 1
         ]
         result = _apply_indentation(lines)
-        assert result[1].text.startswith("    ")      # 4 spaces
-        assert result[2].text.startswith("        ")  # 8 spaces
+        assert result[0].text == "L0"
+        assert result[1].text == "    L1"          # 4 spaces
+        assert result[2].text == "        L2"      # 8 spaces
+
+    def test_indent_ratio_exactly_at_threshold_no_indent(self):
+        """offset/height == 1.0 exactly -> NOT indented (strict >).
+
+        h=40, offset=40 -> ratio = 1.0, which is not > 1.0, so no indent.
+        Pins the strict `>`: a non-strict `>=` would wrongly indent here.
+        """
+        lines = [
+            _line("body",   x=0,  y=0,  w=40, h=40),
+            _line("offset", x=40, y=60, w=40, h=40),  # offset 40, ratio 1.0
+        ]
+        result = _apply_indentation(lines)
+        assert result[1].text == "offset"  # no leading spaces
+
+    def test_indent_ratio_just_above_threshold_indents(self):
+        """offset/height just over 1.0 -> indented."""
+        lines = [
+            _line("body",   x=0,  y=0,  w=40, h=40),
+            _line("offset", x=41, y=60, w=40, h=40),  # offset 41, ratio 1.025 > 1
+        ]
+        result = _apply_indentation(lines)
+        assert result[1].text == "    offset"  # unit=41, level 1 -> 4 spaces
 
     def test_no_significant_offset(self):
         """Small offsets within jitter threshold -> no indent."""
@@ -404,6 +600,26 @@ class TestApplyIndentation:
         result = _apply_indentation(lines)
         assert result[0].text == "A"
         assert result[1].text == "B"
+
+    def test_vertical_lines_skip_indentation(self):
+        """Vertical CJK never gets leading-indent spaces.
+
+        compose_ppocr_structures applies _apply_indentation only on the
+        horizontal path (ppocr.py: `if not is_vertical`).  The right column
+        here sits far right of the left baseline, so the horizontal path
+        would indent it -- the vertical path must NOT.
+        """
+        blocks = [
+            # right column, offset far right (would indent horizontally)
+            _raw_block("右", [[200, 0], [214, 0], [214, 50], [200, 50]]),
+            # left column = baseline
+            _raw_block("左", [[0, 0],   [14, 0],  [14, 50],  [0, 50]]),
+        ]
+        lines = compose_ppocr_structures(blocks, is_vertical=True)
+        for ln in lines:
+            assert ln.text == ln.text.lstrip(), (
+                f"vertical line must not carry leading indent spaces: {ln.text!r}"
+            )
 
 
 # ===================================================================
@@ -587,6 +803,150 @@ class TestApplyCjkSpacing:
 
     def test_pure_cjk_unchanged(self):
         assert _apply_cjk_spacing("純中文測試") == "純中文測試"
+
+
+# ===================================================================
+# inline gap spacing (_build_lines_from_clusters)
+# ===================================================================
+
+class TestInlineGapSpacing:
+    """Deliberate visual gaps between adjacent blocks -> leading spaces.
+
+    Algorithm (ppocr.py _build_lines_from_clusters):
+      gap = next.left - prev.right          # horizontal
+      est = min(prev.height, next.height)
+      if gap_ratio > 1.0:                    # strict >
+          n = max(1, round(gap_ratio))       # banker's rounding
+          sep = (sep or "") + (" " * n)
+
+    Vertical mirrors x->y and uses box *width* as the denominator.  These
+    tests pin: the strict `> 1.0` threshold, Python's banker's `round`
+    (round-half-to-even), the sep+gap combination, and crucially that the
+    denominator is HEIGHT for horizontal / WIDTH for vertical -- the one
+    dimension a refactor could silently swap.
+    """
+
+    # ── horizontal: threshold + rounding + denominator ──────────────
+
+    def test_h_small_gap_no_extra_space(self):
+        """gap_ratio = 0.5 (< 1.0) -> no extra space; only word_separator.
+
+        CJK-CJK: word_separator -> "" -> "你好世界".
+        """
+        blocks = _h_blocks("你好", "世界", w=40, h=20, gap=10)  # ratio 0.5
+        lines = compose_ppocr_structures(blocks, is_vertical=False)
+        assert lines[0].text == "你好世界"
+
+    def test_h_small_gap_latin_keeps_single_separator_space(self):
+        """Latin-Latin small gap -> only the one word_separator space."""
+        blocks = _h_blocks("hello", "world", w=40, h=20, gap=10)  # ratio 0.5
+        lines = compose_ppocr_structures(blocks, is_vertical=False)
+        assert lines[0].text == "hello world"  # single space from word_separator
+
+    def test_h_gap_at_threshold_no_extra_space(self):
+        """gap_ratio == 1.0 exactly -> NOT > 1.0 -> no extra space.
+
+        Pins the strict `>`: a `>=` would add a space here.
+        """
+        blocks = _h_blocks("你好", "世界", w=40, h=20, gap=20)  # ratio 1.0
+        lines = compose_ppocr_structures(blocks, is_vertical=False)
+        assert lines[0].text == "你好世界"
+
+    def test_h_gap_just_above_threshold_one_space(self):
+        """gap_ratio = 1.05 -> round(1.05)=1 -> 1 space."""
+        blocks = _h_blocks("你好", "世界", w=40, h=20, gap=21)  # ratio 1.05
+        lines = compose_ppocr_structures(blocks, is_vertical=False)
+        assert lines[0].text == "你好 世界"
+
+    def test_h_gap_ratio_1_5_two_spaces(self):
+        """gap_ratio = 1.5 -> round(1.5)=2 -> 2 spaces.
+
+        Also excludes floor(): floor(1.5)=1 would give 1 space.
+        """
+        blocks = _h_blocks("你好", "世界", w=40, h=20, gap=30)  # ratio 1.5
+        lines = compose_ppocr_structures(blocks, is_vertical=False)
+        assert lines[0].text == "你好  世界"  # 2 spaces
+
+    def test_h_banker_rounding_ratio_2_5(self):
+        """gap_ratio = 2.5 -> round(2.5)=2 (banker's) -> 2 spaces.
+
+        Excludes round-half-up() and ceil(): both would give 3 spaces.
+        Combined with the ratio=1.5 case above this uniquely pins
+        banker's rounding (floor excluded by 1.5, ceil/r-h-u by 2.5).
+        """
+        blocks = _h_blocks("你好", "世界", w=40, h=20, gap=50)  # ratio 2.5
+        lines = compose_ppocr_structures(blocks, is_vertical=False)
+        assert lines[0].text == "你好  世界"  # 2 spaces, NOT 3
+
+    def test_h_banker_rounding_ratio_3_5(self):
+        """gap_ratio = 3.5 -> round(3.5)=4 (banker's) -> 4 spaces."""
+        blocks = _h_blocks("你好", "世界", w=40, h=20, gap=70)  # ratio 3.5
+        lines = compose_ppocr_structures(blocks, is_vertical=False)
+        assert lines[0].text == "你好    世界"  # 4 spaces
+
+    def test_h_latin_latin_gap_plus_separator(self):
+        """Latin-Latin: word_separator space + gap spaces = 1 + 2 = 3.
+
+        gap_ratio = 1.5 -> 2 gap spaces; sep=" " -> total "   " (3).
+        """
+        blocks = _h_blocks("hello", "world", w=40, h=20, gap=30)  # ratio 1.5
+        lines = compose_ppocr_structures(blocks, is_vertical=False)
+        assert lines[0].text == "hello   world"  # 3 spaces
+
+    def test_h_denominator_is_height_not_width(self):
+        """est uses min(height), not width.
+
+        Wide boxes (w=100, h=20), gap=30.  est(height)=20 -> ratio 1.5
+        -> 2 spaces.  Had est used width (100) ratio would be 0.3 -> no
+        space.  Pins the height denominator for the horizontal path.
+        """
+        blocks = _h_blocks("你好", "世界", w=100, h=20, gap=30)
+        lines = compose_ppocr_structures(blocks, is_vertical=False)
+        assert lines[0].text == "你好  世界"  # 2 spaces => est used height
+
+    # ── vertical: mirror ────────────────────────────────────────────
+
+    def test_v_small_gap_no_extra_space(self):
+        """gap_ratio = 0.5 -> no extra space."""
+        blocks = _v_blocks("一", "二", w=20, h=40, gap=10)  # ratio 0.5
+        lines = compose_ppocr_structures(blocks, is_vertical=True)
+        assert lines[0].text == "一二"
+
+    def test_v_gap_at_threshold_no_extra_space(self):
+        """gap_ratio == 1.0 -> NOT > 1.0 -> no extra space."""
+        blocks = _v_blocks("一", "二", w=20, h=40, gap=20)  # ratio 1.0
+        lines = compose_ppocr_structures(blocks, is_vertical=True)
+        assert lines[0].text == "一二"
+
+    def test_v_gap_just_above_threshold_one_space(self):
+        """gap_ratio = 1.05 -> 1 space."""
+        blocks = _v_blocks("一", "二", w=20, h=40, gap=21)  # ratio 1.05
+        lines = compose_ppocr_structures(blocks, is_vertical=True)
+        assert lines[0].text == "一 二"
+
+    def test_v_gap_ratio_1_5_two_spaces(self):
+        """gap_ratio = 1.5 -> 2 spaces."""
+        blocks = _v_blocks("一", "二", w=20, h=40, gap=30)  # ratio 1.5
+        lines = compose_ppocr_structures(blocks, is_vertical=True)
+        assert lines[0].text == "一  二"  # 2 spaces
+
+    def test_v_banker_rounding_ratio_2_5(self):
+        """gap_ratio = 2.5 -> round(2.5)=2 -> 2 spaces (banker's)."""
+        blocks = _v_blocks("一", "二", w=20, h=40, gap=50)  # ratio 2.5
+        lines = compose_ppocr_structures(blocks, is_vertical=True)
+        assert lines[0].text == "一  二"  # 2 spaces, NOT 3
+
+    def test_v_denominator_is_width_not_height(self):
+        """est uses min(width), not height -- the key vertical invariant.
+
+        Tall boxes (w=20, h=100), gap=30.  est(width)=20 -> ratio 1.5 ->
+        2 spaces.  Had est used height (100) ratio would be 0.3 -> no
+        space.  If a refactor mirrored the geometry but forgot to swap
+        the denominator to width, this test fails.
+        """
+        blocks = _v_blocks("一", "二", w=20, h=100, gap=30)
+        lines = compose_ppocr_structures(blocks, is_vertical=True)
+        assert lines[0].text == "一  二"  # 2 spaces => est used width
 
 
 # ===================================================================
