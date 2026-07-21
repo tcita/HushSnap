@@ -27,7 +27,7 @@ from hushsnap.ocr.ppocr import (
     is_cjk_or_fullwidth,
     _apply_cjk_spacing,
 )
-from hushsnap.ocr.models import OcrBox, OcrLine
+from hushsnap.ocr.models import OcrBox, OcrLine, OcrWord
 
 
 # ---------------------------------------------------------------------------
@@ -997,34 +997,34 @@ class TestApplyParagraphBreaks:
         assert result[2].text == ""  # blank line between paragraphs
 
     def test_gap_exactly_at_threshold_no_break(self):
-        """Gap exactly == 1.0x average height -> NO break (strict >).
+        """Equal-height lines exactly at the local threshold do not break.
 
         Pins the strict >: a non-strict >= would wrongly insert a blank line
         here.  Mirrors _apply_indentation's strict-> pinning test.
         """
         lines = [
             _line("Top",    x=0, y=0,  w=40, h=20),
-            # gap = 40 - 20 = 20 == 1.0 × 20 → no break (strict >)
+            # centre distance = 40 == 20/2 + 20/2 + max(20, 20) → no break
             _line("Bottom", x=0, y=40, w=40, h=20),
         ]
         result = _apply_paragraph_breaks(lines)
         assert len(result) == 2  # no blank line
 
     def test_gap_just_above_threshold_breaks(self):
-        """Gap just over 1.0x average height -> break."""
+        """Equal-height lines just over the local threshold get a break."""
         lines = [
             _line("Top",    x=0, y=0,  w=40, h=20),
-            # gap = 41 - 20 = 21 > 20 (1.0 x 20) -> break
+            # centre distance = 41 > 20/2 + 20/2 + max(20, 20) -> break
             _line("Bottom", x=0, y=41, w=40, h=20),
         ]
         result = _apply_paragraph_breaks(lines)
         assert len(result) == 3  # blank line inserted
 
     def test_edge_case_gap_just_below_threshold(self):
-        """Gap just under 1.0x average height -> no break (conservative)."""
+        """Equal-height lines just below the local threshold do not break."""
         lines = [
             _line("Top",    x=0, y=0,  w=40, h=20),
-            # gap = 39 - 20 = 19 < 20 (1.0 × 20) → no break
+            # centre distance = 39 < 20/2 + 20/2 + max(20, 20) → no break
             _line("Bottom", x=0, y=39, w=40, h=20),
         ]
         result = _apply_paragraph_breaks(lines)
@@ -1046,16 +1046,41 @@ class TestApplyParagraphBreaks:
         assert len(result) == 2  # no blank line
 
     def test_variable_line_heights(self):
-        """Average height computed from actual line heights, not a constant."""
+        """Mixed font sizes use only their adjacent local geometry."""
         lines = [
             _line("Title", x=0, y=0,  w=60, h=24),   # tall title
-            _line("Body1", x=0, y=60, w=50, h=14),   # gap=36, avg_h=(24+14+14)/3=17.3
+            _line("Body1", x=0, y=60, w=50, h=14),
             _line("Body2", x=0, y=78, w=50, h=14),   # gap=78-74=4
         ]
         result = _apply_paragraph_breaks(lines)
-        # gap between Title and Body1 = 60-24 = 36 >= 17.3 -> break
+        # centre distance = 55; threshold = 24/2 + 14/2 + max(24, 14) = 43.
         assert len(result) == 4
         assert result[1].text == ""  # blank after title
+
+    def test_mixed_heights_require_gap_for_taller_line(self):
+        """A short following line cannot make a modest title gap a paragraph."""
+        lines = [
+            _line("Title", x=0, y=0,  w=60, h=24),
+            # centre distance = 42; threshold = 12 + 7 + 24 = 43 -> no break.
+            _line("Body",  x=0, y=47, w=50, h=14),
+        ]
+        result = _apply_paragraph_breaks(lines)
+        assert len(result) == 2
+
+    def test_word_height_median_not_union_height_sets_threshold(self):
+        """Minor within-line box drift does not inflate the break threshold."""
+        title = _line("Title", x=0, y=0, w=60, h=30)
+        title.words = [
+            OcrWord("Title", OcrBox(x=0, y=8, width=60, height=14)),
+            OcrWord(".", OcrBox(x=61, y=0, width=4, height=14)),
+        ]
+        body = _line("Body", x=0, y=51, w=50, h=14)
+        body.words = [OcrWord("Body", OcrBox(x=0, y=51, width=50, height=14))]
+
+        # Union-bbox centres are 15 and 58: d=43.  The word-height threshold
+        # is 14/2 + 14/2 + 14 = 28, rather than the inflated union-height 52.
+        result = _apply_paragraph_breaks([title, body])
+        assert len(result) == 3
 
     def test_no_break_with_large_boxes_small_gap(self):
         """Tall boxes with small gap still don't trigger false break."""
@@ -1079,11 +1104,11 @@ class TestApplyParagraphBreaks:
         assert _apply_paragraph_breaks([]) == []
 
     def test_zero_height_ignored(self):
-        """Lines with zero height are excluded from the average."""
+        """A zero-height line does not prevent adjacent local comparison."""
         lines = [
-            _line("A", x=0, y=0,  w=40, h=0),   # zero height -> excluded
+            _line("A", x=0, y=0,  w=40, h=0),
             _line("B", x=0, y=0,  w=40, h=14),
-            _line("C", x=0, y=30, w=40, h=14),  # gap = 30-14 = 16 >= 14
+            _line("C", x=0, y=30, w=40, h=14),  # centre distance 30 > 28
         ]
         result = _apply_paragraph_breaks(lines)
         assert len(result) >= 3

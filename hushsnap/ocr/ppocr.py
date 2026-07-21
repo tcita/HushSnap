@@ -511,8 +511,7 @@ def _build_lines_from_clusters(
 
 
 def _apply_paragraph_breaks(lines: list[OcrLine]) -> list[OcrLine]:
-    """Insert a single blank line between lines whose vertical gap is at least
-    one average line height (gap > 1.0 x avg_h).
+    """Insert a blank line only across an obviously disconnected local gap.
 
     Deliberately conservative: this does NOT try to detect typographic
     paragraph spacing, which varies wildly (Markdown's blank line, Word's
@@ -522,11 +521,19 @@ def _apply_paragraph_breaks(lines: list[OcrLine]) -> list[OcrLine]:
     block - the gap is large enough to fit a whole other line of text, so no
     reader would consider them adjacent.
 
-    This mirrors _apply_indentation's ratio > 1.0 rule: a displacement of at
-    least one line height is unambiguous layout intent, not detection jitter.
-    A smaller fraction (e.g. 0.6) would guess at paragraph semantics and
-    fragment tight multi-line text; 1.0 only ever splits clearly-disconnected
-    blocks.
+    The decision is local rather than based on the page's average line height.
+    It uses each line's median word-box height, matching the line-clustering
+    scale and avoiding a union bbox inflated by minor within-line drift.  The
+    remaining centre distance must exceed the taller adjacent line.  In centre
+    coordinates::
+
+        next_center_y - current_center_y
+            > current_h / 2 + next_h / 2 + max(current_h, next_h)
+
+    This is symmetric for mixed font sizes and deliberately conservative: a
+    smaller fraction (e.g. 0.6) would guess at paragraph semantics and fragment
+    tight multi-line text; requiring room for the taller adjacent line only
+    splits clearly-disconnected blocks.
 
     Only meaningful for horizontal text.  Gap magnitude beyond the threshold
     does not produce additional blank lines — the separator is binary (one
@@ -535,26 +542,38 @@ def _apply_paragraph_breaks(lines: list[OcrLine]) -> list[OcrLine]:
     if len(lines) <= 1:
         return lines
 
-    heights = [ln.bounding_box.height for ln in lines if ln.bounding_box.height > 0]
-    if not heights:
-        return lines
-    avg_h = sum(heights) / len(heights)
-    # gap > one full line height: the gap could fit another whole line, so the
-    # two lines are obviously not one continuous block.  Same strict > 1.0
-    # rule as _apply_indentation; intentionally not a smaller "paragraph
-    # spacing" fraction, and intentionally strict (exactly one line height is
-    # the borderline case - require room to spare, like indentation does).
-    threshold = avg_h
-
     result: list[OcrLine] = []
     breaks = 0
     for i, line in enumerate(lines):
         result.append(line)
         if i < len(lines) - 1:
-            cur_bottom = line.bounding_box.y + line.bounding_box.height
-            next_top = lines[i + 1].bounding_box.y
-            gap = next_top - cur_bottom
-            if gap > threshold:
+            next_line = lines[i + 1]
+            current_word_heights = sorted(
+                word.bounding_box.height for word in line.words
+                if word.bounding_box.height > 0
+            )
+            next_word_heights = sorted(
+                word.bounding_box.height for word in next_line.words
+                if word.bounding_box.height > 0
+            )
+            current_h = (
+                current_word_heights[len(current_word_heights) // 2]
+                if current_word_heights else line.bounding_box.height
+            )
+            next_h = (
+                next_word_heights[len(next_word_heights) // 2]
+                if next_word_heights else next_line.bounding_box.height
+            )
+            if current_h <= 0 or next_h <= 0:
+                continue
+            current_center_y = (
+                line.bounding_box.y + line.bounding_box.height / 2
+            )
+            next_center_y = (
+                next_line.bounding_box.y + next_line.bounding_box.height / 2
+            )
+            threshold = current_h / 2 + next_h / 2 + max(current_h, next_h)
+            if next_center_y - current_center_y > threshold:
                 result.append(OcrLine(
                     text="", bounding_box=OcrBox(), paragraph_break=True,
                 ))
@@ -562,8 +581,9 @@ def _apply_paragraph_breaks(lines: list[OcrLine]) -> list[OcrLine]:
 
     if breaks:
         logger.debug(
-            "[DET] _apply_paragraph_breaks: avg_h=%.1f  %d blank lines inserted (%d lines → %d)",
-            avg_h, breaks, len(lines), len(result),
+            "[DET] _apply_paragraph_breaks: local centre-distance rule  "
+            "%d blank lines inserted (%d lines → %d)",
+            breaks, len(lines), len(result),
         )
 
     return result
