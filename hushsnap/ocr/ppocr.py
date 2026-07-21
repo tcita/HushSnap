@@ -810,11 +810,24 @@ def _apply_indentation(lines: list[OcrLine]) -> list[OcrLine]:
     if len(lines) <= 1:
         return lines
 
-    # Baseline: leftmost box — the body text / heading edge
-    baseline = min(line.bounding_box.x for line in lines)
+    # Baseline: leftmost box of any non-sentinel line - the
+    # body / heading edge.  Paragraph-break sentinels (bounding_box=OcrBox()
+    # -> x=0, flagged paragraph_break=True) are excluded: their x=0 would pull
+    # the baseline to 0 and inflate every real line's offset, leaving body
+    # lines jittering around the 1.0 indent threshold.
+    text_lines = [line for line in lines if not line.paragraph_break]
+    if not text_lines:
+        return lines
+    baseline = min(line.bounding_box.x for line in text_lines)
 
     def _is_indented(line: OcrLine) -> bool:
-        """Offset exceeds jitter threshold relative to this line's own height."""
+        """Offset exceeds jitter threshold relative to this line's own height.
+
+        Empty lines (paragraph-break sentinels) are never indented - adding
+        leading spaces to a blank separator is meaningless.
+        """
+        if line.paragraph_break:
+            return False
         h = _word_upper_median(line, axis="h")
         if h <= 0:
             return False
