@@ -13,7 +13,7 @@ def register_engine(engine_id: str, *, recognize, release=None, trim=None, warmu
     """Register an OCR engine implementation.
 
     Args:
-        engine_id: Unique identifier (e.g. "windows", "rapidocr").
+        engine_id: Unique identifier (e.g. "ppocr").
         recognize: Callable(image: QImage, language_tag: str) -> OcrRecognition.
         release: Optional zero-arg callable to free engine resources.
         trim: Optional zero-arg callable to trim engine resident memory.

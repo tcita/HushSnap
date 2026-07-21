@@ -24,7 +24,6 @@ a = Analysis(
 	    'hushsnap.ui.thumbnail',
 	    'hushsnap.ocr.models',
 	    'hushsnap.ocr.preprocess',
-	    'hushsnap.ocr.parsing',
 	    'hushsnap.ocr.text',
 	    'hushsnap.ocr.ocr_service',
 	    'hushsnap.system',

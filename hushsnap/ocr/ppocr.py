@@ -542,28 +542,30 @@ def _apply_paragraph_breaks(lines: list[OcrLine]) -> list[OcrLine]:
     if len(lines) <= 1:
         return lines
 
+    # Precompute each line's upper-median word-box height once (high median,
+    # sorted[n // 2]).  This must be the *complete* line's median - the
+    # running median accumulated in _greedy_line_cluster is a partial sample
+    # (it excludes the last box and is recomputed every step), so it cannot
+    # be reused here.  Computing once up front also removes the previous
+    # double-sort: every interior line was sorted twice (as the "current" of
+    # pair (i, i+1) and the "next" of pair (i-1, i)).
+    def _median_height(line: OcrLine) -> float:
+        hs = sorted(
+            w.bounding_box.height for w in line.words
+            if w.bounding_box.height > 0
+        )
+        return hs[len(hs) // 2] if hs else line.bounding_box.height
+
+    medians = [_median_height(line) for line in lines]
+
     result: list[OcrLine] = []
     breaks = 0
     for i, line in enumerate(lines):
         result.append(line)
         if i < len(lines) - 1:
             next_line = lines[i + 1]
-            current_word_heights = sorted(
-                word.bounding_box.height for word in line.words
-                if word.bounding_box.height > 0
-            )
-            next_word_heights = sorted(
-                word.bounding_box.height for word in next_line.words
-                if word.bounding_box.height > 0
-            )
-            current_h = (
-                current_word_heights[len(current_word_heights) // 2]
-                if current_word_heights else line.bounding_box.height
-            )
-            next_h = (
-                next_word_heights[len(next_word_heights) // 2]
-                if next_word_heights else next_line.bounding_box.height
-            )
+            current_h = medians[i]
+            next_h = medians[i + 1]
             if current_h <= 0 or next_h <= 0:
                 continue
             current_center_y = (
