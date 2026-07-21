@@ -124,6 +124,41 @@ class BoxHeightCase:
     prefix: str = ""
 
 
+@dataclass
+class MixedLineCase:
+    """A multi-token line that deliberately mixes token shapes.
+
+    Used to measure within-line box-height drift - the gap between
+    a line's union-bbox height and its word-box median height.  Unlike
+    :class:`BoxHeightCase` (uniform-height words) this renders tokens
+    that naturally produce different detection-box heights on the same
+    baseline: punctuation, mixed case (descenders), Latin+CJK, and an
+    optional smaller-font run.
+
+    Attributes:
+        id: unique case identifier.
+        font_size_px: CSS font-size in pixels for the main run.
+        font_family: CSS font-family string.
+        tokens: exact strings to render, left -> right.  Each becomes
+            one detection box (matched back by the ``prefix`` token).
+        small_token_indices: indices into ``tokens`` rendered at
+            ``small_font_size_px`` (simulates super/subscript or a
+            smaller inline run).
+        small_font_size_px: font size for the small run.
+        is_vertical: use vertical-rl writing mode.
+        prefix: two-letter token for identification.
+    """
+
+    id: str
+    font_size_px: int
+    font_family: str
+    tokens: list[str]
+    small_token_indices: list[int] = field(default_factory=list)
+    small_font_size_px: int = 0
+    is_vertical: bool = False
+    prefix: str = ""
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Case generators
 # ═══════════════════════════════════════════════════════════════════════════

@@ -510,6 +510,63 @@ def _build_lines_from_clusters(
     return result
 
 
+def _word_upper_median(line: OcrLine, *, axis: str) -> float:
+    """High median (``sorted[n // 2]``) of the line's word-box geometry.
+
+    Used wherever a line's *scale* (height / centre) is needed as a ruler
+    for thresholds - the same drift-robust role the greedy clusterer's
+    running median plays, but computed over the *complete* line (the
+    clusterer's median is a partial sample missing the last box).
+
+    The union bbox (``max(bottom) - min(top)``) is *not* the ruler here -
+    but not for the reason of the absolute box-height inflation documented
+    in comment §4 (every detection box runs ~1.2× the font-size; that
+    inflation is shared by all boxes, so it alone favours neither the
+    median nor the union).  The ruler-relevant failure is *relative*: when
+    a line yields several boxes their heights diverge (mixed font sizes,
+    descenders vs caps, CJK vs Latin on one baseline) and the union takes
+    the extreme, amplifying that divergence.  On realistic mixed-content
+    rendered lines (``scripts/measure_within_line_drift.py``) 65 % of
+    multi-box lines show >=2 px of such union inflation (median +7.7 %,
+    p95 +19 %); the high median anchors to the majority of boxes and is
+    robust to it.
+
+    Scope - do not over-read those figures: most desktop screenshots carry
+    continuous text, so the detector emits few boxes per line (typically
+    <=3).  With so few boxes the relative divergence has little room to
+    act and the median's practical gain over the union is small.  The
+    median is a correctness backstop for the multi-box edge case (drop-caps,
+    inline smaller runs, mixed-script lines), not a high-frequency win.
+
+    For *extent / position* queries (leftmost edge, the area a line
+    occupies) use ``line.bounding_box`` directly - the union is correct
+    there because taking the extreme is the point.
+
+    axis:
+        ``'h'``  -> upper-median word-box height
+        ``'cy'`` -> upper-median word-box centre_y
+        ``'cx'`` -> upper-median word-box centre_x (reserved, unused now)
+
+    Falls back to the union-bbox value when the line has no usable words
+    (e.g. tests construct ``OcrLine`` with only ``bounding_box`` set).
+    """
+    bbox = line.bounding_box
+    if axis == "h":
+        vals = [w.bounding_box.height for w in line.words
+                if w.bounding_box.height > 0]
+        fallback = bbox.height
+    elif axis == "cy":
+        vals = [w.bounding_box.y + w.bounding_box.height / 2
+                for w in line.words if w.bounding_box.height > 0]
+        fallback = bbox.y + bbox.height / 2
+    else:
+        raise ValueError(f"unsupported axis {axis!r}")
+    if not vals:
+        return fallback
+    s = sorted(vals)
+    return s[len(s) // 2]
+
+
 def _apply_paragraph_breaks(lines: list[OcrLine]) -> list[OcrLine]:
     """Insert a blank line only across an obviously disconnected local gap.
 
@@ -522,10 +579,19 @@ def _apply_paragraph_breaks(lines: list[OcrLine]) -> list[OcrLine]:
     reader would consider them adjacent.
 
     The decision is local rather than based on the page's average line height.
-    It uses each line's median word-box height, matching the line-clustering
-    scale and avoiding a union bbox inflated by minor within-line drift.  The
-    remaining centre distance must exceed the taller adjacent line.  In centre
-    coordinates::
+    Both the line height (threshold) and the line centre (gap) are taken as
+    the high-median word-box value via :func:`_word_upper_median` (axis
+    ``'h'`` and ``'cy'``).  The union bbox is *not* used as a ruler here:
+    with several boxes on a line their heights diverge and
+    ``max(bottom) - min(top)`` takes the extreme, amplifying that
+    divergence (see :func:`_word_upper_median` for the full rationale
+    and its honest scope).  The break rule's effective working region
+    is the narrow band where the gap just fits one line - exactly where
+    that union inflation would cause missed breaks.  See
+    ``scripts/measure_within_line_drift.py`` for the basis.
+
+    The remaining centre distance must exceed the taller adjacent line.  In
+    centre coordinates::
 
         next_center_y - current_center_y
             > current_h / 2 + next_h / 2 + max(current_h, next_h)
@@ -542,21 +608,11 @@ def _apply_paragraph_breaks(lines: list[OcrLine]) -> list[OcrLine]:
     if len(lines) <= 1:
         return lines
 
-    # Precompute each line's upper-median word-box height once (high median,
-    # sorted[n // 2]).  This must be the *complete* line's median - the
-    # running median accumulated in _greedy_line_cluster is a partial sample
-    # (it excludes the last box and is recomputed every step), so it cannot
-    # be reused here.  Computing once up front also removes the previous
-    # double-sort: every interior line was sorted twice (as the "current" of
-    # pair (i, i+1) and the "next" of pair (i-1, i)).
-    def _median_height(line: OcrLine) -> float:
-        hs = sorted(
-            w.bounding_box.height for w in line.words
-            if w.bounding_box.height > 0
-        )
-        return hs[len(hs) // 2] if hs else line.bounding_box.height
-
-    medians = [_median_height(line) for line in lines]
+    # Precompute each line's upper-median word-box height once.  The greedy
+    # clusterer's running median cannot be reused: it is a partial sample
+    # (excludes the last box, recomputed every step) rather than the complete
+    # line's median.
+    medians = [_word_upper_median(line, axis="h") for line in lines]
 
     result: list[OcrLine] = []
     breaks = 0
@@ -568,12 +624,8 @@ def _apply_paragraph_breaks(lines: list[OcrLine]) -> list[OcrLine]:
             next_h = medians[i + 1]
             if current_h <= 0 or next_h <= 0:
                 continue
-            current_center_y = (
-                line.bounding_box.y + line.bounding_box.height / 2
-            )
-            next_center_y = (
-                next_line.bounding_box.y + next_line.bounding_box.height / 2
-            )
+            current_center_y = _word_upper_median(line, axis="cy")
+            next_center_y = _word_upper_median(next_line, axis="cy")
             threshold = current_h / 2 + next_h / 2 + max(current_h, next_h)
             if next_center_y - current_center_y > threshold:
                 result.append(OcrLine(
@@ -736,10 +788,16 @@ def compose_ppocr_structures(blocks: list[dict], is_vertical: bool = False) -> l
 def _apply_indentation(lines: list[OcrLine]) -> list[OcrLine]:
     """Apply leading spaces to indented lines.
 
-    Baseline is the leftmost box edge.  Each line uses its own height as
-    denominator: ``indent_ratio = (x - baseline) / line_height``.
-    When the ratio exceeds 1.0 the line is considered intentionally
-    indented; smaller offsets are treated as detection jitter.  Per-line
+    Baseline is the leftmost box edge (a *position* query - union bbox is
+    correct there).  Each line's height denominator is the high-median
+    word-box height via :func:`_word_upper_median` (axis ``'h'``), matching
+    the paragraph-break ruler: with several boxes on a line their heights
+    diverge and the union takes the extreme, which would suppress the
+    ratio and miss indents.
+
+    ``indent_ratio = (x - baseline) / line_height``.  When the ratio
+    exceeds 1.0 the line is considered intentionally indented; smaller
+    offsets are treated as detection jitter.  Per-line
     thresholds handle mixed-height text correctly — a tall title with a
     small absolute offset is not falsely flagged, and a short body line
     with the same offset is properly recognised.
@@ -757,7 +815,7 @@ def _apply_indentation(lines: list[OcrLine]) -> list[OcrLine]:
 
     def _is_indented(line: OcrLine) -> bool:
         """Offset exceeds jitter threshold relative to this line's own height."""
-        h = line.bounding_box.height
+        h = _word_upper_median(line, axis="h")
         if h <= 0:
             return False
         indent_ratio = (line.bounding_box.x - baseline) / h

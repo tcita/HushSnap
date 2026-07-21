@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .cases import LineClusteringCase, BoxHeightCase
+    from .cases import LineClusteringCase, BoxHeightCase, MixedLineCase
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Shared CSS
@@ -149,6 +149,40 @@ font-family:'{case.font_family}',sans-serif;line-height:1.2;{vert_style}">
 </body></html>"""
 
 
+def _build_mixed_line_html(case: "MixedLineCase") -> str:
+    """Build a one-line page mixing token shapes to probe within-line drift.
+
+    Tokens are rendered left->right on a shared baseline, each separated by
+    a spacer so the OCR detector emits one box per token (without spacing,
+    adjacent tokens merge into a single detection box and within-line drift
+    cannot be measured).  Tokens listed in ``small_token_indices`` use
+    ``small_font_size_px``."""
+    vert_style = ("writing-mode:vertical-rl;text-orientation:upright;"
+                  if case.is_vertical else "")
+    small_fs = case.small_font_size_px or case.font_size_px
+    spans: list[str] = []
+    for ti, tok in enumerate(case.tokens):
+        fs = small_fs if ti in case.small_token_indices else case.font_size_px
+        spans.append(
+            f'<span class="word" data-line="0" '
+            f'data-token="{_esc(tok)}" '
+            f'data-fs="{fs}" '
+            f'data-family="{_esc(case.font_family)}">'
+            f'{_esc(tok)}</span>'
+        )
+        if ti < len(case.tokens) - 1:
+            spans.append('<span class="spacer" style="width:48px"></span>')
+
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><style>{_CSS}</style></head>
+<body>
+<div class="block" style="font-size:{case.font_size_px}px;
+font-family:'{case.font_family}',sans-serif;line-height:1.2;{vert_style}">
+{"".join(spans)}
+</div>
+</body></html>"""
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Rendering
 # ═══════════════════════════════════════════════════════════════════════════
@@ -159,6 +193,7 @@ def render_cases(
     out_dir: str | Path = "",
     *,
     headless: bool = True,
+    channel: str | None = None,
 ) -> list[RenderResult]:
     """Render one or more cases via Playwright Chromium.
 
@@ -170,6 +205,9 @@ def render_cases(
         cases: list of :class:`LineClusteringCase` or :class:`BoxHeightCase`.
         out_dir: directory for PNG files (default: system temp).
         headless: run Chromium headless.
+        channel: optional Playwright browser channel (e.g. "msedge") to use
+            a system-installed browser instead of Playwright's bundled
+            Chromium.  None (default) uses the bundled Chromium.
 
     Returns:
         One :class:`RenderResult` per case, in the same order.
@@ -186,13 +224,18 @@ def render_cases(
     results: list[RenderResult] = []
 
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=headless)
+        launch_kwargs = {"headless": headless}
+        if channel:
+            launch_kwargs["channel"] = channel
+        browser = pw.chromium.launch(**launch_kwargs)
         context = browser.new_context(device_scale_factor=1)
 
         for case in cases:
             # Build HTML
             if hasattr(case, "line_height_ratio"):
                 html = _build_line_clustering_html(case)
+            elif hasattr(case, "tokens"):
+                html = _build_mixed_line_html(case)
             else:
                 html = _build_box_height_html(case)
 

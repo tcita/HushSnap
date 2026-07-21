@@ -601,6 +601,32 @@ class TestApplyIndentation:
         assert result[0].text == "A"
         assert result[1].text == "B"
 
+    def test_indent_denominator_drift_robust_against_union(self):
+        """A drifting tall box must not suppress the indent ratio.
+
+        The offset line has three boxes: two at h=14 and one drifted tall
+        box at h=24.  The union-bbox height is 24 (the tall box dominates);
+        the word-median height is 14 (sorted[3//2] = the second of
+        [14,14,24]).  With offset=16:
+
+            word-median ratio = 16/14 ~ 1.14 > 1  -> indented
+            union      ratio = 16/24 ~ 0.67 <= 1  -> would NOT indent
+
+        The indent rule must use the word-median denominator: a single
+        drifting tall box must not inflate the height, suppress the ratio,
+        and miss the indent.  The _line(...) tests never set .words, so they
+        exercise only the fallback path - this pins the words path.
+        """
+        body = _line("body", x=0, y=0, w=40, h=14)
+        offset_line = _line("indent", x=16, y=20, w=40, h=24)  # union bbox
+        offset_line.words = [
+            OcrWord("i1", OcrBox(x=16, y=20, width=12, height=14)),
+            OcrWord("i2", OcrBox(x=29, y=20, width=12, height=14)),
+            OcrWord("i3", OcrBox(x=42, y=14, width=8,  height=24)),  # drifts tall
+        ]
+        result = _apply_indentation([body, offset_line])
+        assert result[1].text == "    indent"  # level 1, word-median ratio > 1
+
     def test_vertical_lines_skip_indentation(self):
         """Vertical CJK never gets leading-indent spaces.
 
@@ -1077,10 +1103,41 @@ class TestApplyParagraphBreaks:
         body = _line("Body", x=0, y=51, w=50, h=14)
         body.words = [OcrWord("Body", OcrBox(x=0, y=51, width=50, height=14))]
 
-        # Union-bbox centres are 15 and 58: d=43.  The word-height threshold
-        # is 14/2 + 14/2 + 14 = 28, rather than the inflated union-height 52.
+        # Word-median centres are 15 (title) and 58 (body): d=43.  The
+        # word-height threshold is 14/2 + 14/2 + 14 = 28, rather than the
+        # inflated union-height 52 - and the word-median centre (15) avoids
+        # the union centre (11) that the drifted '.' box would pull down.
+        # 43 > 28 -> breaks.  (Union-height 52 would give threshold 40, still
+        # < 47, but the centre is what this test now also pins.)
         result = _apply_paragraph_breaks([title, body])
         assert len(result) == 3
+
+    def test_word_centre_median_drift_robust_against_union(self):
+        """A drifting box must not inflate the gap via the union centre.
+
+        Line A has two equal-height boxes (h=14) but one is shifted up,
+        pulling the union-bbox centre to 6 while the word-median centre
+        stays at 10.  Line B is a single box at centre 37.
+
+            word-median gap = 37 - 10 = 27  <  threshold 28  -> no break
+            union      gap = 37 -  6 = 31  >  threshold 28  -> would break
+
+        The break rule must use the word-median centre: a single drifting
+        box must not widen the measured gap and trigger a false break.
+        Mirrors test_word_height_median_not_union_height_sets_threshold but
+        for the centre (axis 'cy'), closing the half-measure where height
+        used the median but centre did not.
+        """
+        line_a = _line("A", x=0, y=-5, w=60, h=22)  # union bbox: min_top=-5, max_bot=17
+        line_a.words = [
+            OcrWord("A1", OcrBox(x=0,  y=3,  width=30, height=14)),  # centre 10
+            OcrWord("A2", OcrBox(x=31, y=-5, width=4,  height=14)),  # centre 2, drifts up
+        ]
+        line_b = _line("B", x=0, y=30, w=40, h=14)
+        line_b.words = [OcrWord("B", OcrBox(x=0, y=30, width=40, height=14))]
+
+        result = _apply_paragraph_breaks([line_a, line_b])
+        assert len(result) == 2  # no blank line - word-median gap 27 < 28
 
     def test_no_break_with_large_boxes_small_gap(self):
         """Tall boxes with small gap still don't trigger false break."""
