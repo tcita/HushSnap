@@ -1,3 +1,3 @@
-﻿"""HushSnap package."""
+"""HushSnap package."""
 
 __version__ = "dev"

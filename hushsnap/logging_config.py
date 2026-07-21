@@ -1,4 +1,4 @@
-﻿"""
+"""
 HushSnap logging configuration module.
 Initializes global logging with file rotation and env-driven log levels.
 """
