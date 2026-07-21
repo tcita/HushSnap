@@ -172,7 +172,7 @@ def test_compose_ppocr_text_paragraph_break():
         _make_block("para1", [[0, 0], [50, 0], [50, 20], [0, 20]]),
         _make_block("para2", [[0, 100], [50, 100], [50, 120], [0, 120]]),
     ]
-    # gap = 100 - 20 = 80 >= 0.6*avg_h(12) → paragraph break
+    # gap = 100 - 20 = 80 >= avg_h(20) → paragraph break
     assert compose_ppocr_text(blocks) == "para1\n\npara2"
 
 

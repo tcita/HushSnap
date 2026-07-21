@@ -996,22 +996,51 @@ class TestApplyParagraphBreaks:
         assert len(result) == 5  # A1, A2, blank, B1, B2
         assert result[2].text == ""  # blank line between paragraphs
 
-    def test_edge_case_gap_equals_threshold(self):
-        """Gap exactly == 0.6× average height -> triggers break."""
+    def test_gap_exactly_at_threshold_no_break(self):
+        """Gap exactly == 1.0x average height -> NO break (strict >).
+
+        Pins the strict >: a non-strict >= would wrongly insert a blank line
+        here.  Mirrors _apply_indentation's strict-> pinning test.
+        """
         lines = [
             _line("Top",    x=0, y=0,  w=40, h=20),
-            # gap = 32 - 20 = 12 == 0.6 × 20 → break
-            _line("Bottom", x=0, y=32, w=40, h=20),
+            # gap = 40 - 20 = 20 == 1.0 × 20 → no break (strict >)
+            _line("Bottom", x=0, y=40, w=40, h=20),
+        ]
+        result = _apply_paragraph_breaks(lines)
+        assert len(result) == 2  # no blank line
+
+    def test_gap_just_above_threshold_breaks(self):
+        """Gap just over 1.0x average height -> break."""
+        lines = [
+            _line("Top",    x=0, y=0,  w=40, h=20),
+            # gap = 41 - 20 = 21 > 20 (1.0 x 20) -> break
+            _line("Bottom", x=0, y=41, w=40, h=20),
         ]
         result = _apply_paragraph_breaks(lines)
         assert len(result) == 3  # blank line inserted
 
     def test_edge_case_gap_just_below_threshold(self):
-        """Gap just under 0.6× average height -> no break."""
+        """Gap just under 1.0x average height -> no break (conservative)."""
         lines = [
             _line("Top",    x=0, y=0,  w=40, h=20),
-            # gap = 31 - 20 = 11 < 12 (0.6 × 20) → no break
-            _line("Bottom", x=0, y=31, w=40, h=20),
+            # gap = 39 - 20 = 19 < 20 (1.0 × 20) → no break
+            _line("Bottom", x=0, y=39, w=40, h=20),
+        ]
+        result = _apply_paragraph_breaks(lines)
+        assert len(result) == 2  # no blank line
+
+    def test_moderate_paragraph_spacing_no_break(self):
+        """Moderate paragraph spacing (~0.5x height) -> no break.
+
+        Pins the conservative guarantee: ordinary typographic paragraph spacing
+        (Word-style space-after, Markdown's sub-line gap) is deliberately NOT
+        detected - only obviously-disconnected blocks (> 1.0x height) are.
+        """
+        lines = [
+            _line("Top",    x=0, y=0,  w=40, h=20),
+            # gap = 30 - 20 = 10 == 0.5 x 20 -> no break (well below 1.0)
+            _line("Bottom", x=0, y=30, w=40, h=20),
         ]
         result = _apply_paragraph_breaks(lines)
         assert len(result) == 2  # no blank line

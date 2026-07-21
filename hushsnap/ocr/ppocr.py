@@ -511,12 +511,26 @@ def _build_lines_from_clusters(
 
 
 def _apply_paragraph_breaks(lines: list[OcrLine]) -> list[OcrLine]:
-    """Insert a single blank line between lines whose vertical gap exceeds
-    0.6× average line height.
+    """Insert a single blank line between lines whose vertical gap is at least
+    one average line height (gap > 1.0 x avg_h).
+
+    Deliberately conservative: this does NOT try to detect typographic
+    paragraph spacing, which varies wildly (Markdown's blank line, Word's
+    8pt space-after, a letter's signature gap, a poem's stanza break all
+    differ, and a ci's upper/lower folio is often barely wider than a normal
+    line).  It only separates lines that are obviously not one continuous
+    block - the gap is large enough to fit a whole other line of text, so no
+    reader would consider them adjacent.
+
+    This mirrors _apply_indentation's ratio > 1.0 rule: a displacement of at
+    least one line height is unambiguous layout intent, not detection jitter.
+    A smaller fraction (e.g. 0.6) would guess at paragraph semantics and
+    fragment tight multi-line text; 1.0 only ever splits clearly-disconnected
+    blocks.
 
     Only meaningful for horizontal text.  Gap magnitude beyond the threshold
-    does not produce additional blank lines — there is no concept of
-    "multi-level" paragraph spacing; a paragraph separator is binary.
+    does not produce additional blank lines — the separator is binary (one
+    blank line, never several).
     """
     if len(lines) <= 1:
         return lines
@@ -525,7 +539,12 @@ def _apply_paragraph_breaks(lines: list[OcrLine]) -> list[OcrLine]:
     if not heights:
         return lines
     avg_h = sum(heights) / len(heights)
-    threshold = avg_h * 0.6
+    # gap > one full line height: the gap could fit another whole line, so the
+    # two lines are obviously not one continuous block.  Same strict > 1.0
+    # rule as _apply_indentation; intentionally not a smaller "paragraph
+    # spacing" fraction, and intentionally strict (exactly one line height is
+    # the borderline case - require room to spare, like indentation does).
+    threshold = avg_h
 
     result: list[OcrLine] = []
     breaks = 0
@@ -535,7 +554,7 @@ def _apply_paragraph_breaks(lines: list[OcrLine]) -> list[OcrLine]:
             cur_bottom = line.bounding_box.y + line.bounding_box.height
             next_top = lines[i + 1].bounding_box.y
             gap = next_top - cur_bottom
-            if gap >= threshold:
+            if gap > threshold:
                 result.append(OcrLine(
                     text="", bounding_box=OcrBox(), paragraph_break=True,
                 ))
@@ -670,8 +689,21 @@ def compose_ppocr_structures(blocks: list[dict], is_vertical: bool = False) -> l
     for line in lines:
         line.text = _apply_cjk_spacing(line.text)
 
-    # Step 5 - paragraph breaks (horizontal text only)
+    # Step 5 - split obviously-disconnected blocks with a blank line (horizontal only)
     # Step 6 - detect indentation from left-edge clustering
+    #
+    # Steps 5/6 are horizontal-only by design, NOT a TODO to mirror onto
+    # vertical.  The horizontal rules work because "gap > one line height =
+    # obviously not one continuous block" is an uncontroversial judgment -
+    # the gap could fit a whole other line.  That judgment does NOT transfer
+    # to vertical: there is no column-based UI analogue to horizontally-
+    # separated UI text, and vertical documents (classical texts, calligraphy,
+    # vertical Japanese, couplets) have column-spacing conventions that
+    # don't map onto horizontal line spacing.  So no gap/width ratio is "obviously a different block" the way
+    # > avg_h is for horizontal - any chosen value would be a guess at
+    # typography semantics, the very failure mode the horizontal rule avoids.
+    # Adding vertical support requires first measuring real gap/avg_w
+    # distributions (must be bimodal) - not mirroring a horizontal constant.
     if not is_vertical:
         lines = _apply_paragraph_breaks(lines)
         lines = _apply_indentation(lines)
