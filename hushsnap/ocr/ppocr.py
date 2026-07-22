@@ -520,9 +520,10 @@ def _word_upper_median(line: OcrLine, *, axis: str) -> float:
 
     The union bbox (``max(bottom) - min(top)``) is *not* the ruler here -
     but not for the reason of the absolute box-height inflation documented
-    in comment §4 (every detection box runs ~1.2× the font-size; that
-    inflation is shared by all boxes, so it alone favours neither the
-    median nor the union).  The ruler-relevant failure is *relative*: when
+    in comment §4 (every detection box runs larger than the font-size,
+    ratio ~1.2-1.7× per scripts/measure_box_inflation.py; that inflation
+    is shared by all boxes, so it alone favours neither the median nor
+    the union).  The ruler-relevant failure is *relative*: when
     a line yields several boxes their heights diverge (mixed font sizes,
     descenders vs caps, CJK vs Latin on one baseline) and the union takes
     the extreme, amplifying that divergence.  On realistic mixed-content
@@ -803,11 +804,12 @@ def _apply_indentation(lines: list[OcrLine]) -> list[OcrLine]:
     with the same offset is properly recognised.
 
     The 0.5 threshold is data-backed, not a tuned fraction.  Measured on
-    rendered CJK (``scripts/measure_indent_ratio_gap.py``): top-aligned
+    rendered CJK; reproduced across zh-Hant, ja, en and digits (``scripts/measure_indent_ratio_gap.py``): top-aligned
     body lines' ratio maxes at ~0.09 (pure detection jitter + glyph
     side-bearing), while a genuine 1-char indent lands at ~0.79-1.10
-    (offset ~= font size, denominator ~= 1.2x font size because every
-    detection box runs larger than its glyph).  A 0.70-wide empty valley
+    (offset ~= font size, denominator = box height which runs 1.2-1.7x
+    font size - larger, but not a fixed ratio: it rises at small sizes and
+    for narrow glyphs; the only provable relationship is box > font size).  A 0.70-wide empty valley
     sits between 0.09 and 0.79 with zero samples.  0.5 is a conservative
     pick inside that valley: ~6x above the body jitter ceiling (no
     false-fire) and ~0.30 below the 1-char indent floor (catches the

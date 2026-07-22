@@ -2,15 +2,18 @@
 
 Question
 --------
-``_apply_indentation``'s sub-threshold column fallback clusters left edges with
-a single-linkage tolerance of ``0.4 * median_h`` (reusing the jitter tolerance
-``_greedy_line_cluster`` applies on the perpendicular axis).  That tolerance
-must absorb the per-line left-edge jitter that exists even among lines that
-*should* be perfectly left-aligned - the ``min(bounding_box.x)`` the fallback
-clusters on.  This script measures how big that jitter is.
+``_apply_indentation``'s master rule judges each line by
+``ratio = (bounding_box.x - baseline) / line_height`` with the threshold at
+``0.5`` (commit 24ff563).  For a *flush-left* body line the true offset is 0,
+so its ``ratio`` is pushed above 0 only by detection jitter + glyph
+side-bearing.  The threshold's body side (``ratio < 0.5``) can false-fire
+only if that jitter reaches 0.5 of a line height - i.e. if left edges that
+*should* be perfectly aligned actually spread by ~half a line.  How big is
+that per-line left-edge jitter really?
 
-Three rendering modes span the detector's difficulty, controlled only by the
-case's ``prefix`` and ``word_spacing_px`` (no production code touched):
+This script measures it.  Three rendering modes span the detector's
+difficulty, controlled only by the case's ``prefix`` and ``word_spacing_px``
+(no production code touched):
 
   mixed            2-letter Latin prefix + 16px gap before every CJK word.
                    The Latin anchor gives the detector a sharp left boundary, so
@@ -25,21 +28,28 @@ case's ``prefix`` and ``word_spacing_px`` (no production code touched):
 For every rendered line (one OCR cluster) it records::
 
     left_edge = min(box.left for box in cluster)   # = production min(bounding_box.x)
-    median_h  = upper_median(box.heights)           # = the fallback's ruler
+    median_h  = upper_median(box.heights)           # = the production ruler
 
 Across the lines of one image it computes the image-level spread::
 
-    spread_px    = max(left_edge) - min(left_edge)   # conservative worst-case
-    spread_ratio = spread_px / median_h               # gap the tolerance must bridge
+    spread_px    = max(left_edge) - min(left_edge)   # == body-side ratio ceiling
+    spread_ratio = spread_px / median_h               # gap below the 0.5 ceiling
 
 plus the per-line deviation of each line's left edge from that image's median
 left edge, pooled across images for higher-resolution statistics::
 
     dev_ratio = |left_edge - median_left_edge| / median_h
 
-If spread_ratio stays well under 0.4, the tolerance comfortably absorbs real
-per-line left-edge jitter.  If it approaches or exceeds 0.4, the tolerance is on
-the edge and tightening (e.g. 0.25x) is worth discussing.
+The image-level ``spread_ratio`` is exactly the body-side ratio ceiling: for
+flush-left lines ``offset = left_edge - baseline`` with ``baseline =
+min(left_edge)``, so ``max(offset)/h = (max(left)-min(left))/h =
+spread_ratio``.  If ``spread_ratio`` stays well under 0.5, flush-left body
+lines never approach the indent threshold - the body side of 0.5 is safe.
+
+The cross-script / cross-content confirmation (zh-Hans, zh-Hant, ja, en + digits, body
+max ~0.13 across ~1200 samples) lives in ``measure_indent_ratio_gap.py`` -
+that is the *direct* body-ratio measurement this script's x-jitter
+characterisation corroborates.
 
 Re-running the same image is deterministic and measures nothing - jitter is
 sampled across many left-aligned lines in ONE detection per image.
@@ -78,6 +88,9 @@ _MODES = [
 
 _CJK_FAMILIES = ["Microsoft YaHei", "SimSun", "KaiTi"]
 _FONT_SIZES = [16, 20, 24, 28, 32]
+# The indent threshold's body-side ceiling: ratio < 0.5 must hold for flush-left
+# lines, so left-edge jitter (spread_ratio) must stay well under this.
+_CEILING = 0.5
 
 
 def _build_case(mode: str, prefix: str, spacing: int,
@@ -176,7 +189,7 @@ def _measure_image(png_path: Path, engine) -> dict | None:
 # ── Reporting ────────────────────────────────────────────────────────────────
 
 
-def _report(label: str, records: list[dict], tol_ratio: float) -> None:
+def _report(label: str, records: list[dict], ceiling: float) -> None:
     if not records:
         print(f"\n{label}: no multi-line cases")
         return
@@ -191,7 +204,8 @@ def _report(label: str, records: list[dict], tol_ratio: float) -> None:
     print(f"\n{'═' * 78}")
     print(f"{label}  (n={n} images, {n_dev} lines)")
     print(f"{'═' * 78}")
-    print(f"  image-level spread  (max(left) - min(left))   [conservative worst-case]")
+    print(f"  image-level spread  (max(left) - min(left))   "
+          f"[== body-side ratio ceiling]")
     print(f"  px:    median={statistics.median(spreads_px):.2f}  "
           f"p75={_pct(spreads_px,75):.2f}  p95={_pct(spreads_px,95):.2f}  "
           f"max={max(spreads_px):.2f}")
@@ -207,14 +221,15 @@ def _report(label: str, records: list[dict], tol_ratio: float) -> None:
           f"p75={_pct(all_devs_ratio,75)*1000:.1f}e-3  "
           f"p95={_pct(all_devs_ratio,95)*1000:.1f}e-3  "
           f"max={max(all_devs_ratio)*1000:.1f}e-3")
-    print(f"  (ratio = value / median_h; tolerance = {tol_ratio:.2f} x median_h)")
+    print(f"  (ratio = value / median_h; body ceiling = {ceiling} "
+          f"-- spread_ratio must stay well under it)")
 
-    over = sum(1 for s in spreads_ratio if s > tol_ratio)
-    half = sum(1 for s in spreads_ratio if s > tol_ratio / 2)
-    over_dev = sum(1 for d in all_devs_ratio if d > tol_ratio / 2)
-    print(f"  images with spread_ratio > {tol_ratio:.2f}:              {over}/{n}")
-    print(f"  images with spread_ratio > {tol_ratio/2:.2f} (half tol):  {half}/{n}")
-    print(f"  lines  with |dev|_ratio  > {tol_ratio/2:.2f} (half tol):  {over_dev}/{n_dev}")
+    over = sum(1 for s in spreads_ratio if s > ceiling)
+    half = sum(1 for s in spreads_ratio if s > ceiling / 2)
+    over_dev = sum(1 for d in all_devs_ratio if d > ceiling / 2)
+    print(f"  images with spread_ratio > {ceiling:.2f}:               {over}/{n}")
+    print(f"  images with spread_ratio > {ceiling/2:.2f} (half ceiling):  {half}/{n}")
+    print(f"  lines  with |dev|_ratio  > {ceiling/2:.2f} (half ceiling):  {over_dev}/{n_dev}")
 
     worst = sorted(records, key=lambda r: -r["spread_ratio"])[:6]
     print(f"\n  worst images (spread_ratio desc):")
@@ -224,7 +239,8 @@ def _report(label: str, records: list[dict], tol_ratio: float) -> None:
               f"{r['median_h']:>9.1f} {r['n_lines']:>8}  {r['png']}")
 
 
-def _decision(records: list[dict], tol_ratio: float) -> None:
+def _decision(records: list[dict], ceiling: float) -> None:
+    """Verdict: does left-edge jitter stay well under the 0.5 body ceiling?"""
     if not records:
         return
     spreads_ratio = sorted(r["spread_ratio"] for r in records)
@@ -246,28 +262,29 @@ def _decision(records: list[dict], tol_ratio: float) -> None:
           f"max={mx*1000:.1f}e-3 ({max(spreads_px):.2f}px)")
     print(f"  line |dev|    p95={dev_p95*1000:.1f}e-3  "
           f"max={dev_max*1000:.1f}e-3  (2x max = {dev_max*2*1000:.1f}e-3)")
-    print(f"  tolerance under test: {tol_ratio:.2f} x median_h")
+    print(f"  indent-threshold body ceiling: {ceiling} (ratio < {ceiling} for "
+          f"flush-left)")
     print()
-    # Single-linkage splits a column when a consecutive gap > tol.  Image spread
-    # is an upper bound on that gap; a per-line |dev| > tol/2 means two lines
-    # straddling the median could be tol apart.  Judge on the worst of the two.
+    # spread_ratio == max(offset)/h for body lines == the body-side ratio ceiling.
+    # A spread near the ceiling means a flush-left line could approach the
+    # indent threshold and false-fire; 2x line-dev bounds the worst straddle.
     worst = max(mx, dev_max * 2)
-    if worst < tol_ratio / 2:
-        print(f"  -> worst-case (spread, 2x line-dev) is under HALF the tolerance.")
-        print(f"     {tol_ratio}x comfortably absorbs real per-line left-edge jitter;")
-        print("     the slack is ample.")
-        print("     Consider tightening toward 0.25x only if adjacent columns are")
-        print("     seen merging in practice.")
-    elif worst < tol_ratio:
-        print(f"  -> worst-case is below but within 2x of the tolerance.  {tol_ratio}x")
-        print("     absorbs the bulk of jitter; worst cases sit near the edge but")
-        print("     inside.  Stands as-is.")
+    if worst < ceiling / 2:
+        print(f"  -> worst-case (spread, 2x line-dev) is under HALF the ceiling "
+          f"({ceiling/2:.2f}).")
+        print(f"     Flush-left body lines never approach the {ceiling} indent "
+          f"threshold;")
+        print(f"     the body side of 0.5 is safe (no false-fire).  Cross-script")
+        print(f"     confirmation in measure_indent_ratio_gap.py.")
+    elif worst < ceiling:
+        print(f"  -> worst-case is below but within 2x of the ceiling ({ceiling}).")
+        print(f"     Flush-left jitter stays under {ceiling}; worst cases sit "
+          f"near the")
+        print(f"     edge but inside.  Stands as-is.")
     else:
-        print(f"  -> worst-case reaches or exceeds the tolerance.  {tol_ratio}x may be")
-        print("     too TIGHT for the worst cases - a real column whose lines jitter")
-        print("     this much could split across the tolerance and be missed.")
-        print("     Consider widening, or clustering on a per-image measured jitter")
-        print("     instead of a fixed ratio.")
+        print(f"  -> worst-case reaches or exceeds the ceiling ({ceiling}).")
+        print(f"     A flush-left line could false-fire at 0.5.  Investigate the")
+        print(f"     worst images above; the threshold's body margin may be too thin.")
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
@@ -285,8 +302,8 @@ def main():
                     help="comma-separated font sizes px (default 16,20,24,28,32)")
     ap.add_argument("--families", type=str, default="",
                     help="comma-separated CJK font families")
-    ap.add_argument("--tol", type=float, default=0.4,
-                    help="tolerance ratio to compare against (default 0.4)")
+    ap.add_argument("--ceiling", type=float, default=_CEILING,
+                    help=f"body ceiling to compare against (default {_CEILING})")
     args = ap.parse_args()
 
     mode_map = {m[0]: m for m in _MODES}
@@ -347,7 +364,7 @@ def main():
 
     for mode in sel_modes:
         _report(f"MODE: {mode}", [r for r in all_records if r["mode"] == mode],
-                args.tol)
+                args.ceiling)
     # per-size / per-family breakdown across pure modes only (the realistic ones)
     pure = [r for r in all_records if r["mode"] in ("pure_spaced", "pure_continuous")]
     if pure:
@@ -361,12 +378,12 @@ def main():
             by_size.setdefault(fs, []).append(r)
             by_fam.setdefault(fam, []).append(r)
         for fs in sorted(by_size, key=lambda x: int(x) if x.isdigit() else 0):
-            _report(f"PURE modes, size: {fs}px", by_size[fs], args.tol)
+            _report(f"PURE modes, size: {fs}px", by_size[fs], args.ceiling)
         for fam in sorted(by_fam):
-            _report(f"PURE modes, family: {fam}", by_fam[fam], args.tol)
+            _report(f"PURE modes, family: {fam}", by_fam[fam], args.ceiling)
     if len(sel_modes) > 1:
-        _report("ALL MODES COMBINED", all_records, args.tol)
-    _decision(all_records, args.tol)
+        _report("ALL MODES COMBINED", all_records, args.ceiling)
+    _decision(all_records, args.ceiling)
     print("\nDone.")
 
 

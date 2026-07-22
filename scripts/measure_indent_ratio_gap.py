@@ -1,46 +1,62 @@
-"""Measure the ratio gap between body and 1-char-indented CJK lines.
+"""Measure the ratio gap between body and 1-em indent; assert the 0.5 threshold.
 
 Question
 --------
-``_apply_indentation``'s main rule judges each line by ``ratio = offset / h``
-where ``offset = bounding_box.x - baseline`` and ``h`` is the line's own
-upper-median word-box height (``_word_upper_median(axis='h')``).  A line is
-indented when ``ratio > 1.0``.
+``_apply_indentation``'s main rule judges each line by::
 
-That ``>1.0`` threshold misses a 1-char CJK indent: a 1-char offset (~= font
-size) divided by the box height (~1.2x font size, since every detection box
-runs larger than the glyph) lands near ``0.83``.  Could the threshold be
-lowered to catch 1-char indents without false-firing on top-aligned body lines
-whose ratio is pushed above 0 by side-bearing + detection jitter?
+    ratio = (bounding_box.x - baseline) / line_height
 
-This script answers that by measuring the two distributions directly:
+where ``baseline`` is the leftmost box edge (``min(bounding_box.x)`` over all
+non-sentinel lines) and ``line_height`` is the line's own upper-median word-box
+height (``_word_upper_median(axis='h')``).  A line is indented when
+``ratio > 0.5`` (lowered from ``>1.0`` on master, commit 24ff563).
 
-  body   : top-aligned lines; true offset ~0, ratio nudged up by jitter.
-  indent : 1-char-indented lines; true offset ~1 font size, ratio ~0.83.
+The ``>1.0`` threshold missed every 1-char CJK indent: a 1-em offset
+(~= font size) divided by the detection-box height (which runs 1.2-1.7x
+font size - larger, but not a fixed ratio: it rises at small sizes and for
+narrow glyphs; the only provable relationship is box > font size, so a 1-em
+indent lands well under 1.0) lands near ``0.83`` (for CJK at typical sizes).
+Could the threshold be lowered to 0.5 - small enough to catch a 1-em indent, large
+enough to never false-fire on top-aligned body jitter?
 
-For every rendered line (one OCR cluster) it records, mirroring production::
+This script answers that directly with an explicit two-claim assertion:
+
+  * body   (flush-left): max ratio < 0.5   -> never false-fires
+  * indent (1 em):              min ratio > 0.5   -> shallowest indent caught
+
+backed by enough data that the claim is not a tuned fraction.  It mirrors
+production exactly::
 
     baseline = min(left_edge) over all lines in the image
     offset   = left_edge - baseline           (left_edge = min(box.left))
-    h        = upper_median(box.heights)      (the per-line ruler)
-    ratio    = offset / h                      (the master-rule ratio)
+    h        = upper_median(box.heights)       (the per-line ruler)
+    ratio    = offset / h
 
-It pools ``ratio`` across images, split by body vs indent, and prints the two
-distributions plus the gap (or overlap) between them - which decides whether a
-single-line threshold can separate 1-char indent from body jitter at all:
+It pools ``ratio`` across images split by body vs indent, per content stratum
+and per font size, and reports the two distributions plus the verdict at 0.5.
 
-  clear gap  -> a threshold in the gap safely separates them (master rule +
-                lowered threshold is enough; the clustering fallback is
-                redundant).
-  overlap    -> no single-line threshold works; either accept the miss at
-                >1.0 (conservative) or rely on multi-line structure (the
-                clustering fallback), which is a separate question.
+Content - five strata spanning the typographies whose geometry differs:
 
-No assertion / pass / fail - this is a measurement for human judgement.
+  zh-Hans / zh-Hant / ja   continuous CJK / kana, 1 char == 1 em (full-width
+                           glyph).  The 1-char-indent concept is native here.
+  en                       spaced Latin; a line yields several word boxes and
+                           min(box.left) gives the line edge as production does.
+  digits                   comma-separated digit groups, no spaces; narrow
+                           glyphs (digit box ~0.55 em) stress the denominator
+                           - the narrowest-valley case.
+
+Indent unit is 1 em = ``font_size_px`` (CSS ``margin-left``) for every stratum
+- a full-width glyph for CJK/JP (literally one character) and the typographic
+em unit for Latin/digits.  The detection-box height inflation that sets the
+ratio denominator is font-size-proportional for every script, so the ratio
+math transfers.
+
+No hard pass/fail exit code - this is a measurement for human judgement.
 
 Usage:
     python scripts/measure_indent_ratio_gap.py
-    python scripts/measure_indent_ratio_gap.py --sizes 20,24,32
+    python scripts/measure_indent_ratio_gap.py --content zh-Hans,en --sizes 24
+    python scripts/measure_indent_ratio_gap.py --content digits
 """
 
 from __future__ import annotations
@@ -58,35 +74,72 @@ if str(_scripts_dir) not in sys.path:
     sys.path.insert(0, str(_scripts_dir))
 
 
-# ── Rendering ────────────────────────────────────────────────────────────────
+# ── Content strata ───────────────────────────────────────────────────────────
 #
-# One image per (size, family): a body block (flush-left) followed by a
-# 1-char-indented block (margin-left = 1 em = font_size_px).  Pure continuous
-# CJK per line so OCR self-segments ~1 box/line - the production-like case.
+# One representative line per stratum, repeated per image (controlled - the
+# measurement is geometric, not content-dependent).  CJK/Japanese are
+# continuous (no spaces) so the OCR self-segments ~1 box/line, the
+# production-like case; English is spaced; digits are comma-grouped (no
+# spaces) so a line may split into several boxes - all exercise min(box.left)
+# as the line edge exactly as production does on a mixed box count.  Families
+# are those confirmed installed on the Windows box.
 
-_CJK_FAMILIES = ["Microsoft YaHei", "SimSun", "KaiTi"]
+_CONTENT = [
+    {
+        "code": "zh-Hans", "label": "Simplified Chinese",
+        "families": ["Microsoft YaHei", "SimSun", "SimHei"],
+        "line": "测试简体中文文本缩进检测阈值的统计分布与稳定性",
+    },
+    {
+        "code": "zh-Hant", "label": "Traditional Chinese",
+        "families": ["Microsoft JhengHei"],
+        "line": "測試繁體中文文字縮進檢測閾值的統計分佈與穩定性",
+    },
+    {
+        "code": "ja", "label": "Japanese",
+        "families": ["Yu Gothic", "MS Gothic"],
+        "line": "日本語テキストのインデント検出閾値の統計分布と安定性",
+    },
+    {
+        "code": "en", "label": "English (Latin)",
+        "families": ["Arial", "Times New Roman", "Consolas", "Georgia"],
+        "line": "The quick brown fox jumps over the lazy dog every day now",
+    },
+    {
+        "code": "digits", "label": "Pure digits",
+        "families": ["Consolas", "Constantia", "Arial", "Times New Roman",
+                     "Georgia", "Microsoft YaHei"],
+        "line": "3,14159265,3589793,23846264,33832795,02884197",
+    },
+]
+
 _FONT_SIZES = [16, 20, 24, 28, 32]
-_CJK_LINE = "我凯瑞甘发誓如果我爱过寒王这辈子不得好死"
+_LINE_HEIGHTS = [1.3, 1.5, 1.8]
+_THRESHOLD = 0.5
 
 
-def _build_html(fs: int, fam: str, n_body: int, n_indent: int) -> str:
-    lh = round(fs * 1.5, 1)
+def _build_html(fs: int, fam: str, lh: float, line: str,
+                n_body: int, n_indent: int) -> str:
     rows = []
     for _ in range(n_body):
-        rows.append(f'<div style="margin-left:0">{_CJK_LINE}</div>')
-    # 1 em = font_size_px (CJK full-width glyph == font size)
+        rows.append(f'<div style="margin-left:0">{line}</div>')
+    # 1 em = font_size_px (CJK full-width glyph == font size; Latin em unit).
     for _ in range(n_indent):
-        rows.append(f'<div style="margin-left:{fs}px">{_CJK_LINE}</div>')
+        rows.append(f'<div style="margin-left:{fs}px">{line}</div>')
     body = "".join(rows)
     css = (
         "* { margin:0; padding:0; box-sizing:border-box; }"
         "body { background:white; }"
         ".block { padding:4px 8px; }"
     )
+    # line-height must be a px value, not a unitless ratio: `line-height:1.5px`
+    # would collapse every line to 1.5 px.  Convert ratio -> px (== the existing
+    # sibling scripts' `lh = round(fs * 1.5, 1)` convention).
+    lh_px = round(fs * lh, 1)
     return (
         f'<!DOCTYPE html><html><head><meta charset="UTF-8">'
         f'<style>{css}</style></head><body>'
-        f'<div class="block" style="font-size:{fs}px;line-height:{lh}px;'
+        f'<div class="block" style="font-size:{fs}px;line-height:{lh_px}px;'
         f"font-family:'{fam}',sans-serif;\">{body}</div></body></html>"
     )
 
@@ -138,10 +191,10 @@ def _upper_median(values: list[float]) -> float:
 def _measure(png_path: Path, engine, n_body: int) -> dict | None:
     """One detection; return per-line ratio records split body/indent.
 
-    baseline = min(left_edge) over all lines (production definition, now
-    sentinel-excluded in production but these synthetic images have none).
-    Each line's h = upper-median of its own box heights (production ruler).
-    The first n_body lines are body (flush-left), the rest are 1-char indent.
+    baseline = min(left_edge) over all lines (production definition; these
+    synthetic images have no paragraph-break sentinels).  Each line's h is
+    the upper-median of its own box heights (production ruler).  The first
+    n_body lines are body (flush-left), the rest are 1-em indent.
     """
     from ocr_layout.pipeline import run_pipeline
 
@@ -165,14 +218,9 @@ def _measure(png_path: Path, engine, n_body: int) -> dict | None:
     for ln in lines:
         ln["offset"] = ln["left_edge"] - baseline
         ln["ratio"] = ln["offset"] / ln["h"] if ln["h"] > 0 else 0.0
-    # split by cluster order: first n_body are body, rest are indent
     body = lines[:n_body]
     indent = lines[n_body:]
-    return {
-        "png": png_path.name,
-        "body": body,
-        "indent": indent,
-    }
+    return {"png": png_path.name, "body": body, "indent": indent}
 
 
 # ── Reporting ────────────────────────────────────────────────────────────────
@@ -189,7 +237,6 @@ def _pct(sorted_vals: list[float], p: float) -> float:
 
 
 def _hist(values: list[float], lo: float, hi: float, bins: int = 24) -> str:
-    """ASCII histogram of values in [lo, hi], binned into `bins`."""
     if not values:
         return "(none)"
     step = (hi - lo) / bins
@@ -216,53 +263,66 @@ def _dist(label: str, values: list[float]) -> None:
     print(f"  ratio: min={s[0]:.3f}  p5={_pct(s,5):.3f}  p25={_pct(s,25):.3f}  "
           f"median={statistics.median(s):.3f}  p75={_pct(s,75):.3f}  "
           f"p95={_pct(s,95):.3f}  max={s[-1]:.3f}")
-    print(f"  px:   median offset/h at median ratio "
-          f"(see per-size breakdown for px)")
 
 
-def _gap(body: list[float], indent: list[float]) -> None:
+def _verdict(label: str, body: list[float], indent: list[float]) -> None:
+    """Assert the two 0.5 claims; report the valley and violations.
+
+    body   (flush-left):   max ratio < 0.5  -> no false-fire on flush-left jitter
+    indent (1 em):   min ratio > 0.5  -> shallowest real indent is caught
+    """
     print(f"\n{'━' * 78}")
-    print("SEPARATION (body vs 1-char indent)")
+    print(f"{label}")
     print(f"{'━' * 78}")
     if not body or not indent:
         print("  insufficient data")
         return
-    body_max = max(body)
-    body_p95 = _pct(sorted(body), 95)
-    body_p99 = _pct(sorted(body), 99) if len(body) > 1 else body_max
-    indent_min = min(indent)
-    indent_p5 = _pct(sorted(indent), 5)
-    print(f"  body   upper:  p95={body_p95:.3f}  p99={body_p99:.3f}  "
-          f"max={body_max:.3f}")
-    print(f"  indent lower:  p5 ={indent_p5:.3f}  min={indent_min:.3f}")
-    print()
-    if body_max < indent_min:
-        g = indent_min - body_max
-        mid = (body_max + indent_min) / 2
-        print(f"  CLEAR GAP: body max {body_max:.3f} < indent min "
-              f"{indent_min:.3f}  (gap {g:.3f})")
-        print(f"  -> a single-line threshold at ~{mid:.2f} separates them with")
-        print(f"     {body_max:.2f} below / {indent_min:.2f} above.")
-        print(f"     Master rule + lowered threshold is enough; the clustering")
-        print(f"     fallback is redundant for 1-char indent.")
-    elif body_p95 < indent_p5:
-        g = indent_p5 - body_p95
-        print(f"  MOSTLY SEPARATED (p95 body {body_p95:.3f} < p5 indent "
-              f"{indent_p5:.3f}, gap {g:.3f}) but tails touch "
-              f"(body max {body_max:.3f} >= indent min {indent_min:.3f}).")
-        print(f"  -> a threshold around {body_p95:.2f}-{indent_p5:.2f} catches")
-        print(f"     most 1-char indents; a few body tail/jitter outliers may")
-        print(f"     false-fire.  Master rule + threshold is workable but lossy.")
+    b_sorted = sorted(body)
+    i_sorted = sorted(indent)
+    b_max = b_sorted[-1]
+    b_p95 = _pct(b_sorted, 95)
+    i_min = i_sorted[0]
+    i_p5 = _pct(i_sorted, 5)
+    b_over = sum(1 for r in body if r > _THRESHOLD)
+    i_under = sum(1 for r in indent if r <= _THRESHOLD)
+
+    print(f"  body   (flush-left):  n={len(body):4}  p95={b_p95:.3f}  "
+          f"max={b_max:.3f}   ->  max < {_THRESHOLD}? "
+          f"{'YES' if b_max < _THRESHOLD else 'NO'}"
+          f"   false-fires (>{_THRESHOLD}): {b_over}/{len(body)}")
+    print(f"  indent (1 em):   n={len(indent):4}  p5 ={i_p5:.3f}  "
+          f"min={i_min:.3f}   ->  min > {_THRESHOLD}? "
+          f"{'YES' if i_min > _THRESHOLD else 'NO'}"
+          f"   misses (<= {_THRESHOLD}): {i_under}/{len(indent)}")
+
+    margin_below = _THRESHOLD - b_max
+    margin_above = i_min - _THRESHOLD
+    print(f"  {_THRESHOLD} margin:  body max is {margin_below:+.3f} below "
+          f"{_THRESHOLD},  indent min is {margin_above:+.3f} above "
+          f"{_THRESHOLD}")
+    if b_max < _THRESHOLD < i_min:
+        g = i_min - b_max
+        print(f"  VERDICT: SEPARATED - body max {b_max:.3f} < {_THRESHOLD} < "
+              f"indent min {i_min:.3f}  (valley {g:.3f} wide, "
+              f"{_THRESHOLD} inside it)")
+        print(f"           both claims HOLD: no false-fire, shallowest "
+              f"indent caught.")
+    elif b_max < i_min:
+        g = i_min - b_max
+        print(f"  VERDICT: PARTIALLY SEPARATED - body max {b_max:.3f} < "
+              f"indent min {i_min:.3f} (gap {g:.3f}) BUT {_THRESHOLD} is NOT "
+              f"inside the valley ({_THRESHOLD} outside "
+              f"[{b_max:.3f},{i_min:.3f}]).")
+        if i_min <= _THRESHOLD:
+            print(f"           a 1-em indent dips to/under {_THRESHOLD} "
+                  f"(min {i_min:.3f}) -> would be MISSED.")
+        if b_max >= _THRESHOLD:
+            print(f"           flush-left jitter reaches/over {_THRESHOLD} "
+                  f"(max {b_max:.3f}) -> would FALSE-FIRE.")
     else:
-        print(f"  OVERLAP: body p95 {body_p95:.3f} >= indent p5 "
-              f"{indent_p5:.3f} (body max {body_max:.3f}, indent min "
-              f"{indent_min:.3f}).")
-        print(f"  -> no single-line threshold cleanly separates 1-char indent")
-        print(f"     from body jitter.  Either keep >1.0 (conservative miss)")
-        print(f"     or use multi-line structure (clustering) - a single-line")
-        print(f"     threshold cannot do it safely.")
-    print(f"\n  reference: current master threshold = 1.0  "
-          f"(1-char indent lands ~0.83 -> MISSED at >1.0)")
+        print(f"  VERDICT: OVERLAP - body max {b_max:.3f} >= indent min "
+              f"{i_min:.3f}: no single-line threshold at {_THRESHOLD} cleanly "
+              f"separates them.")
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
@@ -270,14 +330,28 @@ def _gap(body: list[float], indent: list[float]) -> None:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("--content", type=str, default="",
+                    help="comma-separated content codes (default all): "
+                         "zh-Hans,zh-Hant,ja,en,digits")
     ap.add_argument("--sizes", type=str, default="",
                     help="comma-separated font sizes px (default 16,20,24,28,32)")
-    ap.add_argument("--n-body", type=int, default=6, help="body lines per image")
-    ap.add_argument("--n-indent", type=int, default=6, help="indent lines per image")
+    ap.add_argument("--line-heights", type=str, default="",
+                    help="comma-separated line-height ratios (default 1.3,1.5,1.8)")
+    ap.add_argument("--n-body", type=int, default=8, help="body lines per image")
+    ap.add_argument("--n-indent", type=int, default=8, help="indent lines per image")
     args = ap.parse_args()
 
     sizes = ([int(s) for s in args.sizes.split(",") if s.strip()]
              if args.sizes else list(_FONT_SIZES))
+    lhs = ([float(s) for s in args.line_heights.split(",") if s.strip()]
+           if args.line_heights else list(_LINE_HEIGHTS))
+    sel_codes = ([c.strip() for c in args.content.split(",") if c.strip()]
+                 if args.content else [c["code"] for c in _CONTENT])
+    cmap = {c["code"]: c for c in _CONTENT}
+    for c in sel_codes:
+        if c not in cmap:
+            ap.error(f"unknown content {c!r}; choices: {list(cmap)}")
+    content = [cmap[c] for c in sel_codes]
 
     import os
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -290,17 +364,24 @@ def main():
         old.unlink()
 
     cases: list[dict] = []
-    for fs in sizes:
-        for fam in _CJK_FAMILIES:
-            cid = f"ratiogap_{fs}_{fam.replace(' ', '')}"
-            cases.append({
-                "id": cid, "fs": fs, "fam": fam,
-                "html": _build_html(fs, fam, args.n_body, args.n_indent),
-            })
+    for c in content:
+        for fs in sizes:
+            for lh in lhs:
+                for fam in c["families"]:
+                    cid = (f"ratiogap_{c['code']}_"
+                           f"{fam.replace(' ', '')}_{fs}_{str(lh).replace('.', 'p')}")
+                    cases.append({
+                        "id": cid, "content": c["code"], "fs": fs, "fam": fam,
+                        "lh": lh,
+                        "html": _build_html(fs, fam, lh, c["line"],
+                                            args.n_body, args.n_indent),
+                    })
 
     print(f"Rendering {len(cases)} images "
-          f"({len(sizes)} sizes x {len(_CJK_FAMILIES)} families, "
-          f"{args.n_body} body + {args.n_indent} indent lines) -> {out_dir}")
+          f"({len(content)} content x sizes {sizes} x line-heights {lhs}, "
+          f"{args.n_body} body + {args.n_indent} 1-em-indent lines) -> {out_dir}")
+    print(f"threshold = {_THRESHOLD}  (master; old 1.0 missed the 1-em "
+          f"indent at ~0.83)")
     pngs = _render(cases, out_dir)
     print("Render done.  Initialising OCR engine.\n")
 
@@ -308,48 +389,72 @@ def main():
     engine = get_engine()
     print("Engine ready.  Running one OCR detection per image.\n")
 
-    body_ratios: list[float] = []
-    indent_ratios: list[float] = []
+    body_by: dict[str, list[float]] = {c["code"]: [] for c in content}
+    ind_by: dict[str, list[float]] = {c["code"]: [] for c in content}
     by_size: dict[int, dict] = {}
+    all_body: list[float] = []
+    all_indent: list[float] = []
+    skipped = 0
     for c, png in zip(cases, pngs):
         rec = _measure(png, engine, args.n_body)
         if rec is None:
             print(f"  skip (no result): {c['id']}")
+            skipped += 1
             continue
         b = [ln["ratio"] for ln in rec["body"] if ln["h"] > 0]
         ind = [ln["ratio"] for ln in rec["indent"] if ln["h"] > 0]
-        body_ratios.extend(b)
-        indent_ratios.extend(ind)
+        body_by[c["content"]].extend(b)
+        ind_by[c["content"]].extend(ind)
+        all_body.extend(b)
+        all_indent.extend(ind)
         by_size.setdefault(c["fs"], {"body": [], "indent": []})
         by_size[c["fs"]]["body"].extend(b)
         by_size[c["fs"]]["indent"].extend(ind)
-        print(f"  {c['id']:40} body_med={statistics.median(b) if b else 0:.3f}  "
+        print(f"  {c['id']:54} body_med={statistics.median(b) if b else 0:.3f}  "
               f"indent_med={statistics.median(ind) if ind else 0:.3f}  "
               f"(n_body={len(b)}, n_indent={len(ind)})")
     release_engine()
 
-    _dist("BODY (top-aligned) ratios", body_ratios)
-    _dist("1-CHAR INDENT ratios", indent_ratios)
-
     print(f"\n{'═' * 78}")
-    print("HISTOGRAMS  (ratio = offset / own_h)")
+    print(f"REPRODUCTION SUMMARY  (threshold = {_THRESHOLD}, "
+          f"{len(cases)} images, skipped {skipped})")
+    print(f"{'═' * 78}")
+    print(f"  total body   ratios: {len(all_body)}")
+    print(f"  total indent ratios: {len(all_indent)}")
+
+    # Per-content distributions + verdict
+    for c in content:
+        _dist(f"{c['label']}  BODY (flush-left)", body_by[c["code"]])
+        _dist(f"{c['label']}  1-em INDENT", ind_by[c["code"]])
+    print(f"\n{'═' * 78}")
+    print("PER-CONTENT VERDICTS")
+    print(f"{'═' * 78}")
+    for c in content:
+        _verdict(f"{c['label']}", body_by[c["code"]], ind_by[c["code"]])
+
+    # Pooled histograms
+    print(f"\n{'═' * 78}")
+    print(f"POOLED HISTOGRAMS  (ratio = offset / own_h, all content pooled)")
     print(f"{'═' * 78}")
     lo = 0.0
-    hi = max(max(body_ratios, default=0), max(indent_ratios, default=0), 1.2)
-    hi = min(hi, 1.6)
-    print("\nbody:")
-    print(_hist(body_ratios, lo, hi))
-    print("\n1-char indent:")
-    print(_hist(indent_ratios, lo, hi))
+    hi = min(max(max(all_body, default=0), max(all_indent, default=0), 1.2), 1.6)
+    print("\nbody (flush-left):")
+    print(_hist(all_body, lo, hi))
+    print("\n1-em indent:")
+    print(_hist(all_indent, lo, hi))
 
+    # Per-size verdict (does separation hold at every font size?)
+    print(f"\n{'═' * 78}")
+    print("PER-SIZE VERDICTS  (all content pooled)")
+    print(f"{'═' * 78}")
     for fs in sorted(by_size):
-        _gap(by_size[fs]["body"], by_size[fs]["indent"])
-        print(f"  [size {fs}px]")
+        _verdict(f"size {fs}px", by_size[fs]["body"], by_size[fs]["indent"])
 
-    print(f"\n{'━' * 78}")
-    print("OVERALL (all sizes/families pooled)")
-    print(f"{'━' * 78}")
-    _gap(body_ratios, indent_ratios)
+    # Overall verdict
+    print(f"\n{'═' * 78}")
+    print("OVERALL VERDICT  (all content / sizes / families pooled)")
+    print(f"{'═' * 78}")
+    _verdict("ALL pooled", all_body, all_indent)
     print("\nDone.")
 
 
