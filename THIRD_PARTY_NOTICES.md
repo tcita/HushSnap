@@ -44,7 +44,4 @@ HushSnap.
   - `PP-OCRv6_det_small.onnx` - text detection
   - `PP-OCRv6_rec_small.onnx` - text recognition
   - `ppocrv6_dict.txt` - character dictionary
-  Note: `rapidocr` also ships `ch_ppocr_mobile_v2.0_cls_mobile.onnx` (text
-  orientation classifier), but HushSnap strips it at packaging time
-  (`HushSnap.spec`) because `Global.use_cls=False` at runtime means it is
-  never loaded.
+  - `ch_ppocr_mobile_v2.0_cls_mobile.onnx` - text orientation classifier (constructed at engine init even with use_cls=False; not called at inference)

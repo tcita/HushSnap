@@ -89,10 +89,6 @@ def filter_datas(datas):
                 continue
             if 'v4' in basename: # Exclude v4 models (using v5)
                 continue
-            # Strip the direction classifier (cls). Global.use_cls=False at
-            # runtime (ppocr.py) - the model is never loaded, only dead weight.
-            if '_cls' in basename or 'cls_mobile' in basename:
-                continue
         out.append(d)
     return out
 
