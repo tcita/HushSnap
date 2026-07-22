@@ -110,6 +110,11 @@ function Invoke-PreBuildValidation {
     $errors = 0
     $warnings = 0
 
+    # Directories that are local-only (gitignored, never bundled by
+    # PyInstaller). Artifact scans 1.9/1.10/1.11 skip these so they do not
+    # flag measurement-script output or build scratch as "leaked into pkg".
+    $ignoreDirs = '\\(scratch|stress_results|ocr_stability_results|build|dist|dist-installer|dist-installer-test)\\'
+
     # 1.1 ── .spec hiddenimports covers all source packages ─────────
     if (-not (Test-Path $SpecPath)) {
         Write-Fail ".spec file not found: $SpecPath"
@@ -240,7 +245,10 @@ function Invoke-PreBuildValidation {
     }
 
     # 1.9 ── No .log files in project tree ──────────────────────────
-    $logFiles = Get-ChildItem -Path $RootDir -Recurse -Filter "*.log" -ErrorAction SilentlyContinue
+    # Skip gitignored local dirs (scratch/, stress_results/, build/, etc.);
+    # PyInstaller never bundles them, so their .log output is not a leak.
+    $logFiles = Get-ChildItem -Path $RootDir -Recurse -Filter "*.log" -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -notmatch $ignoreDirs }
     if ($logFiles) {
         foreach ($f in $logFiles) {
             $sizeKB = [math]::Round($f.Length / 1KB, 1)
@@ -252,15 +260,12 @@ function Invoke-PreBuildValidation {
     }
 
     # 1.10 ── No debug/artifact files in project tree ───────────────
-    # Exclude build\crashlib\ — crashlib's diagnostic symbols (crashlib.pdb) and
-    # the MSVC linker's collateral vc140.pdb land there after build_crashlib.bat.
-    # They are never bundled (the .spec does not reference crashlib at all) and
-    # crashlib.pdb is needed by WinDbg symbol resolution
-    # (see scripts/NATIVE_CRASH_DEBUGGING.md), so they are intentional, not stray
-    # debug artifacts to clean up. This keeps the standalone crashlib tool from
-    # blocking the MSIX build when it has been built locally.
+    # Skip gitignored local dirs via $ignoreDirs. This covers build\crashlib\,
+    # whose crashlib.pdb / vc140.pdb are intentional WinDbg symbols (see
+    # scripts/NATIVE_CRASH_DEBUGGING.md), never bundled (.spec ignores crashlib),
+    # as well as any stray ocr_debug_*.png / .pdb in scratch/ or stress_results/.
     $debugArtifacts = Get-ChildItem -Path $RootDir -Recurse -Include @("ocr_debug_*.png", "*.pdb") -ErrorAction SilentlyContinue |
-        Where-Object { $_.FullName -notmatch '\\build\\crashlib\\' }
+        Where-Object { $_.FullName -notmatch $ignoreDirs }
     if ($debugArtifacts) {
         foreach ($f in $debugArtifacts) {
             Write-Fail "Debug artifact found: $($f.FullName) — delete before packaging"
@@ -272,7 +277,7 @@ function Invoke-PreBuildValidation {
 
     # 1.11 ── Orphan .pyc files outside __pycache__ (stale cache) ──
     $orphanPyc = Get-ChildItem -Path $RootDir -Recurse -Filter "*.pyc" -ErrorAction SilentlyContinue |
-        Where-Object { $_.DirectoryName -notmatch '__pycache__|localpycs' }
+        Where-Object { $_.DirectoryName -notmatch '__pycache__|localpycs' -and $_.FullName -notmatch $ignoreDirs }
     if ($orphanPyc) {
         foreach ($f in $orphanPyc) {
             Write-Fail "Orphan .pyc outside __pycache__: $($f.FullName) — delete before packaging"
