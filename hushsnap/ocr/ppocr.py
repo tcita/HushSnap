@@ -796,11 +796,24 @@ def _apply_indentation(lines: list[OcrLine]) -> list[OcrLine]:
     ratio and miss indents.
 
     ``indent_ratio = (x - baseline) / line_height``.  When the ratio
-    exceeds 1.0 the line is considered intentionally indented; smaller
+    exceeds 0.5 the line is considered intentionally indented; smaller
     offsets are treated as detection jitter.  Per-line
-    thresholds handle mixed-height text correctly — a tall title with a
+    thresholds handle mixed-height text correctly - a tall title with a
     small absolute offset is not falsely flagged, and a short body line
     with the same offset is properly recognised.
+
+    The 0.5 threshold is data-backed, not a tuned fraction.  Measured on
+    rendered CJK (``scripts/measure_indent_ratio_gap.py``): top-aligned
+    body lines' ratio maxes at ~0.09 (pure detection jitter + glyph
+    side-bearing), while a genuine 1-char indent lands at ~0.79-1.10
+    (offset ~= font size, denominator ~= 1.2x font size because every
+    detection box runs larger than its glyph).  A 0.70-wide empty valley
+    sits between 0.09 and 0.79 with zero samples.  0.5 is a conservative
+    pick inside that valley: ~6x above the body jitter ceiling (no
+    false-fire) and ~0.30 below the 1-char indent floor (catches the
+    shallowest real indent).  The previous 1.0 threshold was set when
+    jitter was assumed large; measurement showed it an order of magnitude
+    smaller, so 1.0 was over-conservative and missed every 1-char indent.
 
     The indent *unit* is the smallest non-jitter offset from baseline.
     Each line gets ``level × 4`` leading spaces, where ``level = round(offset / unit)``.
@@ -814,7 +827,7 @@ def _apply_indentation(lines: list[OcrLine]) -> list[OcrLine]:
     # body / heading edge.  Paragraph-break sentinels (bounding_box=OcrBox()
     # -> x=0, flagged paragraph_break=True) are excluded: their x=0 would pull
     # the baseline to 0 and inflate every real line's offset, leaving body
-    # lines jittering around the 1.0 indent threshold.
+    # lines jittering around the indent threshold.
     text_lines = [line for line in lines if not line.paragraph_break]
     if not text_lines:
         return lines
@@ -832,7 +845,7 @@ def _apply_indentation(lines: list[OcrLine]) -> list[OcrLine]:
         if h <= 0:
             return False
         indent_ratio = (line.bounding_box.x - baseline) / h
-        return indent_ratio > 1.0
+        return indent_ratio > 0.5
 
     # Indent unit: smallest offset that is clearly not jitter
     offsets = sorted(set(
