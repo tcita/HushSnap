@@ -6,7 +6,7 @@ HushSnap 是一款无需联网的截图 OCR 工具，轻量、本地、不传数
 
 为什么要用 HushSnap？因为它围绕截图之后最常做的事做了打磨。大多数时候，截一张图只是为了识别文字或随手存下来——所以截图完成后它会默认帮你保存到剪贴板，不立刻弹出标注工具栏，而是先在角落滑出一张缩略图（就像手机截完图那样）：点一下就能 OCR，拖一下就能存图。需要标注时，可以直接打开内置编辑器，提供基础的编辑功能。最常用的动作各只有一步，编辑器只在需要时出现。
 
-它尽量不打扰你：没有主窗口占着任务栏，缩略图超时后自动消失，常驻后台时空闲还会自动回收内存。支持多台不同分辨率显示器混用的多屏环境截图。免登录、免注册，不依赖其他软件，截图和识别全部在本地完成，不向任何服务器上传数据。代码开源（GPL-3.0）。
+它尽量不打扰你：没有主窗口占着任务栏，缩略图超时后自动消失，常驻后台时空闲还会自动回收内存。支持多台不同分辨率显示器混用的多屏环境截图。免登录、免注册，不依赖其他软件，截图和识别全部在本地完成，不向任何服务器上传数据。代码开源（GPL-3.0），源码见 github.com/tcita/HushSnap。
 
 截图后，右下角会滑出一张浮动缩略图：
 · 单击缩略图 → OCR 识别图中文字，结果可编辑、可复制。
@@ -33,7 +33,7 @@ HushSnap 是一款無需聯網的截圖 OCR 工具，輕量、本地、不傳資
 
 為什麼要用 HushSnap？因為它圍繞截圖之後最常做的事做了打磨。大多數時候，截一張圖只是為了辨識文字或隨手存下來——所以截圖完成後它會預設幫你複製到剪貼簿，不立刻彈出標註工具列，而是先在角落滑出一張縮圖（就像手機截完圖那樣）：點一下就能 OCR，拖一下就能存圖。需要標註時，可以直接打開內建編輯器，提供基礎的編輯功能。最常用的動作各只有一步，編輯器只在需要時出現。
 
-它盡量不打擾你：沒有主視窗佔著工作列，縮圖逾時後自動消失，常駐背景時，閒置還會自動釋放記憶體。支援多台不同解析度顯示器混用的多螢幕環境截圖。免登入、免註冊，不依賴其他軟體，截圖和辨識全部在本地完成，不向任何伺服器上傳資料。程式碼開源（GPL-3.0）。
+它盡量不打擾你：沒有主視窗佔著工作列，縮圖逾時後自動消失，常駐背景時，閒置還會自動釋放記憶體。支援多台不同解析度顯示器混用的多螢幕環境截圖。免登入、免註冊，不依賴其他軟體，截圖和辨識全部在本地完成，不向任何伺服器上傳資料。程式碼開源（GPL-3.0），原始碼見 github.com/tcita/HushSnap。
 
 截圖後，右下角會滑出一張浮動縮圖：
 · 單擊縮圖 → OCR 辨識圖中文字，結果可編輯、可複製。
@@ -60,7 +60,7 @@ HushSnap is an offline screenshot & OCR tool — lightweight, local, no data lea
 
 Why use HushSnap? Because it's built around what you actually do right after a screenshot. Most of the time, you capture an image just to read its text or save it for later — so on capture it goes straight to your clipboard by default. Instead of immediately throwing up an annotation toolbar, a thumbnail slides into the corner (just like a phone screenshot): click once to OCR, drag once to save. When you need to annotate, the built-in editor is right there with basic editing tools. The most common actions each take a single step; the editor appears only when needed.
 
-It stays out of your way: no main window cluttering the taskbar, the thumbnail fades away after a timeout, and while idle in the background it automatically releases unused memory. Works across multiple monitors with mixed resolutions/DPIs. No login, no account, no other software required — capture and recognition all happen locally, with nothing uploaded to any server. Open source (GPL-3.0).
+It stays out of your way: no main window cluttering the taskbar, the thumbnail fades away after a timeout, and while idle in the background it automatically releases unused memory. Works across multiple monitors with mixed resolutions/DPIs. No login, no account, no other software required — capture and recognition all happen locally, with nothing uploaded to any server. Open source (GPL-3.0); source code at github.com/tcita/HushSnap.
 
 After a capture, a floating thumbnail slides in at the bottom-right:
 · Left-click the thumbnail → OCR the text in the image; results are editable and copyable.
@@ -86,7 +86,7 @@ HushSnap はネット接続不要のスクリーンショット・OCR ツール�
 
 なぜ HushSnap を使うのか。撮った直後に最もよく行う操作を起点に磨き上げたからです。多くの場合、スクリーンショットは文字を認識するか、とりあえず保存するために撮ります。だから撮影後は既定でクリップボードにコピーし、注釈ツールバーはすぐには表示しません。代わりに隅にサムネイルが現れます（スマホのスクリーンショットのように）。クリック一つで OCR、ドラッグ一つで保存できます。注釈が必要なときは、サムネイルからエディターを開けば、基本的な編集機能を使えます。よく使う操作はそれぞれワンステップ、エディターは必要なときだけ現れます。
 
-また、なるべく邪魔しません：メインウィンドウがタスクバーを占拠せず、サムネイルは時間が来れば消え、バックグラウンド待機中は使っていないメモリを自動的に解放します。異なる解像度・DPI のマルチモニター混在環境でも正しく動作します。ログイン・登録不要、他ソフトへの依存も不要。撮影も認識もすべてローカルで完結し、いかなるサーバーにもデータを送信しません。オープンソース（GPL-3.0）。
+また、なるべく邪魔しません：メインウィンドウがタスクバーを占拠せず、サムネイルは時間が来れば消え、バックグラウンド待機中は使っていないメモリを自動的に解放します。異なる解像度・DPI のマルチモニター混在環境でも正しく動作します。ログイン・登録不要、他ソフトへの依存も不要。撮影も認識もすべてローカルで完結し、いかなるサーバーにもデータを送信しません。オープンソース（GPL-3.0）。ソースコードは github.com/tcita/HushSnap で公開しています。
 
 撮影後、右下に浮かぶサムネイルがスライドインします：
 · サムネイルをクリック → 画像内の文字を OCR 認識。結果は編集・コピー可能。
