@@ -120,6 +120,13 @@ _MIN_CONTRAST_RANGE = 80
 # ── Default PP-OCR engine parameters (documented in the module header) ───────
 _DEFAULT_ENGINE_PARAMS: dict = {
     "Global.max_side_len": 1280,
+    # use_preprocess_img / use_vertical_padding were introduced in rapidocr
+    # 3.9.2 (made configurable with default True). Pin them explicitly so a
+    # future default change upstream cannot silently alter OCR behaviour -
+    # both affect the det path; vertical_padding in particular is on the
+    # vertical-CJK pipeline (see _is_vertical_json / compose_ppocr_structures).
+    "Global.use_preprocess_img": True,
+    "Global.use_vertical_padding": True,
     "Rec.rec_batch_num": 1,
     "EngineConfig.onnxruntime.intra_op_num_threads": 8,
     "EngineConfig.onnxruntime.inter_op_num_threads": 1,
