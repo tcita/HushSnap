@@ -309,8 +309,8 @@ function Invoke-PostPyInstallerValidation {
         $errors++
     } else {
         $exeSizeMB = [math]::Round((Get-Item $exePath).Length / 1MB, 1)
-        if ($exeSizeMB -lt 5) {
-            Write-Fail "HushSnap.exe is too small: ${exeSizeMB}MB (expected >5MB)"
+        if ($exeSizeMB -lt 7) {
+            Write-Fail "HushSnap.exe is too small: ${exeSizeMB}MB (expected >7MB)"
             $errors++
         } else {
             Write-Pass "HushSnap.exe: ${exeSizeMB}MB"
@@ -328,13 +328,32 @@ function Invoke-PostPyInstallerValidation {
     }
 
     # 2.3 ── PP-OCR model files bundled ────────────────────────────
+    # Locked to exactly 2 onnx: det_small + rec_small. The cls (direction
+    # classifier) model is stripped by .spec filter_datas - use_cls=False
+    # at runtime, so it is never loaded. If the count ever changes (a 3rd
+    # model slipped past the filter, or one went missing) it is a
+    # release-blocking event that must be acknowledged by editing this
+    # assertion, not silently packaged. A same-count model swap (e.g.
+    # det_small -> det_server ~100MB) is caught by the size cap.
     $modelDir = Join-Path $DistDir "_internal\rapidocr\models"
     $modelFiles = Get-ChildItem -Path $modelDir -Filter "*.onnx" -ErrorAction SilentlyContinue
-    if (-not $modelFiles -or $modelFiles.Count -lt 3) {
-        Write-Fail "PP-OCR ONNX model files missing or incomplete in $modelDir (found $($modelFiles.Count))"
+    if (-not $modelFiles -or $modelFiles.Count -ne 2) {
+        $found = if ($modelFiles) { $modelFiles.Name -join ', ' } else { '(none)' }
+        Write-Fail "PP-OCR onnx count != 2 (found $($modelFiles.Count)): $found"
         $errors++
     } else {
         Write-Pass "PP-OCR model files present ($($modelFiles.Count) .onnx files)"
+    }
+
+    # 2.3b ── PP-OCR model total size cap (catches same-count swap) ─
+    if ($modelFiles -and $modelFiles.Count -eq 2) {
+        $onnxTotalMB = [math]::Round(($modelFiles | Measure-Object -Property Length -Sum).Sum / 1MB, 1)
+        if ($onnxTotalMB -gt 50) {
+            Write-Fail "PP-OCR onnx total ${onnxTotalMB}MB > 50MB cap - a small model was likely swapped for a server variant"
+            $errors++
+        } else {
+            Write-Pass "PP-OCR onnx total size: ${onnxTotalMB}MB"
+        }
     }
 
     # 2.4 ── No .py source files leaked into dist root ───────────────
@@ -360,10 +379,10 @@ function Invoke-PostPyInstallerValidation {
 
     # 2.6 ── Dist total size is reasonable ───────────────────────────
     $totalSizeMB = [math]::Round((Get-ChildItem -Path $DistDir -Recurse -File | Measure-Object -Property Length -Sum).Sum / 1MB, 1)
-    if ($totalSizeMB -lt 50) {
-        Write-Fail "Dist total size too small: ${totalSizeMB}MB (expected >50MB)"
+    if ($totalSizeMB -lt 150) {
+        Write-Fail "Dist total size too small: ${totalSizeMB}MB (expected >150MB)"
         $errors++
-    } elseif ($totalSizeMB -gt 300) {
+    } elseif ($totalSizeMB -gt 350) {
         Write-Warn "Dist total size large: ${totalSizeMB}MB (may include unnecessary files)"
     } else {
         Write-Pass "Dist total size: ${totalSizeMB}MB"
