@@ -36,9 +36,11 @@ Why SMALL det + SMALL rec
 Pipeline: det+rec → fallback rec-only.
   Detection provides reading-order layout (overlap-based clustering) for
   horizontal left-to-right and vertical right-to-left text.  When the
-  detector finds no boxes, the engine falls back to recognition-
-  only on the raw image (via _recognize_without_detection, which crops back to
-  the original content area before recognising).
+  detector finds no boxes, the engine falls back to recognition-only:
+  recognize_ppocr_qimage crops arr back to original_size if preprocessing
+  upscaled it, then _recognize_without_detection direct-feeds that image to
+  the recognizer (use_det=False, no crop / contrast-normalize).  A failure
+  surfaces empty so the caller prompts recapture (ocr_empty_popup_hint).
 
   Vertical CJK needs no rotation: PP-OCRv6 SMALL recognises upright CJK
   characters in vertical columns natively, so a 90° rotation (which loses
@@ -114,10 +116,20 @@ logger = logging.getLogger(__name__)
 # This single font-agnostic condition replaces the previous two-condition
 # (overlap + centre) approach — at 0.4 the overlap check is implied.
 _CENTER_RATIO = 0.4
-# Minimum contrast range for recognition-without-detection fallback.
-_MIN_CONTRAST_RANGE = 80
 
 # ── Default PP-OCR engine parameters (documented in the module header) ───────
+# Det.mean / Det.std are deliberately NOT overridden here.  rapidocr 3.9.2
+# defaults them to [0.5, 0.5, 0.5] (== img/127.5 - 1), which is rapidocr's own
+# choice, NOT the PP-OCRv6 training distribution: PaddleOCR's official
+# PP-OCRv6_small_det.yml trains+evals NormalizeImage with ImageNet
+# mean=[0.485,0.456,0.406] / std=[0.229,0.224,0.225].  Matching the training
+# distribution looks like it should help, but it doesn't in practice - an A/B
+# over the box-inflation harness (scripts/measure_box_inflation_ab.py, 77 cases
+# x Latin/CJK) found ImageNet vs 0.5 within ±1% on box count, false_splits,
+# matched-box recall and box/fontsize ratio stdev, with recall actually
+# 7 boxes worse.  The det network is robust to both normalizations, so the
+# upstream default is kept.  Note this only touches the det path; Rec has its
+# own preprocessing (rec_img_shape [3,48,320]) and is unaffected.
 _DEFAULT_ENGINE_PARAMS: dict = {
     "Global.max_side_len": 1280,
     # use_preprocess_img / use_vertical_padding were introduced in rapidocr
@@ -1088,39 +1100,16 @@ def _is_vertical_json(json_data: list[dict]) -> bool:
 def _recognize_without_detection(engine, arr) -> OcrRecognition:
     """Fallback: skip text detection and run recognition on the whole image.
     
-    Includes automatic content cropping to handle large/padded images where 
-    the text might be too small relative to the canvas for the recognizer's 
-    fixed-height input window.
+    Direct feed: the entire image is passed straight to the recognizer
+    (use_det=False, use_cls=False), matching upstream rapidocr rec-only.
+    No content crop, no contrast normalize -- a failed recognition surfaces
+    empty so the caller prompts recapture (ocr_empty_popup_hint).
     """
     from ..constants import OCR_ENGINE_PPOCR
 
     orig_det = engine.use_det
     orig_cls = engine.use_cls
     try:
-        # 1. Smart Content Crop: Find the actual text area to avoid destructive downscaling
-        # Sample background from the top-left corner
-        h, w = arr.shape[:2]
-        gray = cv2.cvtColor(arr, cv2.COLOR_BGR2GRAY)
-        bg_val = int(gray[0, 0])
-        # Find pixels significantly different from background
-        mask = cv2.absdiff(gray, bg_val) > 20
-        coords = np.column_stack(np.where(mask))
-        
-        if coords.size > 0:
-            y0, x0 = coords.min(axis=0)
-            y1, x1 = coords.max(axis=0)
-            # Add a small 2px margin for safety
-            y0, x0 = max(0, y0-2), max(0, x0-2)
-            y1, x1 = min(h-1, y1+2), min(w-1, x1+2)
-            arr = arr[y0:y1+1, x0:x1+1].copy()
-            logger.debug("Fallback: auto-cropped to content area %dx%d", x1-x0, y1-y0)
-
-        # 2. Pre-recognition enhancement: Normalize contrast
-        gray_crop = cv2.cvtColor(arr, cv2.COLOR_BGR2GRAY)
-        min_v, max_v, _, _ = cv2.minMaxLoc(gray_crop)
-        if max_v - min_v < _MIN_CONTRAST_RANGE:
-            arr = cv2.normalize(arr, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
-
         _acquire_request()
         try:
             rec_result = engine(arr, use_det=False, use_cls=False)
