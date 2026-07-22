@@ -101,3 +101,29 @@ OCR の結果も元のレイアウトを再現し、改行・段落・インデ�
 
 *簡体字中国語・繁体字中国語・英語・日本語のインターフェースと文字認識に対応し、動作を確認済みです。そのうち中国語と日本語は縦書き文字の認識にも対応します。その他の言語は一定の認識精度が出る場合がありますが保証はできません（認識できない言語もあります）。
 
+
+================================================================================
+Release notes (newest first)
+================================================================================
+
+
+### v1.2.0
+
+· 内置编辑器新增状态栏缩放滑条，拖动即可调整图片的查看大小，操作更接近系统自带的看图器。
+· OCR 对原文排版的还原更准确，换行、段落与缩进更贴近原图，减少了段落被误合并或误拆分的情况。
+· 修复若干小问题，并优化了编辑器体验。
+
+
+· 內建編輯器新增狀態列縮放滑桿，拖曳即可調整圖片的檢視大小，操作更接近系統內建的看圖軟體。
+· OCR 對原文排版的還原更準確，換行、段落與縮排更貼近原圖，減少了段落被誤合併或誤分割的情況。
+· 修正若干小問題，並改善編輯器體驗。
+
+
+· Added a zoom slider to the built-in editor's status bar - drag to adjust the image's viewing size, much like the system image viewer.
+· OCR better preserves the original layout. Line breaks, paragraphs, and indentation now match the source image more closely, with fewer paragraphs merged or split incorrectly.
+· Various small fixes and editor improvements.
+
+
+· 内蔵エディターのステータスバーにズームスライダーを追加。ドラッグするだけで画像の表示倍率を調整でき、OS 標準の画像ビューアーに近い操作感です。
+· OCR のレイアウト再現性が向上。改行・段落・インデントがより元画像に忠実になり、段落の誤結合・誤分割が減りました。
+· いくつかの細かな不具合を修正し、エディターの使い勝手を改善しました。
