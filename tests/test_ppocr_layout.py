@@ -561,23 +561,24 @@ class TestApplyIndentation:
         assert result[2].text == "        L2"      # 8 spaces
 
     def test_indent_ratio_exactly_at_threshold_no_indent(self):
-        """offset/height == 1.0 exactly -> NOT indented (strict >).
+        """offset/height == 0.5 exactly -> NOT indented (strict >).
 
-        h=40, offset=40 -> ratio = 1.0, which is not > 1.0, so no indent.
+        h=40, offset=20 -> ratio = 0.5, which is not > 0.5, so no indent.
         Pins the strict `>`: a non-strict `>=` would wrongly indent here.
+        (Threshold lowered 1.0 -> 0.5; see _apply_indentation docstring.)
         """
         lines = [
             _line("body",   x=0,  y=0,  w=40, h=40),
-            _line("offset", x=40, y=60, w=40, h=40),  # offset 40, ratio 1.0
+            _line("offset", x=20, y=60, w=40, h=40),  # offset 20, ratio 0.5
         ]
         result = _apply_indentation(lines)
         assert result[1].text == "offset"  # no leading spaces
 
     def test_indent_ratio_just_above_threshold_indents(self):
-        """offset/height just over 1.0 -> indented."""
+        """offset/height well over 0.5 -> indented."""
         lines = [
             _line("body",   x=0,  y=0,  w=40, h=40),
-            _line("offset", x=41, y=60, w=40, h=40),  # offset 41, ratio 1.025 > 1
+            _line("offset", x=41, y=60, w=40, h=40),  # ratio 1.025 > 0.5
         ]
         result = _apply_indentation(lines)
         assert result[1].text == "    offset"  # unit=41, level 1 -> 4 spaces
@@ -609,8 +610,10 @@ class TestApplyIndentation:
         the word-median height is 14 (sorted[3//2] = the second of
         [14,14,24]).  With offset=16:
 
-            word-median ratio = 16/14 ~ 1.14 > 1  -> indented
-            union      ratio = 16/24 ~ 0.67 <= 1  -> would NOT indent
+            word-median ratio = 16/14 ~ 1.14 > 0.5 -> indented
+            union      ratio = 16/24 ~ 0.67 > 0.5 -> also indents now
+            (the drift-robustness point stands either way: the rule
+            uses the word-median, not the union, as its denominator)
 
         The indent rule must use the word-median denominator: a single
         drifting tall box must not inflate the height, suppress the ratio,
