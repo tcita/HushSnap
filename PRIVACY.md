@@ -8,7 +8,7 @@ This Privacy Policy explains how HushSnap handles data.
 
 ## 1. We Collect Nothing
 
-HushSnap sends no data to us — not now, not ever. There is no server on our side that the app talks to:
+HushSnap sends no data to us - not now, not ever. There is no server on our side that the app talks to:
 
 - **No Remote Servers:** HushSnap does not communicate with any of our servers, nor does it transmit any of your data to us over the internet.
 - **Local OCR:** Optical Character Recognition is performed entirely on your local machine using embedded offline libraries (RapidOCR).
@@ -17,7 +17,7 @@ HushSnap sends no data to us — not now, not ever. There is no server on our si
 - **No Account, No Analytics:** HushSnap has no sign-in, no usage tracking, and no advertising or analytics SDKs of any kind.
 - **Local Logs:** Diagnostic logs are written to your device only (`%LOCALAPPDATA%\HushSnap\`) and are never uploaded by us.
 
-<small><em>Note: As with any Microsoft Store app, Windows may collect platform-level telemetry — such as crash/error reports, install and usage statistics, or device information — and share it with us via Partner Center. This is governed by Microsoft's practices and your Windows diagnostic settings, not by HushSnap. HushSnap itself sends nothing and never puts your screenshots, OCR text, or other content into any such report.</em></small>
+<small><em>Note: As with any Microsoft Store app, Windows may collect platform-level telemetry - such as crash/error reports, install and usage statistics, or device information - and share it with us via Partner Center. This is governed by Microsoft's practices and your Windows diagnostic settings, not by HushSnap. HushSnap itself sends nothing and never puts your screenshots, OCR text, or other content into any such report.</em></small>
 
 ## 2. Information We Access
 

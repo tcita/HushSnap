@@ -14,3 +14,5 @@ end_of_line = crlf
 
 [*.{md,markdown}]
 trim_trailing_whitespace = false
+# Docs use ASCII hyphen (-), never em dash (U+2014) or en dash (U+2013).
+# Keeps byte-exact edits (search/replace) reliable across editors and agents.

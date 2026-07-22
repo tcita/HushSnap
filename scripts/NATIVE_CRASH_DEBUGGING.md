@@ -2,7 +2,7 @@
 
 How to make native crashes in HushSnap (access violations in Qt6Gui,
 onnxruntime, or any C/C++ code outside Python's reach) freeze at the fault
-site inside WinDbg, with full heap readable — instead of dying silently or
+site inside WinDbg, with full heap readable - instead of dying silently or
 being swallowed by faulthandler.
 
 This is a **dev-machine only** setup. Production user machines are unaffected
@@ -15,13 +15,13 @@ needs heap memory to diagnose (dangling pointer, freed object's vtable), so a
 post-mortem **full-memory dump** is required. The obvious approaches all fail
 for an MSIX-packaged app:
 
-- **WER LocalDumps** (registry `DumpType=2`) — MSIX apps crash via MoAppCrash
+- **WER LocalDumps** (registry `DumpType=2`) - MSIX apps crash via MoAppCrash
   whose `EtwNonCollectReason=1` skips classic LocalDumps. Unreliable.
-- **procdump `-e -ma`** as an attached debugger — procdump v12 crashes itself
+- **procdump `-e -ma`** as an attached debugger - procdump v12 crashes itself
   with `0xc0000409` (`__fastfail`) when capturing native AVs, producing 0-byte
   dumps, AND because it attaches as the process debugger it suppresses WER
   reporting. Dead end.
-- **faulthandler** (enabled at boot) — installs a fatal-exception handler that
+- **faulthandler** (enabled at boot) - installs a fatal-exception handler that
   dumps the Python stack then re-raises. On Windows the re-raise does NOT
   reliably reach a JIT debugger; the process exits before WinDbg can attach.
   So even with WinDbg installed, faulthandler pre-empts it.
@@ -30,7 +30,7 @@ The working approach: register WinDbg as the system JIT debugger, and on
 machines where that's true, **skip faulthandler entirely** so native AVs flow
 through WER's unhandled-exception dispatch straight to WinDbg, which freezes
 the process at the fault site. WinDbg then writes the full-memory dump from
-its own (clean) process — no corrupted-heap-in-dumper problem.
+its own (clean) process - no corrupted-heap-in-dumper problem.
 
 ## One-time setup (per dev machine)
 
@@ -55,7 +55,7 @@ Get-Process procdump64 -ErrorAction SilentlyContinue | Stop-Process -Force
 
 That's the whole opt-in: steps 1-2 (install WinDbg, register as JIT) are a
 deliberate, admin-only action no ordinary user performs. There is no env var
-or config key to set per session — once WinDbg is the registered JIT
+or config key to set per session - once WinDbg is the registered JIT
 debugger, native crashes defer to it automatically on every HushSnap launch.
 Production user machines have no JIT debugger registered, so they keep
 faulthandler + WER reporting unchanged.
@@ -64,7 +64,7 @@ faulthandler + WER reporting unchanged.
 
 Real native crashes are rare (the UAF didn't reproduce in 2000 stress runs).
 To confirm the WinDbg chain works without waiting for a real crash, use the
-standalone `crashlib` diagnostic — a tiny DLL that triggers a deterministic
+standalone `crashlib` diagnostic - a tiny DLL that triggers a deterministic
 native access violation. It is NOT part of the shipped app (not bundled by
 `HushSnap.spec`, not referenced by app code).
 
@@ -90,7 +90,7 @@ If WinDbg pops and freezes there, the JIT chain is wired correctly on this
 machine: WinDbg is registered as the AeDebug debugger and will attach to an
 unhandled native exception.
 
-### What this test does — and does not — cover
+### What this test does - and does not - cover
 
 This unpackaged test is a **prerequisite check**, not a full end-to-end proof.
 It confirms the machine-side half (WinDbg registered as JIT). It does **not**
@@ -108,7 +108,7 @@ HushSnap and so never runs the code this guide exists to verify:
   classic LocalDumps); this test crashes a normal unpackaged process, which
   takes the ordinary unhandled-exception path. `MoAppCrash` *can* decline to
   auto-launch the JIT debugger for a packaged app unless it's registered under
-  WER `DebugApplications` (setup step 3) — a behavior this test cannot surface.
+  WER `DebugApplications` (setup step 3) - a behavior this test cannot surface.
 
 So: passing this test means "WinDbg will catch native crashes on this machine,"
 but **not** "the packaged HushSnap app will definitely hand its native crashes
@@ -119,7 +119,7 @@ by temporarily bundling crashlib into the package and triggering it there.
 For the latter (optional, when you need to be sure the packaged path works):
 build crashlib, add a one-off `binaries=[(crashlib.dll, '.')]` entry to the
 .spec, build the MSIX, and call `trigger_crash()` from inside the running app
-via `ctypes` — the dll resolves under `sys._MEIPASS` (PyInstaller's `_internal/`
+via `ctypes` - the dll resolves under `sys._MEIPASS` (PyInstaller's `_internal/`
 dir), not beside the exe. If WinDbg pops from inside the MSIX, the full path is
 proven. Revert the .spec change afterward so release builds stay clean.
 
@@ -162,21 +162,21 @@ When true, `faulthandler.enable()` is skipped in `HushSnap.py` (boot) and
 `hushsnap/logging_config.py` (log redirect). Native AVs then reach WER's
 unhandled-exception dispatch → JIT debugger (WinDbg) → frozen at fault site.
 
-When false (production user machines — no JIT debugger registered),
+When false (production user machines - no JIT debugger registered),
 faulthandler stays enabled and native crashes dump the Python stack to the
-log then exit — the existing production behavior, with WER still reporting
+log then exit - the existing production behavior, with WER still reporting
 to Partner Center. Zero impact on machines without WinDbg.
 
 Installing WinDbg and running `windbg -I` is the deliberate opt-in: it's an
 admin action no ordinary user performs, so no separate env var or config key
-is needed. Failure is visible rather than silent — if WinDbg is installed but
+is needed. Failure is visible rather than silent - if WinDbg is installed but
 a crash is still swallowed, the cause is right here (WinDbg not registered as
 JIT), not a forgotten opt-in flag.
 
 ## Tearing it down
 
 ```powershell
-# Unregister WinDbg as the JIT debugger — via System Properties, or by
+# Unregister WinDbg as the JIT debugger - via System Properties, or by
 # clearing the registry value:
 Remove-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AeDebug" -Name Debugger -ErrorAction SilentlyContinue
 ```
