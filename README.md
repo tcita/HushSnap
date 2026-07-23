@@ -6,6 +6,19 @@ HushSnap is an offline screenshot & OCR tool - lightweight, local, fully offline
 
 [Demo Video](https://youtu.be/untWW6_Ea3M)
 
+<table>
+  <tr>
+    <td align="center"><b>Click thumbnail → OCR</b></td>
+    <td align="center"><b>Drag thumbnail → Save</b></td>
+    <td align="center"><b>Edit → Redact</b></td>
+  </tr>
+  <tr>
+    <td><img src="assets/demo-ocr.gif" alt="OCR demo" width="280"></td>
+    <td><img src="assets/demo-drag-save.gif" alt="Drag and save demo" width="280"></td>
+    <td><img src="assets/demo-editor-redact.gif" alt="Editor redaction demo" width="280"></td>
+  </tr>
+</table>
+
 After capture, a thumbnail slides in at the bottom-right corner of your screen. This thumbnail is the heart of HushSnap's post-capture flow:
 
 - **Hover** to pause auto-hide and reveal an action pill with **Edit**, **Pin**, and **Close** buttons.
