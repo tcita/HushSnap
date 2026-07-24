@@ -12,11 +12,11 @@ This generates fresh evidence: PP-OCRv6 + realistic desktop-text screenshots +
 end-to-end recognition (CER vs ground truth).
 
 Variable isolation: ONLY Det.mean/Det.std differ between A and B.
-limit_side_len=64, use_dilation=true, use_cls=false are identical in both
-(= the runtime det path), so any A/B difference is attributable to
-normalization.  limit_side_len here is the runtime value 64 (NOT rapidocr's
-736); the mean/std conclusion is unaffected by the resize choice since
-normalization acts on global pixel statistics.
+limit_side_len=32, use_dilation=false, use_cls=false are identical in both
+(= the current production det path, see hushsnap/ocr/ppocr.py
+_DEFAULT_ENGINE_PARAMS), so any A/B difference is attributable to
+normalization.  The mean/std conclusion is unaffected by the resize choice
+since normalization acts on global pixel statistics.
 
 Dataset: scratch/desktop_dataset (gen_normalize_dataset.py, dpr=1.5, real font
 sizes, 6 cats x 3 size tiers x CJK/Latin).  Earlier runs used
@@ -48,7 +48,7 @@ _project_root = Path(__file__).resolve().parent.parent
 
 # ── A/B engine configs ──────────────────────────────────────────────────────
 # Both pin ocr_version/model_type/use_cls + limit_side_len/use_dilation to the
-# RUNTIME values (64 / true, see hushsnap/ocr/ppocr.py _DEFAULT_ENGINE_PARAMS),
+# RUNTIME values (32 / false, see hushsnap/ocr/ppocr.py _DEFAULT_ENGINE_PARAMS),
 # so ONLY mean/std varies and the A/B reflects the real production det path.
 _BASE_PARAMS = None  # built lazily after importing OCRVersion/ModelType
 
@@ -58,8 +58,8 @@ def _build_params(mean_std: dict) -> dict:
         "Det.ocr_version": OCRVersion.PPOCRV6,
         "Det.model_type": ModelType.SMALL,
         "Global.use_cls": False,
-        "Det.limit_side_len": 64,
-        "Det.use_dilation": True,
+        "Det.limit_side_len": 32,
+        "Det.use_dilation": False,
     }
     base.update(mean_std)
     return base
@@ -169,7 +169,7 @@ def main():
 
     emit("=" * 78)
     emit("A/B: Det.mean/std  [0.5,0.5,0.5]  vs  ImageNet")
-    emit("  Only Det.mean/Det.std differ.  limit_side_len=64, use_dilation=true,")
+    emit("  Only Det.mean/Det.std differ.  limit_side_len=32, use_dilation=false,")
     emit("  use_cls=false identical in both (= runtime det path) -> diff = normalize.")
     emit("  RAW RapidOCR output (res.boxes/txts/scores), NOT through any layout logic.")
     emit("=" * 78)

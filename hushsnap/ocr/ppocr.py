@@ -56,11 +56,13 @@ Pipeline: det+rec → fallback rec-only.
   character features; padding to 960 px forced a 1∶1 scale.  The root cause is
   that screenshots are pixel-exact vector-rasterized text - already sharp, so any
   forced upscale only blurs them.  The fix is to not upscale in the first place:
-  limit_side_len is now pinned to 64 (= PaddleOCR v6 default), so only images
-  below 64 px get a mild (≤~2×) upscale and crisp screenshots pass through at
-  native scale.  The rec-only fallback on the raw pixels handles the remaining
-  wide-flat tiny cases (short side < 48 px, aspect ratio ≥ 3∶1) down to ~15 px,
-  so the simpler pipeline without padding is more reliable overall.
+  limit_side_len is now pinned to 32 (see the derivation below - the only value
+  that both keeps aspect ratio and minimizes upscale).  UX: screenshots taken
+  for OCR almost never have a short side below ~20px, so at 32 the upscale is
+  ≤1.6× and harmless - unlike rapidocr's 736 which force-scales a 46px crop
+  ~16× and destroys it.  The rec-only fallback handles the remaining wide-flat
+  tiny cases (short side < 48 px, aspect ratio ≥ 3∶1) down to ~15 px, so the
+  simpler pipeline without padding is more reliable overall.
 
 Parameter choices vs RapidOCR defaults
   ────────────────────────────────────
@@ -135,17 +137,21 @@ _CENTER_RATIO = 0.4
 # Reason: the claim that rapidocr's 0.5 is better is NOT verified.  The prior
 # A/B that supported 0.5 ran on the old dpr=1 undersized dataset with
 # limit_side_len=736 (both since fixed) - tainted, retracted.  On the corrected
-# dataset (dpr=1.5, limit_side_len=64, 480 images) ImageNet is in fact
+# dataset (dpr=1.5, limit_side_len=32, 480 images) ImageNet is in fact
 # measurably better:
 #   A/B  scripts/ab_det_normalize.py  over  scripts/gen_normalize_dataset.py
-#   A=[0.5,0.5,0.5]  vs  B=ImageNet  - only mean/std vary (limit_side_len=64,
-#   use_dilation=true, use_cls=false identical in both = runtime det path).
-#   480 images (6 cats x 80, dpr=1.5, real font sizes), seed 20260724:
-#     mean CER   A=0.0696  B=0.0631   (B-A = -0.0065)
-#     paired     A better 46, B better 126, tie 308
-#   reproduced on seed 20260725 (B-A = -0.0086, paired 40/147).
-#   B's lead is in code/terminal (the synthetic dark-mono categories); on
-#   word/web/ui/chat B and A are within noise.
+#   A=[0.5,0.5,0.5]  vs  B=ImageNet  - only mean/std vary (limit_side_len=32,
+#   use_dilation=false, use_cls=false identical in both = current production det
+#   path).  480 images (6 cats x 80, dpr=1.5, real font sizes, design-matrix
+#   balanced across tier/scheme/lang/size_bin), seed 20260724:
+#     mean CER   A=0.0711  B=0.0647   (B-A = -0.0065)
+#     pooled CER A=0.0568  B=0.0507
+#     paired    A better 47, B better 109, tie 324; A==B text 296/480 (62%)
+#   B-A = -0.0065 reproduces across config changes (was -0.0065 under the old
+#   limit_side_len=64/use_dilation=true too) - the conclusion is stable.
+#   Root cause: 0.5 over-segments det (total boxes A=2835 vs B=2565; e.g.
+#   code_008 A=22 boxes vs B=7) -> fragmented rec.  B's lead is in
+#   code/terminal (B-A -0.022 / -0.020); on word/web/ui/chat within noise.
 #
 # Real-screenshot sanity (the decisive check): on two actual HushSnap
 # screenshots - a Chinese paragraph and a black-bg PowerShell terminal - A and
@@ -176,26 +182,46 @@ _CENTER_RATIO = 0.4
 #   -1), a sourceless choice.  No evidence rapidocr's 0.5 is better on desktop
 #   screenshots: the rapidocr author's det-eval-set A/B found 0.5 better on
 #   detection H-mean (natural-scene det set, not screenshots), but HushSnap's
-#   dpr=1.5 screenshot end-to-end A/B found ImageNet marginally better (0.0631
-#   vs 0.0696) and real screenshots show a wash - so 0.5 is NOT proven better
-#   for this domain.  Per "keep PP-OCR defaults where verifiable", use ImageNet.
+#   dpr=1.5 screenshot end-to-end A/B found ImageNet marginally better (0.0647
+#   vs 0.0711, B-A=-0.0065, stable across limit_side_len/dilation config) and
+#   real screenshots show a wash - so 0.5 is NOT proven better for this domain.
+#   Per "keep PP-OCR defaults where verifiable", use ImageNet.
 #   See memory rapidocr-det-normalize-not-imagenet.
 #
 # Det.limit_side_len: pinned to 32 (a guard), NOT rapidocr's 736.  No PP-OCR
 #   source for 32: PP-OCRv6 small det's inference.yml sets DetResizeForTest=null,
 #   which falls to the PaddleOCR code default 736 (same as rapidocr) - so the
 #   "64 = PaddleOCR v6" once cited here was the MEDIUM model's OCR.yaml, not
-#   small.  32 is HushSnap's own choice: rapidocr's 736 force-upscale blurs crisp
-#   screenshot glyphs (46x28 crop -> ~26x blur, DB finds no box, CER=1.0), so
-#   we want NO upscale.  limit_type=min means a short side below this is pulled
-#   up to it (then rounded to a 32 multiple by det's resize); 32 is the natural
-#   floor since anything <32 lands on 32 anyway.  32px is below any readable
-#   text, so this is a pure guard for unreadable slivers, not an accuracy lever.
-#   Measured on scratch/crisp_small_dataset (121 real small screenshots, dpr=1.5,
-#   glyph 18-24px, short side 20-38px): meanCER 64=0.022 vs 736=0.174, 736 empty
-#   on 10/121 (e.g. "设置", "3.14", "PS C:\\project>").  See
-#   scripts/ab_crisp_small_lsl.py + scripts/gen_crisp_small_dataset.py and
-#   memory limit-side-len-736-wrong.
+#   small.  32 is HushSnap's own choice, derived as follows.  det's resize
+#   (ch_ppocr_det/utils.py DetPreProcess.resize, limit_type=min) is two steps:
+#     (a) if short side s < N: scale BOTH dims by r = N/s  (uniform, aspect-
+#         preserving); else r = 1.
+#     (b) round each dim to a multiple of 32:  D -> R(D) = round(D/32)·32,
+#         Python banker's rounding (0.5 -> even).  This is unconditional (a
+#         hard net requirement), applied to EVERY image.
+#   After (a) the short side is exactly min(s, N); after (b) it is R(min(s,N)).
+#   R is round-to-NEAREST, not a floor: R(16) = round(0.5)·32 = 0 (even), so a
+#   16px dim snaps to 0 and trips the `<=0` guard -> det returns EMPTY.
+#
+#   Why N must be a multiple of 32:  after step (a) the short side lands on N,
+#   then step (b) snaps it to R(N).  If N is a multiple of 32, R(N) = N (zero
+#   extra snap) and the long side, scaled by the same r, also lands near a 32-
+#   multiple -> aspect ratio preserved.  If N is NOT a multiple of 32 (e.g. 17),
+#   R(N) != N and the short side takes an extra asymmetric snap while the long
+#   side does not -> aspect ratio distorted (measured 8x200 -> 32x416 under
+#   N=17, ratio 1:25 crushed to 1:13; under N=32 it stays 1:25).  So N is
+#   constrained to {32, 64, 96, ...}.
+#
+#   Within that set pick the smallest:  larger N (64/736) adds pointless upscale
+#   blur to screenshots (already pixel-exact sharp); rapidocr's 736 force-scales
+#   a 46px crop ~16x and collapses it (CER=1.0).  Smaller-than-32 multiples: only
+#   0, which makes s<=16 round to 0 -> det returns EMPTY (losing the det vote
+#   entirely to the rec-only fallback).  Hence 32 - the unique value that is a
+#   multiple of 32, non-empty, and minimal.  UX corroboration: screenshots taken
+#   for OCR almost never have a short side below ~20px, so at N=32 the upscale is
+#   <=1.6x (harmless), in stark contrast to 736's ~16x destruction.  No PP-OCR
+#   source for 32 (small det inference.yml is null -> code 736); 32 is a guard.
+#   See memory limit-side-len-736-wrong.
 #
 # Det.use_dilation: pinned False (= PaddleOCR default), NOT rapidocr's True.
 #   use_dilation is a DB post-step (ch_ppocr_det/utils.py DBPostProcess): a
@@ -205,14 +231,16 @@ _CENTER_RATIO = 0.4
 #   Screenshots are pixel-exact vector-rasterized text with regular spacing,
 #   so the connect benefit is marginal and the over-merge risk is real (it
 #   fuses adjacent list items "- A - B" into one box, can join near lines).
-#   Measured on scratch/desktop_dataset (480 real screenshots, dpr=1.5, 6 cats
-#   x 3 size tiers x CJK/Latin): under OLD mean=0.5 True won +0.0023 (patched
-#   0.5's over-segmentation); under CURRENT ImageNet mean/std (cleaner seg)
-#   True vs False is a WASH - meanCER True=0.0631 vs False=0.0648, Δ=+0.0016
-#   (noise), paired True wins 111 / False wins 48.  Failure shape: True
-#   over-merges web list items; False over-splits tight code/ui (drops more
-#   spaces).  Given the wash + PaddleOCR source + screenshots being a cleaner
-#   subset of PaddleOCR's document domain (which uses False), pick False.
+#   Measured on scratch/desktop_dataset (480 screenshots, dpr=1.5, design-matrix
+#   balanced across tier/scheme/lang/size_bin): under CURRENT ImageNet mean/std
+#   + limit_side_len=32 (= production det path) True vs False is a WASH -
+#   meanCER True=0.0639 vs False=0.0647, Δ=+0.0007 (noise), paired True wins 80
+#   / False wins 47 / tie 353; box count identical on 455/480 (total 2552 vs
+#   2565).  Stable across config: was Δ=+0.0016 under the old 64/true isolation.
+#   Failure shape: True over-merges web list items; False over-splits tight
+#   code/ui (drops more spaces).  Given the wash + PaddleOCR source + screenshots
+#   being a cleaner subset of PaddleOCR's document domain (which uses False),
+#   pick False.
 #   See scripts/ab_det_use_dilation.py + scratch/ab_use_dilation_report.txt
 #   and memory det-use-dilation-true (updated: reversed to False).
 #
@@ -223,11 +251,16 @@ _CENTER_RATIO = 0.4
 #                          -> code default False) ✓  [rapidocr defaults True]
 #   limit_side_len=32   = HushSnap guard, NO PP-OCR source (small inference.yml
 #                          is null -> code 736; we override because 736 collapses
-#                          screenshots). 32 = det's 32-align floor, below any
-#                          readable text.
-#   use_preprocess_img=False  = match PP-OCR (no global-preprocess step);
-#                          rapidocr-only feature, not needed for screenshots.
-#   use_vertical_padding=False = match PP-OCR; rapidocr-only, wash on real data.
+#                          screenshots).  32 = the unique multiple of 32 that is
+#                          non-empty and minimal (see derivation above);
+#                          round(dim/32)*32 is round-to-nearest, not a floor.
+#   use_preprocess_img=False  = rapidocr-only photo/scan guard (min/max side);
+#                          premises (uncontrolled sizes, OOM) don't hold for
+#                          screenshots - see dict comment below.
+#   use_vertical_padding=False = rapidocr-only pad (aspect>8 or h<=30);
+#                          premise DOES occur (single-line crops), but padding=False
+#                          still handles them (probed: det finds the line, no
+#                          fallback) - see dict comment below.
 #   Global.max_side_len  = REMOVED (dead with use_preprocess_img=False — the
 #                          resize_image_within_bounds path is never reached).
 # Principle: keep PP-OCR defaults where they have a verifiable small-model
@@ -241,9 +274,38 @@ _DEFAULT_ENGINE_PARAMS: dict = {
     # the pin was dead.  If use_preprocess_img is ever re-enabled, reinstate the
     # pin (4000 to cover 4K full-screen shots); without it rapidocr defaults 2000.
     # use_preprocess_img / use_vertical_padding: both rapidocr-only (no PP-OCR
-    # equivalent).  Pinned False to match PP-OCR — screenshots don't need
-    # global-scaling guard nor vertical padding.  A/B on real screenshots:
-    # vertical_padding is a wash; preprocess never fires on screenshot crops.
+    # equivalent).  Pinned False.  These are PHOTO/SCAN preprocesses whose design
+    # premises don't hold for desktop screenshots:
+    #
+    # use_preprocess_img (rapidocr's global pre-det resize, params min_side_len
+    #   =30 / max_side_len=2000): meant to guard "image too large -> OOM" and
+    #   "too small -> illegible" - i.e. UNCONTROLLED camera/scan input sizes.
+    #   Desktop screenshots are user-cropped and size-controlled: a 4K full-screen
+    #   shot is ~3840px max side (no OOM risk on a desktop OCR run), and the small
+    #   end is already guarded by Det.limit_side_len=32 below.  So neither guard
+    #   fires meaningfully; the magic numbers 30/2000 are calibrated for natural
+    #   images, not vector-rasterized text.  (rapidocr 3.9.2 made these togglable
+    #   with default True; we opt out.)
+    #
+    # use_vertical_padding (rapidocr's top/bottom pad, params min_height=30 /
+    #   width_height_ratio=8): pads an image whose aspect ratio >8 (or h<=30)
+    #   to "restore the training aspect ratio" so det sees more typical
+    #   proportions.  Unlike the size guards above, this premise DOES occur in
+    #   desktop OCR - a single line (terminal cmd, title, one-row toolbar) is
+    #   routinely 1:10+ and triggers the pad.  But padding=False still handles
+    #   these fine: probed on 7 single-line crops (ratio 2 to 24, h 22-30px,
+    #   all triggering the pad condition), det+rec under padding=False returned
+    #   exactly 1 box each and recognized the text correctly - det did NOT empty,
+    #   so the rec-only fallback was never triggered.  padding=True gave at most a
+    #   tiny edge (1/7: `created_at` vs `created at`, an underscore) - not worth
+    #   the magic numbers.  (limit_side_len=32 upscales the short side uniformly
+    #   to 32, which is enough for det to find the line without padding.)  A/B on
+    #   the full dataset: vertical_padding is a wash.  The magic numbers 30/8
+    #   remain photo-domain heuristics; closing the transform removes both the
+    #   magic numbers and an unneeded pass.
+    #
+    # Net: closing these is "remove an unneeded transform + its magic numbers",
+    # not "give up a benefit".  See memory preprocess-vertical-padding-false.
     "Global.use_preprocess_img": False,
     "Global.use_vertical_padding": False,
     "Rec.rec_batch_num": 1,
@@ -256,23 +318,18 @@ _DEFAULT_ENGINE_PARAMS: dict = {
     # rapidocr-det-normalize-not-imagenet (verdict reversed).
     "Det.mean": [0.485, 0.456, 0.406],
     "Det.std": [0.229, 0.224, 0.225],
-    # Det.limit_side_len: with limit_type=min, a short side below this is
-    # upscaled to it (then rounded to a multiple of 32 by det's resize, so 32
-    # here is the natural floor - anything below 32 lands on 32 anyway).  Set
-    # to 32, NOT rapidocr's 736: rapidocr's 736 force-upscale destroys crisp
-    # screenshot glyphs (a 46x28 crop -> ~26x linear blur, DB finds no box,
-    # output empty, CER=1.0).  Screenshots are pixel-exact vector-rasterized
-    # and already sharp - they need no upscale, only a guard so sub-32px crops
-    # (a single glyph at <14px, essentially unreadable) get a mild floor
-    # instead of falling through.  32px physical is below any readable text,
-    # so this is a pure guard, not an accuracy lever.  Measured on
-    # scratch/crisp_small_dataset (121 real small screenshots, dpr=1.5, glyph
-    # 18-24px, short side 20-38px): meanCER 64=0.022 vs 736=0.174, 736 empty on
-    # 10/121 (e.g. "设置", "3.14", "PS C:\\project>").  See scripts/ab_crisp_small_lsl.py
-    # and memory limit-side-len-736-wrong.  Note: 64/736 are rapidocr's two
-    # sides of the debate; 32 is HushSnap's choice (guard, no PP-OCR source -
-    # PP-OCR small det's inference.yml sets DetResizeForTest=null -> code
-    # default 736; we override because 736 collapses screenshots).
+    # Det.limit_side_len = 32.  det's resize (limit_type=min): step (a) scales
+    # both dims by r = N/s when short side s < N (uniform, aspect-preserving);
+    # step (b) rounds each dim via R(D) = round(D/32)·32 (banker's rounding,
+    # unconditional).  N must be a multiple of 32 so R(N) = N (zero extra snap)
+    # and aspect ratio is preserved; non-multiples like 17 distort it
+    # (8x200 -> 1:13 instead of 1:25).  Among {32,64,96,...} pick the smallest
+    # = 32 (least upscale -> least blur; rapidocr's 736 is ~16x destruction).
+    # Below 32 only 0 is a multiple of 32, but it makes s<=16 round to 0 ->
+    # det returns EMPTY.  UX: OCR screenshots almost never have short side
+    # <~20px, so at 32 the upscale is <=1.6x (harmless).  No PP-OCR source
+    # (small det inference.yml is null -> code 736); 32 is a guard, not an
+    # accuracy lever.  See memory limit-side-len-736-wrong.
     "Det.limit_side_len": 32,
     # Det.use_dilation: pinned False (= PaddleOCR default), NOT rapidocr's True.
     # DB post-process: a 2x2 cv2.dilate on the thresholded score map before
@@ -283,13 +340,15 @@ _DEFAULT_ENGINE_PARAMS: dict = {
     # so the connect benefit is marginal and the OVER-MERGE risk is real: it
     # fuses adjacent items (e.g. list rows "- A - B" into one box) and can
     # join neighbouring lines.  Measured on scratch/desktop_dataset (480 imgs,
-    # dpr=1.5): under the OLD mean=0.5 normalization True won +0.0023 (True
-    # patched 0.5's over-segmentation); under the CURRENT ImageNet mean/std
-    # (which segments cleanly already) True vs False is a WASH - Δ=+0.0016
-    # (noise), paired 111/48.  Failure shape: True over-merges web list items;
-    # False over-splits tight code/ui (drops more spaces).  Given the wash +
-    # PaddleOCR's source + screenshots being a cleaner subset of PaddleOCR's
-    # document domain (which doesn't need dilation), pick False.  See memory
+    # dpr=1.5, design-matrix balanced): under the CURRENT production det path
+    # (ImageNet mean/std, limit_side_len=32) True vs False is a WASH -
+    # meanCER True=0.0639 vs False=0.0647, Δ=+0.0007 (noise), paired 80/47/353;
+    # box count identical 455/480.  Stable: was Δ=+0.0016 under old 64/true.
+    # Failure shape: True over-merges web list items; False over-splits tight
+    # code/ui (drops more spaces).  Given the wash + PaddleOCR's source +
+    # screenshots being a cleaner subset of PaddleOCR's document domain (which
+    # doesn't need dilation), pick False.  See memory det-use-dilation-true
+    # (updated: reversed to False).
     # det-use-dilation-true (updated: reversed to False).
     "Det.use_dilation": False,
     "EngineConfig.onnxruntime.intra_op_num_threads": 8,

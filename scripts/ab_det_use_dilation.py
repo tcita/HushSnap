@@ -1,5 +1,5 @@
-"""A/B test: Det.use_dilation True (rapidocr default / HushSnap now) vs False
-(PaddleOCR default).
+"""A/B test: Det.use_dilation True (rapidocr default) vs False (PaddleOCR
+default / HushSnap production).
 
 Question: rapidocr defaults Det.use_dilation=True; PaddleOCR defaults False
 (params.py:37).  use_dilation is a DB (Differentiable Binarization) post-step
@@ -10,9 +10,10 @@ strokes) or hurting (over-merging adjacent words/boxes, fusing separate text
 regions)?  PaddleOCR's False suggests that for their training distribution
 dilation isn't needed; is it needed for HushSnap's desktop-screenshot domain?
 
-Variable isolation: ONLY Det.use_dilation varies.  Det.limit_side_len=64,
-Det.mean/std=[0.5,0.5,0.5], use_cls=false, Global.max_side_len=1280 identical
-in both -> any difference is attributable to the dilation toggle.
+Variable isolation: ONLY Det.use_dilation varies.  Det.limit_side_len=32,
+Det.mean/std=ImageNet, use_cls=false identical in both (current production det
+path, see hushsnap/ocr/ppocr.py _DEFAULT_ENGINE_PARAMS) -> any difference is
+attributable to the dilation toggle.
 
 Evaluation:
   - Equal-weight CER (no char/punct/emoji weighting - that's a judgment with
@@ -54,7 +55,7 @@ from ab_det_limit_side_len import diff_ops  # noqa: E402
 _project_root = Path(__file__).resolve().parent.parent
 
 CONFIGS = [("True", True), ("False", False)]
-BASELINE = "True"  # current HushSnap value
+BASELINE = "False"  # current HushSnap production value
 
 # Isolation constants = the RUNTIME det path (mean/std=ImageNet now, not 0.5;
 # see memory rapidocr-det-normalize-not-imagenet).  Only use_dilation varies.
@@ -90,15 +91,15 @@ def main():
 
     emit("=" * 100)
     emit("A/B: Det.use_dilation  True (rapidocr default / HushSnap) vs False (PaddleOCR)")
-    emit("  Only use_dilation varies; limit_side_len=64, mean/std=0.5, use_cls=false,")
-    emit("  Global.max_side_len=1280 identical -> difference = dilation toggle.")
+    emit("  Only use_dilation varies; limit_side_len=32, mean/std=ImageNet, use_cls=false")
+    emit("  identical -> difference = dilation toggle.")
     emit("=" * 100)
 
     from rapidocr import RapidOCR
     engines = {}
     for name, val in CONFIGS:
         base = _build_params({"Det.mean": DET_MEAN, "Det.std": DET_STD})
-        base["Det.limit_side_len"] = 64
+        base["Det.limit_side_len"] = 32
         base["Det.use_dilation"] = val
         t0 = time.perf_counter()
         engines[name] = RapidOCR(params=base)
@@ -154,12 +155,14 @@ def main():
     neg = sum(1 for d in nonzero if d < 0)   # other better than baseline
     emit(f"  paired non-tie: {other_name} better={neg}  worse={pos}  "
          f"(sign test two-sided p ~ {2*min(pos,neg) if nonzero else 0} / {len(nonzero)})")
+    base_val = dict(CONFIGS)[BASELINE]
+    other_val = dict(CONFIGS)[other_name]
     if diff < -0.002:
-        verdict = f"{other_name} (use_dilation=False) is better by {-diff:.4f}"
+        verdict = f"{other_name} (use_dilation={other_val}) is better by {-diff:.4f}"
     elif diff > 0.002:
-        verdict = f"{BASELINE} (use_dilation=True) is better by {diff:.4f}"
+        verdict = f"{BASELINE} (use_dilation={base_val}) is better by {diff:.4f}"
     else:
-        verdict = f"within noise (|Δ|={abs(diff):.4f} < 0.002); keep {BASELINE} (rapidocr default)"
+        verdict = f"within noise (|Δ|={abs(diff):.4f} < 0.002); keep {BASELINE} (production)"
     emit(f"\n  >>> overall: {verdict}")
 
     # ── Failure-shape analysis: WHERE does dilation help/hurt ─────────────
