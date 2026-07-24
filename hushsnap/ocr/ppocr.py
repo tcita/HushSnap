@@ -338,18 +338,37 @@ _DEFAULT_ENGINE_PARAMS: dict = {
     #     even.  So 736 taxes the latency of nearly every capture, not just
     #     tiny ones - and the smaller the screenshot, the worse both effects.
     #
-    # Why exactly 32 (the guard value): det's resize is two steps - (a) scale
-    # both dims by r = N/s when short side s < N (uniform, aspect-preserving);
-    # (b) round each dim via R(D) = round(D/32)·32 (banker's rounding,
-    # unconditional).  N must be a multiple of 32 so R(N) = N (zero extra snap)
-    # and aspect ratio is preserved; non-multiples like 17 distort it
-    # (8x200 -> 1:13 instead of 1:25).  Among {32,64,96,...} pick the smallest
-    # = 32 (least upscale -> least blur AND least latency).  Below 32 only 0 is
-    # a multiple of 32, but it makes s<=16 round to 0 -> det returns EMPTY.
-    # UX: OCR screenshots almost never have short side <~20px, so at 32 the
-    # upscale is <=1.6x (harmless).  No PP-OCR source (small det inference.yml
-    # is null -> code 736); 32 is a guard, not an accuracy lever.  See memory
-    # limit-side-len-736-wrong.
+    # Why exactly 32 (the guard value).  det's resize is two steps: (a) scale
+    # both dims by ratio = N/s when short side s < N (uniform); (b) snap each dim
+    # via R(D) = round(D/32)·32 (banker's rounding, unconditional - runs on every
+    # image, upscaled or not; the CNN backbone has stride 32 so inputs must be
+    # multiples of 32).  The final cv2.resize passes no interpolation flag, so it
+    # defaults to INTER_LINEAR (bilinear) - pure fabrication of in-between pixels
+    # that only blurs pixel-exact screenshot text, recovering no real detail.
+    #
+    # Three constraints pin N to 32:
+    #  (1) Want N as SMALL as possible.  Screenshots are already sharp vector-
+    #      rasterized text; any upscale only blurs (bilinear) AND slows det (CNN
+    #      cost grows with output area).  Smaller N = less upscale = better on
+    #      both.  So the search is downward from small N, not upward.
+    #  (2) N <= 16 is broken: R(N) = round(N/32)·32 = 0 (at N=16, 0.5 rounds to
+    #      even 0; below 16 is <0.5), so the short side snaps to 0 -> det returns
+    #      EMPTY (the short side is effectively dropped).
+    #  (3) 17 <= N < 32 distorts the ratio.  Short side = R(N) = round(N/32)·32
+    #      = 32 for ALL N in this range (N/32 in (0.5,1) -> rounds to 1) --
+    #      INSENSITIVE to N.  Long side = round(ratio·N/32)·32 = round(ratio·x)·32
+    #      with x=N/32 in (0.5,1) -- SENSITIVE to N (varies continuously).
+    #      Preserving the ratio needs long side = ratio·32, i.e. round(ratio·x)=ratio,
+    #      which holds only at x=1 (N=32).  For x<1 the short side is pinned at 32
+    #      while the long side shrinks with N -- asymmetric N-sensitivity breaks the
+    #      ratio (8x200 -> 32x416 = 13:1 instead of 25:1 at N=17).  This defeats
+    #      the intent of pulling the short side near 32 WITHOUT distorting the ratio.
+    # So 32 is the smallest N that is non-empty (rules out <=16) and ratio-honest
+    # (rules out 17-31; for N>32 only multiples of 32 are ratio-honest, and they
+    # upscale more).  UX: OCR screenshots almost never have short side <~20px, so
+    # at 32 the upscale is <=1.6x (harmless).  No PP-OCR source (small det
+    # inference.yml is null -> code 736); 32 is a guard, not an accuracy lever.
+    # See memory limit-side-len-736-wrong.
     "Det.limit_side_len": 32,
     # Det.use_dilation: pinned False (= PaddleOCR default), NOT rapidocr's True.
     # DB post-process: a 2x2 cv2.dilate on the thresholded score map before
