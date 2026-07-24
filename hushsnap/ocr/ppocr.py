@@ -50,21 +50,30 @@ Pipeline: det+rec → fallback rec-only.
 
   Pad-to-960 pre-processing was removed in Jul 2026.  The padding was originally
   introduced to work around RapidOCR v5's detector behaviour: when an image's
-  short side is < limit_side_len (736), the detector upscales it to 736 px via
-  cv2.resize.  For tiny images (e.g. 32 px short side) this ~23× upscale causes
-  catastrophic interpolation blur that destroys character features, so padding
-  to 960 px forced a 1∶1 scale.  With v6's PPLCNetV4 backbone the native tiny-
-  image handling improved, but the fundamental issue remains: for wide-flat
-  small images (short side < 48 px, aspect ratio ≥ 3∶1) the detector's forced
-  upscale still degrades features.  However, the rec-only fallback on the raw
-  pixels consistently outperforms detection in these cases down to ~15 px short
-  side, so the simpler pipeline without padding is more reliable overall.
+  short side is < limit_side_len, the detector upscales it to that length via
+  cv2.resize.  rapidocr defaulted that to 736, so a tiny image (e.g. 32 px short
+  side) got a ~23× upscale causing catastrophic interpolation blur that destroys
+  character features; padding to 960 px forced a 1∶1 scale.  The root cause is
+  that screenshots are pixel-exact vector-rasterized text - already sharp, so any
+  forced upscale only blurs them.  The fix is to not upscale in the first place:
+  limit_side_len is now pinned to 64 (= PaddleOCR v6 default), so only images
+  below 64 px get a mild (≤~2×) upscale and crisp screenshots pass through at
+  native scale.  The rec-only fallback on the raw pixels handles the remaining
+  wide-flat tiny cases (short side < 48 px, aspect ratio ≥ 3∶1) down to ~15 px,
+  so the simpler pipeline without padding is more reliable overall.
 
 Parameter choices vs RapidOCR defaults
   ────────────────────────────────────
-  Global.max_side_len = 1280 (default 2000)
-      Verified against v6 small models (Jul 2026); remains the knee of the
-      accuracy-vs-latency curve.  Values above 1600 degrade both.
+  Global.use_preprocess_img = False (rapidocr default True)
+  Global.use_vertical_padding = False (rapidocr default True)
+      Both rapidocr-ONLY features with no PP-OCR equivalent.  Pinned False to
+      match PP-OCR: screenshots don't need global-scaling guard nor vertical
+      padding.  A/B on real screenshots: vertical_padding is a wash;
+      preprocess never fires on screenshot crops.  Global.max_side_len is
+      absent (dead when use_preprocess_img=False — resize_image_within_bounds
+      is never reached).  Previously pinned to 4000 (not rapidocr 2000) to
+      leave 4K shots unscaled; if use_preprocess_img is ever re-enabled,
+      reinstate that pin.
 
   Rec.rec_batch_num = 1 (default 6)
       Recognition runs sequentially on CPU — batching only adds threading
@@ -118,28 +127,171 @@ logger = logging.getLogger(__name__)
 _CENTER_RATIO = 0.4
 
 # ── Default PP-OCR engine parameters (documented in the module header) ───────
-# Det.mean / Det.std are deliberately NOT overridden here.  rapidocr 3.9.2
-# defaults them to [0.5, 0.5, 0.5] (== img/127.5 - 1), which is rapidocr's own
-# choice, NOT the PP-OCRv6 training distribution: PaddleOCR's official
-# PP-OCRv6_small_det.yml trains+evals NormalizeImage with ImageNet
-# mean=[0.485,0.456,0.406] / std=[0.229,0.224,0.225].  Matching the training
-# distribution looks like it should help, but it doesn't in practice - an A/B
-# over the box-inflation harness (scripts/measure_box_inflation_ab.py, 77 cases
-# x Latin/CJK) found ImageNet vs 0.5 within ±1% on box count, false_splits,
-# matched-box recall and box/fontsize ratio stdev, with recall actually
-# 7 boxes worse.  The det network is robust to both normalizations, so the
-# upstream default is kept.  Note this only touches the det path; Rec has its
-# own preprocessing (rec_img_shape [3,48,320]) and is unaffected.
+# Det.mean / Det.std: pinned to ImageNet [0.485,0.456,0.406] / [0.229,0.224,0.225]
+# (= the PP-OCRv6 training normalization, from PaddleOCR's
+# configs/det/PP-OCRv6/PP-OCRv6_small_det.yml NormalizeImage), NOT rapidocr's
+# default [0.5,0.5,0.5] (== img/127.5 - 1).
+#
+# Reason: the claim that rapidocr's 0.5 is better is NOT verified.  The prior
+# A/B that supported 0.5 ran on the old dpr=1 undersized dataset with
+# limit_side_len=736 (both since fixed) - tainted, retracted.  On the corrected
+# dataset (dpr=1.5, limit_side_len=64, 480 images) ImageNet is in fact
+# measurably better:
+#   A/B  scripts/ab_det_normalize.py  over  scripts/gen_normalize_dataset.py
+#   A=[0.5,0.5,0.5]  vs  B=ImageNet  - only mean/std vary (limit_side_len=64,
+#   use_dilation=true, use_cls=false identical in both = runtime det path).
+#   480 images (6 cats x 80, dpr=1.5, real font sizes), seed 20260724:
+#     mean CER   A=0.0696  B=0.0631   (B-A = -0.0065)
+#     paired     A better 46, B better 126, tie 308
+#   reproduced on seed 20260725 (B-A = -0.0086, paired 40/147).
+#   B's lead is in code/terminal (the synthetic dark-mono categories); on
+#   word/web/ui/chat B and A are within noise.
+#
+# Real-screenshot sanity (the decisive check): on two actual HushSnap
+# screenshots - a Chinese paragraph and a black-bg PowerShell terminal - A and
+# B produce IDENTICAL box counts and identical text (box positions within a few
+# px).  So on real screenshots 0.5 vs ImageNet is a wash; neither is "better"
+# in practice.  Given that, pick the one with a PP-OCR source (ImageNet, the
+# training normalization - matches what the detector weights expect) over
+# rapidocr's sourceless 0.5.  See memory rapidocr-det-normalize-not-imagenet
+# (updated: verdict reversed).  Det path only - Rec has its own preprocessing
+# (rec_img_shape [3,48,320]).
+#
+# -- det config: rapidocr default vs PaddleOCR training/inference ------------
+# (verified from PaddleOCR-main.zip: configs/det/PP-OCRv6/PP-OCRv6_small_det.yml,
+#  deploy/cpp_infer/src/configs/OCR.yaml, deploy/hubserving/ocr_det/params.py)
+#
+#   Param            rapidocr cfg default   PaddleOCR                 HushSnap now
+#   ---------------  ---------------------   ------------------------   ------------
+#   Det.ocr_version  "PP-OCRv6"              PP-OCRv6                   PPOCRV6 (set in _get_engine)
+#   Det.mean         [0.5,0.5,0.5]           [0.485,0.456,0.406] ImNet  [0.485,0.456,0.406] ImNet  (= PP-OCRv6 training)
+#   Det.std          [0.5,0.5,0.5]           [0.229,0.224,0.225] ImNet  [0.229,0.224,0.225] ImNet  (= PP-OCRv6 training)
+#   Det.limit_side_len 736                   null(->code 736)           32   (HushSnap guard; see note)
+#   Det.limit_type   "min"                  "min"                      "min" (rapidocr default)
+#   Det.use_dilation True                   False(implicit)             False (= PaddleOCR implicit)
+#
+# mean/std: pinned to ImageNet = PP-OCRv6 small det inference.yml NormalizeImage
+#   (mean [0.485,0.456,0.406] / std [0.229,0.224,0.225], direct source - the
+#   model's own shipped config).  rapidocr defaults to [0.5,0.5,0.5] (== img/127.5
+#   -1), a sourceless choice.  No evidence rapidocr's 0.5 is better on desktop
+#   screenshots: the rapidocr author's det-eval-set A/B found 0.5 better on
+#   detection H-mean (natural-scene det set, not screenshots), but HushSnap's
+#   dpr=1.5 screenshot end-to-end A/B found ImageNet marginally better (0.0631
+#   vs 0.0696) and real screenshots show a wash - so 0.5 is NOT proven better
+#   for this domain.  Per "keep PP-OCR defaults where verifiable", use ImageNet.
+#   See memory rapidocr-det-normalize-not-imagenet.
+#
+# Det.limit_side_len: pinned to 32 (a guard), NOT rapidocr's 736.  No PP-OCR
+#   source for 32: PP-OCRv6 small det's inference.yml sets DetResizeForTest=null,
+#   which falls to the PaddleOCR code default 736 (same as rapidocr) - so the
+#   "64 = PaddleOCR v6" once cited here was the MEDIUM model's OCR.yaml, not
+#   small.  32 is HushSnap's own choice: rapidocr's 736 force-upscale blurs crisp
+#   screenshot glyphs (46x28 crop -> ~26x blur, DB finds no box, CER=1.0), so
+#   we want NO upscale.  limit_type=min means a short side below this is pulled
+#   up to it (then rounded to a 32 multiple by det's resize); 32 is the natural
+#   floor since anything <32 lands on 32 anyway.  32px is below any readable
+#   text, so this is a pure guard for unreadable slivers, not an accuracy lever.
+#   Measured on scratch/crisp_small_dataset (121 real small screenshots, dpr=1.5,
+#   glyph 18-24px, short side 20-38px): meanCER 64=0.022 vs 736=0.174, 736 empty
+#   on 10/121 (e.g. "设置", "3.14", "PS C:\\project>").  See
+#   scripts/ab_crisp_small_lsl.py + scripts/gen_crisp_small_dataset.py and
+#   memory limit-side-len-736-wrong.
+#
+# Det.use_dilation: pinned False (= PaddleOCR default), NOT rapidocr's True.
+#   use_dilation is a DB post-step (ch_ppocr_det/utils.py DBPostProcess): a
+#   2x2 cv2.dilate on the thresholded score map before findContours, which
+#   connects text regions <=1px apart in the downsampled score map.  It was
+#   made for low-res photos where blur/anti-aliasing fragments strokes.
+#   Screenshots are pixel-exact vector-rasterized text with regular spacing,
+#   so the connect benefit is marginal and the over-merge risk is real (it
+#   fuses adjacent list items "- A - B" into one box, can join near lines).
+#   Measured on scratch/desktop_dataset (480 real screenshots, dpr=1.5, 6 cats
+#   x 3 size tiers x CJK/Latin): under OLD mean=0.5 True won +0.0023 (patched
+#   0.5's over-segmentation); under CURRENT ImageNet mean/std (cleaner seg)
+#   True vs False is a WASH - meanCER True=0.0631 vs False=0.0648, Δ=+0.0016
+#   (noise), paired True wins 111 / False wins 48.  Failure shape: True
+#   over-merges web list items; False over-splits tight code/ui (drops more
+#   spaces).  Given the wash + PaddleOCR source + screenshots being a cleaner
+#   subset of PaddleOCR's document domain (which uses False), pick False.
+#   See scripts/ab_det_use_dilation.py + scratch/ab_use_dilation_report.txt
+#   and memory det-use-dilation-true (updated: reversed to False).
+#
+# Summary of HushSnap Det config vs sources (honest - no false "aligns with
+# PP-OCRv6" claims):
+#   mean/std=ImageNet   = PP-OCRv6 small det inference.yml (direct source) ✓
+#   use_dilation=False  = PP-OCRv6 small det inference.yml (implicit: no field
+#                          -> code default False) ✓  [rapidocr defaults True]
+#   limit_side_len=32   = HushSnap guard, NO PP-OCR source (small inference.yml
+#                          is null -> code 736; we override because 736 collapses
+#                          screenshots). 32 = det's 32-align floor, below any
+#                          readable text.
+#   use_preprocess_img=False  = match PP-OCR (no global-preprocess step);
+#                          rapidocr-only feature, not needed for screenshots.
+#   use_vertical_padding=False = match PP-OCR; rapidocr-only, wash on real data.
+#   Global.max_side_len  = REMOVED (dead with use_preprocess_img=False — the
+#                          resize_image_within_bounds path is never reached).
+# Principle: keep PP-OCR defaults where they have a verifiable small-model
+# source (mean/std, use_dilation); override only where a rapidocr default is
+# demonstrably bad for screenshots (limit_side_len 736 collapses small crops);
+# switch off rapidocr-only features that have no PP-OCR equivalent.
 _DEFAULT_ENGINE_PARAMS: dict = {
-    "Global.max_side_len": 1280,
-    # use_preprocess_img / use_vertical_padding were introduced in rapidocr
-    # 3.9.2 (made configurable with default True). Pin them explicitly so a
-    # future default change upstream cannot silently alter OCR behaviour -
-    # both affect the det path; vertical_padding in particular is on the
-    # vertical-CJK pipeline (see _is_vertical_json / compose_ppocr_structures).
-    "Global.use_preprocess_img": True,
-    "Global.use_vertical_padding": True,
+    # Global.max_side_len was pinned to 4000 (rapidocr-ONLY pre-det long-side
+    # cap; no PP-OCR equivalent).  REMOVED: with use_preprocess_img=False the
+    # code path that reads it (resize_image_within_bounds) is never reached, so
+    # the pin was dead.  If use_preprocess_img is ever re-enabled, reinstate the
+    # pin (4000 to cover 4K full-screen shots); without it rapidocr defaults 2000.
+    # use_preprocess_img / use_vertical_padding: both rapidocr-only (no PP-OCR
+    # equivalent).  Pinned False to match PP-OCR — screenshots don't need
+    # global-scaling guard nor vertical padding.  A/B on real screenshots:
+    # vertical_padding is a wash; preprocess never fires on screenshot crops.
+    "Global.use_preprocess_img": False,
+    "Global.use_vertical_padding": False,
     "Rec.rec_batch_num": 1,
+    # Det.mean / Det.std: pinned to ImageNet [0.485,0.456,0.406] /
+    # [0.229,0.224,0.225] (= PP-OCRv6 training normalization,
+    # PP-OCRv6_small_det.yml NormalizeImage), NOT rapidocr's default 0.5.
+    # rapidocr's 0.5 being better was not verified (old A/B was tainted; the
+    # corrected A/B shows ImageNet better, real screenshots show a wash).  Pin
+    # to the value with a PP-OCR source.  See det-config block above + memory
+    # rapidocr-det-normalize-not-imagenet (verdict reversed).
+    "Det.mean": [0.485, 0.456, 0.406],
+    "Det.std": [0.229, 0.224, 0.225],
+    # Det.limit_side_len: with limit_type=min, a short side below this is
+    # upscaled to it (then rounded to a multiple of 32 by det's resize, so 32
+    # here is the natural floor - anything below 32 lands on 32 anyway).  Set
+    # to 32, NOT rapidocr's 736: rapidocr's 736 force-upscale destroys crisp
+    # screenshot glyphs (a 46x28 crop -> ~26x linear blur, DB finds no box,
+    # output empty, CER=1.0).  Screenshots are pixel-exact vector-rasterized
+    # and already sharp - they need no upscale, only a guard so sub-32px crops
+    # (a single glyph at <14px, essentially unreadable) get a mild floor
+    # instead of falling through.  32px physical is below any readable text,
+    # so this is a pure guard, not an accuracy lever.  Measured on
+    # scratch/crisp_small_dataset (121 real small screenshots, dpr=1.5, glyph
+    # 18-24px, short side 20-38px): meanCER 64=0.022 vs 736=0.174, 736 empty on
+    # 10/121 (e.g. "设置", "3.14", "PS C:\\project>").  See scripts/ab_crisp_small_lsl.py
+    # and memory limit-side-len-736-wrong.  Note: 64/736 are rapidocr's two
+    # sides of the debate; 32 is HushSnap's choice (guard, no PP-OCR source -
+    # PP-OCR small det's inference.yml sets DetResizeForTest=null -> code
+    # default 736; we override because 736 collapses screenshots).
+    "Det.limit_side_len": 32,
+    # Det.use_dilation: pinned False (= PaddleOCR default), NOT rapidocr's True.
+    # DB post-process: a 2x2 cv2.dilate on the thresholded score map before
+    # findContours (ch_ppocr_det/utils.py DBPostProcess).  dilation connects
+    # text regions separated by <=1px in the (downsampled) score map - useful
+    # for low-res photos where anti-aliasing/blur fragments strokes, but
+    # screenshots are pixel-exact vector-rasterized text with regular spacing,
+    # so the connect benefit is marginal and the OVER-MERGE risk is real: it
+    # fuses adjacent items (e.g. list rows "- A - B" into one box) and can
+    # join neighbouring lines.  Measured on scratch/desktop_dataset (480 imgs,
+    # dpr=1.5): under the OLD mean=0.5 normalization True won +0.0023 (True
+    # patched 0.5's over-segmentation); under the CURRENT ImageNet mean/std
+    # (which segments cleanly already) True vs False is a WASH - Δ=+0.0016
+    # (noise), paired 111/48.  Failure shape: True over-merges web list items;
+    # False over-splits tight code/ui (drops more spaces).  Given the wash +
+    # PaddleOCR's source + screenshots being a cleaner subset of PaddleOCR's
+    # document domain (which doesn't need dilation), pick False.  See memory
+    # det-use-dilation-true (updated: reversed to False).
+    "Det.use_dilation": False,
     "EngineConfig.onnxruntime.intra_op_num_threads": 8,
     "EngineConfig.onnxruntime.inter_op_num_threads": 1,
     "EngineConfig.onnxruntime.enable_cpu_mem_arena": False,
