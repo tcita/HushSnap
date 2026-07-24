@@ -107,6 +107,21 @@ Release notes (newest first)
 ================================================================================
 
 
+### v1.3.0
+
+· OCR 更快更准：识别速度大幅提升，尤其是小尺寸截图，识别更跟手；同时小图的识别准确度也更好。
+
+
+· OCR 更快更準：辨識速度大幅提升，尤其是小尺寸截圖，辨識更跟手；同時小圖的辨識準確度也更好。
+
+
+
+· OCR is faster and more accurate: recognition speed is up notably - especially for small screenshots, it feels more responsive - and small screenshots recognize more accurately too.
+
+
+· OCR はより速くより正確に：認識速度が大幅に向上し、特に小さなスクリーンショットでより追従感が出ました。同時に小さな画像の認識精度も向上しています。
+
+
 ### v1.2.0
 
 · 内置编辑器新增状态栏缩放滑条，拖动即可调整图片的查看大小，操作更接近系统自带的看图器。
