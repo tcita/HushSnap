@@ -60,7 +60,8 @@ Pipeline: det+rec → fallback rec-only.
   that both keeps aspect ratio and minimizes upscale).  UX: screenshots taken
   for OCR almost never have a short side below ~20px, so at 32 the upscale is
   ≤1.6× and harmless - unlike rapidocr's 736 which force-scales a 46px crop
-  ~16× and destroys it.  The rec-only fallback handles the remaining wide-flat
+  ~16× and destroys it (and, since 736 is a large short side for desktop OCR,
+  taxes the latency of nearly every screenshot - small ones 8-17× slower).  The rec-only fallback handles the remaining wide-flat
   tiny cases (short side < 48 px, aspect ratio ≥ 3∶1) down to ~15 px, so the
   simpler pipeline without padding is more reliable overall.
 
@@ -250,9 +251,11 @@ _CENTER_RATIO = 0.4
 #   use_dilation=False  = PP-OCRv6 small det inference.yml (implicit: no field
 #                          -> code default False) ✓  [rapidocr defaults True]
 #   limit_side_len=32   = HushSnap guard, NO PP-OCR source (small inference.yml
-#                          is null -> code 736; we override because 736 collapses
-#                          screenshots).  32 = the unique multiple of 32 that is
-#                          non-empty and minimal (see derivation above);
+#                          is null -> code 736; we override because 736 both
+#                          destroys small-image quality AND taxes the latency of
+#                          ~every desktop screenshot - 736 is a large short side
+#                          for desktop OCR).  32 = the unique multiple of 32 that
+#                          is non-empty and minimal (see derivation above);
 #                          round(dim/32)*32 is round-to-nearest, not a floor.
 #   use_preprocess_img=False  = rapidocr-only photo/scan guard (min/max side);
 #                          premises (uncontrolled sizes, OOM) don't hold for
@@ -318,18 +321,35 @@ _DEFAULT_ENGINE_PARAMS: dict = {
     # rapidocr-det-normalize-not-imagenet (verdict reversed).
     "Det.mean": [0.485, 0.456, 0.406],
     "Det.std": [0.229, 0.224, 0.225],
-    # Det.limit_side_len = 32.  det's resize (limit_type=min): step (a) scales
+    # Det.limit_side_len = 32, NOT rapidocr's 736.  Two independent reasons:
+    #
+    # (1) QUALITY: 736 (limit_type=min) force-upscales any short side <736 to
+    #     736 (aspect-preserving).  On small screenshots this destroys the
+    #     image - measured objectively on 6 small crops (Sobel edge sharpness
+    #     drops 78-95%, unique colors explode 22 -> ~60000 from interpolation
+    #     artifacts), DB finds no box, CER=1.0.  Smaller short side = worse
+    #     (a 140x29 crop -> 3552x736, a 25x linear upscale).
+    # (2) PERFORMANCE: 736 forces almost EVERY desktop screenshot through a
+    #     736-short-side CNN pass, because 736px is a LARGE short side for
+    #     desktop OCR - most screenshots (single lines, UI cards, chat,
+    #     multi-para docs) have short sides well under 736.  Measured end-to-end
+    #     det+rec latency (median of 3): small 140x29 -> 33ms(32) vs 554ms(736),
+    #     16.8x slower; mid 300x100 -> ~2-6x slower; only near-736 images break
+    #     even.  So 736 taxes the latency of nearly every capture, not just
+    #     tiny ones - and the smaller the screenshot, the worse both effects.
+    #
+    # Why exactly 32 (the guard value): det's resize is two steps - (a) scale
     # both dims by r = N/s when short side s < N (uniform, aspect-preserving);
-    # step (b) rounds each dim via R(D) = round(D/32)·32 (banker's rounding,
+    # (b) round each dim via R(D) = round(D/32)·32 (banker's rounding,
     # unconditional).  N must be a multiple of 32 so R(N) = N (zero extra snap)
     # and aspect ratio is preserved; non-multiples like 17 distort it
     # (8x200 -> 1:13 instead of 1:25).  Among {32,64,96,...} pick the smallest
-    # = 32 (least upscale -> least blur; rapidocr's 736 is ~16x destruction).
-    # Below 32 only 0 is a multiple of 32, but it makes s<=16 round to 0 ->
-    # det returns EMPTY.  UX: OCR screenshots almost never have short side
-    # <~20px, so at 32 the upscale is <=1.6x (harmless).  No PP-OCR source
-    # (small det inference.yml is null -> code 736); 32 is a guard, not an
-    # accuracy lever.  See memory limit-side-len-736-wrong.
+    # = 32 (least upscale -> least blur AND least latency).  Below 32 only 0 is
+    # a multiple of 32, but it makes s<=16 round to 0 -> det returns EMPTY.
+    # UX: OCR screenshots almost never have short side <~20px, so at 32 the
+    # upscale is <=1.6x (harmless).  No PP-OCR source (small det inference.yml
+    # is null -> code 736); 32 is a guard, not an accuracy lever.  See memory
+    # limit-side-len-736-wrong.
     "Det.limit_side_len": 32,
     # Det.use_dilation: pinned False (= PaddleOCR default), NOT rapidocr's True.
     # DB post-process: a 2x2 cv2.dilate on the thresholded score map before
