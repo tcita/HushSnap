@@ -79,6 +79,7 @@ def run_pipeline(
     engine=None,
     *,
     is_vertical: bool = False,
+    unclip_ratio: float | None = None,
 ) -> PipelineResult:
     """Run PP-OCR detection + greedy line clustering on a PNG.
 
@@ -86,6 +87,9 @@ def run_pipeline(
         png_path: path to a PNG image.
         engine: pre-initialised PP-OCR engine (auto-detected if None).
         is_vertical: force vertical column clustering.
+        unclip_ratio: passed through to RapidOCR engine call (None = use
+            engine default, currently 1.6).  Values below 1.6 produce
+            tighter boxes; 2.0 = PaddleOCR original default.
 
     Returns:
         :class:`PipelineResult` with every detected box and its cluster_id.
@@ -116,7 +120,10 @@ def run_pipeline(
     t0 = time.perf_counter()
     _acquire_request()
     try:
-        result = engine(arr)
+        if unclip_ratio is not None:
+            result = engine(arr, unclip_ratio=unclip_ratio)
+        else:
+            result = engine(arr)
         json_data = result.to_json()
     finally:
         _release_request()

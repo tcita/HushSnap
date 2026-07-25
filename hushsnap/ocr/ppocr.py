@@ -129,6 +129,29 @@ logger = logging.getLogger(__name__)
 # (overlap + centre) approach — at 0.4 the overlap check is implied.
 _CENTER_RATIO = 0.4
 
+# Box-height to font-size ratio.  PP-OCR detection boxes are systematically
+# taller than the rendered font-size — the DB shrink→unclip pipeline produces
+# boxes whose height median is ~1.31× the CSS font-size at unclip_ratio=1.6.
+# This was measured on 168 single-line samples covering 4 languages
+# (en, zh-CN, zh-TW, ja), 14 system fonts, and 12 font sizes (16–80 px) at
+# devicePixelRatio=1.5, rendered via Playwright Chromium (scripts/box_fit_test.py
+# and scratch/box_fit_test_16_80/detail.json).
+#
+# Per-language breakdown at unclip_ratio=1.6:
+#   en     median 1.24   p5 1.13    (Latin descenders make boxes ~20 % tighter)
+#   zh-CN  median 1.33   p5 1.19
+#   zh-TW  median 1.35   p5 1.27
+#   ja     median 1.33   p5 1.19
+#
+# Using the conservative Latin edge (1.2) as a global divisor avoids language
+# detection while keeping the worst under-estimate at −10 % (Consolas 48 px,
+# a monospace outlier where estimated_fs = 43 px instead of 48).  For all CJK
+# fonts and the majority of Latin samples the error is ≤ 5 %.  The threshold
+# constants (_CENTER_RATIO, _INDENT_RATIO, _PARAGRAPH_GAP_RATIO, _INLINE_GAP_RATIO)
+# were all tuned against box-height-as-proxy and remain unchanged — only the
+# height input is calibrated.
+_BOX_H_TO_FS_RATIO = 1.2
+
 # ── Default PP-OCR engine parameters (documented in the module header) ───────
 # Det.mean / Det.std: pinned to ImageNet [0.485,0.456,0.406] / [0.229,0.224,0.225]
 # (= the PP-OCRv6 training normalization, from PaddleOCR's
@@ -624,7 +647,7 @@ def _greedy_line_cluster(blocks: list[dict]) -> list[list[dict]]:
         sorted_h = sorted(line_heights)
         median_h = sorted_h[n // 2]
 
-        if abs(box["center_y"] - median_center) < 0.4 * median_h:
+        if abs(box["center_y"] - median_center) < _CENTER_RATIO * median_h / _BOX_H_TO_FS_RATIO:
             current.append(box)
             line_centers.append(box["center_y"])
             line_heights.append(box["height"])
@@ -685,7 +708,7 @@ def _greedy_column_cluster(blocks: list[dict]) -> list[list[dict]]:
         sorted_w = sorted(col_widths)
         median_w = sorted_w[n // 2]
 
-        if abs(box["center_x"] - median_center) < 0.4 * median_w:
+        if abs(box["center_x"] - median_center) < _CENTER_RATIO * median_w / _BOX_H_TO_FS_RATIO:
             current.append(box)
             col_centers.append(box["center_x"])
             col_widths.append(box["width"])
@@ -749,10 +772,10 @@ def _build_lines_from_clusters(
                 # spaces in the output regardless of orientation.
                 if is_vertical:
                     gap = block["top"] - prev_block["bottom"]
-                    est = min(prev_block["width"], block["width"])
+                    est = min(prev_block["width"], block["width"]) / _BOX_H_TO_FS_RATIO
                 else:
                     gap = block["left"] - prev_block["right"]
-                    est = min(prev_block["height"], block["height"])
+                    est = min(prev_block["height"], block["height"]) / _BOX_H_TO_FS_RATIO
                 if est > 0:
                     gap_ratio = gap / est
                     if gap_ratio > 1.0:
@@ -890,8 +913,8 @@ def _apply_paragraph_breaks(lines: list[OcrLine]) -> list[OcrLine]:
         result.append(line)
         if i < len(lines) - 1:
             next_line = lines[i + 1]
-            current_h = medians[i]
-            next_h = medians[i + 1]
+            current_h = medians[i] / _BOX_H_TO_FS_RATIO
+            next_h = medians[i + 1] / _BOX_H_TO_FS_RATIO
             if current_h <= 0 or next_h <= 0:
                 continue
             current_center_y = _word_upper_median(line, axis="cy")
@@ -1112,7 +1135,7 @@ def _apply_indentation(lines: list[OcrLine]) -> list[OcrLine]:
         """
         if line.paragraph_break:
             return False
-        h = _word_upper_median(line, axis="h")
+        h = _word_upper_median(line, axis="h") / _BOX_H_TO_FS_RATIO
         if h <= 0:
             return False
         indent_ratio = (line.bounding_box.x - baseline) / h
