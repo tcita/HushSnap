@@ -1349,11 +1349,22 @@ def _is_vertical_json(json_data: list[dict]) -> bool:
 
 def _recognize_without_detection(engine, arr) -> OcrRecognition:
     """Fallback: skip text detection and run recognition on the whole image.
-    
-    Direct feed: the entire image is passed straight to the recognizer
-    (use_det=False, use_cls=False), matching upstream rapidocr rec-only.
-    No content crop, no contrast normalize -- a failed recognition surfaces
-    empty so the caller prompts recapture (ocr_empty_popup_hint).
+
+    This fires when the detector finds zero text regions.  Direct-feed the
+    entire image to the recognizer (use_det=False, use_cls=False), matching
+    upstream rapidocr rec-only.  No content crop, no contrast normalize.
+
+    The recognizer resizes any input to a fixed 48 px height (CRNN input
+    shape [3, 48, <=320]), so it can only read text that fills most of the
+    original image height -- typically single-line short phrases.  Multi-line,
+    wide-format desktop captures are already illegible at 48 px even clean.
+
+    Cost is constant ~5-9 ms regardless of image size (always the same
+    48 px feature map); ~1 % of a typical det+rec call.
+
+    Narrow insurance: degrades gracefully on low-quality single-line small
+    images where the detector drops out.  Don't expect it to recover
+    multi-line desktop screenshots.
     """
     from ..constants import OCR_ENGINE_PPOCR
 
