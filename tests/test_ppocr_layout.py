@@ -556,32 +556,29 @@ class TestApplyIndentation:
         assert result[1].text == "    L1"          # 4 spaces
         assert result[2].text == "        L2"      # 8 spaces
 
-    def test_indent_ratio_exactly_at_threshold_no_indent(self):
-        """Half-width offset vs calibrated height → NOT indented (strict >).
+    def test_indent_exactly_at_threshold_no_indent(self):
+        """offset/calibrated_h == 1.0 → NOT indented (strict >).
 
-        16 px body text, OCR box_h ≈ 21 px.  Calibrated height = 21 / 1.2 = 17.5.
-        An 8 px offset (half of 16 px body, typed as two spaces) gives
-        ratio = 8 / 17.5 = 0.46 < 0.5 → not indented.  Pins strict `>`.
+        16 px body, box_h=21, calib=17.5.  offset=17 → ratio=0.97 < 1.0.
         """
         lines = [
-            _line("body",   x=0,  y=0,  w=50, h=21),   # OCR box for 16 px font
-            _line("offset", x=8,  y=26, w=50, h=21),   # 2-space indent at 16 px
+            _line("body",   x=0,  y=0,  w=50, h=21),
+            _line("offset", x=17, y=26, w=50, h=21),
         ]
         result = _apply_indentation(lines)
         assert result[1].text == "offset"  # no leading spaces
 
-    def test_indent_ratio_just_above_threshold_indents(self):
-        """1-char indent (≈ 1.0× font size) → clearly indented.
+    def test_indent_just_above_threshold_indents(self):
+        """offset/calibrated_h > 1.0 → indented.
 
-        16 px body text, OCR box_h ≈ 21 px, calibrated = 17.5.
-        A 16 px offset (one full char width) gives ratio = 16 / 17.5 = 0.91 > 0.5.
+        16 px body, box_h=21, calib=17.5.  offset=18 > 17.5, ratio=1.03.
         """
         lines = [
             _line("body",   x=0,  y=0,  w=50, h=21),
-            _line("offset", x=16, y=26, w=50, h=21),  # 1-char (16 px) indent
+            _line("offset", x=18, y=26, w=50, h=21),
         ]
         result = _apply_indentation(lines)
-        assert result[1].text == "    offset"  # unit=16, level 1 → 4 spaces
+        assert result[1].text == "    offset"  # unit=18, level 1 → 4 spaces
 
     def test_no_significant_offset(self):
         """Sub-pixel jitter offset → no indent.
@@ -877,28 +874,21 @@ class TestInlineGapSpacing:
         assert lines[0].text == "hello world"  # single space from word_separator
 
     def test_h_gap_at_threshold_no_extra_space(self):
-        """Gap = one calibrated char width → NOT > 1.0 → no extra space.
+        """gap_ratio = 1.94 < 2.0 → no extra space.  Pins strict `>`.
 
-        20 px CJK, OCR box_h ≈ 26 px, calibrated est = 21.67.  A 21 px gap
-        (one full-width CJK char, snug column layout) gives ratio ≈ 0.97.
-        Pins the strict `>`.
+        20 px CJK, box_h=26, calib=21.67.  gap=42 → ratio=1.94.
+        A 42 px gap (two full CJK chars) should NOT trigger inline spacing.
         """
-        blocks = _h_blocks("你好", "世界", w=50, h=26, gap=21)
+        blocks = _h_blocks("你好", "世界", w=50, h=26, gap=42)
         lines = compose_ppocr_structures(blocks, is_vertical=False)
         assert lines[0].text == "你好世界"
 
-    def test_h_gap_just_above_threshold_one_space(self):
-        """Gap just over one calibrated char → 1 space.
+    def test_h_gap_just_above_threshold_two_spaces(self):
+        """gap_ratio = 2.03 > 2.0 → round(2.03)=2 spaces.
 
-        20 px CJK, box_h=26, est=21.67.  gap=23 → ratio=1.06 > 1.0 → 1 space.
+        Table column gap (44 px) between 20 px CJK columns.
         """
-        blocks = _h_blocks("你好", "世界", w=50, h=26, gap=23)
-        lines = compose_ppocr_structures(blocks, is_vertical=False)
-        assert lines[0].text == "你好 世界"
-
-    def test_h_gap_ratio_1_5_two_spaces(self):
-        """Table column gap (~1.5× char) → 2 spaces.  Pins round(), excludes floor()."""
-        blocks = _h_blocks("你好", "世界", w=50, h=26, gap=33)  # ratio ≈ 1.52
+        blocks = _h_blocks("你好", "世界", w=50, h=26, gap=44)  # ratio ≈ 2.03
         lines = compose_ppocr_structures(blocks, is_vertical=False)
         assert lines[0].text == "你好  世界"  # 2 spaces
 
@@ -916,13 +906,13 @@ class TestInlineGapSpacing:
 
     def test_h_latin_latin_gap_plus_separator(self):
         """Latin-Latin: word_separator + gap spaces = 1 + 2 = 3."""
-        blocks = _h_blocks("hello", "world", w=50, h=26, gap=33)  # ratio ≈ 1.52
+        blocks = _h_blocks("hello", "world", w=50, h=26, gap=44)  # ratio ≈ 2.03
         lines = compose_ppocr_structures(blocks, is_vertical=False)
         assert lines[0].text == "hello   world"  # 3 spaces (1 sep + 2 gap)
 
     def test_h_denominator_is_height_not_width(self):
         """est uses min(height), not width.  Wide boxes (w=160, h=26) still use h."""
-        blocks = _h_blocks("你好", "世界", w=160, h=26, gap=33)
+        blocks = _h_blocks("你好", "世界", w=160, h=26, gap=44)
         lines = compose_ppocr_structures(blocks, is_vertical=False)
         assert lines[0].text == "你好  世界"  # 2 spaces → est used height
 
@@ -935,22 +925,16 @@ class TestInlineGapSpacing:
         assert lines[0].text == "一二"
 
     def test_v_gap_at_threshold_no_extra_space(self):
-        """Gap = one calibrated char width vertically → NOT > 1.0 → no space."""
-        blocks = _v_blocks("一", "二", w=26, h=40, gap=21)
+        """gap_ratio = 1.94 < 2.0 → no extra space (vertical)."""
+        blocks = _v_blocks("一", "二", w=26, h=40, gap=42)
         lines = compose_ppocr_structures(blocks, is_vertical=True)
         assert lines[0].text == "一二"
 
-    def test_v_gap_just_above_threshold_one_space(self):
-        """Gap just over one calibrated char → 1 space."""
-        blocks = _v_blocks("一", "二", w=26, h=40, gap=23)
+    def test_v_gap_just_above_threshold_two_spaces(self):
+        """gap_ratio = 2.03 > 2.0 → 2 spaces (vertical)."""
+        blocks = _v_blocks("一", "二", w=26, h=40, gap=44)
         lines = compose_ppocr_structures(blocks, is_vertical=True)
-        assert lines[0].text == "一 二"
-
-    def test_v_gap_ratio_1_5_two_spaces(self):
-        """Vertical gap ~1.5× → 2 spaces."""
-        blocks = _v_blocks("一", "二", w=26, h=40, gap=33)
-        lines = compose_ppocr_structures(blocks, is_vertical=True)
-        assert lines[0].text == "一  二"  # 2 spaces
+        assert lines[0].text == "一  二"
 
     def test_v_banker_rounding_ratio_2_5(self):
         """gap_ratio = 2.5 → round(2.5)=2 (banker's)."""
@@ -961,9 +945,9 @@ class TestInlineGapSpacing:
     def test_v_denominator_is_width_not_height(self):
         """est uses min(width), not height — the key vertical invariant.
 
-        Tall boxes (w=26, h=100), gap=33.  26/1.2 ≈ 21.67, ratio ≈ 1.52 → 2 spaces.
+        Tall boxes (w=26, h=100), gap=44.  26/1.2 ≈ 21.67, ratio ≈ 2.03 → 2 spaces.
         """
-        blocks = _v_blocks("一", "二", w=26, h=100, gap=33)
+        blocks = _v_blocks("一", "二", w=26, h=100, gap=44)
         lines = compose_ppocr_structures(blocks, is_vertical=True)
         assert lines[0].text == "一  二"  # 2 spaces → est used width
 
@@ -1016,56 +1000,60 @@ class TestApplyParagraphBreaks:
         assert result[2].text == ""  # blank line between paragraphs
 
     def test_gap_exactly_at_threshold_no_break(self):
-        """Equal-height lines exactly at the local threshold → no break (strict >).
+        """Equal-height lines, 1.5× line gap → no break (strict >).
 
-        20 px body text, OCR box_h ≈ 26 px, calibrated_h ≈ 21.7.
-        Threshold = 21.7/2 + 21.7/2 + 21.7 = 43.3.  Centre distance = 43
-        (y=0 → 56, centres 13 and 56, gap 43).  43 < 43.3 → no break.
+        20 px body, box_h=26, calib=21.67.  Threshold = 21.67/2 + 21.67/2
+        + 1.5×21.67 = 54.17.  Centre distance 54 < 54.17 → no break.
+        (A 28 px physical gap between the two text blocks — ~1.4× font
+        size, tight but still one paragraph.)
         """
         lines = [
             _line("Top",    x=0, y=0,  w=50, h=26),
-            _line("Bottom", x=0, y=43, w=50, h=26),
+            _line("Bottom", x=0, y=54, w=50, h=26),
         ]
         result = _apply_paragraph_breaks(lines)
         assert len(result) == 2  # no blank line
 
     def test_gap_just_above_threshold_breaks(self):
-        """Same heights, centre distance 45 > 43.3 → break."""
+        """Same heights, centre distance 56 > 54.17 → break."""
         lines = [
             _line("Top",    x=0, y=0,  w=50, h=26),
-            _line("Bottom", x=0, y=45, w=50, h=26),
+            _line("Bottom", x=0, y=56, w=50, h=26),
         ]
         result = _apply_paragraph_breaks(lines)
         assert len(result) == 3  # blank line inserted
 
     def test_edge_case_gap_just_below_threshold(self):
-        """Same heights, centre distance 42 < 43.3 → no break."""
+        """Same heights, centre distance 53 < 54.17 → no break."""
         lines = [
             _line("Top",    x=0, y=0,  w=50, h=26),
-            _line("Bottom", x=0, y=42, w=50, h=26),
+            _line("Bottom", x=0, y=53, w=50, h=26),
         ]
         result = _apply_paragraph_breaks(lines)
         assert len(result) == 2  # no blank line
 
     def test_moderate_paragraph_spacing_no_break(self):
-        """Ordinary Word-style paragraph spacing (~0.5× font height) → no break.
+        """Ordinary paragraph spacing (1× font size gap) → no break.
 
-        The conservative design deliberately ignores typographic spacing —
-        only obviously-disconnected blocks (gap ≳ 1 line height) trigger.
+        Only obviously-disconnected blocks (≳ 1.5× line height gap) trigger.
         """
         lines = [
             _line("Top",    x=0, y=0,  w=50, h=26),
-            _line("Bottom", x=0, y=32, w=50, h=26),  # 6 px gap → no break
+            _line("Bottom", x=0, y=46, w=50, h=26),  # 20 px gap → no break
         ]
         result = _apply_paragraph_breaks(lines)
         assert len(result) == 2  # no blank line
 
     def test_variable_line_heights(self):
-        """Title (24 px font → box_h=31) + body (16 px → box_h=21): large gap → break."""
+        """Title (24 px → box_h=31) + body (16 px → box_h=21): large gap → break.
+
+        Title calib=25.83, body calib=17.5.  Threshold = 25.83/2 + 17.5/2
+        + 1.5×25.83 = 60.4.  centre distance 61 > 60.4 → break.
+        """
         lines = [
-            _line("Title", x=0, y=0,  w=60, h=31),   # OC R box for 24 px title
-            _line("Body1", x=0, y=60, w=50, h=21),
-            _line("Body2", x=0, y=85, w=50, h=21),
+            _line("Title", x=0, y=0,  w=60, h=31),
+            _line("Body1", x=0, y=66, w=50, h=21),
+            _line("Body2", x=0, y=95, w=50, h=21),
         ]
         result = _apply_paragraph_breaks(lines)
         # centre distance = 55; threshold = 24/2 + 14/2 + max(24, 14) = 43.

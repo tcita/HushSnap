@@ -778,7 +778,7 @@ def _build_lines_from_clusters(
                     est = min(prev_block["height"], block["height"]) / _BOX_H_TO_FS_RATIO
                 if est > 0:
                     gap_ratio = gap / est
-                    if gap_ratio > 1.0:
+                    if gap_ratio > 2.0:
                         n = max(1, round(gap_ratio))
                         sep = (sep or "") + (" " * n)
                 if sep:
@@ -919,7 +919,7 @@ def _apply_paragraph_breaks(lines: list[OcrLine]) -> list[OcrLine]:
                 continue
             current_center_y = _word_upper_median(line, axis="cy")
             next_center_y = _word_upper_median(next_line, axis="cy")
-            threshold = current_h / 2 + next_h / 2 + max(current_h, next_h)
+            threshold = current_h / 2 + next_h / 2 + 1.5 * max(current_h, next_h)
             if next_center_y - current_center_y > threshold:
                 result.append(OcrLine(
                     text="", bounding_box=OcrBox(), paragraph_break=True,
@@ -1089,25 +1089,15 @@ def _apply_indentation(lines: list[OcrLine]) -> list[OcrLine]:
     ratio and miss indents.
 
     ``indent_ratio = (x - baseline) / line_height``.  When the ratio
-    exceeds 0.5 the line is considered intentionally indented; smaller
-    offsets are treated as detection jitter.  Per-line
-    thresholds handle mixed-height text correctly - a tall title with a
-    small absolute offset is not falsely flagged, and a short body line
-    with the same offset is properly recognised.
-
-    The 0.5 threshold is data-backed, not a tuned fraction.  Measured on
-    rendered CJK; reproduced across zh-Hant, ja, en and digits (``scripts/measure_indent_ratio_gap.py``): top-aligned
-    body lines' ratio maxes at ~0.09 (pure detection jitter + glyph
-    side-bearing), while a genuine 1-char indent lands at ~0.79-1.10
-    (offset ~= font size, denominator = box height which runs 1.2-1.7x
-    font size - larger, but not a fixed ratio: it rises at small sizes and
-    for narrow glyphs; the only provable relationship is box > font size).  A 0.70-wide empty valley
-    sits between 0.09 and 0.79 with zero samples.  0.5 is a conservative
-    pick inside that valley: ~6x above the body jitter ceiling (no
-    false-fire) and ~0.30 below the 1-char indent floor (catches the
-    shallowest real indent).  The previous 1.0 threshold was set when
-    jitter was assumed large; measurement showed it an order of magnitude
-    smaller, so 1.0 was over-conservative and missed every 1-char indent.
+    exceeds 1.0 the line is considered intentionally indented; smaller
+    offsets are treated as detection jitter.  1.0 deliberately gives up
+    1-character indents (ratio ~0.79-1.10× font size): the calibrated
+    divisor _BOX_H_TO_FS_RATIO leaves ``h`` ~9 % above real font size, so
+    a 1-char offset lands at ~0.72-1.01 → mostly below the threshold.
+    Only multi-character indentation (code blocks, nested lists) is
+    detected.  Per-line thresholds handle mixed-height text correctly - a
+    tall title with a small absolute offset is not falsely flagged, and a
+    short body line with the same offset is properly recognised.
 
     The indent *unit* is the smallest non-jitter offset from baseline.
     Each line gets ``level × 4`` leading spaces, where ``level = round(offset / unit)``.
@@ -1139,7 +1129,7 @@ def _apply_indentation(lines: list[OcrLine]) -> list[OcrLine]:
         if h <= 0:
             return False
         indent_ratio = (line.bounding_box.x - baseline) / h
-        return indent_ratio > 0.5
+        return indent_ratio > 1.0
 
     # Indent unit: smallest offset that is clearly not jitter
     offsets = sorted(set(
@@ -1321,7 +1311,7 @@ def release_engine():
 
 # -- text orientation detection -------------------------------------------
 
-_VERTICAL_BOX_RATIO = 1.3          # h/w threshold for a "tall" (vertical) text box
+_VERTICAL_BOX_RATIO = 1.5          # h/w threshold for a "tall" (vertical) text box
 _VERTICAL_WEIGHTED_THRESHOLD = 0.5  # weighted tall-area fraction to trigger rotation
 
 
