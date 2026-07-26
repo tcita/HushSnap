@@ -47,12 +47,13 @@ async def get_startup_state() -> bool:
         try:
             import winrt.windows.applicationmodel as appmodel
             task = await appmodel.StartupTask.get_async(MSIX_STARTUP_TASK_ID)
-            return task.state in (appmodel.StartupTaskState.ENABLED, appmodel.StartupTaskState.ENABLED_BY_POLICY)
+            result = task.state in (appmodel.StartupTaskState.ENABLED, appmodel.StartupTaskState.ENABLED_BY_POLICY)
+            logger.info("startup: get_startup_state() MSIX result=%s (StartupTask state=%s)", result, task.state)
+            return result
         except Exception as e:
-            logger.error(f"Failed to get MSIX startup state: {e}")
+            logger.error("startup: get_startup_state() MSIX path failed: %s", e, exc_info=True)
             return False
     else:
-        # Check Registry
         registry_enabled = False
         try:
             key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -64,10 +65,13 @@ async def get_startup_state() -> bool:
             except FileNotFoundError:
                 pass
         except Exception as e:
-            logger.error(f"Failed to check registry startup state: {e}")
+            logger.error("startup: get_startup_state() registry check failed: %s", e, exc_info=True)
 
         shortcut_enabled = _get_startup_shortcut_path().exists()
-        return registry_enabled or shortcut_enabled
+        result = registry_enabled or shortcut_enabled
+        logger.info("startup: get_startup_state() registry result=%s (registry=%s, shortcut=%s)",
+                    result, registry_enabled, shortcut_enabled)
+        return result
 
 async def set_startup_state(enable: bool) -> bool:
     """
@@ -80,18 +84,21 @@ async def set_startup_state(enable: bool) -> bool:
 
             if enable:
                 result = await task.request_enable_async()
-                return result in (appmodel.StartupTaskState.ENABLED, appmodel.StartupTaskState.ENABLED_BY_POLICY)
+                success = result in (appmodel.StartupTaskState.ENABLED, appmodel.StartupTaskState.ENABLED_BY_POLICY)
+                logger.info("startup: set_startup_state(enable=True) MSIX result=%s (new state=%s)", success, result)
+                return success
             else:
                 task.disable()
+                logger.info("startup: set_startup_state(enable=False) MSIX disabled")
                 return False
         except Exception as e:
-            logger.error(f"Failed to set MSIX startup state: {e}")
+            logger.error("startup: set_startup_state(enable=%s) MSIX path failed: %s", enable, e, exc_info=True)
             return False
     else:
         try:
             key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
             reg_name = get_startup_reg_name()
-            
+
             shortcut_path = _get_startup_shortcut_path()
             if shortcut_path.exists():
                 try:
@@ -112,6 +119,7 @@ async def set_startup_state(enable: bool) -> bool:
 
                 with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE) as key:
                     winreg.SetValueEx(key, reg_name, 0, winreg.REG_SZ, cmd)
+                logger.info("startup: set_startup_state(enable=True) registry written (name=%s)", reg_name)
                 return True
             else:
                 try:
@@ -119,7 +127,8 @@ async def set_startup_state(enable: bool) -> bool:
                         winreg.DeleteValue(key, reg_name)
                 except FileNotFoundError:
                     pass
+                logger.info("startup: set_startup_state(enable=False) registry removed (name=%s)", reg_name)
                 return False
         except Exception as e:
-            logger.error(f"Failed to set registry startup state: {e}")
+            logger.error("startup: set_startup_state(enable=%s) registry path failed: %s", enable, e, exc_info=True)
             return False

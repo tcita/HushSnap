@@ -187,6 +187,34 @@ function Invoke-PreBuildValidation {
     }
     Write-Pass "All critical Python modules importable"
 
+    # 1.4b ── Every hiddenimport is actually importable ────────────
+    # PyInstaller logs "ERROR: Hidden import 'X' not found" but
+    # returns exit code 0 — a stale or missing hiddenimport is a
+    # packaging bug that will cause runtime ModuleNotFoundError.
+    # Verify them all at the Python level before the build.
+    if ($specContent) {
+        # Extract the hiddenimports=[...] block via regex
+        if ($specContent -match "(?s)hiddenimports\s*=\s*\[(.*?)\]") {
+            $hiBlock = $matches[1]
+            $hiMatches = [regex]::Matches($hiBlock, "'([^']+)'")
+            $hiList = $hiMatches | ForEach-Object { $_.Groups[1].Value }
+            foreach ($hi in $hiList) {
+                $result = & python.exe -c "import $hi" 2>&1
+                if ($LASTEXITCODE -ne 0) {
+                    $errMsg = ($result -join ' ') -replace '\s+', ' '
+                    Write-Fail "hiddenimport '$hi' is NOT importable — $errMsg"
+                    $errors++
+                }
+            }
+            if ($errors -eq 0) {
+                Write-Pass "All $($hiList.Count) hiddenimports are importable"
+            }
+        } else {
+            Write-Fail "Could not parse hiddenimports block from .spec"
+            $errors++
+        }
+    }
+
     # 1.5 ── Git working tree status (warning only) ─────────────────
     $gitStatus = & git -C $RootDir status --porcelain 2>$null
     if ($gitStatus) {

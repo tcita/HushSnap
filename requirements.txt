@@ -5,4 +5,5 @@ rapidocr>=3.9.1
 numpy>=1.24
 onnxruntime==1.20.0
 winrt-Windows.ApplicationModel
+winrt-Windows.Foundation
 Pillow>=10.0
