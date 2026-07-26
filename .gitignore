@@ -38,4 +38,7 @@ ocr_stability_results/
 # Orphaned build links
 *.lnk
 
+# OCR batch test images (drop zone for ad-hoc OCR runs)
+ocr_batch/*
+!ocr_batch/*.py
 

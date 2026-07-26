@@ -122,25 +122,25 @@ def main() -> int:
     print(file=sys.stderr)
 
     # ── Process ───────────────────────────────────────────────────────────
-    results: list[tuple[str, float, int, str]] = []  # (name, elapsed_s, chars, error)
+    results: list[tuple[str, float, int, str]] = []  # (name, elapsed_ms, chars, error)
 
     for i, img_path in enumerate(images, 1):
         t0 = time.perf_counter()
         try:
             text, error = _ocr_image(img_path)
         except Exception as exc:
-            dt = time.perf_counter() - t0
+            dt = (time.perf_counter() - t0) * 1000
             results.append((img_path.name, dt, 0, str(exc)))
             print(f"{_DIVIDER}", file=sys.stderr)
-            print(f"FAIL [{i}/{len(images)}] {img_path.name}  ({dt*1000:.0f}ms)", file=sys.stderr)
+            print(f"FAIL [{i}/{len(images)}] {img_path.name}  ({dt:.0f}ms)", file=sys.stderr)
             print(f"  {exc}", file=sys.stderr)
             continue
 
-        dt = time.perf_counter() - t0
+        dt = (time.perf_counter() - t0) * 1000
         if error:
             results.append((img_path.name, dt, 0, error))
             print(f"{_DIVIDER}", file=sys.stderr)
-            print(f"FAIL [{i}/{len(images)}] {img_path.name}  ({dt*1000:.0f}ms)", file=sys.stderr)
+            print(f"FAIL [{i}/{len(images)}] {img_path.name}  ({dt:.0f}ms)", file=sys.stderr)
             print(f"  {error}", file=sys.stderr)
             continue
 
@@ -150,7 +150,7 @@ def main() -> int:
             # Batch mode: divider + header so output from different images
             # never runs together.
             print(f"{_DIVIDER}")
-            print(f"[{i}/{len(images)}] {img_path.name}  ({dt:.2f}s, {len(text)} chars)")
+            print(f"[{i}/{len(images)}] {img_path.name}  ({dt:.0f}ms, {len(text)} chars)")
             print(f"{_DIVIDER}")
 
         print(text)
