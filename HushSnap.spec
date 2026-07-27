@@ -44,7 +44,6 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        'openai', 'httpx', 'pydantic', 'anyio', 'httpcore',
         'tkinter', 'tcl', 'tk', '_tkinter', 'lib2to3',
         'unittest', 'pydoc',
         'PyQt6.QtNetwork', 'PyQt6.QtSql', 'PyQt6.QtWebEngine', 'PyQt6.QtQml',
@@ -74,21 +73,17 @@ def filter_binaries(binaries):
     return [b for b in binaries if not any(dll.lower() in b[0].lower() for dll in excluded_dlls)]
 
 def filter_datas(datas):
-    # Keep only the core Chinese Qt translation pack; remove other translation modules.
-    # Also strip rapidocr infer model variants (only mobile models are used).
+    # Drop ALL Qt translation packs (.qm). HushSnap does its own i18n via
+    # hushsnap/translations.py, not Qt's QTranslator system - no code ever
+    # calls QTranslator.load() / app.installTranslator(), so the .qm files
+    # PyQt6 auto-collects (~10 MB across 217 files) are pure dead weight.
+    # If a future change starts loading Qt's own translations for standard
+    # dialogs (QMessageBox Yes/No/OK, QFileDialog), re-add a zh_CN/zh_TW
+    # whitelist here.
     out = []
     for d in datas:
-        src = d[0].lower()
-        if 'translations' in src and 'qtbase_zh_cn' not in src and 'qtbase_zh_tw' not in src:
+        if 'translations' in d[0].lower():
             continue
-        if 'rapidocr/models/' in src.replace('\\', '/'):
-            basename = src.replace('\\', '/').rsplit('/', 1)[-1]
-            if '_infer.onnx' in basename:
-                continue
-            if 'ppocrv5_dict' in basename:
-                continue
-            if 'v4' in basename: # Exclude v4 models (using v5)
-                continue
         out.append(d)
     return out
 
