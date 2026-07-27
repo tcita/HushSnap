@@ -169,8 +169,20 @@ class BenchmarkRunner:
         Parameters
         ----------
         iterations:
-            Number of OCR calls.  The first may be cold (if the engine
-            wasn't already loaded); iteration 1+ are warm.
+            Number of OCR calls.  Iteration 0 pays a one-time first-
+            inference cost that later iterations do not: ``_wait_for_warmup``
+            has already loaded the engine (session build, mmap, graph opt
+            - the model-load cost), but ORT has not yet committed the
+            detector's input-sized intermediate tensors, so iteration 0's
+            first ``engine(arr)`` commits them and triggers a demand-zero
+            page-fault storm sized by the image.  This first-inference
+            buffer-commit cost is distinct from the model-load cost that
+            warmup handles; it scales with image size, not with steady-
+            state throughput, so it is excluded from the latency
+            aggregates (``avg_duration_ms`` / ``best_duration_ms``) and
+            preserved separately as ``cold_duration_ms``.  See
+            ``scripts/OCR_FIRST_INFERENCE.md`` ("Two cold starts") for
+            the full derivation.  Iterations 1+ are warm.
         interval:
             Seconds between iterations.
         profile:
@@ -315,7 +327,7 @@ class BenchmarkRunner:
                 print(f"  Private Bytes:  {peak_pv:8.2f} MB  (peak)")
                 print(f"  Working Set:    {peak_ws:8.2f} MB  (peak physical RAM)")
                 print(f"  Retention (R):  {retention:8.3f}     "
-                      f"({'⚠ plateau' if retention > 0.7 else '✓ spike'})")
+                      f"({'plateau' if retention > 0.7 else 'spike'})")
                 print(f"  Page Faults:    {pf_delta:+8d}     (Δ this iteration)")
                 print(f"  Handles:        {h_after:8d}     ({h_delta:+d} Δ)")
                 print(f"  Chars:          {len(self._last_text):8d}")
@@ -371,13 +383,25 @@ class BenchmarkRunner:
         )
 
         # Derived aggregates
-        result.avg_duration_ms = sum(r.duration_ms for r in iter_results) / len(iter_results)
-        result.best_duration_ms = min(r.duration_ms for r in iter_results)
+        # Latency: WARM-ONLY.  Iteration 0 pays the first-inference
+        # buffer-commit cost (ORT commits the det intermediate tensors,
+        # triggering a demand-zero fault storm sized by the input image).
+        # This is distinct from the model-load cost _wait_for_warmup
+        # already handled; it is a one-time startup cost, not steady-state
+        # throughput, so it is excluded from avg/best and kept standalone
+        # as cold_duration_ms.  See scripts/OCR_FIRST_INFERENCE.md.
+        # The same warm slice is reused for retention below.
+        warm = iter_results[1:] if len(iter_results) > 1 else iter_results
+        warm_durations = [r.duration_ms for r in warm]
+        result.avg_duration_ms = (sum(warm_durations) / len(warm_durations)
+                                  if warm_durations else 0.0)
+        result.best_duration_ms = min(warm_durations) if warm_durations else 0.0
+        result.cold_duration_ms = iter_results[0].duration_ms if iter_results else 0.0
         result.max_ws_mb = max(r.peak_ws_mb for r in iter_results)
         result.max_pv_mb = max(r.peak_pv_mb for r in iter_results)
 
-        # Retention from warm iterations (or all if only 1)
-        warm = iter_results[1:] if len(iter_results) > 1 else iter_results
+        # Retention from warm iterations (reuses the warm slice above;
+        # iteration 0 excluded for the same cold-start reason as latency)
         warm_retentions = [r.retention for r in warm]
         result.avg_retention = sum(warm_retentions) / len(warm_retentions) if warm_retentions else -1
 
@@ -411,11 +435,16 @@ class BenchmarkRunner:
             result.text_full = first_text
 
         # ── Warnings ──────────────────────────────────────────────
-        if warm_retentions and all(r > 0.7 for r in warm_retentions):
-            result.warnings.append(
-                "Memory SHAPE: retention > 0.7 in ALL warm iterations "
-                "(plateau pattern — check arena settings or leaked references)"
-            )
+        # WS-retention > 0.7 (plateau) is NOT an anomaly - do not warn.
+        # Per scripts/OCR_FIRST_INFERENCE.md, the working set stays resident
+        # after OCR because the detector's intermediate tensors commit once
+        # (first inference) and are never released in production
+        # (release_engine is dead code); the OS only reclaims those physical
+        # pages via idle-trim (simulate with --idle-trim, reported as
+        # trim_delta_mb).  High post-OCR retention is the expected steady
+        # state, not a leak and not an arena problem (arena is off by
+        # default).  A genuine leak would show Private Bytes (commit) GROWING
+        # across warm iterations - not currently checked.
         warm_h_deltas = [r.h_delta for r in warm if r.h_delta != -1]
         if warm_h_deltas and all(d > 0 for d in warm_h_deltas):
             result.warnings.append(
@@ -488,8 +517,11 @@ class BenchmarkRunner:
         print(f" Summary ({result.iterations} iterations"
               f"{', idle trim ON' if result.idle_trim_enabled else ''})")
         print(f"{'='*70}")
-        print(f" Latency (avg):        {result.avg_duration_ms:8.1f} ms")
+        print(f" Latency (warm avg):   {result.avg_duration_ms:8.1f} ms  "
+              f"(iterations 1+; iter 0 excluded - first-inference buffer commit)")
         print(f" Latency (best):       {result.best_duration_ms:8.1f} ms")
+        print(f" Latency (iter0):      {result.cold_duration_ms:8.1f} ms  "
+              f"(first-inference buffer commit; info-only, not in avg)")
         print(f" Private Bytes (max):  {result.max_pv_mb:8.2f} MB  "
               f"(committed virtual memory)")
         print(f" Working Set (max):    {result.max_ws_mb:8.2f} MB  "
@@ -498,8 +530,8 @@ class BenchmarkRunner:
             print(f" Trim Δ (avg warm):    {result.avg_trim_delta_mb:8.1f} MB  "
                   f"(WS freed by idle trim @ {result.trim_delay_s:.0f}s)")
         print(f" Retention (avg warm): {result.avg_retention:8.3f}     "
-              f"({'⚠ plateau' if result.avg_retention > 0.7 else '✓ spike'} "
-              f"— memory shape indicator)")
+              f"({'plateau' if result.avg_retention > 0.7 else 'spike'} - "
+              f"plateau is expected; det tensors stay resident, see OCR_FIRST_INFERENCE.md)")
 
         if result.decay_lambda > -0.5:
             src = "warm iter" if result.iterations > 1 else "iter 1"

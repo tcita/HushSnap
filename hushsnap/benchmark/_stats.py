@@ -79,7 +79,12 @@ def classify_shape(retention: float, decay_lambda: float = -1.0,
     ----------
     retention:
         ``WS_after / WS_peak``.  ≈1.0 → plateau (memory held);
-        ≪1.0 → spike (memory released).
+        ≪1.0 → spike (memory released).  NB for this engine a plateau is
+        the EXPECTED steady state, not an anomaly: the detector's
+        intermediate tensors commit once on first inference and stay
+        resident for the process lifetime (release_engine is dead
+        code in production); the OS only reclaims those physical pages
+        via idle-trim.  See scripts/OCR_FIRST_INFERENCE.md.
     decay_lambda:
         Exponential decay rate in s⁻¹.  Pass -1 if unavailable.
     r_squared:
@@ -94,7 +99,7 @@ def classify_shape(retention: float, decay_lambda: float = -1.0,
     lambda_ok = r_squared < 0 or r_squared >= 0.5
 
     if retention > 0.8 and lambda_ok and 0 <= decay_lambda < 0.2:
-        return "PLATEAU  (memory held, arena-like)"
+        return "PLATEAU  (det tensors resident - expected, see OCR_FIRST_INFERENCE.md)"
     if retention < 0.5 and lambda_ok and decay_lambda > 1.0:
         return "SPIKE    (sharp peak, fast release)"
     if retention < 0.5 and decay_lambda > 0.1:
@@ -103,4 +108,4 @@ def classify_shape(retention: float, decay_lambda: float = -1.0,
         return "SPIKE    (released, λ unreliable)"
     if lambda_ok and decay_lambda > 0.5:
         return "MIXED    (some retention but decaying)"
-    return "PLATEAU  (memory retained)"
+    return "PLATEAU  (det tensors resident - expected)"

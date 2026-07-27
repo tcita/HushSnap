@@ -36,8 +36,25 @@ class BenchmarkResult:
     iter_results: list[IterationResult] = field(default_factory=list)
 
     # ── Computed aggregates ──
-    avg_duration_ms: float = 0.0
-    best_duration_ms: float = 0.0
+    # Two distinct one-time costs precede steady state (see
+    # scripts/OCR_FIRST_INFERENCE.md, "Two cold starts"):
+    #   (1) model load - session build, mmap, graph opt.  Paid by
+    #       warmup_ppocr / _wait_for_warmup BEFORE the loop, so no
+    #       iteration here sees it.
+    #   (2) first-inference buffer commit - on the first engine(arr) ORT
+    #       commits the detector's input-sized intermediate tensors,
+    #       triggering a demand-zero page-fault storm sized by the image.
+    #       Iteration 0 pays this; it scales with image size, not with
+    #       steady-state throughput.
+    # This benchmark measures steady-state throughput, so the latency
+    # aggregates below exclude iteration 0 and keep it standalone as
+    # cold_duration_ms.  "cold" in that field name = (2) the first-
+    # inference buffer commit, NOT (1) the model load warmup already
+    # eliminated.  The two are unrelated one-time costs that share the
+    # colloquial "cold start" label; do not conflate them.
+    avg_duration_ms: float = 0.0      # mean over warm iterations only
+    best_duration_ms: float = 0.0     # min over warm iterations only
+    cold_duration_ms: float = 0.0     # iteration 0 - first-inference buffer commit (2), not model load (1)
     max_ws_mb: float = 0.0
     max_pv_mb: float = 0.0
     avg_retention: float = 0.0
@@ -68,8 +85,9 @@ class BenchmarkResult:
         if self.engine_overrides:
             lines.append(f"Engine overrides: {self.engine_overrides}")
         lines += [
-            f"  Latency  avg={self.avg_duration_ms:.0f}ms  "
-            f"best={self.best_duration_ms:.0f}ms",
+            f"  Latency  warm avg={self.avg_duration_ms:.0f}ms  "
+            f"best={self.best_duration_ms:.0f}ms  "
+            f"iter0={self.cold_duration_ms:.0f}ms (first-inference)",
             f"  Memory   WS peak={self.max_ws_mb:.0f}MB  "
             f"Pvt peak={self.max_pv_mb:.0f}MB",
         ]
