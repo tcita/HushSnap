@@ -207,18 +207,20 @@ def _line(text="test line"):
 
 
 def test_compose_default_line_text():
-    # Trailing spaces/tabs are stripped (OCR noise), but \n is preserved (paragraph marker)
-    assert compose_default_line_text(_line("hello world  ")) == "hello world"
+    # Trailing spaces are NOT stripped here (deferred to normalize_ocr_text /
+    # finalize); \n is preserved (paragraph marker).
+    assert compose_default_line_text(_line("hello world  ")) == "hello world  "
     assert compose_default_line_text(_line("Para 1\n")) == "Para 1\n"
 
 
 def test_compose_spaced_line_text():
-    assert compose_spaced_line_text(_line("hello world  ")) == "hello world"
+    assert compose_spaced_line_text(_line("hello world  ")) == "hello world  "
 
 
 def test_compose_cjk_line_text():
-    """CJK line text strips spaces/tabs but preserves \\n paragraph markers."""
-    assert compose_cjk_line_text(_line("中文测试  ")) == "中文测试"
+    """CJK line text preserves trailing spaces/tabs and \\n paragraph markers;
+    stripping is deferred to normalize_ocr_text (finalize)."""
+    assert compose_cjk_line_text(_line("中文测试  ")) == "中文测试  "
     assert compose_cjk_line_text(_line("沪 A 测试")) == "沪 A 测试"
 
 

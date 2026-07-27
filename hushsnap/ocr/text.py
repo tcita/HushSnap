@@ -171,9 +171,11 @@ def normalize_token_text(token: str) -> str:
 
 
 def compose_default_line_text(line: OcrLine) -> str:
-    # Strip trailing spaces/tabs (OCR noise) but preserve \n line separators.
-    # normalize_ocr_text (finalize_text) handles full line-by-line cleanup after join.
-    return cleanup_ocr_text_line((line.text or "").rstrip(" \t"))
+    # Trailing-space stripping is left to normalize_ocr_text (finalize_text),
+    # which rstrips every line after join.  Doing it here too is a no-op:
+    # the input is already post-_build_lines_from_clusters, and rec does not
+    # emit trailing spaces anyway.
+    return cleanup_ocr_text_line(line.text or "")
 
 
 def compose_spaced_line_text(line: OcrLine) -> str:
@@ -181,9 +183,10 @@ def compose_spaced_line_text(line: OcrLine) -> str:
 
 
 def compose_cjk_line_text(line: OcrLine) -> str:
-    # If it's already a pre-composed line with indentation (e.g. from PP-OCR layout),
-    # return with only spaces/tabs stripped — \n paragraph markers must survive.
-    return (line.text or "").rstrip(" \t")
+    # Pre-composed line (e.g. from PP-OCR layout, indentation already applied).
+    # \n paragraph markers must survive; trailing-space stripping is deferred
+    # to normalize_ocr_text (finalize_text), same as the default adapter.
+    return line.text or ""
 
 
 def normalize_ocr_text(text: str) -> str:
@@ -299,7 +302,10 @@ def compose_text_from_result(result: OcrRecognition, language_tag: str = "") -> 
     built_lines: list[str] = []
     for line in result.lines:
         joined = adapter.compose_line(line)
-        if joined or line.paragraph_break:
+        # A whitespace-only line has no content - skip it (same filter as
+        # _normalize_blocks dropping empty blocks).  paragraph_break
+        # sentinels (joined == "") must still be kept to mark blank lines.
+        if (joined and joined.strip()) or line.paragraph_break:
             built_lines.append(joined)
 
     if not built_lines:

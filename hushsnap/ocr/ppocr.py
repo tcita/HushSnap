@@ -794,7 +794,7 @@ def _build_lines_from_clusters(
             prev_block = block
 
         result.append(OcrLine(
-            text="".join(text_parts).rstrip(),
+            text="".join(text_parts),
             words=words,
             bounding_box=bbox_to_ocr_box(min_l, min_t, max_r, max_b),
         ))
