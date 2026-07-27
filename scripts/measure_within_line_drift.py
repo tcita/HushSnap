@@ -2,7 +2,7 @@
 
 Question being answered
 -----------------------
-``_apply_paragraph_breaks`` computes each line's height as the
+``_decide_paragraph_breaks`` computes each line's height as the
 *upper-median* of its word-box heights, deliberately avoiding the
 line's *union* bbox, whose height (max(bottom) - min(top)) is inflated
 by any single drifting box on that line.  This script measures how
@@ -144,7 +144,7 @@ def _make_cases() -> list:
 
 
 def _upper_median(values: list[float]) -> float:
-    """High median: sorted[n // 2], matching _apply_paragraph_breaks."""
+    """High median: sorted[n // 2], matching _decide_paragraph_breaks."""
     if not values:
         return 0.0
     s = sorted(values)
@@ -331,7 +331,7 @@ def main():
         print()
         if material_pct < 0.05 and med_ratio < 0.05:
             print("  -> Drift is negligible.  union bbox can replace the")
-            print("     word-box median in _apply_paragraph_breaks without")
+            print("     word-box median in _decide_paragraph_breaks without")
             print("     materially moving the break threshold.")
         elif material_pct < 0.25:
             print("  -> Drift is modest.  union bbox would widen the break")

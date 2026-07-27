@@ -8,7 +8,6 @@ from .preprocess import (
 from . import ppocr  # noqa: F401  # triggers engine self-registration (must precede recognition to be default)
 
 from .ocr_service import OcrService
-from .text import OcrTextAdapter, compose_text_from_result, select_text_adapter
 
 __all__ = [
     "OcrBox",
@@ -20,9 +19,6 @@ __all__ = [
     "OcrRequest",
     "OcrResponse",
     "OcrService",
-    "OcrTextAdapter",
     "OcrWord",
     "DEFAULT_OCR_SCALE_FACTOR",
-    "compose_text_from_result",
-    "select_text_adapter",
 ]

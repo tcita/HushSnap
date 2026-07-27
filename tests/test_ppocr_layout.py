@@ -5,7 +5,7 @@ Coverage:
   - _greedy_column_cluster (vertical clustering + anti-bridging)
   - _normalize_blocks      (empty / invalid-box filtering)
   - _is_vertical_json      (tall-box area-weighted voting)
-  - _apply_indentation     (single- / multi-level indent detection)
+  - _decide_indentation   (single- / multi-level indent detection)
   - compose_ppocr_structures (integration, horizontal + vertical)
   - ppocr_box_to_bbox      (coordinate parsing edge cases)
   - word_separator         (CJK / Latin / punctuation boundaries)
@@ -19,8 +19,9 @@ from hushsnap.ocr.ppocr import (
     _greedy_column_cluster,
     _normalize_blocks,
     _is_vertical_json,
-    _apply_indentation,
-    _apply_paragraph_breaks,
+    _decide_indentation,
+    _decide_paragraph_breaks,
+    _render_layout,
     compose_ppocr_structures,
     ppocr_box_to_bbox,
     word_separator,
@@ -28,6 +29,15 @@ from hushsnap.ocr.ppocr import (
     _apply_cjk_spacing,
 )
 from hushsnap.ocr.models import OcrBox, OcrLine, OcrWord
+
+
+def _apply_layout(lines):
+    """Test helper: run the full decide + render stage (horizontal) so tests
+    can keep asserting on final text / line count.  Mirrors what
+    compose_ppocr_structures does in its horizontal branch."""
+    _decide_indentation(lines)
+    break_after = _decide_paragraph_breaks(lines)
+    return _render_layout(lines, break_after)
 
 
 # ---------------------------------------------------------------------------
@@ -514,14 +524,14 @@ class TestIsVerticalJson:
 
 
 # ===================================================================
-# _apply_indentation
+# _decide_indentation
 # ===================================================================
 
 class TestApplyIndentation:
 
     def test_single_line_no_indent(self):
         lines = [_line("hello", x=0, y=0, w=40, h=14)]
-        result = _apply_indentation(lines)
+        result = _apply_layout(lines)
         assert result[0].text == "hello"
 
     def test_indented_line(self):
@@ -536,7 +546,7 @@ class TestApplyIndentation:
             _line("body",  x=0,  y=0,  w=40, h=14),  # baseline
             _line("indent", x=40, y=20, w=40, h=14),  # offset 40, ratio 40/14≈2.86 > 1
         ]
-        result = _apply_indentation(lines)
+        result = _apply_layout(lines)
         assert result[0].text == "body"
         assert result[1].text == "    indent"  # exactly 4 spaces
 
@@ -551,7 +561,7 @@ class TestApplyIndentation:
             _line("L1", x=20, y=20, w=30, h=14),   # offset 20, ratio 20/14≈1.43 > 1
             _line("L2", x=40, y=40, w=30, h=14),   # offset 40, ratio 40/14≈2.86 > 1
         ]
-        result = _apply_indentation(lines)
+        result = _apply_layout(lines)
         assert result[0].text == "L0"
         assert result[1].text == "    L1"          # 4 spaces
         assert result[2].text == "        L2"      # 8 spaces
@@ -565,7 +575,7 @@ class TestApplyIndentation:
             _line("body",   x=0,  y=0,  w=50, h=21),
             _line("offset", x=17, y=26, w=50, h=21),
         ]
-        result = _apply_indentation(lines)
+        result = _apply_layout(lines)
         assert result[1].text == "offset"  # no leading spaces
 
     def test_indent_just_above_threshold_indents(self):
@@ -577,7 +587,7 @@ class TestApplyIndentation:
             _line("body",   x=0,  y=0,  w=50, h=21),
             _line("offset", x=18, y=26, w=50, h=21),
         ]
-        result = _apply_indentation(lines)
+        result = _apply_layout(lines)
         assert result[1].text == "    offset"  # unit=18, level 1 → 4 spaces
 
     def test_no_significant_offset(self):
@@ -590,7 +600,7 @@ class TestApplyIndentation:
             _line("L0", x=0, y=0, w=30, h=18),
             _line("L1", x=2, y=24, w=30, h=18),  # 2 px jitter
         ]
-        result = _apply_indentation(lines)
+        result = _apply_layout(lines)
         assert not result[1].text.startswith(" ")
 
     def test_all_same_x(self):
@@ -599,7 +609,7 @@ class TestApplyIndentation:
             _line("A", x=10, y=0,  w=30, h=14),
             _line("B", x=10, y=20, w=30, h=14),
         ]
-        result = _apply_indentation(lines)
+        result = _apply_layout(lines)
         assert result[0].text == "A"
         assert result[1].text == "B"
 
@@ -628,13 +638,13 @@ class TestApplyIndentation:
             OcrWord("i2", OcrBox(x=29, y=20, width=12, height=14)),
             OcrWord("i3", OcrBox(x=42, y=14, width=8,  height=24)),  # drifts tall
         ]
-        result = _apply_indentation([body, offset_line])
+        result = _apply_layout([body, offset_line])
         assert result[1].text == "    indent"  # level 1, word-median ratio > 1
 
     def test_vertical_lines_skip_indentation(self):
         """Vertical CJK never gets leading-indent spaces.
 
-        compose_ppocr_structures applies _apply_indentation only on the
+        compose_ppocr_structures applies _decide_indentation only on the
         horizontal path (ppocr.py: `if not is_vertical`).  The right column
         here sits far right of the left baseline, so the horizontal path
         would indent it -- the vertical path must NOT.
@@ -953,14 +963,14 @@ class TestInlineGapSpacing:
 
 
 # ===================================================================
-# _apply_paragraph_breaks
+# _decide_paragraph_breaks
 # ===================================================================
 
 class TestApplyParagraphBreaks:
 
     def test_single_line_no_break(self):
         lines = [_line("hello", x=0, y=0, w=40, h=14)]
-        result = _apply_paragraph_breaks(lines)
+        result = _apply_layout(lines)
         assert len(result) == 1
         assert result[0].text == "hello"
 
@@ -971,7 +981,7 @@ class TestApplyParagraphBreaks:
             _line("Line2", x=0, y=18, w=40, h=14),  # gap = 18-14 = 4 < 14
             _line("Line3", x=0, y=36, w=40, h=14),  # gap = 36-32 = 4 < 14
         ]
-        result = _apply_paragraph_breaks(lines)
+        result = _apply_layout(lines)
         assert len(result) == 3  # no blank lines inserted
         assert all(ln.text for ln in result)
 
@@ -981,7 +991,7 @@ class TestApplyParagraphBreaks:
             _line("Para1", x=0, y=0,  w=50, h=14),
             _line("Para2", x=0, y=60, w=50, h=14),  # gap = 60-14 = 46 >= 14
         ]
-        result = _apply_paragraph_breaks(lines)
+        result = _apply_layout(lines)
         assert len(result) == 3  # Para1, blank, Para2
         assert result[0].text == "Para1"
         assert result[1].text == ""
@@ -995,7 +1005,7 @@ class TestApplyParagraphBreaks:
             _line("B1", x=0, y=60, w=30, h=14),   # para B (gap=42 >= 14)
             _line("B2", x=0, y=78, w=30, h=14),   # para B (gap=4)
         ]
-        result = _apply_paragraph_breaks(lines)
+        result = _apply_layout(lines)
         assert len(result) == 5  # A1, A2, blank, B1, B2
         assert result[2].text == ""  # blank line between paragraphs
 
@@ -1011,7 +1021,7 @@ class TestApplyParagraphBreaks:
             _line("Top",    x=0, y=0,  w=50, h=26),
             _line("Bottom", x=0, y=54, w=50, h=26),
         ]
-        result = _apply_paragraph_breaks(lines)
+        result = _apply_layout(lines)
         assert len(result) == 2  # no blank line
 
     def test_gap_just_above_threshold_breaks(self):
@@ -1020,7 +1030,7 @@ class TestApplyParagraphBreaks:
             _line("Top",    x=0, y=0,  w=50, h=26),
             _line("Bottom", x=0, y=56, w=50, h=26),
         ]
-        result = _apply_paragraph_breaks(lines)
+        result = _apply_layout(lines)
         assert len(result) == 3  # blank line inserted
 
     def test_edge_case_gap_just_below_threshold(self):
@@ -1029,7 +1039,7 @@ class TestApplyParagraphBreaks:
             _line("Top",    x=0, y=0,  w=50, h=26),
             _line("Bottom", x=0, y=53, w=50, h=26),
         ]
-        result = _apply_paragraph_breaks(lines)
+        result = _apply_layout(lines)
         assert len(result) == 2  # no blank line
 
     def test_moderate_paragraph_spacing_no_break(self):
@@ -1041,7 +1051,7 @@ class TestApplyParagraphBreaks:
             _line("Top",    x=0, y=0,  w=50, h=26),
             _line("Bottom", x=0, y=46, w=50, h=26),  # 20 px gap → no break
         ]
-        result = _apply_paragraph_breaks(lines)
+        result = _apply_layout(lines)
         assert len(result) == 2  # no blank line
 
     def test_variable_line_heights(self):
@@ -1055,7 +1065,7 @@ class TestApplyParagraphBreaks:
             _line("Body1", x=0, y=66, w=50, h=21),
             _line("Body2", x=0, y=95, w=50, h=21),
         ]
-        result = _apply_paragraph_breaks(lines)
+        result = _apply_layout(lines)
         # centre distance = 55; threshold = 24/2 + 14/2 + max(24, 14) = 43.
         assert len(result) == 4
         assert result[1].text == ""  # blank after title
@@ -1071,7 +1081,7 @@ class TestApplyParagraphBreaks:
             _line("Title", x=0, y=0,  w=60, h=31),
             _line("Body",  x=0, y=43, w=50, h=21),
         ]
-        result = _apply_paragraph_breaks(lines)
+        result = _apply_layout(lines)
         assert len(result) == 2
 
     def test_word_height_median_not_union_height_sets_threshold(self):
@@ -1089,7 +1099,7 @@ class TestApplyParagraphBreaks:
         body = _line("Body", x=0, y=51, w=50, h=18)
         body.words = [OcrWord("Body", OcrBox(x=0, y=51, width=50, height=18))]
 
-        result = _apply_paragraph_breaks([title, body])
+        result = _apply_layout([title, body])
         assert len(result) == 3
 
     def test_word_centre_median_drift_robust_against_union(self):
@@ -1114,7 +1124,7 @@ class TestApplyParagraphBreaks:
         line_b = _line("B", x=0, y=36, w=40, h=18)
         line_b.words = [OcrWord("B", OcrBox(x=0, y=36, width=40, height=18))]
 
-        result = _apply_paragraph_breaks([line_a, line_b])
+        result = _apply_layout([line_a, line_b])
         assert len(result) == 2  # no blank line — word-median resists drift
 
     def test_no_break_with_large_boxes_small_gap(self):
@@ -1123,7 +1133,7 @@ class TestApplyParagraphBreaks:
             _line("Big1", x=0, y=0,  w=100, h=30),
             _line("Big2", x=0, y=34, w=100, h=30),  # gap = 34-30 = 4 < 30
         ]
-        result = _apply_paragraph_breaks(lines)
+        result = _apply_layout(lines)
         assert len(result) == 2
 
     def test_huge_gap_still_single_blank(self):
@@ -1132,11 +1142,11 @@ class TestApplyParagraphBreaks:
             _line("Top",    x=0, y=0,   w=40, h=14),
             _line("Bottom", x=0, y=200, w=40, h=14),  # gap = 186 >> 14
         ]
-        result = _apply_paragraph_breaks(lines)
+        result = _apply_layout(lines)
         assert len(result) == 3  # exactly one blank line, not multiple
 
     def test_empty_input(self):
-        assert _apply_paragraph_breaks([]) == []
+        assert _apply_layout([]) == []
 
     def test_zero_height_ignored(self):
         """A zero-height line does not prevent adjacent local comparison."""
@@ -1145,7 +1155,7 @@ class TestApplyParagraphBreaks:
             _line("B", x=0, y=0,  w=40, h=14),
             _line("C", x=0, y=30, w=40, h=14),  # centre distance 30 > 28
         ]
-        result = _apply_paragraph_breaks(lines)
+        result = _apply_layout(lines)
         assert len(result) >= 3
 
     def test_compose_integration_horizontal(self):

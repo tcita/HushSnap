@@ -7,7 +7,6 @@ from PyQt6 import QtGui
 from .engine import get_default_engine, get_recognize_fn
 from .models import OcrRequest, OcrResponse
 from .preprocess import run_minimal_pipeline
-from .text import compose_text_from_result
 
 logger = logging.getLogger(__name__)
 
@@ -139,9 +138,8 @@ class OcrService:
             _save_debug_word_boxes(preprocess_result.image, recognition, request.debug_dir)
             _save_debug_line_boxes(preprocess_result.image, recognition, request.debug_dir)
 
-            text = compose_text_from_result(recognition, language_tag=request.language_tag)
             return OcrResponse(
-                text=text,
+                text=recognition.text,
                 error="",
                 pixmap=request.pixmap,
                 recognition=recognition,

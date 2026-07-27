@@ -511,8 +511,12 @@ def test_compose_ppocr_structures_cjk_spacing_applied():
 
 
 def test_apply_indentation():
-    from hushsnap.ocr.ppocr import _apply_indentation
+    from hushsnap.ocr.ppocr import _decide_indentation, _decide_paragraph_breaks, _render_layout
     from hushsnap.ocr.models import OcrLine, OcrBox
+
+    def _apply(lines):
+        _decide_indentation(lines)
+        return _render_layout(lines, _decide_paragraph_breaks(lines))
 
     # Test case 1: Monospace code with 4-space indent
     # Line 1: 'offsets = sorted(set(' -> 21 characters, width 245
@@ -523,7 +527,7 @@ def test_apply_indentation():
         OcrLine(text="round(line.bounding_box.x) - baseline for line in lines", bounding_box=OcrBox(x=78.0, y=35.0, width=633.0, height=30.0)),
         OcrLine(text="if round(line.bounding_box.x) - baseline > threshold", bounding_box=OcrBox(x=79.0, y=70.0, width=598.0, height=30.0)),
     ]
-    result = _apply_indentation(lines)
+    result = _apply(lines)
     assert result[0].text == "offsets = sorted(set("
     assert result[1].text == "    round(line.bounding_box.x) - baseline for line in lines"
     assert result[2].text == "    if round(line.bounding_box.x) - baseline > threshold"
@@ -537,7 +541,7 @@ def test_apply_indentation():
         OcrLine(text="这是一个正常的段落首行。", bounding_box=OcrBox(x=10.0, y=0.0, width=240.0, height=20.0)),
         OcrLine(text="缩进两汉字宽度的行。", bounding_box=OcrBox(x=50.0, y=25.0, width=200.0, height=20.0)),
     ]
-    cjk_result = _apply_indentation(cjk_lines)
+    cjk_result = _apply(cjk_lines)
     assert cjk_result[0].text == "这是一个正常的段落首行。"
     assert cjk_result[1].text == "    缩进两汉字宽度的行。"
 

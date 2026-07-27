@@ -69,11 +69,6 @@ class OcrController:
             logging.debug("[OcrController] Scheduling background warmup on event loop start...")
             QtCore.QTimer.singleShot(0, self._background_warmup)
 
-    @staticmethod
-    def _normalize_ocr_text(text: str) -> str:
-        """Normalize OCR result text for display/copy. Shared by both paths."""
-        return (text or "").rstrip()
-
     def set_capture_requester(self, capture_requester):
         """Set callback used to request screenshot captures on demand."""
         self.capture_requester = capture_requester
@@ -127,7 +122,7 @@ class OcrController:
         """Main-thread handler: copy OCR text and show global toast."""
         self._toast_bridge = None
         self._trim_timer.start(5000)
-        text = self._normalize_ocr_text(response.text)
+        text = response.text or ""
             
         if text:
             clipboard = self.app.clipboard()
@@ -284,7 +279,7 @@ class OcrController:
             )
             return
 
-        recognized = self._normalize_ocr_text(text)
+        recognized = text or ""
         if not recognized:
             logging.debug("OCR result is empty.")
             logging.debug("[OCR_CHAIN] on_ocr_finished calling show_text (empty)")

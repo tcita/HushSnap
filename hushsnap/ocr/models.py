@@ -22,10 +22,14 @@ class OcrLine:
     text: str = ""
     words: list[OcrWord] = field(default_factory=list)
     bounding_box: OcrBox = field(default_factory=OcrBox)
-    paragraph_break: bool = False
-    """True when this line is an explicit paragraph separator inserted by the
-    layout engine (gap >= 1× line height).  The text is empty but the line
-    should survive compose-time filtering to produce a blank line."""
+    indent_level: int = 0
+    """Leading-indent level decided by the layout engine (0 = flush left).
+    Rendered as ``level * 4`` spaces; the decision is made on clean geometry
+    before any text mutation."""
+    is_blank: bool = False
+    """True when this line is a paragraph-separator blank line inserted by
+    the layout engine (gap >= 1.5x line height).  ``text`` is empty but the
+    line survives compose-time filtering to produce a blank line."""
 
 
 @dataclass

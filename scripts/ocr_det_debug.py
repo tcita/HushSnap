@@ -126,8 +126,9 @@ def main():
         _greedy_column_cluster,
         _build_lines_from_clusters,
         _apply_cjk_spacing,
-        _apply_indentation,
-        _apply_paragraph_breaks,
+        _decide_indentation,
+        _decide_paragraph_breaks,
+        _render_layout,
         compose_ppocr_structures,
         _recognize_without_detection,
         ppocr_box_to_bbox,
@@ -290,12 +291,11 @@ def main():
 
         # Paragraph breaks + Indentation (horizontal only)
         if not is_vertical:
-            before_pb = len(lines)
-            lines = _apply_paragraph_breaks(lines)
-            blank_count = len(lines) - before_pb
-            if blank_count:
-                print(f"\n  _apply_paragraph_breaks: {blank_count} blank line(s) inserted")
-            lines = _apply_indentation(lines)
+            _decide_indentation(lines)
+            break_after = _decide_paragraph_breaks(lines)
+            if break_after:
+                print(f"\n  _decide_paragraph_breaks: {len(break_after)} blank line(s) inserted")
+            lines = _render_layout(lines, break_after)
 
         print(f"\n  Final reading order ({len(lines)} {cluster_name}):")
         for li, line in enumerate(lines):

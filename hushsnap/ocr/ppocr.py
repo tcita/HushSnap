@@ -586,6 +586,13 @@ def _normalize_blocks(blocks: list[dict]) -> list[dict]:
         if not raw_text.strip():
             empty_skipped += 1
             continue
+        # Strip boundary whitespace once, at the source.  Every block that
+        # reaches the layout engine is then clean; the only whitespace in
+        # downstream text is whitespace the engine deliberately inserts
+        # (word_separator / inline gap / indent).  This makes the render-time
+        # rstrips in text.py a no-op rather than a guard - they stay as a
+        # safety net but no longer compensate for dirty rec boundaries.
+        raw_text = raw_text.strip()
 
         left, top, right, bottom = ppocr_box_to_bbox(block.get("box"))
         w = right - left
@@ -860,8 +867,8 @@ def _word_upper_median(line: OcrLine, *, axis: str) -> float:
     return s[len(s) // 2]
 
 
-def _apply_paragraph_breaks(lines: list[OcrLine]) -> list[OcrLine]:
-    """Insert a blank line only across an obviously disconnected local gap.
+def _decide_paragraph_breaks(lines: list[OcrLine]) -> set[int]:
+    """Return indices after which a blank separator line should be inserted.
 
     Deliberately conservative: this does NOT try to detect typographic
     paragraph spacing, which varies wildly (Markdown's blank line, Word's
@@ -877,64 +884,54 @@ def _apply_paragraph_breaks(lines: list[OcrLine]) -> list[OcrLine]:
     ``'h'`` and ``'cy'``).  The union bbox is *not* used as a ruler here:
     with several boxes on a line their heights diverge and
     ``max(bottom) - min(top)`` takes the extreme, amplifying that
-    divergence (see :func:`_word_upper_median` for the full rationale
-    and its honest scope).  The break rule's effective working region
-    is the narrow band where the gap just fits one line - exactly where
-    that union inflation would cause missed breaks.  See
-    ``scripts/measure_within_line_drift.py`` for the basis.
+    divergence.  The break rule's effective working region is the narrow
+    band where the gap just fits one line - exactly where that union
+    inflation would cause missed breaks.
 
-    The remaining centre distance must exceed the taller adjacent line by half
-    again.  In centre coordinates::
+    The remaining centre distance must exceed the taller adjacent line by
+    half again.  In centre coordinates::
 
         next_center_y - current_center_y
             > current_h / 2 + next_h / 2 + 1.5 * max(current_h, next_h)
 
     i.e. the whitespace gap between the two boxes must exceed 1.5x the taller
-    adjacent line's font size.  This is symmetric for mixed font sizes and
+    adjacent line's font size.  Symmetric for mixed font sizes and
     deliberately conservative: a smaller fraction (e.g. 0.6) would guess at
-    paragraph semantics and fragment tight multi-line text; requiring room for
-    one and a half taller lines only splits clearly-disconnected blocks.
+    paragraph semantics and fragment tight multi-line text; requiring room
+    for one and a half taller lines only splits clearly-disconnected blocks.
 
-    Only meaningful for horizontal text.  Gap magnitude beyond the threshold
-    does not produce additional blank lines — the separator is binary (one
-    blank line, never several).
+    Returns a set of indices *i* such that a blank line is inserted after
+    ``lines[i]`` during render.  Gap magnitude beyond the threshold does not
+    produce additional blank lines - the separator is binary (one blank
+    line, never several).  Horizontal-only; vertical is handled upstream.
     """
     if len(lines) <= 1:
-        return lines
+        return set()
 
-    # Precompute each line's upper-median word-box height once.  The greedy
-    # clusterer's running median cannot be reused: it is a partial sample
-    # (excludes the last box, recomputed every step) rather than the complete
-    # line's median.
     medians = [_word_upper_median(line, axis="h") for line in lines]
+    break_after: set[int] = set()
 
-    result: list[OcrLine] = []
-    breaks = 0
-    for i, line in enumerate(lines):
-        result.append(line)
-        if i < len(lines) - 1:
-            next_line = lines[i + 1]
-            current_h = medians[i] / _BOX_H_TO_FS_RATIO
-            next_h = medians[i + 1] / _BOX_H_TO_FS_RATIO
-            if current_h <= 0 or next_h <= 0:
-                continue
-            current_center_y = _word_upper_median(line, axis="cy")
-            next_center_y = _word_upper_median(next_line, axis="cy")
-            threshold = current_h / 2 + next_h / 2 + 1.5 * max(current_h, next_h)
-            if next_center_y - current_center_y > threshold:
-                result.append(OcrLine(
-                    text="", bounding_box=OcrBox(), paragraph_break=True,
-                ))
-                breaks += 1
+    for i in range(len(lines) - 1):
+        line = lines[i]
+        next_line = lines[i + 1]
+        current_h = medians[i] / _BOX_H_TO_FS_RATIO
+        next_h = medians[i + 1] / _BOX_H_TO_FS_RATIO
+        if current_h <= 0 or next_h <= 0:
+            continue
+        current_center_y = _word_upper_median(line, axis="cy")
+        next_center_y = _word_upper_median(next_line, axis="cy")
+        threshold = current_h / 2 + next_h / 2 + 1.5 * max(current_h, next_h)
+        if next_center_y - current_center_y > threshold:
+            break_after.add(i)
 
-    if breaks:
+    if break_after:
         logger.debug(
-            "[DET] _apply_paragraph_breaks: local centre-distance rule  "
-            "%d blank lines inserted (%d lines → %d)",
-            breaks, len(lines), len(result),
+            "[DET] _decide_paragraph_breaks: local centre-distance rule  "
+            "%d blank lines (%d lines)",
+            len(break_after), len(lines),
         )
 
-    return result
+    return break_after
 
 
 # -- CJK spacing post-processing (core patterns from pangu.py) ----------
@@ -1024,63 +1021,79 @@ def _apply_cjk_spacing(text: str) -> str:
 def compose_ppocr_structures(blocks: list[dict], is_vertical: bool = False) -> list[OcrLine]:
     """Convert PP-OCR detection blocks into ordered OcrLines.
 
-    Pipeline::
+    Three-stage pipeline - geometry, decide, render - so that layout
+    decisions (indent level, where blank lines go) are made on clean
+    geometry *before* any text mutation, and text is rewritten once at
+    the end:
 
-      1. Normalize raw blocks (filter empty / zero-size)
-      2. Greedy overlap-based clustering → reading order
-      3. Build OcrLine objects from clusters
-      4. Post-process CJK-Latin spacing (pangu-style safety net)
-      5. Paragraph breaks (horizontal only: blank line when gap >= 1.5× line height)
-      6. Indentation (horizontal only: left-edge clustering)
+      Stage 1 - geometry + text assembly (no decisions):
+        1. Normalize raw blocks (filter empty / zero-size)
+        2. Greedy overlap-based clustering -> reading order
+        3. Build OcrLine objects from clusters (text = rec + word_separator
+           + inline-gap spaces; CJK<->Latin spacing applied)
+      Stage 2 - decide (compute, don't mutate text):
+        4. Indentation: indent_level per line, baseline on clean lines
+        5. Paragraph breaks: which line indices get a blank line after
+      Stage 3 - render (mutate text once):
+        6. Prepend indent spaces, insert is_blank separator lines
 
-    When *is_vertical* is True, the image contains predominantly vertical
-    CJK text (tall boxes, h > w × 1.3).  Column clustering detects
-    vertical columns; reading order is right→left, top→bottom.
+    Stages 4-6 are horizontal-only by design (see note below).  When
+    *is_vertical* is True the image contains predominantly vertical CJK
+    text (tall boxes, h > w * 1.3); column clustering detects vertical
+    columns, reading order is right->left, top->bottom.
+
+    Why decide-then-render: previously paragraph-break *sentinel* OcrLines
+    (bounding_box=OcrBox() -> x=0) were inserted before indentation ran, so
+    the indent baseline calculation had to exclude them by flag
+    (``if not line.paragraph_break``).  Splitting decide from render lets
+    the baseline see only real lines - no sentinel exclusion needed.
     """
-    # Step 1 - normalize
+    # Stage 1 - geometry + text assembly
     normalized = _normalize_blocks(blocks)
     if not normalized:
         return []
 
-    # Step 2 - overlap-based clustering into reading order
     if is_vertical:
         clusters = _greedy_column_cluster(normalized)
     else:
         clusters = _greedy_line_cluster(normalized)
 
-    # Step 3 - build OcrLine objects from clusters
     lines = _build_lines_from_clusters(clusters, is_vertical=is_vertical)
     if not lines:
         return []
 
-    # Step 4 - CJK spacing safety net (pangu-inspired regex)
     for line in lines:
         line.text = _apply_cjk_spacing(line.text)
 
-    # Step 5 - split obviously-disconnected blocks with a blank line (horizontal only)
-    # Step 6 - detect indentation from left-edge clustering
-    #
-    # Steps 5/6 are horizontal-only by design, NOT a TODO to mirror onto
+    # Stages 2-3 are horizontal-only by design, NOT a TODO to mirror onto
     # vertical.  The horizontal rules work because "gap > one line height =
     # obviously not one continuous block" is an uncontroversial judgment -
     # the gap could fit a whole other line.  That judgment does NOT transfer
     # to vertical: there is no column-based UI analogue to horizontally-
     # separated UI text, and vertical documents (classical texts, calligraphy,
     # vertical Japanese, couplets) have column-spacing conventions that
-    # don't map onto horizontal line spacing.  So no gap/width ratio is "obviously a different block" the way
-    # > avg_h is for horizontal - any chosen value would be a guess at
-    # typography semantics, the very failure mode the horizontal rule avoids.
-    # Adding vertical support requires first measuring real gap/avg_w
-    # distributions (must be bimodal) - not mirroring a horizontal constant.
+    # don't map onto horizontal line spacing.  So no gap/width ratio is
+    # "obviously a different block" the way > avg_h is for horizontal - any
+    # chosen value would be a guess at typography semantics, the very
+    # failure mode the horizontal rule avoids.  Adding vertical support
+    # requires first measuring real gap/avg_w distributions (must be
+    # bimodal) - not mirroring a horizontal constant.
     if not is_vertical:
-        lines = _apply_paragraph_breaks(lines)
-        lines = _apply_indentation(lines)
+        # Stage 2 - decide on clean geometry (no sentinel lines present yet)
+        _decide_indentation(lines)
+        break_after = _decide_paragraph_breaks(lines)
+        # Stage 3 - render: mutate text once
+        lines = _render_layout(lines, break_after)
 
     return lines
 
 
-def _apply_indentation(lines: list[OcrLine]) -> list[OcrLine]:
-    """Apply leading spaces to indented lines.
+def _decide_indentation(lines: list[OcrLine]) -> None:
+    """Decide each line's ``indent_level`` from left-edge clustering.
+
+    Mutates only ``line.indent_level`` - text is left untouched (rendered
+    later by :func:`_render_layout`).  Runs on clean geometry: no blank-line
+    separators are present yet, so the baseline needs no sentinel exclusion.
 
     Baseline is the leftmost box edge (a *position* query - union bbox is
     correct there).  Each line's height denominator is the high-median
@@ -1092,59 +1105,44 @@ def _apply_indentation(lines: list[OcrLine]) -> list[OcrLine]:
     ``indent_ratio = (x - baseline) / line_height``.  When the ratio
     exceeds 1.0 the line is considered intentionally indented; smaller
     offsets are treated as detection jitter.  1.0 deliberately gives up
-    1-character indents (ratio ~0.79-1.10× font size): the calibrated
+    1-character indents (ratio ~0.79-1.10x font size): the calibrated
     divisor _BOX_H_TO_FS_RATIO leaves ``h`` ~9 % above real font size, so
-    a 1-char offset lands at ~0.72-1.01 → mostly below the threshold.
+    a 1-char offset lands at ~0.72-1.01 -> mostly below the threshold.
     Only multi-character indentation (code blocks, nested lists) is
     detected.  Per-line thresholds handle mixed-height text correctly - a
     tall title with a small absolute offset is not falsely flagged, and a
     short body line with the same offset is properly recognised.
 
     The indent *unit* is the smallest non-jitter offset from baseline.
-    Each line gets ``level × 4`` leading spaces, where ``level = round(offset / unit)``.
-    Multi-level indentation (code, nested quotes, outlines) is handled
-    without any per-language constants.
+    ``level = round(offset / unit)``; rendering applies ``level * 4``
+    spaces.  Multi-level indentation (code, nested quotes, outlines) is
+    handled without any per-language constants.
     """
     if len(lines) <= 1:
-        return lines
+        return
 
-    # Baseline: leftmost box of any non-sentinel line - the
-    # body / heading edge.  Paragraph-break sentinels (bounding_box=OcrBox()
-    # -> x=0, flagged paragraph_break=True) are excluded: their x=0 would pull
-    # the baseline to 0 and inflate every real line's offset, leaving body
-    # lines jittering around the indent threshold.
-    text_lines = [line for line in lines if not line.paragraph_break]
-    if not text_lines:
-        return lines
-    baseline = min(line.bounding_box.x for line in text_lines)
+    baseline = min(line.bounding_box.x for line in lines)
 
     def _is_indented(line: OcrLine) -> bool:
-        """Offset exceeds jitter threshold relative to this line's own height.
-
-        Empty lines (paragraph-break sentinels) are never indented - adding
-        leading spaces to a blank separator is meaningless.
-        """
-        if line.paragraph_break:
-            return False
+        """Offset exceeds jitter threshold relative to this line's own height."""
         h = _word_upper_median(line, axis="h") / _BOX_H_TO_FS_RATIO
         if h <= 0:
             return False
         indent_ratio = (line.bounding_box.x - baseline) / h
         return indent_ratio > 1.0
 
-    # Indent unit: smallest offset that is clearly not jitter
     offsets = sorted(set(
         round(line.bounding_box.x) - baseline for line in lines
         if _is_indented(line)
     ))
     if not offsets:
-        logger.debug("[DET] _apply_indentation: no offsets > per-line "
-                     "threshold → no indent  (baseline=%.1f  n_lines=%d)",
+        logger.debug("[DET] _decide_indentation: no offsets > per-line "
+                     "threshold -> no indent  (baseline=%.1f  n_lines=%d)",
                      baseline, len(lines))
-        return lines
+        return
     unit = offsets[0]
 
-    logger.debug("[DET] _apply_indentation: baseline=%.1f  indent_unit=%d px  "
+    logger.debug("[DET] _decide_indentation: baseline=%.1f  indent_unit=%d px  "
                  "offsets=%s  n_lines=%d",
                  baseline, unit, offsets, len(lines))
 
@@ -1153,16 +1151,31 @@ def _apply_indentation(lines: list[OcrLine]) -> list[OcrLine]:
         if not _is_indented(line):
             continue
         offset = round(line.bounding_box.x) - baseline
-        level = max(round(offset / unit), 1)
-        line.text = ("    " * level) + line.text
+        line.indent_level = max(round(offset / unit), 1)
         indented += 1
-        logger.debug("[DET]   indent L%d: offset=%d px → level=%d (%d spaces)  %r",
-                     indented, offset, level, level * 4, line.text[:60])
+        logger.debug("[DET]   indent L%d: offset=%d px -> level=%d  %r",
+                     indented, offset, line.indent_level, line.text[:60])
 
     if indented:
-        logger.debug("[DET] _apply_indentation: %d/%d lines indented", indented, len(lines))
+        logger.debug("[DET] _decide_indentation: %d/%d lines indented", indented, len(lines))
 
-    return lines
+
+def _render_layout(lines: list[OcrLine], break_after: set[int]) -> list[OcrLine]:
+    """Render layout decisions into text: prepend indent spaces and insert
+    blank-line separators.  Single mutation pass - text was untouched during
+    the decide stage.
+
+    *break_after* holds indices (into the input *lines* list) after which a
+    blank separator line should be inserted.
+    """
+    result: list[OcrLine] = []
+    for i, line in enumerate(lines):
+        if line.indent_level > 0:
+            line.text = ("    " * line.indent_level) + line.text
+        result.append(line)
+        if i in break_after:
+            result.append(OcrLine(text="", bounding_box=OcrBox(), is_blank=True))
+    return result
 
 
 def compose_ppocr_text(blocks: list[dict]) -> str:

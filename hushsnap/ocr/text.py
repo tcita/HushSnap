@@ -1,30 +1,24 @@
 import re
-import unicodedata
-from dataclasses import dataclass
 from typing import Callable
 
-from .models import OcrLine, OcrRecognition
 
-NO_SPACE_SCRIPT_CHAR_CLASS = r"\u3040-\u30ff\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff"
-
-
-# \u2500\u2500 URL detection (shared by the OCR popup highlighter & click handling) \u2500\u2500\u2500\u2500\u2500\u2500
+# ── URL detection (shared by the OCR popup highlighter & click handling) ──────
 # Matches http(s) URLs.  The body stops at whitespace and closing brackets so a
-# trailing "\u3002"/")" that the OCR picked up (or that sits in the source text)
-# doesn't get swallowed into the link.  Remaining trailing punctuation \u2014
-# ASCII and CJK \u2014 is trimmed in _iter_url_spans so the coloured span and the
+# trailing "。"/")" that the OCR picked up (or that sits in the source text)
+# doesn't get swallowed into the link.  Remaining trailing punctuation —
+# ASCII and CJK — is trimmed in _iter_url_spans so the coloured span and the
 # clickable region stay in sync.
 #
 # The scheme separator accepts ONE or TWO slashes: OCR not infrequently drops a
-# slash and yields "https:/host" (see normalize_url \u2014 QUrl needs the second
+# slash and yields "https:/host" (see normalize_url — QUrl needs the second
 # slash restored before opening, but matching it here keeps it highlighted and
 # protects it from the punctuation-cleanup spacers).
 URL_REGEX = re.compile(r"https?://?[^\s<>\]\)\}]+", re.IGNORECASE)
 
 # Trailing characters stripped from a matched URL.  CJK fullwidth punctuation
-# is included because OCR of Chinese/Japanese text frequently appends \u3002 or \uff09
+# is included because OCR of Chinese/Japanese text frequently appends 。 or ）
 # immediately after a URL.
-_URL_TRAILING_CHARS = set(".,;:!?\"')]}\u3002\uff0c\uff1b\uff1a\uff01\uff1f\u300d\u300f\uff09\u3011\u3001'")
+_URL_TRAILING_CHARS = set(".,;:!?\"')]}。，；：！？」』）】、'")
 
 
 def _iter_url_spans(text: str):
@@ -32,7 +26,7 @@ def _iter_url_spans(text: str):
 
     The returned end offset (and the slice text[start:end]) exclude trailing
     punctuation/brackets, so callers (highlighter, hit-testing) see the same
-    span.  URLs never span newlines \u2014 callers should pass a single line/block.
+    span.  URLs never span newlines — callers should pass a single line/block.
     """
     for m in URL_REGEX.finditer(text):
         url = m.group(0)
@@ -66,7 +60,7 @@ def find_url_at_position(text: str, pos: int) -> str | None:
 
 
 def normalize_url(url: str) -> str:
-    """Restore the second slash OCR sometimes drops: ``https:/host`` → ``https://host``.
+    """Restore the second slash OCR sometimes drops: ``https:/host`` -> ``https://host``.
 
     Browsers tolerate a single slash after the scheme, but ``QUrl`` parses
     ``https:/host`` with an empty host and ``QDesktopServices.openUrl`` then
@@ -76,49 +70,15 @@ def normalize_url(url: str) -> str:
     return re.sub(r"^(https?:)/(?!/)", r"\1//", url, flags=re.IGNORECASE)
 
 
-@dataclass(frozen=True)
-class OcrTextAdapter:
-    """Language-specific text composition rules kept separate from OCR IO."""
-
-    name: str
-    matches_language: Callable[[str], bool]
-    compose_line: Callable[[OcrLine], str]
-    finalize_text: Callable[[str], str]
-
-
-def is_space_joining_word(token: str) -> bool:
-    r"""
-    Text-Grab style SpaceJoiningWordRegex: (^[\p{L}-[\p{Lo}]]|\p{Nd}$)|.{2,}
-    Matches words that should trigger a space-joining behavior.
-    """
-    if not token:
-        return False
-
-    # CJK tokens should never trigger space joining logic, regardless of length
-    if re.search(f"[{NO_SPACE_SCRIPT_CHAR_CLASS}]", token):
-        return False
-
-    if len(token) >= 2:
-        return True
-
-    char = token[0]
-    category = unicodedata.category(char)
-    if category == "Nd":
-        return True
-    if category.startswith("L") and category != "Lo":
-        return True
-    return False
-
-
 def apply_outside_urls(text: str, transform: Callable[[str], str]) -> str:
     """Apply *transform* to the non-URL runs of *text*, leaving URL spans intact.
 
-    URLs (per :data:`URL_REGEX`) are matched on the raw, pre-spacing text —
+    URLs (per :data:`URL_REGEX`) are matched on the raw, pre-spacing text -
     which is exactly when OCR output is cleanest, before CJK<->Latin spacers insert
     spaces inside them.  Keeping the matched spans
     untouched here means the link highlighter and Ctrl+Click handler later see
     the same complete URL.  Empty string flows through (``transform("")`` may
-    still be called on a tail run); ``None`` is not handled — callers pass str.
+    still be called on a tail run); ``None`` is not handled - callers pass str.
     """
     if text == "":
         return text
@@ -131,183 +91,3 @@ def apply_outside_urls(text: str, transform: Callable[[str], str]) -> str:
         last_end = m.end()
     parts.append(transform(text[last_end:]))
     return "".join(parts)
-
-
-def cleanup_ocr_text_line(text: str) -> str:
-    """Return *text* unchanged.
-
-    Historically this tightened/inserted spacing around ASCII punctuation
-    (whitespace before ASCII punctuation -> delete; ASCII punctuation
-    followed by alnum -> insert a space) to enforce human typesetting norms
-    on OCR output.  Both rules were removed: they fought the layout
-    engine rather than helped it.
-
-    The delete-before-punct rule's only real hits were the leading spaces
-    the indentation engine deliberately inserts (it ate a right-aligned
-    "?" prompt's indent down to nothing) and the geometric gap spaces the
-    inline-gap rule inserts from real pixel distances - both legitimate
-    layout measurements, not OCR noise.  Its original target (the detector
-    splitting a punctuation mark into its own box, leaving "foo ,bar") was
-    already handled upstream by word_separator returning "" when the right
-    block starts with punctuation.
-
-    The insert-after-punct rule was the symmetric failure: it guessed
-    "punctuation followed by alnum always wants a space", which is a
-    semantic call a character-class regex cannot make - it rewrote
-    "3.14" -> "3. 14", "v1.0" -> "v1. 0", "e.g." -> "e. g.", "12:30" ->
-    "12: 30".  Whether a punctuation mark is a sentence boundary or a
-    number/version separator depends on meaning, not character class.
-
-    Spacing is now entirely the layout engine's call (word_separator +
-    inline-gap geometry, _apply_cjk_spacing at CJK<->Latin boundaries,
-    _apply_indentation for left-edge indent).  No human-norm overlay.
-    """
-    return text
-
-
-def normalize_token_text(token: str) -> str:
-    # Preserve original spacing inside tokens but remove trailing junk
-    return unicodedata.normalize("NFKC", (token or "").rstrip())
-
-
-def compose_default_line_text(line: OcrLine) -> str:
-    # Trailing-space stripping is left to normalize_ocr_text (finalize_text),
-    # which rstrips every line after join.  Doing it here too is a no-op:
-    # the input is already post-_build_lines_from_clusters, and rec does not
-    # emit trailing spaces anyway.
-    return cleanup_ocr_text_line(line.text or "")
-
-
-def compose_spaced_line_text(line: OcrLine) -> str:
-    return compose_default_line_text(line)
-
-
-def compose_cjk_line_text(line: OcrLine) -> str:
-    # Pre-composed line (e.g. from PP-OCR layout, indentation already applied).
-    # \n paragraph markers must survive; trailing-space stripping is deferred
-    # to normalize_ocr_text (finalize_text), same as the default adapter.
-    return line.text or ""
-
-
-def normalize_ocr_text(text: str) -> str:
-    if not text:
-        return ""
-
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-    cleaned_lines: list[str] = []
-    for line in text.split("\n"):
-        # Keep leading spaces (indentation), only strip trailing
-        cleaned_line = line.rstrip()
-        if not cleaned_line.strip():
-            # If the line is only whitespace, we preserve a truly empty line 
-            # for paragraph separation, but don't keep the spaces.
-            cleaned_lines.append("")
-            continue
-        cleaned_lines.append(cleaned_line)
-    
-    # Trim leading/trailing blank lines but preserve indentation of the first non-empty line
-    start = 0
-    while start < len(cleaned_lines) and not cleaned_lines[start]:
-        start += 1
-    end = len(cleaned_lines)
-    while end > start and not cleaned_lines[end - 1]:
-        end -= 1
-    return "\n".join(cleaned_lines[start:end])
-
-
-def matches_chinese(language_tag: str) -> bool:
-    return (language_tag or "").lower().startswith("zh")
-
-
-def matches_english(language_tag: str) -> bool:
-    return (language_tag or "").lower().startswith("en")
-
-
-def finalize_default_text(text: str) -> str:
-    return normalize_ocr_text(text)
-
-
-def finalize_english_text(text: str) -> str:
-    return normalize_ocr_text(text)
-
-
-LANGUAGE_TEXT_ADAPTERS = (
-    OcrTextAdapter(
-        name="chinese",
-        matches_language=matches_chinese,
-        compose_line=compose_cjk_line_text,
-        finalize_text=finalize_default_text,
-    ),
-    OcrTextAdapter(
-        name="english",
-        matches_language=matches_english,
-        compose_line=compose_spaced_line_text,
-        finalize_text=finalize_english_text,
-    ),
-    OcrTextAdapter(
-        name="default",
-        matches_language=lambda _language_tag: True,
-        compose_line=compose_default_line_text,
-        finalize_text=finalize_default_text,
-    ),
-)
-
-
-def select_text_adapter(language_tag: str) -> OcrTextAdapter:
-    for adapter in LANGUAGE_TEXT_ADAPTERS:
-        if adapter.matches_language(language_tag):
-            return adapter
-    return LANGUAGE_TEXT_ADAPTERS[-1]
-
-
-def _postprocess_layout_text(text: str) -> str:
-    """Final text-level fixes after layout composition (spec ⑤)."""
-    if not text:
-        return text
-
-    # Note: we use rstrip() here because leading whitespace
-    # might be intentional indentation from the layout engine.
-    text = text.rstrip()
-
-    # Ensure whitespace-only lines are truly empty for paragraph separation,
-    # while preserving indentation on non-empty lines.
-    lines = text.split("\n")
-    result: list[str] = []
-    for line in lines:
-        cleaned = line.rstrip()
-        if not cleaned.strip():
-            result.append("")  # truly blank line
-            continue
-        result.append(cleaned)
-
-    # Trim leading/trailing blank lines but preserve indentation of the first non-empty line
-    start = 0
-    while start < len(result) and not result[start]:
-        start += 1
-    end = len(result)
-    while end > start and not result[end - 1]:
-        end -= 1
-    return "\n".join(result[start:end])
-
-
-def compose_text_from_result(result: OcrRecognition, language_tag: str = "") -> str:
-    adapter = select_text_adapter(language_tag)
-
-    if not result.lines:
-        return adapter.finalize_text(result.text)
-
-    built_lines: list[str] = []
-    for line in result.lines:
-        joined = adapter.compose_line(line)
-        # A whitespace-only line has no content - skip it (same filter as
-        # _normalize_blocks dropping empty blocks).  paragraph_break
-        # sentinels (joined == "") must still be kept to mark blank lines.
-        if (joined and joined.strip()) or line.paragraph_break:
-            built_lines.append(joined)
-
-    if not built_lines:
-        return adapter.finalize_text(result.text)
-
-    return adapter.finalize_text(
-        _postprocess_layout_text("\n".join(built_lines))
-    )

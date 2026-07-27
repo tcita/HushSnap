@@ -99,28 +99,3 @@ def test_ocr_service_receives_preprocessed_image(monkeypatch, sample_pixmap):
     assert isinstance(captured["image"], QtGui.QImage)
     assert captured["image"].format() == QtGui.QImage.Format.Format_RGB32
 
-
-def test_compose_text_from_result_keeps_chinese_tokens_intact():
-    result = ocr.OcrRecognition(
-        lines=[
-            ocr.OcrLine(
-                text="沪 A 测试",
-                words=[
-                    ocr.OcrWord(text="沪"),
-                    ocr.OcrWord(text="A"),
-                    ocr.OcrWord(text="测试"),
-                ],
-            )
-        ]
-    )
-
-    text = ocr.compose_text_from_result(result, language_tag="zh-CN")
-
-    assert text == "沪 A 测试"
-
-
-def test_select_text_adapter_falls_back_to_default():
-    adapter = ocr.select_text_adapter("fr-FR")
-
-    assert adapter.name == "default"
-
