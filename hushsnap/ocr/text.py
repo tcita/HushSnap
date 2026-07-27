@@ -110,19 +110,12 @@ def is_space_joining_word(token: str) -> bool:
     return False
 
 
-def _apply_punct_spacing(text: str) -> str:
-    """Tighten/insert spacing around ASCII punctuation for natural-language text."""
-    text = re.sub(r"\s+([,;:.!?])", r"\1", text)
-    text = re.sub(r"([,;:.!?])(?=[A-Za-z0-9])", r"\1 ", text)
-    return text
-
-
 def apply_outside_urls(text: str, transform: Callable[[str], str]) -> str:
     """Apply *transform* to the non-URL runs of *text*, leaving URL spans intact.
 
     URLs (per :data:`URL_REGEX`) are matched on the raw, pre-spacing text —
-    which is exactly when OCR output is cleanest, before CJK↔Latin spacers and
-    punctuation cleanup insert spaces inside them.  Keeping the matched spans
+    which is exactly when OCR output is cleanest, before CJK<->Latin spacers insert
+    spaces inside them.  Keeping the matched spans
     untouched here means the link highlighter and Ctrl+Click handler later see
     the same complete URL.  Empty string flows through (``transform("")`` may
     still be called on a tail run); ``None`` is not handled — callers pass str.
@@ -141,20 +134,35 @@ def apply_outside_urls(text: str, transform: Callable[[str], str]) -> str:
 
 
 def cleanup_ocr_text_line(text: str) -> str:
-    """Normalize spacing around punctuation.
+    """Return *text* unchanged.
 
-    CJK space-stripping is intentionally NOT done here — the layout engine
-    (ppocr._greedy_line_cluster + _apply_cjk_spacing) is the
-    authority on inter-word spacing via word_separator() and pangu-style
-    CJK↔Latin regexes.  Stripping spaces here would undo that work.
+    Historically this tightened/inserted spacing around ASCII punctuation
+    (whitespace before ASCII punctuation -> delete; ASCII punctuation
+    followed by alnum -> insert a space) to enforce human typesetting norms
+    on OCR output.  Both rules were removed: they fought the layout
+    engine rather than helped it.
 
-    URLs are protected from the punctuation rules: the dot/colon spacers would
-    otherwise rewrite ``https://www.deepseek.com`` to ``https://www. deepseek.
-    com`` (a space after every dot), and the link highlighter — which stops at
-    whitespace — would then only colour ``https://www.``.  Only the non-URL
-    runs are reformatted, via :func:`apply_outside_urls`.
+    The delete-before-punct rule's only real hits were the leading spaces
+    the indentation engine deliberately inserts (it ate a right-aligned
+    "?" prompt's indent down to nothing) and the geometric gap spaces the
+    inline-gap rule inserts from real pixel distances - both legitimate
+    layout measurements, not OCR noise.  Its original target (the detector
+    splitting a punctuation mark into its own box, leaving "foo ,bar") was
+    already handled upstream by word_separator returning "" when the right
+    block starts with punctuation.
+
+    The insert-after-punct rule was the symmetric failure: it guessed
+    "punctuation followed by alnum always wants a space", which is a
+    semantic call a character-class regex cannot make - it rewrote
+    "3.14" -> "3. 14", "v1.0" -> "v1. 0", "e.g." -> "e. g.", "12:30" ->
+    "12: 30".  Whether a punctuation mark is a sentence boundary or a
+    number/version separator depends on meaning, not character class.
+
+    Spacing is now entirely the layout engine's call (word_separator +
+    inline-gap geometry, _apply_cjk_spacing at CJK<->Latin boundaries,
+    _apply_indentation for left-edge indent).  No human-norm overlay.
     """
-    return apply_outside_urls(text, _apply_punct_spacing)
+    return text
 
 
 def normalize_token_text(token: str) -> str:

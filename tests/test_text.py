@@ -87,21 +87,28 @@ def test_is_space_joining_word_null_and_none():
 # cleanup_ocr_text_line
 # ═══════════════════════════════════════════════════════════════════════
 
-def test_cleanup_punctuation_no_leading_space():
-    """Remove space before punctuation."""
-    assert cleanup_ocr_text_line("hello .") == "hello."
-    assert cleanup_ocr_text_line("hello , world") == "hello, world"
-    assert cleanup_ocr_text_line("hello ; world") == "hello; world"
-    assert cleanup_ocr_text_line("hello : world") == "hello: world"
-    assert cleanup_ocr_text_line("hello !") == "hello!"
-    assert cleanup_ocr_text_line("hello ?") == "hello?"
+def test_cleanup_preserves_space_before_punctuation():
+    """Punctuation cleanup was removed: spaces before punctuation are
+    preserved, not tightened.  These spaces come from the layout engine
+    (inline-gap geometry or indentation) and represent real layout, not
+    OCR noise - the old delete rule ate indent and gap spaces."""
+    assert cleanup_ocr_text_line("hello .") == "hello ."
+    assert cleanup_ocr_text_line("hello , world") == "hello , world"
+    assert cleanup_ocr_text_line("hello ; world") == "hello ; world"
+    assert cleanup_ocr_text_line("hello : world") == "hello : world"
+    assert cleanup_ocr_text_line("hello !") == "hello !"
+    assert cleanup_ocr_text_line("hello ?") == "hello ?"
 
 
-def test_cleanup_punctuation_add_space_after():
-    """After punctuation followed by alphanumeric, insert a space."""
-    assert cleanup_ocr_text_line("hello.World") == "hello. World"
-    assert cleanup_ocr_text_line("end,begin") == "end, begin"
-    assert cleanup_ocr_text_line("ok;next") == "ok; next"
+def test_cleanup_preserves_no_space_after_punctuation():
+    """Punctuation cleanup was removed: punctuation followed by alnum is
+    left alone, not spaced.  The old insert rule guessed semantics from a
+    character class and rewrote "3.14" -> "3. 14", "v1.0" -> "v1. 0"."""
+    assert cleanup_ocr_text_line("hello.World") == "hello.World"
+    assert cleanup_ocr_text_line("end,begin") == "end,begin"
+    assert cleanup_ocr_text_line("ok;next") == "ok;next"
+    assert cleanup_ocr_text_line("3.14") == "3.14"
+    assert cleanup_ocr_text_line("v1.0") == "v1.0"
 
 
 def test_cleanup_protects_url_from_dot_spacing():
@@ -117,10 +124,12 @@ def test_cleanup_protects_url_from_dot_spacing():
     assert extract_urls(cleanup_ocr_text_line("https://www.deepseek.com")) == ["https://www.deepseek.com"]
 
 
-def test_cleanup_protects_url_but_still_cleans_surrounding_text():
-    """Punctuation cleanup still applies to the non-URL runs around a URL."""
+def test_cleanup_protects_url_but_leaves_surrounding_text():
+    """With punctuation cleanup removed, the non-URL runs around a URL are
+    returned as-is (no tightening of "today . ok").  The URL itself still
+    survives intact and extractable."""
     cleaned = cleanup_ocr_text_line("Visit https://www.deepseek.com today . ok")
-    assert cleaned == "Visit https://www.deepseek.com today. ok"
+    assert cleaned == "Visit https://www.deepseek.com today . ok"
     assert extract_urls(cleaned) == ["https://www.deepseek.com"]
 
 
@@ -160,9 +169,8 @@ def test_apply_outside_urls_empty_and_none():
 
 def test_cleanup_empty():
     assert cleanup_ocr_text_line("") == ""
-    # None is not handled — raises TypeError from re.sub
-    with pytest.raises(TypeError):
-        cleanup_ocr_text_line(None)
+    # cleanup_ocr_text_line is now identity — None flows through unchanged.
+    assert cleanup_ocr_text_line(None) is None
 
 
 def test_cleanup_no_change():
@@ -434,15 +442,16 @@ def test_compose_text_all_lines_empty_falls_back_to_flat():
     assert text == "flat fallback"
 
 
-def test_compose_text_default_adapter_cleans_punctuation():
-    """Default adapter applies punctuation cleanup via cleanup_ocr_text_line."""
+def test_compose_text_default_adapter_preserves_punctuation_spacing():
+    """Default adapter no longer tightens punctuation spacing - the layout
+    engine's spaces (gap/indent) must survive through compose."""
     result = OcrRecognition(
         lines=[
             OcrLine(text="hello . world", bounding_box=OcrBox(0, 0, 100, 20)),
         ]
     )
     text = compose_text_from_result(result, language_tag="fr-FR")
-    assert text == "hello. world"
+    assert text == "hello . world"
 
 
 def test_compose_text_paragraph_break_via_double_newline():

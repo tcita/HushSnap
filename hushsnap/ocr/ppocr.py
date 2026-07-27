@@ -883,16 +883,17 @@ def _apply_paragraph_breaks(lines: list[OcrLine]) -> list[OcrLine]:
     that union inflation would cause missed breaks.  See
     ``scripts/measure_within_line_drift.py`` for the basis.
 
-    The remaining centre distance must exceed the taller adjacent line.  In
-    centre coordinates::
+    The remaining centre distance must exceed the taller adjacent line by half
+    again.  In centre coordinates::
 
         next_center_y - current_center_y
-            > current_h / 2 + next_h / 2 + max(current_h, next_h)
+            > current_h / 2 + next_h / 2 + 1.5 * max(current_h, next_h)
 
-    This is symmetric for mixed font sizes and deliberately conservative: a
-    smaller fraction (e.g. 0.6) would guess at paragraph semantics and fragment
-    tight multi-line text; requiring room for the taller adjacent line only
-    splits clearly-disconnected blocks.
+    i.e. the whitespace gap between the two boxes must exceed 1.5x the taller
+    adjacent line's font size.  This is symmetric for mixed font sizes and
+    deliberately conservative: a smaller fraction (e.g. 0.6) would guess at
+    paragraph semantics and fragment tight multi-line text; requiring room for
+    one and a half taller lines only splits clearly-disconnected blocks.
 
     Only meaningful for horizontal text.  Gap magnitude beyond the threshold
     does not produce additional blank lines — the separator is binary (one
@@ -1029,7 +1030,7 @@ def compose_ppocr_structures(blocks: list[dict], is_vertical: bool = False) -> l
       2. Greedy overlap-based clustering → reading order
       3. Build OcrLine objects from clusters
       4. Post-process CJK-Latin spacing (pangu-style safety net)
-      5. Paragraph breaks (horizontal only: blank line when gap >= 1× line height)
+      5. Paragraph breaks (horizontal only: blank line when gap >= 1.5× line height)
       6. Indentation (horizontal only: left-edge clustering)
 
     When *is_vertical* is True, the image contains predominantly vertical
