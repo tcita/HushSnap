@@ -1,3 +1,21 @@
-* text=auto
+# Normalize all text files to LF in the repo AND the working tree.
+# * text=auto eol=lf forces LF on checkout regardless of core.autocrlf,
+# so Windows working trees stay LF (matching the repo blobs) instead of
+# the mixed LF/CRLF that autocrlf=true + editor differences produced.
+* text=auto eol=lf
+
+# Windows-only scripts must keep CRLF (cmd.exe / PowerShell parsers).
 *.bat text eol=crlf
 *.ps1 text eol=crlf
+
+# Binary - never normalize.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.icns binary
+*.onnx binary
+*.zip binary
+*.exe binary
+*.dll binary
+*.pdf binary
