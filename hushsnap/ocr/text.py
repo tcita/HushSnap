@@ -265,10 +265,7 @@ def _postprocess_layout_text(text: str) -> str:
     if not text:
         return text
 
-    # Normalize excessive blank lines: max 2 consecutive newlines
-    text = re.sub(r"\n{3,}", "\n\n", text)
-
-    # Note: we use rstrip() here because leading whitespace 
+    # Note: we use rstrip() here because leading whitespace
     # might be intentional indentation from the layout engine.
     text = text.rstrip()
 

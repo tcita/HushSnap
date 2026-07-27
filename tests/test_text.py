@@ -307,11 +307,14 @@ def test_finalize_english_text():
 # _postprocess_layout_text
 # ═══════════════════════════════════════════════════════════════════════
 
-def test_postprocess_normalizes_excessive_blank_lines():
-    """Max 2 consecutive newlines (i.e. 1 blank line between paragraphs)."""
+def test_postprocess_preserves_multiple_blank_lines():
+    """The 3+-newline compression was removed: the PP-OCR pipeline never
+    produces 3+ consecutive newlines (paragraph_break inserts at most one
+    sentinel between any two lines, and line.text contains no \\n), so the
+    rule was a no-op.  Multiple blank lines now pass through unchanged."""
     text = "a\n\n\n\nb"
     result = _postprocess_layout_text(text)
-    assert result == "a\n\nb"
+    assert result == "a\n\n\n\nb"
 
 
 def test_postprocess_keeps_single_blank_line():
