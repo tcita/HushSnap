@@ -16,7 +16,7 @@ from hushsnap.ocr.ppocr import (
     ppocr_box_to_bbox,
     recognize_ppocr_qimage,
     recognize_ppocr_result_from_pixmap,
-    word_separator,
+    block_separator,
 )
 from hushsnap.ocr.models import OcrLine, OcrBox
 
@@ -92,36 +92,36 @@ def test_is_cjk_empty():
     assert is_cjk_or_fullwidth("") is False
 
 
-# ── word_separator ────────────────────────────────────────────────────
+# ── block_separator ───────────────────────────────────────────────────
 
-def test_word_separator_cjk_adjacent():
-    assert word_separator("中", "文") == ""
-
-
-def test_word_separator_latin_adjacent():
-    assert word_separator("hello", "world") == " "
+def test_block_separator_cjk_adjacent():
+    assert block_separator("中", "文") == ""
 
 
-def test_word_separator_cjk_latin_boundary():
-    assert word_separator("中文", "hello") == " "
-    assert word_separator("hello", "中文") == " "
+def test_block_separator_latin_adjacent():
+    assert block_separator("hello", "world") == " "
 
 
-def test_word_separator_hyphen():
-    assert word_separator("pre-", "fix") == ""
+def test_block_separator_cjk_latin_boundary():
+    assert block_separator("中文", "hello") == " "
+    assert block_separator("hello", "中文") == " "
 
 
-def test_word_separator_punctuation():
-    assert word_separator("hello", ".") == ""
-    assert word_separator("hello", ",") == ""
-    assert word_separator("hello", "!") == ""
-    assert word_separator("中文", "。") == ""
+def test_block_separator_hyphen():
+    assert block_separator("pre-", "fix") == ""
 
 
-def test_word_separator_empty():
-    assert word_separator("", "x") == ""
-    assert word_separator("x", "") == ""
-    assert word_separator("", "") == ""
+def test_block_separator_punctuation():
+    assert block_separator("hello", ".") == ""
+    assert block_separator("hello", ",") == ""
+    assert block_separator("hello", "!") == ""
+    assert block_separator("中文", "。") == ""
+
+
+def test_block_separator_empty():
+    assert block_separator("", "x") == ""
+    assert block_separator("x", "") == ""
+    assert block_separator("", "") == ""
 
 
 # ── compose_ppocr_text ─────────────────────────────────────────────

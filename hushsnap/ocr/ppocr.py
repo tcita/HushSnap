@@ -454,7 +454,7 @@ def is_cjk_or_fullwidth(character: str) -> bool:
     )
 
 
-def word_separator(left: str, right: str) -> str:
+def block_separator(left: str, right: str) -> str:
     if not left or not right:
         return ""
     if is_cjk_or_fullwidth(left[-1]) and is_cjk_or_fullwidth(right[0]):
@@ -589,7 +589,7 @@ def _normalize_blocks(blocks: list[dict]) -> list[dict]:
         # Strip boundary whitespace once, at the source.  Every block that
         # reaches the layout engine is then clean; the only whitespace in
         # downstream text is whitespace the engine deliberately inserts
-        # (word_separator / inline gap / indent).  This makes the render-time
+        # (block_separator / inline gap / indent).  This makes the render-time
         # rstrips in text.py a no-op rather than a guard - they stay as a
         # safety net but no longer compensate for dirty rec boundaries.
         raw_text = raw_text.strip()
@@ -756,6 +756,11 @@ def _build_lines_from_clusters(
     Each cluster (a line for horizontal text, or a column for vertical
     CJK) becomes one OcrLine.  Blocks within a cluster are already sorted
     in reading order (left→right for horizontal, top→bottom for vertical).
+
+    Completes the full within-line text rendering in one pass: block
+    boundaries (block_separator), inline-gap geometry, and intra-block
+    CJK<->Latin spacing (_apply_cjk_spacing).  Downstream stages see line
+    text already spacing-final at the within-line level.
     """
     result: list[OcrLine] = []
     for cluster in clusters:
@@ -770,7 +775,7 @@ def _build_lines_from_clusters(
 
         for block in cluster:
             if prev_block:
-                sep = word_separator(prev_block["text"], block["text"])
+                sep = block_separator(prev_block["text"], block["text"])
                 # ── inline gap spacing ──
                 # Geometry is mirrored for vertical text: gap measured along
                 # y (column stack) and normalised by box width, vs. x + box
@@ -801,7 +806,7 @@ def _build_lines_from_clusters(
             prev_block = block
 
         result.append(OcrLine(
-            text="".join(text_parts),
+            text=_apply_cjk_spacing("".join(text_parts)),
             words=words,
             bounding_box=bbox_to_ocr_box(min_l, min_t, max_r, max_b),
         ))
@@ -936,8 +941,8 @@ def _decide_paragraph_breaks(lines: list[OcrLine]) -> set[int]:
 
 # -- CJK spacing post-processing (core patterns from pangu.py) ----------
 # Applied as a final safety net: PP-OCR sometimes merges CJK+Latin into
-# a single detection block, so block-level word_separator() misses those
-# boundaries.  These two regexes catch them.
+# a single detection block, so block_separator() (block boundaries) misses
+# those boundaries.  These two regexes catch them.
 # Reference: https://github.com/vinta/pangu.py (MIT licensed)
 #
 # CJK Unicode blocks (verified code points):
@@ -1029,7 +1034,7 @@ def compose_ppocr_structures(blocks: list[dict], is_vertical: bool = False) -> l
       Stage 1 - geometry + text assembly (no decisions):
         1. Normalize raw blocks (filter empty / zero-size)
         2. Greedy overlap-based clustering -> reading order
-        3. Build OcrLine objects from clusters (text = rec + word_separator
+        3. Build OcrLine objects from clusters (text = rec + block_separator
            + inline-gap spaces; CJK<->Latin spacing applied)
       Stage 2 - decide (compute, don't mutate text):
         4. Indentation: indent_level per line, baseline on clean lines
@@ -1061,9 +1066,6 @@ def compose_ppocr_structures(blocks: list[dict], is_vertical: bool = False) -> l
     lines = _build_lines_from_clusters(clusters, is_vertical=is_vertical)
     if not lines:
         return []
-
-    for line in lines:
-        line.text = _apply_cjk_spacing(line.text)
 
     # Stages 2-3 are horizontal-only by design, NOT a TODO to mirror onto
     # vertical.  The horizontal rules work because "gap > one line height =

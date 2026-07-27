@@ -8,7 +8,7 @@ Coverage:
   - _decide_indentation   (single- / multi-level indent detection)
   - compose_ppocr_structures (integration, horizontal + vertical)
   - ppocr_box_to_bbox      (coordinate parsing edge cases)
-  - word_separator         (CJK / Latin / punctuation boundaries)
+  - block_separator       (CJK / Latin / punctuation boundaries)
   - is_cjk_or_fullwidth    (Unicode block membership)
   - _apply_cjk_spacing     (pangu-style CJK↔Latin spacing)
 """
@@ -24,7 +24,7 @@ from hushsnap.ocr.ppocr import (
     _render_layout,
     compose_ppocr_structures,
     ppocr_box_to_bbox,
-    word_separator,
+    block_separator,
     is_cjk_or_fullwidth,
     _apply_cjk_spacing,
 )
@@ -745,41 +745,41 @@ class TestPpocrBoxToBbox:
 
 
 # ===================================================================
-# word_separator
+# block_separator
 # ===================================================================
 
-class TestWordSeparator:
+class TestBlockSeparator:
 
     def test_cjk_cjk_no_space(self):
-        assert word_separator("中文", "字符") == ""
+        assert block_separator("中文", "字符") == ""
 
     def test_latin_latin_space(self):
-        assert word_separator("hello", "world") == " "
+        assert block_separator("hello", "world") == " "
 
     def test_latin_punctuation_no_space(self):
-        assert word_separator("hello", ",") == ""
-        assert word_separator("hello", ".") == ""
+        assert block_separator("hello", ",") == ""
+        assert block_separator("hello", ".") == ""
 
     def test_cjk_latin_space(self):
         """CJK followed by Latin needs a space."""
-        assert word_separator("测试", "ABC") == " "
+        assert block_separator("测试", "ABC") == " "
 
     def test_latin_cjk_space(self):
         """Latin followed by CJK needs a space."""
-        assert word_separator("ABC", "测试") == " "
+        assert block_separator("ABC", "测试") == " "
 
     def test_emdash_no_space(self):
         """Em-dash and en-dash suppress spacing like CJK brackets."""
-        assert word_separator("pre", "—") == ""   # em-dash starts next token
-        assert word_separator("pre—", "fix") == "" # dash at end suppresses space
+        assert block_separator("pre", "—") == ""   # em-dash starts next token
+        assert block_separator("pre—", "fix") == "" # dash at end suppresses space
 
     def test_hyphen_space(self):
         """Regular ASCII hyphen does NOT suppress spacing."""
-        assert word_separator("pre", "-") == " "
+        assert block_separator("pre", "-") == " "
 
     def test_empty_input(self):
-        assert word_separator("", "a") == ""
-        assert word_separator("a", "") == ""
+        assert block_separator("", "a") == ""
+        assert block_separator("a", "") == ""
 
 
 # ===================================================================
@@ -869,19 +869,19 @@ class TestInlineGapSpacing:
     # ── horizontal: threshold + rounding + denominator ──────────────
 
     def test_h_small_gap_no_extra_space(self):
-        """gap_ratio = 0.5 (< 1.0) -> no extra space; only word_separator.
+        """gap_ratio = 0.5 (< 1.0) -> no extra space; only block_separator.
 
-        CJK-CJK: word_separator -> "" -> "你好世界".
+        CJK-CJK: block_separator -> "" -> "你好世界".
         """
         blocks = _h_blocks("你好", "世界", w=40, h=20, gap=10)  # ratio 0.5
         lines = compose_ppocr_structures(blocks, is_vertical=False)
         assert lines[0].text == "你好世界"
 
     def test_h_small_gap_latin_keeps_single_separator_space(self):
-        """Latin-Latin small gap -> only the one word_separator space."""
+        """Latin-Latin small gap -> only the one block_separator space."""
         blocks = _h_blocks("hello", "world", w=40, h=20, gap=10)  # ratio 0.5
         lines = compose_ppocr_structures(blocks, is_vertical=False)
-        assert lines[0].text == "hello world"  # single space from word_separator
+        assert lines[0].text == "hello world"  # single space from block_separator
 
     def test_h_gap_at_threshold_no_extra_space(self):
         """gap_ratio = 1.94 < 2.0 → no extra space.  Pins strict `>`.
@@ -915,7 +915,7 @@ class TestInlineGapSpacing:
         assert lines[0].text == "你好    世界"  # 4 spaces
 
     def test_h_latin_latin_gap_plus_separator(self):
-        """Latin-Latin: word_separator + gap spaces = 1 + 2 = 3."""
+        """Latin-Latin: block_separator + gap spaces = 1 + 2 = 3."""
         blocks = _h_blocks("hello", "world", w=50, h=26, gap=44)  # ratio ≈ 2.03
         lines = compose_ppocr_structures(blocks, is_vertical=False)
         assert lines[0].text == "hello   world"  # 3 spaces (1 sep + 2 gap)
