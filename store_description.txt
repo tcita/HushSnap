@@ -2,144 +2,113 @@
 HushSnap — Store 描述与更新说明（简体中文）
 ================================================================================
 
-HushSnap 是一款无需联网的截图 OCR 工具，本地运行、不传数据，日常截图识别跟手。按下快捷键（默认 Alt+Q），框选区域，右下角随即滑出一张缩略图：单击就能 OCR，拖一下就能存图，还能钉图、编辑、另存。它用这张缩略图代替弹出的工具栏——不抢焦点，需要时触手可及，不需要就放着它消失，就像手机截完图那样。
+HushSnap 是一款无需联网的截图 OCR 工具，本地运行、不传数据，日常截图识别跟手。按下快捷键（默认 Alt+Q），框选区域，截图即复制到剪贴板，右下角随即滑出一张缩略图：单击就能 OCR，拖一下就能存图，还能钉图、编辑、另存。它用这张缩略图代替弹出的工具栏--不抢焦点，需要时触手可及，不需要就放着它消失，就像手机截完图那样。
 
-截图默认先复制到剪贴板。需要标注时，从缩略图打开内置编辑器即可，提供基础的编辑功能，只在需要时出现。
-
-它尽量不打扰你：没有主窗口占着任务栏，常驻后台时空闲还会自动回收内存。支持多台不同分辨率显示器混用的多屏环境截图。免登录、免注册，不依赖其他软件，截图和识别全部在本地完成，不向任何服务器上传数据。代码开源（GPL-3.0），源码见 github.com/tcita/HushSnap。
-
-截图后，右下角会滑出一张浮动缩略图：
+缩略图支持这些操作：
 · 单击缩略图 → OCR 识别图中文字，结果可编辑、可复制。
 · 右键缩略图 → 钉图（把截图贴在屏幕上）、查看图片、保存到桌面、另存为。
 · 鼠标悬停 → 缩略图上出现图钉和关闭按钮，一键操作。
 · 拖拽缩略图 → 直接拖进聊天窗口、浏览器或文件夹即可存图。
 · 不操作时，缩略图超时后自动消失（时长可在设置里调）。
 
-OCR 识别出的文字也尽量还原原文排版--保留换行、段落和缩进，不会像多数 OCR 软件那样把文字挤成一团。
+OCR 识别出的文字会整理成更易读的排版，不会像多数 OCR 软件那样把文字挤成一团。
 
-常驻系统托盘，右键托盘图标进入设置。快捷键可自定义。
+它尽量不打扰你：没有主窗口占着任务栏，常驻后台时空闲还会自动回收内存。支持多台不同分辨率显示器混用的多屏环境截图。免登录、免注册，不依赖其他软件。常驻系统托盘，右键托盘图标进入设置，快捷键可自定义。
 
-*支持简体中文、繁体中文、英文、日文的界面和文字识别，效果已验证良好；其中中文与日文还支持竖排文字识别。其他语言可能有一定识别效果但不作保证（部分语言暂不支持）。
+*支持简体中文、繁体中文、英文、日文的界面和文字识别，效果已验证良好；其中中文与日文还支持竖排文字识别。其他语言可能有一定识别效果，但不作保证，部分语言暂不支持。
 
-
-
-
+代码开源（GPL-3.0），源码见 GitHub：tcita/HushSnap。
 
 ================================================================================
 HushSnap — 商店描述與更新說明（繁體中文）
 ================================================================================
 
-HushSnap 是一款無需聯網的截圖 OCR 工具，本地運作、不傳資料，日常截圖辨識跟手。按下快速鍵（預設 Alt+Q），框選區域，右下角隨即滑出一張縮圖：點一下就能 OCR，拖一下就能存圖，還能釘圖、編輯、另存。它用這張縮圖代替彈出的工具列——不搶焦點，需要時隨手可得，不需要就放著它消失，就像手機截完圖那樣。
+HushSnap 是一款無需聯網的截圖 OCR 工具，本地運作、不傳資料，日常截圖辨識跟手。按下快速鍵（預設 Alt+Q），框選區域，截圖即複製到剪貼簿，右下角隨即滑出一張縮圖：點一下就能 OCR，拖一下就能存圖，還能釘圖、編輯、另存。它用這張縮圖代替彈出的工具列--不搶焦點，需要時隨手可得，不需要就放著它消失，就像手機截完圖那樣。
 
-截圖預設先複製到剪貼簿。需要標註時，從縮圖開啟內建編輯器即可，提供基礎的編輯功能，只在需要時出現。
-
-它盡量不打擾你：沒有主視窗佔著工作列，常駐背景時，閒置還會自動釋放記憶體。支援多台不同解析度顯示器混用的多螢幕環境截圖。免登入、免註冊，不依賴其他軟體，截圖和辨識全部在本地完成，不向任何伺服器上傳資料。程式碼開源（GPL-3.0），原始碼見 github.com/tcita/HushSnap。
-
-截圖後，右下角會滑出一張浮動縮圖：
+縮圖支援這些操作：
 · 單擊縮圖 → OCR 辨識圖中文字，結果可編輯、可複製。
 · 右鍵縮圖 → 釘圖（把截圖貼在螢幕上）、檢視圖片、儲存到桌面、另存新檔。
 · 滑鼠停留 → 縮圖上出現圖釘和關閉按鈕，一鍵操作。
 · 拖曳縮圖 → 直接拖進聊天視窗、瀏覽器或資料夾即可存圖。
 · 不操作時，縮圖逾時後自動消失（時長可在設定裡調）。
 
-OCR 辨識出的文字也盡量還原原文排版--保留換行、段落和縮排，不會像多數 OCR 軟體那樣把文字擠成一團。
+OCR 辨識出的文字會整理成更易讀的排版，不會像多數 OCR 軟體那樣把文字擠成一團。
 
-常駐系統匣，右鍵系統匣圖示進入設定。快速鍵可自訂。
+它盡量不打擾你：沒有主視窗佔著工作列，常駐背景時，閒置還會自動釋放記憶體。支援多台不同解析度顯示器混用的多螢幕環境截圖。免登入、免註冊，不依賴其他軟體。常駐系統匣，右鍵系統匣圖示進入設定，快速鍵可自訂。
 
-*支援簡體中文、繁體中文、英文、日文的介面和文字辨識，效果已驗證良好；其中中文與日文還支援直排文字辨識。其他語言可能有一定辨識效果但不作保證（部分語言暫不支援）。
+*支援簡體中文、繁體中文、英文、日文的介面和文字辨識，效果已驗證良好；其中中文與日文還支援直排文字辨識。其他語言可能有一定辨識效果，但不作保證，部分語言暫不支援。
 
-
-
-
+程式碼開源（GPL-3.0），原始碼見 GitHub：tcita/HushSnap。
 
 ================================================================================
 HushSnap — Store description & release notes (English)
 ================================================================================
 
-HushSnap is an offline screenshot & OCR tool — local, no data leaves your device, with snappy recognition on everyday captures. Press the hotkey (Alt+Q by default), drag a selection, and a thumbnail slides into the bottom-right corner: click to OCR, drag to save, or pin, edit, and save as. The thumbnail replaces an intrusive toolbar — it never steals focus, is there when you need it, and fades away on its own when you don’t, just like a phone screenshot.
+HushSnap is an offline screenshot & OCR tool - local, no data leaves your device, with snappy recognition on everyday captures. Press the hotkey (Alt+Q by default), drag a selection: the capture goes straight to your clipboard, and a thumbnail slides into the bottom-right corner - click to OCR, drag to save, or pin, edit, and save as. The thumbnail replaces an intrusive toolbar - it never steals focus, is there when you need it, and fades away on its own when you don’t, just like a phone screenshot.
 
-Captures go straight to your clipboard by default. When you need to annotate, open the built-in editor from the thumbnail — basic tools, only when you need them.
-
-It stays out of your way: no main window cluttering the taskbar, and while idle in the background it automatically releases unused memory. Works across multiple monitors with mixed resolutions/DPIs. No login, no account, no other software required — capture and recognition all happen locally, with nothing uploaded to any server. Open source (GPL-3.0); source code at github.com/tcita/HushSnap.
-
-After a capture, a floating thumbnail slides in at the bottom-right:
+The thumbnail supports:
 · Left-click the thumbnail → OCR the text in the image; results are editable and copyable.
 · Right-click the thumbnail → pin it on screen, open it, save to Desktop, or Save As.
 · Hover → a pin and close button appear on the thumbnail for one-click actions.
 · Drag the thumbnail → drop it straight into a chat, browser, or folder to save.
 · Left alone → the thumbnail disappears after a timeout (duration adjustable in Settings).
 
-The OCR output also keeps the original layout - preserving line breaks, paragraphs, and indentation - so the text isn't bunched into a single block the way most OCR tools leave it.
+The OCR output is laid out for readability - the text isn't bunched into a single block the way most OCR tools leave it.
 
-Lives in the system tray. Right-click the tray icon to open Settings. Hotkey is customizable.
+It stays out of your way: no main window cluttering the taskbar, and while idle in the background it automatically releases unused memory. Works across multiple monitors with mixed resolutions/DPIs. No login, no account, no other software required. Lives in the system tray - right-click the tray icon to open Settings; hotkey is customizable.
 
 *Simplified Chinese, Traditional Chinese, English, and Japanese are officially supported for both UI and text recognition, and verified to work well; Chinese and Japanese also support vertical-text recognition. Other languages may work to varying degrees but aren't guaranteed — some aren't recognized at all.
 
-
-
+Open source (GPL-3.0); source code on GitHub: tcita/HushSnap.
 
 ================================================================================
 HushSnap — ストア説明とリリースノート（日本語）
 ================================================================================
 
-HushSnap はネット接続不要のスクリーンショット・OCR ツールです。ローカル完結・データ非送信。日常的なキャプチャなら認識が軽快です。ホットキーを押し（既定は Alt+Q）、範囲を選ぶと、右下にサムネイルがスライドインします：クリックで OCR、ドラッグで保存、さらにピン留め・編集・名前を付けて保存もできます。サムネイルがポップアップするツールバーの代わり——フォーカスを奪わず、必要なときにすぐ手に届き、不要ならそのまま消える、スマホのスクリーンショットのように。
+HushSnap はネット接続不要のスクリーンショット・OCR ツールです。ローカル完結・データ非送信。日常的なキャプチャなら認識が軽快です。ホットキーを押し（既定は Alt+Q）、範囲を選ぶと、キャプチャはクリップボードにコピーされ、右下にサムネイルがスライドインします：クリックで OCR、ドラッグで保存、さらにピン留め・編集・名前を付けて保存もできます。サムネイルがポップアップするツールバーの代わり--フォーカスを奪わず、必要なときにすぐ手に届き、不要ならそのまま消える、スマホのスクリーンショットのように。
 
-撮影後は既定でクリップボードにコピーされます。注釈が必要なときは、サムネイルから内蔵エディターを開けば、基本的な編集機能が使えます——必要なときだけ現れます。
-
-また、なるべく邪魔しません：メインウィンドウがタスクバーを占拠せず、バックグラウンド待機中は使っていないメモリを自動的に解放します。異なる解像度・DPI のマルチモニター混在環境でも正しく動作します。ログイン・登録不要、他ソフトへの依存も不要。撮影も認識もすべてローカルで完結し、いかなるサーバーにもデータを送信しません。オープンソース（GPL-3.0）。ソースコードは github.com/tcita/HushSnap で公開しています。
-
-撮影後、右下に浮かぶサムネイルがスライドインします：
+サムネイルでできること：
 · サムネイルをクリック → 画像内の文字を OCR 認識。結果は編集・コピー可能。
 · サムネイルを右クリック → ピン留め（画面に貼り付け）、画像を開く、デスクトップに保存、名前を付けて保存。
 · マウスを乗せる → サムネイルにピンと閉じるボタンが現れ、ワンクリックで操作。
 · サムネイルをドラッグ → チャット、ブラウザ、フォルダに直接ドロップして保存。
 · そのまま放置 → サムネイルは時間が来ると自動で消えます（時間は設定で調整可能）。
 
-OCR の結果も元のレイアウトを再現し、改行・段落・インデントを保ちます。多くの OCR ソフトのように文字が一塊に押しつぶされることはありません。
+OCR の結果は読みやすいレイアウトに整理します。多くの OCR ソフトのように文字が一塊に押しつぶされることはありません。
 
-システムトレイに常駐。トレイアイコンを右クリックすると設定画面が開きます。ホットキーはカスタマイズ可能。
+また、なるべく邪魔しません：メインウィンドウがタスクバーを占拠せず、バックグラウンド待機中は使っていないメモリを自動的に解放します。異なる解像度・DPI のマルチモニター混在環境でも正しく動作します。ログイン・登録不要、他ソフトへの依存も不要。システムトレイに常駐し、トレイアイコンを右クリックすると設定画面が開きます。ホットキーはカスタマイズ可能。
 
-*簡体字中国語・繁体字中国語・英語・日本語のインターフェースと文字認識に対応し、動作を確認済みです。そのうち中国語と日本語は縦書き文字の認識にも対応します。その他の言語は一定の認識精度が出る場合がありますが保証はできません（認識できない言語もあります）。
+*簡体字中国語・繁体字中国語・英語・日本語のインターフェースと文字認識に対応し、動作を確認済みです。そのうち中国語と日本語は縦書き文字の認識にも対応します。その他の言語は一定の認識精度が出る場合がありますが、保証はできず、認識できない言語もあります。
 
+オープンソース（GPL-3.0）。ソースコードは GitHub：tcita/HushSnap で公開しています。
 
 ================================================================================
 Release notes (newest first)
 ================================================================================
-
 
 ### v1.3.1
 
 · 修复设置中"开机自启动"选项无效的问题。
 · OCR 排版判断更保守。
 
-
 · 修復設定中「開機自啟動」選項無效的問題。
 · OCR 排版判斷更保守。
-
-
 
 · Fixed the "Start with Windows" setting not taking effect.
 · OCR layout detection is now more conservative.
 
-
 · 設定の「OS 起動時に自動スタート」オプションが機能しない問題を修正。
 · OCR のレイアウト判定をより保守的にしました。
-
 
 ### v1.3.0
 
 · OCR 更快更准：识别速度大幅提升，尤其是小尺寸截图，识别更跟手；同时小图的识别准确度也更好。
 
-
 · OCR 更快更準：辨識速度大幅提升，尤其是小尺寸截圖，辨識更跟手；同時小圖的辨識準確度也更好。
-
-
 
 · OCR is faster and more accurate: recognition speed is up notably - especially for small screenshots, it feels more responsive - and small screenshots recognize more accurately too.
 
-
 · OCR はより速くより正確に：認識速度が大幅に向上し、特に小さなスクリーンショットでより追従感が出ました。同時に小さな画像の認識精度も向上しています。
-
 
 ### v1.2.0
 
@@ -147,16 +116,13 @@ Release notes (newest first)
 · OCR 对原文排版的还原更准确，换行、段落与缩进更贴近原图，减少了段落被误合并或误拆分的情况。
 · 修复若干小问题，并优化了编辑器体验。
 
-
 · 內建編輯器新增狀態列縮放滑桿，拖曳即可調整圖片的檢視大小，操作更接近系統內建的看圖軟體。
 · OCR 對原文排版的還原更準確，換行、段落與縮排更貼近原圖，減少了段落被誤合併或誤分割的情況。
 · 修正若干小問題，並改善編輯器體驗。
 
-
 · Added a zoom slider to the built-in editor's status bar - drag to adjust the image's viewing size, much like the system image viewer.
 · OCR better preserves the original layout. Line breaks, paragraphs, and indentation now match the source image more closely, with fewer paragraphs merged or split incorrectly.
 · Various small fixes and editor improvements.
-
 
 · 内蔵エディターのステータスバーにズームスライダーを追加。ドラッグするだけで画像の表示倍率を調整でき、OS 標準の画像ビューアーに近い操作感です。
 · OCR のレイアウト再現性が向上。改行・段落・インデントがより元画像に忠実になり、段落の誤結合・誤分割が減りました。

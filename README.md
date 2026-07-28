@@ -39,7 +39,6 @@ The built-in image editor opens from the thumbnail's **Edit** button or the righ
 
 **Tools:** rectangle / ellipse / line (color, size, fill, optional arrowhead), text (font, size, color), brush, highlighter, mosaic (pixelate/redact), eraser, pan, and the crop / rotate / resize transforms. Plus undo/redo (`Ctrl+Z` / `Ctrl+Y`), fit-to-viewport (`Ctrl+0`), copy, and Save As… (`Ctrl+S`, PNG / JPEG / BMP). Transforms run as atomic sessions - **Esc** cancels - so the state stays unambiguous mid-edit.
 
-Everything runs locally; the edited image never leaves your device.
 
 ## OCR Engine
 
