@@ -101,7 +101,13 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    # UPX disabled: it was never effective (UPX binary not installed, so
+    # upx=True was a silent no-op), and for MSIX packaging it is actively
+    # harmful - UPX's high-entropy output defeats MakeAppx's deflate pass
+    # (a .dll that deflate alone compresses to ~45% becomes ~0% re-compressible
+    # after UPX), making the downloaded MSIX larger, not smaller. UPX only
+    # helps unpacked footprint, which is irrelevant for an MSIX install.
+    upx=False,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -117,7 +123,6 @@ coll = COLLECT(
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=True,
-    upx_exclude=['python3.dll'],
+    upx=False,
     name='HushSnap',
 )
