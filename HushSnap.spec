@@ -90,6 +90,52 @@ def filter_datas(datas):
 a.binaries = filter_binaries(a.binaries)
 a.datas = filter_datas(a.datas)
 
+# --- Minimal cv2.pyd swap (82MB official -> 14.3MB purpose-built) -------------
+# rapidocr is the only runtime cv2 consumer and uses 30 symbols, all in
+# core/imgproc/imgcodecs (audited by tests/test_cv2_symbol_audit.py).  The
+# official opencv-python cv2.pyd is an 82MB monolithic build with ~90% unused
+# modules.  scripts/build_minimal_opencv.ps1 compiles a 14.3MB static
+# single-file pyd (WITH_IPP=OFF + dead codecs/GPU stripped); its OCR output is
+# byte-identical to the official wheel.  The built pyd is committed at
+# third_party/cv2.cp313-win_amd64.pyd so the build needs no compile step.
+#
+# This swaps ONLY the cv2.pyd binary source -- the frozen cv2/ package layout
+# (opencv's __init__.py bootstrap, config*.py) is unchanged.  Verified: the
+# bootstrap loads the tagged minimal pyd via importlib.import_module("cv2")
+# and rapidocr runs end-to-end (5/5, char-identical) under this layout.
+# Rebuild the pyd when OpenCV or the target Python (cp313) version changes:
+#   pwsh scripts/build_minimal_opencv.ps1 -NoIPP -ForceClean
+#   cp opencv-build/output/cv2.cp313-win_amd64.pyd third_party/
+def swap_minimal_cv2(binaries):
+    minimal_pyd = str(project_root / 'third_party' / 'cv2.cp313-win_amd64.pyd')
+    if not (project_root / 'third_party' / 'cv2.cp313-win_amd64.pyd').is_file():
+        raise SystemExit(
+            "third_party/cv2.cp313-win_amd64.pyd not found. "
+            "Build it: pwsh scripts/build_minimal_opencv.ps1 -NoIPP -ForceClean, "
+            "then cp opencv-build/output/cv2.cp313-win_amd64.pyd third_party/"
+        )
+    # PyInstaller binaries TOC entries are 3-tuples: (dest_relpath, source_abspath, kind).
+    # We swap the source of the cv2 extension module only.  Match by dest name so it
+    # works whether the frozen entry is 'cv2/cv2.pyd' or 'cv2/cv2.cp313-win_amd64.pyd'.
+    cv2_pyd_names = {'cv2.pyd', 'cv2.cp313-win_amd64.pyd'}
+    out, swapped = [], False
+    for entry in binaries:
+        dest, source, kind = entry  # (dest_relpath, source_abspath, kind)
+        dest_name = Path(dest).name.lower()
+        if dest_name in cv2_pyd_names:
+            out.append((dest, minimal_pyd, kind))
+            swapped = True
+        else:
+            out.append(entry)
+    if not swapped:
+        raise SystemExit(
+            "cv2.pyd not found in PyInstaller binaries -- expected the opencv-python "
+            "cv2.pyd to be collected. Did the cv2 package layout change?"
+        )
+    return out
+
+a.binaries = swap_minimal_cv2(a.binaries)
+
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(

@@ -20,17 +20,17 @@
     - Visual Studio 2022 Build Tools + VCTools workload (vcvarsall.bat)
     - Python 3.13 (the interpreter HushSnap builds against)
 
-  Output: scripts/minimal-cv2-build/cv2.cp313-win_amd64.pyd
+  Output: opencv-build/output/cv2.cp313-win_amd64.pyd
   Next:  python scripts/verify_minimal_cv2.py --pyd <that path>
          python tests/run_ocr_minimal_cv2.py --pyd <that path>
 
 .PARAMETER OpenCVVersion
-  OpenCV tag to build.  Defaults to 4.10.0 (validated end-to-end; the 30
-  symbols used are classical and API-stable across 4.x/5.x).  5.0.0 is also
-  available but unvalidated against this build path.
+  OpenCV tag to build.  Defaults to 5.0.0 (matches the official opencv-python
+  wheel HushSnap ships; the 30 symbols rapidocr uses are classical and
+  API-stable across 4.x/5.x).  Rebuild with -OpenCVVersion 4.10.0 to compare.
 
 .PARAMETER ForceClean
-  Re-run CMake configure from scratch (otherwise reuses opencv-work/opencv-build).
+  Re-run CMake configure from scratch (otherwise reuses opencv-build/cmake).
 
 .PARAMETER NoIPP
   Build WITHOUT Intel IPP (-DWITH_IPP=OFF).  IPP is the pyd's biggest size
@@ -50,7 +50,7 @@
 
   Contamination is defended in TWO layers:
     1. Structural: no --target install anywhere (see above).  All build output
-       stays under scripts/opencv-work\ (build tree) and scripts/minimal-cv2-build\
+       stays under opencv-build\ (src + cmake build tree) and opencv-build/output\
        (staged pyd); nothing is written to the interpreter's site-packages.
     2. Asserted: the script snapshots the system cv2\ package (file list + sizes)
        before building and asserts it is byte-identical afterwards.  If anything
@@ -74,16 +74,17 @@
   weight rapidocr provably never touches -- safe to drop unconditionally.
 #>
 param(
-    [string]$OpenCVVersion = "4.10.0",
+    [string]$OpenCVVersion = "5.0.0",
     [switch]$ForceClean,
     [switch]$NoIPP
 )
 
 $ErrorActionPreference = "Stop"
-$workDir  = Join-Path $PSScriptRoot "opencv-work"
-$srcDir   = Join-Path $workDir "opencv-src"
-$buildDir = Join-Path $workDir "opencv-build"
-$outDir   = Join-Path $PSScriptRoot "minimal-cv2-build"
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$workDir  = Join-Path $repoRoot "opencv-build"
+$srcDir   = Join-Path $workDir "src"
+$buildDir = Join-Path $workDir "cmake"
+$outDir   = Join-Path $workDir "output"
 $outPyd   = Join-Path $outDir "cv2.cp313-win_amd64.pyd"
 
 # --- locate toolchain --------------------------------------------------------

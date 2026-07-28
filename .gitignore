@@ -43,9 +43,9 @@ ocr_batch/*
 !ocr_batch/*.py
 
 # Minimal OpenCV build artifacts (scripts/build_minimal_opencv.ps1).
-# opencv-work/ = cloned opencv source + cmake/ninja build tree (~500MB+,
-#   fully rebuildable by the script).  minimal-cv2-build/ = the staged output
-#   cv2.pyd (rebuildable).  Both are build outputs, not source.
-scripts/opencv-work/
-scripts/minimal-cv2-build/
+# opencv-build/ lives at the repo root (not under scripts/, to keep the
+# scripts folder clean).  src/ = cloned opencv source, cmake/ = the
+# cmake/ninja build tree (~500MB+, fully rebuildable), output/ = the staged
+# cv2.pyd.  All build outputs, not source.
+/opencv-build/
 

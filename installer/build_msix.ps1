@@ -113,7 +113,10 @@ function Invoke-PreBuildValidation {
     # Directories that are local-only (gitignored, never bundled by
     # PyInstaller). Artifact scans 1.9/1.10/1.11 skip these so they do not
     # flag measurement-script output or build scratch as "leaked into pkg".
-    $ignoreDirs = '\\(scratch|stress_results|ocr_stability_results|build|dist|dist-installer|dist-installer-test)\\'
+    # opencv-build/ (repo root) is the from-source OpenCV build tree
+    # (libjpeg change.log, cv2.pdb, ...); the shipped pyd lives in third_party/,
+    # so it is never bundled by PyInstaller either.
+    $ignoreDirs = '\\(scratch|stress_results|ocr_stability_results|build|dist|dist-installer|dist-installer-test|opencv-build)\\'
 
     # 1.1 ── .spec hiddenimports covers all source packages ─────────
     if (-not (Test-Path $SpecPath)) {
