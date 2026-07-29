@@ -91,14 +91,17 @@ def filter_datas(datas):
 a.binaries = filter_binaries(a.binaries)
 a.datas = filter_datas(a.datas)
 
-# --- Minimal cv2.pyd swap (82MB official -> 14.3MB purpose-built) -------------
+# --- Minimal cv2.pyd swap (82MB official -> 24.8MB purpose-built) -------------
 # rapidocr is the only runtime cv2 consumer and uses 30 symbols, all in
 # core/imgproc/imgcodecs (audited by tests/test_cv2_symbol_audit.py).  The
 # official opencv-python cv2.pyd is an 82MB monolithic build with ~90% unused
-# modules.  scripts/build/build_minimal_opencv.ps1 compiles a 14.3MB static
-# single-file pyd (WITH_IPP=OFF + dead codecs/GPU stripped); its OCR output is
-# byte-identical to the official wheel.  The built pyd is committed at
-# third_party/cv2.cp313-win_amd64.pyd so the build needs no compile step.
+# modules.  scripts/build/build_minimal_opencv.ps1 compiles a 24.8MB static
+# single-file pyd (OpenCV 5.0.0, WITH_IPP=OFF + dead codecs/GPU stripped);
+# its OCR output is byte-identical to the official wheel.  (At 4.10 this was
+# 14.3MB; 5.0 grew ~10MB because the geometry module split out of imgproc and
+# drags in flann+usac as transitive deps -- not controllable by codec flags.)
+# The built pyd is committed at third_party/cv2.cp313-win_amd64.pyd so the
+# build needs no compile step.
 #
 # This swaps ONLY the cv2.pyd binary source -- the frozen cv2/ package layout
 # (opencv's __init__.py bootstrap, config*.py) is unchanged.  Verified: the

@@ -10,9 +10,10 @@
   PyInstaller excludes cannot help (one monolithic .pyd, not a split package).
 
   This script compiles OpenCV from source with BUILD_LIST=core,imgproc,imgcodecs,
-  python3 and BUILD_SHARED_LIBS=OFF, yielding a ~47 MB single-file static cv2.pyd
-  (validated end-to-end 2026-07-28: 30/30 symbols, OCR output identical to the
-  82 MB wheel across CN/EN/code/classical-CN test images).
+  python3 and BUILD_SHARED_LIBS=OFF, yielding a single-file static cv2.pyd.
+  At OpenCV 5.0.0 with -NoIPP (the build HushSnap ships) it is ~24.8 MB vs the
+  82 MB official wheel (validated end-to-end 2026-07-29: 30/30 symbols, OCR
+  output identical to the 82 MB wheel across CN/EN/code/classical-CN test images).
 
   Toolchain (install once, see memory/cv2-minimal-opencv-build.md):
     - CMake (on PATH)
@@ -36,7 +37,8 @@
   Build WITHOUT Intel IPP (-DWITH_IPP=OFF).  IPP is the pyd's biggest size
   component (~28 MB) but a perf layer, not function.  Use to A/B size vs OCR
   latency, especially on AMD where IPP (Intel-tuned) may not be used at all.
-  With NoIPP the pyd drops to ~18 MB and imgproc falls back to OpenCV's own
+  With NoIPP the pyd is ~24.8 MB at 5.0 (was ~18 MB at 4.10; the +9 MB is the
+  5.0 geometry/flann split, see NOTES) and imgproc falls back to OpenCV's own
   AVX2 implementations.
 
 .NOTES
@@ -63,13 +65,20 @@
   disk and vanishes when the process exits.
 
   Size vs speed -- Intel IPP dominates the pyd size:
-    * WITH_IPP=ON (default): ~47 MB pyd.  IPPICV (~28 MB linked) accelerates the
-      imgproc hot path (resize/cvtColor/warp) rapidocr calls on every image.
-      IPP is Intel-tuned -- it may not be used at all on AMD CPUs, where the 28 MB
-      could be pure dead weight.  A/B with -NoIPP before trusting it.
-    * WITH_IPP=OFF (-NoIPP): ~18 MB pyd, imgproc falls back to OpenCV's own AVX2
-      paths.  The 30 symbols + OCR output are identical either way (IPP is perf,
-      not function).  Measure OCR latency on the target CPU to decide.
+    * WITH_IPP=ON (default): ~47 MB pyd at 4.10 (5.0 unmeasured; expect roughly
+      +9 MB from the geometry/flann split below).  IPPICV (~28 MB linked)
+      accelerates the imgproc hot path (resize/cvtColor/warp) rapidocr calls on
+      every image.  IPP is Intel-tuned -- it may not be used at all on AMD CPUs,
+      where the 28 MB could be pure dead weight.  A/B with -NoIPP before trusting.
+    * WITH_IPP=OFF (-NoIPP): ~24.8 MB pyd at 5.0 (was ~18 MB at 4.10), imgproc
+      falls back to OpenCV's own AVX2 paths.  THIS IS THE BUILD HUSHSNAP SHIPS.
+      The 30 symbols + OCR output are identical either way (IPP is perf, not
+      function).  Measure OCR latency on the target CPU to decide.
+  NOTE on the 4.10 -> 5.0 growth: OpenCV 5.0 split a `geometry` module out of
+  imgproc, which drags in `flann` + USAC as transitive deps (getBuildInformation
+  shows "To be built: core flann geometry imgcodecs imgproc python3").  This adds
+  ~9 MB that BUILD_LIST cannot exclude -- structural to 5.0, independent of the
+  codec/IPP flags below.
   Everything else pruned above (OpenCL/ITT/OpenEXR/OpenJPEG/TIFF/WEBP) is dead
   weight rapidocr provably never touches -- safe to drop unconditionally.
 #>
@@ -227,9 +236,9 @@ $cmakeArgs = @(
     "-DWITH_WEBP=OFF",
     # Intel IPP: ~28MB of the pyd.  IPP is a perf layer (accelerates imgproc
     # hot path), NOT function -- 30 symbols + OCR output are identical on/off.
-    # Default ON (fast); -NoIPP -> OFF (~18MB, imgproc falls back to OpenCV's
-    # own AVX2).  IPP is Intel-tuned; on AMD it may not be used at all -- A/B
-    # size + OCR latency before deciding.  See NOTES "Size vs speed".
+    # Default ON (fast); -NoIPP -> OFF (~24.8MB at 5.0, imgproc falls back to
+    # OpenCV's own AVX2).  IPP is Intel-tuned; on AMD it may not be used at all
+    # -- A/B size + OCR latency before deciding.  See NOTES "Size vs speed".
     "-DWITH_IPP=$ippFlag",
     "-DPYTHON3_EXECUTABLE=$python",
     "-DPYTHON3_INCLUDE_DIR=$pyInclude",
