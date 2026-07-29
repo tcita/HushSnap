@@ -1,14 +1,18 @@
-"""End-to-end OCR regression with a minimal cv2.pyd path-injected.
+"""End-to-end OCR regression with the minimal cv2.
 
-Replaces cv2 in-process with the minimal build, then runs the full PP-OCR
-pipeline (OcrService.recognize -- the same path the thumbnail popup uses) over
-ocr_batch/*.png.  When the minimal build is a true drop-in, output is identical
-to the system-cv2 run produced by ``ocr_batch/run_ocr.py``.
+Runs the full PP-OCR pipeline (OcrService.recognize -- the same path the
+thumbnail popup uses) over ocr_batch/*.png.  By default this uses the
+repo-root ``cv2/`` package (the minimal cv2 development/production import);
+pass ``--pyd`` to path-inject a freshly built pyd before it is copied into
+place.  When the minimal build is a true drop-in, output is identical to the
+system-cv2 run produced by ``ocr_batch/run_ocr.py``.
 
-Run after scripts/verify_minimal_cv2.py passes.  Compare char counts / text
+Run after scripts/build/verify_minimal_cv2.py passes.  Compare char counts / text
 against a fresh ``python ocr_batch/run_ocr.py`` to confirm zero regression.
 
-Usage:  python tests/run_ocr_minimal_cv2.py --pyd <path-to-minimal-cv2.pyd>
+Usage:
+  python tests/run_ocr_minimal_cv2.py
+  python tests/run_ocr_minimal_cv2.py --pyd <path-to-minimal-cv2.pyd>
 """
 
 import argparse
@@ -17,15 +21,19 @@ import sys
 from pathlib import Path
 
 _project_root = Path(__file__).resolve().parent.parent
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
+# Repo-root cv2/ (the minimal package) must win over site-packages.  When this
+# script is run as ``python tests/run_ocr_minimal_cv2.py`` sys.path[0] is
+# tests/, not the repo root, so insert the repo root explicitly and
+# unconditionally (the ``not in`` guard could leave site-packages ahead).
+sys.path.insert(0, str(_project_root))
 
 
 def inject_minimal_cv2(pyd_path: Path):
-    """Prepend the pyd's dir to sys.path and force (re)import of cv2.
+    """Path-inject a bare minimal pyd ahead of the repo-root cv2/ package.
 
-    Must run BEFORE any rapidocr/hushsnap import so their ``import cv2`` picks
-    up the minimal pyd rather than the site-packages wheel.
+    Used only for the ``--pyd`` path (verifying a freshly built pyd before it
+    is copied into place); without ``--pyd`` the repo-root cv2/ package is
+    imported directly (it already wins via sys.path[0]).
     """
     if not pyd_path.is_file():
         raise SystemExit(f"minimal cv2 pyd not found: {pyd_path}")
@@ -38,14 +46,18 @@ def inject_minimal_cv2(pyd_path: Path):
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--pyd", required=True, type=Path,
-                    help="path to the minimal cv2.cp313-win_amd64.pyd")
+    ap.add_argument("--pyd", type=Path, default=None,
+                    help="path to a minimal cv2.cp313-win_amd64.pyd to verify "
+                         "(default: use the repo-root cv2/ package)")
     ap.add_argument("--folder", type=Path,
                     default=_project_root / "ocr_batch",
                     help="folder of images to OCR (default: ocr_batch/)")
     args = ap.parse_args()
 
-    cv2 = inject_minimal_cv2(args.pyd)
+    if args.pyd is not None:
+        cv2 = inject_minimal_cv2(args.pyd)
+    else:
+        import cv2  # noqa: F401 -- repo-root cv2/ wins via sys.path[0]
     print(f"[minimal-cv2] file={getattr(cv2, '__file__', '?')}", file=sys.stderr)
     print(f"[minimal-cv2] version={getattr(cv2, '__version__', '?')}",
           file=sys.stderr)

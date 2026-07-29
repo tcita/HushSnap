@@ -102,7 +102,6 @@ import re
 import threading
 import time
 
-import cv2
 import numpy as np
 
 # Import ppocr library at startup to ensure thread-safe loading of C/C++ extensions.
@@ -506,11 +505,19 @@ def block_separator(left: str, right: str) -> str:
 #     k ≤ min(½, 1−r), whenever the centre-distance gate accepts a pair,
 #     the overlap-ratio gate is *guaranteed* to accept it too.  In other
 #     words, under this parameter regime centre-distance is a stricter
-#     (more conservative) sufficient condition for overlap-ratio —
-#     filtering by centre-distance never produces a false negative (it
-#     won't reject a pair that overlap-ratio would accept), while
-#     side-stepping overlap-ratio's sensitivity to detection-box
+#     (more conservative) sufficient condition for overlap-ratio.  The
+#     entailment is one-way: overlap-ratio does NOT imply centre-
+#     distance, so centre-distance rejects some pairs overlap-ratio
+#     would accept.  That asymmetry is exactly why dropping the overlap
+#     check is safe: it can never ACCEPT a pair overlap-ratio would
+#     REJECT (no false merge relative to the old two-condition gate),
+#     while side-stepping overlap-ratio's sensitivity to detection-box
 #     precision.
+#     (Verified numerically, 2 M samples + fine grid, scripts/
+#     verify_centre_implies_overlap.py: worst-case overlap ratio = 1−k,
+#     attained at h = H, d -> kH⁻.  Production (k=0.4, r=0.5) clears r
+#     by 0.10; the code's /_BOX_H_TO_FS_RATIO divisor makes the
+#     effective k = 1/3, widening the margin to 0.167.)
 #
 #     Our pair (k=0.4, r=0.5) satisfies 0.4 ≤ min(0.5, 0.5), so
 #     centre-distance ⇒ overlap-ratio holds unconditionally.  If k is

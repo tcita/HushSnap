@@ -1,4 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
+import re
 from pathlib import Path
 
 block_cipher = None
@@ -94,7 +95,7 @@ a.datas = filter_datas(a.datas)
 # rapidocr is the only runtime cv2 consumer and uses 30 symbols, all in
 # core/imgproc/imgcodecs (audited by tests/test_cv2_symbol_audit.py).  The
 # official opencv-python cv2.pyd is an 82MB monolithic build with ~90% unused
-# modules.  scripts/build_minimal_opencv.ps1 compiles a 14.3MB static
+# modules.  scripts/build/build_minimal_opencv.ps1 compiles a 14.3MB static
 # single-file pyd (WITH_IPP=OFF + dead codecs/GPU stripped); its OCR output is
 # byte-identical to the official wheel.  The built pyd is committed at
 # third_party/cv2.cp313-win_amd64.pyd so the build needs no compile step.
@@ -104,14 +105,14 @@ a.datas = filter_datas(a.datas)
 # bootstrap loads the tagged minimal pyd via importlib.import_module("cv2")
 # and rapidocr runs end-to-end (5/5, char-identical) under this layout.
 # Rebuild the pyd when OpenCV or the target Python (cp313) version changes:
-#   pwsh scripts/build_minimal_opencv.ps1 -NoIPP -ForceClean
+#   pwsh scripts/build/build_minimal_opencv.ps1 -NoIPP -ForceClean
 #   cp opencv-build/output/cv2.cp313-win_amd64.pyd third_party/
 def swap_minimal_cv2(binaries):
     minimal_pyd = str(project_root / 'third_party' / 'cv2.cp313-win_amd64.pyd')
     if not (project_root / 'third_party' / 'cv2.cp313-win_amd64.pyd').is_file():
         raise SystemExit(
             "third_party/cv2.cp313-win_amd64.pyd not found. "
-            "Build it: pwsh scripts/build_minimal_opencv.ps1 -NoIPP -ForceClean, "
+            "Build it: pwsh scripts/build/build_minimal_opencv.ps1 -NoIPP -ForceClean, "
             "then cp opencv-build/output/cv2.cp313-win_amd64.pyd third_party/"
         )
     # PyInstaller binaries TOC entries are 3-tuples: (dest_relpath, source_abspath, kind).
@@ -135,6 +136,60 @@ def swap_minimal_cv2(binaries):
     return out
 
 a.binaries = swap_minimal_cv2(a.binaries)
+
+# --- cv2 version-consistency assertion --------------------------------------
+# Guard against drift between pip-installed opencv-python (whose cv2/version.py
+# PyInstaller collects) and the third_party/ minimal pyd build version.
+# swap_minimal_cv2 only replaces the cv2.pyd binary source; the cv2/ package
+# layout (__init__.py bootstrap + version.py) still comes from pip's full wheel.
+# If pip upgrades opencv-python but the minimal pyd is not rebuilt, the
+# bootstrap and pyd fall out of sync.
+def _pyd_opencv_version(pyd_path):
+    """Embedded OpenCV library version (3-seg X.Y.Z) in the minimal pyd.
+    getBuildInformation() writes "OpenCV version is 'X.Y.Z'" into .rdata;
+    both official and self-built pyds contain it."""
+    data = Path(pyd_path).read_bytes()
+    m = re.search(rb"OpenCV version is '(\d+\.\d+\.\d+)'", data)
+    if not m:
+        raise SystemExit(
+            f"Could not extract OpenCV version from minimal pyd: {pyd_path}\n"
+            "The pyd may not be a standard OpenCV build."
+        )
+    return m.group(1).decode()
+
+def _collected_opencv_version(datas):
+    """The opencv_version (4-seg X.Y.Z.W) from PyInstaller-collected
+    cv2/version.py (sourced from pip's opencv-python wheel). None if absent."""
+    for entry in datas:
+        dest = entry[0].replace("\\", "/")
+        if dest == "cv2/version.py":
+            txt = Path(entry[1]).read_text(encoding="utf-8")
+            m = re.search(r'opencv_version\s*=\s*["\']([^"\']+)["\']', txt)
+            if m:
+                return m.group(1)
+    return None
+
+def _assert_cv2_version_consistent(datas):
+    pyd_ver = _pyd_opencv_version(
+        str(project_root / "third_party" / "cv2.cp313-win_amd64.pyd"))
+    coll_ver = _collected_opencv_version(datas)
+    if coll_ver is None:
+        raise SystemExit(
+            "PyInstaller did not collect cv2/version.py -- is opencv-python installed?"
+        )
+    coll_lib = ".".join(coll_ver.split(".")[:3])  # first 3 of 4 segs = library version
+    if coll_lib != pyd_ver:
+        raise SystemExit(
+            f"cv2 version drift: pip opencv-python collected = {coll_ver} "
+            f"(library {coll_lib}), third_party minimal pyd build = {pyd_ver}.\n"
+            "pip upgraded opencv-python but the minimal pyd was not rebuilt. Fix:\n"
+            f"  pwsh scripts/build/build_minimal_opencv.ps1 -OpenCVVersion {coll_lib} -NoIPP -ForceClean\n"
+            "  cp opencv-build/output/cv2.cp313-win_amd64.pyd third_party/\n"
+            "  and pin opencv-python to the matching version in requirements.txt."
+        )
+    print(f"[spec] cv2 version consistent: pip opencv-python={coll_ver} == minimal pyd={pyd_ver}")
+
+_assert_cv2_version_consistent(a.datas)
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 

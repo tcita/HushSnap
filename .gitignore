@@ -1,5 +1,6 @@
 # PyInstaller build artifacts
 build/
+!scripts/build/
 dist/
 *.spec
 !HushSnap.spec
@@ -42,7 +43,7 @@ ocr_stability_results/
 ocr_batch/*
 !ocr_batch/*.py
 
-# Minimal OpenCV build artifacts (scripts/build_minimal_opencv.ps1).
+# Minimal OpenCV build artifacts (scripts/build/build_minimal_opencv.ps1).
 # opencv-build/ lives at the repo root (not under scripts/, to keep the
 # scripts folder clean).  src/ = cloned opencv source, cmake/ = the
 # cmake/ninja build tree (~500MB+, fully rebuildable), output/ = the staged

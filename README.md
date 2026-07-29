@@ -52,6 +52,23 @@ The engine supports the following 50 languages out of the box:
 
 **Latin-script (46):** French, German, Italian, Spanish, Portuguese, Dutch, Polish, Romanian, Czech, Swedish, Norwegian, Danish, Finnish, Hungarian, Turkish, Vietnamese, Indonesian, Malay, Azerbaijani, Afrikaans, Bosnian, Croatian, Welsh, Estonian, Irish, Icelandic, Kurdish, Lithuanian, Latvian, Maltese, Māori, Occitan, Slovak, Slovenian, Albanian, Swahili, Tagalog, Uzbek, Latin, Serbian (Latin), Catalan, Basque, Galician, Luxembourgish, Romansh, Quechua
 
+### Minimal cv2 build
+
+`rapidocr` is the only runtime consumer of `cv2`, and it touches just 30 symbols across `core`/`imgproc`/`imgcodecs` (audited by `tests/test_cv2_symbol_audit.py`, which fails loud if a `rapidocr` upgrade pulls a pruned-module symbol). The official `opencv-python` wheel ships an 82 MB monolithic `cv2.pyd` with ~90% of its modules (dnn, video, features2d, ...) never touched. HushSnap ships a purpose-built **24.8 MB static `cv2.pyd`** (OpenCV 5.0.0, `WITH_IPP=OFF` + dead codecs/GPU/ffmpeg stripped) — 70% smaller, OCR output byte-identical to the official wheel.
+
+The minimal cv2 lives in two committed places, kept in sync by `scripts/build/build_minimal_opencv.ps1`:
+
+- **`third_party/cv2.cp313-win_amd64.pyd`** — the binary `HushSnap.spec`'s `swap_minimal_cv2` swaps in as the shipped `cv2.pyd` (the frozen `cv2/` package layout still comes from the `opencv-python` wheel).
+- **`cv2/`** (repo root) — a complete minimal cv2 *package* (12 runtime `.py` + `cv2.pyd`) that **development and tests import directly**. Because `sys.path[0]` is the repo root, `import cv2` resolves here ahead of the site-packages wheel — so development runs against the same minimal cv2 users get, with `cv2.dnn`/`videoio`/etc. absent (a misuse fails immediately, mirroring production, instead of passing in dev and breaking for users). `.pyi` stubs are excluded: they are runtime-dead and would make `hasattr(cv2, "dnn")` misleadingly return `True`.
+
+A version-consistency assertion in `HushSnap.spec` (`_assert_cv2_version_consistent`) cross-checks the pip `opencv-python` package version against the version embedded in the minimal pyd, failing the build on drift. `opencv-python==5.0.0.93` is pinned in `requirements.txt`.
+
+Rebuild the minimal cv2 when OpenCV or the target Python changes:
+```powershell
+pwsh scripts/build/build_minimal_opencv.ps1 -NoIPP -ForceClean
+# syncs both third_party/ and cv2/ automatically
+```
+
 ## Third-Party Acknowledgment
 
 The OCR workflow and product ideas in this project were inspired by the

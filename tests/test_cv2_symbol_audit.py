@@ -1,7 +1,7 @@
 """Guard against rapidocr pulling cv2 symbols from pruned OpenCV modules.
 
 HushSnap ships a minimal OpenCV build -- only core + imgproc + imgcodecs are
-compiled in (see scripts/build_minimal_opencv.ps1).  The official opencv-python
+compiled in (see scripts/build/build_minimal_opencv.ps1).  The official opencv-python
 wheel is an 82 MB monolithic cv2.pyd whose other modules (dnn, ml, video,
 features2d, calib3d, flann, photo, ...) are dead weight rapidocr never touches.
 PyInstaller excludes cannot help (one .pyd, not a split package like PyQt6).
@@ -31,7 +31,7 @@ from pathlib import Path
 
 import pytest
 
-# Mirrors BUILD_LIST in scripts/build_minimal_opencv.ps1.  A symbol is safe to
+# Mirrors BUILD_LIST in scripts/build/build_minimal_opencv.ps1.  A symbol is safe to
 # ship iff its module is in this set.
 ALLOWED_MODULES = frozenset({"core", "imgproc", "imgcodecs"})
 
@@ -166,7 +166,7 @@ def test_known_symbols_actually_exist_in_cv2():
 
     Uses the full installed cv2, which is a superset of the minimal build --
     existence here does NOT mean the minimal build has it.  The end-to-end
-    scripts/verify_minimal_cv2.py + tests/run_ocr_minimal_cv2.py cover that.
+    scripts/build/verify_minimal_cv2.py + tests/run_ocr_minimal_cv2.py cover that.
     """
     roots = _roots_to_scan()
     if not roots:
