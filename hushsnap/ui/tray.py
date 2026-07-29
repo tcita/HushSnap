@@ -270,14 +270,23 @@ def create_tray(
     # Tray is shown after OCR warmup completes (see app.py).
     # Delaying the tray gives a subtle "still loading" signal to the user.
 
-    # Flat light theme: solid card, rounded corners, 1px hairline border.
-    # No drop shadow / transparent margin - see WA_TranslucentBackground note
-    # below for why (Qt 6.11 QGraphicsDropShadowEffect alpha bug).
+    # Flat light theme: solid opaque card, 1px hairline border, square corners.
+    # No border-radius and no WA_TranslucentBackground.
+    #
+    # Why drop the QSS border-radius and per-pixel alpha: let the OS render the
+    # menu directly as a plain opaque square popup, rather than the app painting
+    # its own rounded corners on a translucency layer. The thumbnail / pinned
+    # menus are frameless self-drawn windows whose rounded corners are NOT
+    # duplicated by the OS, so they keep their own QSS radius; the tray menu is
+    # a standard QMenu popup, and its rounded-corners + per-pixel-alpha combo
+    # correlated with solid black corners at the four corners in VM testing
+    # (observed, not diagnosed; the thumbnail / pinned menus did not show it).
+    # Going opaque + square renders correctly. The cause of the VM-only,
+    # tray-only behaviour is not established.
     tray_menu.setStyleSheet("""
         QMenu {
             background-color: #FFFFFF;
             border: 1px solid #E5E5E5;
-            border-radius: 10px;
             padding: 8px;
             font-size: 13px;
             font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
@@ -292,17 +301,6 @@ def create_tray(
             margin: 3px 8px;
         }
     """)
-    # WA_TranslucentBackground keeps the rounded corners transparent outside
-    # the card. There is NO transparent margin anymore: the old code reserved
-    # a 10px margin to paint a QGraphicsDropShadowEffect soft shadow into, but
-    # that effect forces an offscreen texture whose alpha channel is dropped
-    # by Qt 6.11's DWM compositing on some GPU/driver combos (notably dual-GPU
-    # laptops), so the margin composites as a solid black ring around the
-    # menu. The shadow was purely decorative, so both margin and effect were
-    # removed. AB-confirmed: Qt 6.11.1 shows the black ring on the same
-    # recipe, Qt 6.10.2 does not - so this is a Qt 6.11 regression, worked
-    # around here by not using the effect at all.
-    tray_menu.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
 
     # Resolve local icon directory paths
     icons_dir = Path(__file__).resolve().parent / "icons"
