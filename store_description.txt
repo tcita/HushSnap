@@ -86,6 +86,24 @@ OCR の結果は読みやすいレイアウトに整理します。多くの OCR
 Release notes (newest first)
 ================================================================================
 
+### v1.4.0
+
+· OCR 间距更忠实原图：数字与标点间不再错误插入空格（如 3.14、v1.0、12:30），并保留原文缩进。
+· 托盘右键菜单移除渲染不稳定的圆角，改用 Windows 原生渲染。
+· 优化内部依赖，安装包更小、下载更快。
+
+· OCR 間距更忠實原圖：數字與標點間不再錯誤插入空格（如 3.14、v1.0、12:30），並保留原文縮排。
+· 系統匣右鍵選單移除渲染不穩定的圓角，改用 Windows 原生渲染。
+· 最佳化內部相依元件，安裝包更小、下載更快。
+
+· OCR spacing is more faithful to the original: no more stray spaces inside numbers and abbreviations (3.14, v1.0, 12:30), and indentation from the source image is preserved.
+· Tray right-click menu drops the unstable rounded-corner rendering in favor of native Windows rendering.
+· Slimmed down internal dependencies - smaller install package, faster download.
+
+· OCR の間隔がより原文に忠実に：数字や略記の途中にスペースが誤挿入されなくなりました（3.14、v1.0、12:30）。元画像のインデントも保持されます。
+· トレイの右クリックメニューは、描画が不安定な角丸をやめて Windows ネイティブの描画に切り替えました。
+· 内部依存を最適化し、インストールパッケージをより小さく、ダウンロードを高速化しました。
+
 ### v1.3.1
 
 · 修复设置中"开机自启动"选项无效的问题。
