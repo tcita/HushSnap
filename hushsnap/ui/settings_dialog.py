@@ -1190,8 +1190,8 @@ class SettingsDialogController(QtCore.QObject):
         frame_options = [
             (self.translate("settings_ornament_off"), ""),
             (self.translate("settings_ornament_vine"), "vine"),
-            (self.translate("settings_ornament_vine2"), "vine2"),
             (self.translate("settings_ornament_butterfly"), "butterfly"),
+            (self.translate("settings_ornament_floral"), "floral"),
         ]
         card_frame, combo_frame = _make_language_card(
             self.translate("settings_thumbnail_frame_label"),

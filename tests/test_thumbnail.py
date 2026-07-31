@@ -268,11 +268,11 @@ def test_thumbnail_frame_off_default(qapp, monkeypatch):
         win.close()
 
 
-def test_thumbnail_ornament_vine2_loads(qapp, monkeypatch):
-    """The second ornament ('vine2') loads its own asset and positions via its
-    own ox/oy - distinct from the default 'vine' ornament."""
+def test_thumbnail_ornament_floral_loads(qapp, monkeypatch):
+    """The 'floral' ornament loads its own asset and positions via its own
+    hand-set ox/oy - distinct from the default 'vine' ornament."""
     import hushsnap.config as cfg
-    monkeypatch.setattr(cfg, "get_thumbnail_frame", lambda path=None: "vine2")
+    monkeypatch.setattr(cfg, "get_thumbnail_frame", lambda path=None: "floral")
 
     img = Image.new("RGBA", (1000, 500), (255, 255, 255, 255))
     win = ThumbnailWindow(img)
@@ -281,15 +281,15 @@ def test_thumbnail_ornament_vine2_loads(qapp, monkeypatch):
             _CORNER_ORNAMENT_BY_ID, _CORNER_ORNAMENT_SIZE, _CORNER_OUT_PAD,
             _CORNER_OX, _CORNER_OY,
         )
-        assert win._frame_id == "vine2"
+        assert win._frame_id == "floral"
         assert win._frame_enabled is True
         assert win._frame_pixmap is not None and not win._frame_pixmap.isNull()
         assert win._frame_pixmap.width() == _CORNER_ORNAMENT_SIZE
 
-        meta = _CORNER_ORNAMENT_BY_ID["vine2"]
+        meta = _CORNER_ORNAMENT_BY_ID["floral"]
         orr = win._ornament_rect
         assert orr is not None
-        # Uses vine2's own ox/oy from the registry.
+        # Uses floral's own ox/oy from the registry.
         sp = 12
         card_x = sp + _CORNER_OUT_PAD
         card_y = sp + _CORNER_OUT_PAD

@@ -50,9 +50,9 @@ _CornerOrnament = namedtuple(
 )
 _CORNER_ORNAMENTS = (
     _CornerOrnament("vine",       "corner_vine.png",       -19, -18),
-    _CornerOrnament("vine2",      "corner_vine2.png",      -19, -19),
-    # Butterfly artwork by gustavorezende (openclipart), via rawpixel - see icons/ATTRIBUTION.md
+    # Butterfly artwork by gustavorezende (openclipart, Public Domain) - see icons/ATTRIBUTION.md
     _CornerOrnament("butterfly",  "corner_butterfly.png",  -34, -28),
+    _CornerOrnament("floral",     "corner_floral.png",     -19, -22),
 )
 _CORNER_ORNAMENT_BY_ID = {o.id: o for o in _CORNER_ORNAMENTS}
 _CORNER_DEFAULT_ID = "vine"          # legacy bool True migrates to this ornament
