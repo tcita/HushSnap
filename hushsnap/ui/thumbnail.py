@@ -31,32 +31,28 @@ _ELEVATION_ALPHA_PER_PASS = 45
 _COUNTDOWN_WARN_S = 2.0
 
 # ── Decorative corner ornament (optional, opt-in via config 'thumbnail_frame') ─
-# A transparent PNG (ui/icons/corner_vine*.png) whose vine content is concentrated
-# in the top-left and fades toward the bottom-right.  When enabled it hangs on the
-# thumbnail card's top-left CORNER: the ornament's vine centroid lands on the
-# card's top-left corner, so the dense vines stick out up-left (outside the card,
-# like a clasp biting the corner) and only the sparse tail restrains itself over
-# the screenshot.  The window is enlarged on the TOP-LEFT side only to give the
-# outward vines room; the card's bottom-right stays anchored (thumbnail still
-# hugs the screen's bottom-right corner, never off-screen).
+# A transparent square PNG (ui/icons/corner_*.png) hung on the thumbnail card's
+# top-left CORNER.  The ornament is scaled to a fixed 120x120 canvas, then its
+# TOP-LEFT is nailed at (card TL + ox, card TL + oy).  ox/oy is a plain pixel
+# offset measured by hand in scripts/ornament_placer.html (drag the PNG where
+# you want it, read ox/oy off the tool) - NO alpha-centroid computation, which
+# was unstable across different artwork.  Negative ox/oy => the ornament sticks
+# out up-left of the card (like a clasp biting the corner); positive => inside.
+# The window is enlarged on the TOP-LEFT side only to give outward vines room;
+# the card's bottom-right stays anchored (thumbnail still hugs the screen's
+# bottom-right corner, never off-screen).
 #
 # Available ornaments are registered below.  The id is stored in config
-# 'thumbnail_frame' ("" = none).  centroid_x/y is the asset's alpha-weighted
-# center (canvas fraction); the ornament is placed so this point lands on the
-# card's TL corner, then nudged.  nudge_x/y is a perceptual bottom-right pull
-# (+X onto the card, +Y down its left edge) so the dense bulk drapes over the
-# corner ("wrapping") instead of floating up-left of it - the alpha centroid
-# already sits on the corner at nudge 0, but the dense bulk lies up-left of that
-# centroid, so 0 reads as "sticking out".  Per-asset because each vine's mass
-# distribution differs; values measured from each PNG.
+# 'thumbnail_frame' ("" = none).  ox/oy is per-asset because each ornament's
+# intended bite point differs; values are hand-measured, not computed.
 _CornerOrnament = namedtuple(
-    "_CornerOrnament", "id filename centroid_x centroid_y nudge_x nudge_y"
+    "_CornerOrnament", "id filename ox oy"
 )
 _CORNER_ORNAMENTS = (
-    _CornerOrnament("vine",       "corner_vine.png",       0.26, 0.28, 15, 15),
-    _CornerOrnament("vine2",      "corner_vine2.png",      0.27, 0.26, 15, 15),
+    _CornerOrnament("vine",       "corner_vine.png",       -19, -18),
+    _CornerOrnament("vine2",      "corner_vine2.png",      -19, -19),
     # Butterfly artwork by gustavorezende (openclipart), via rawpixel - see icons/ATTRIBUTION.md
-    _CornerOrnament("butterfly",  "corner_butterfly.png",  0.40, 0.28, 20, 0),
+    _CornerOrnament("butterfly",  "corner_butterfly.png",  -34, -28),
 )
 _CORNER_ORNAMENT_BY_ID = {o.id: o for o in _CORNER_ORNAMENTS}
 _CORNER_DEFAULT_ID = "vine"          # legacy bool True migrates to this ornament
@@ -64,12 +60,10 @@ _CORNER_ORNAMENT_SIZE = 120          # square canvas edge, px (restrained intrus
 _CORNER_OUT_PAD = 36                 # extra window padding on top-left sides for outward vines
 # Default-ornament constants (aliases of the "vine" entry above) - the named
 # reference used by the ornament-rect math and by tests.  Other ornaments read
-# their own centroid/nudge from _CORNER_ORNAMENT_BY_ID at draw time.
+# their own ox/oy from _CORNER_ORNAMENT_BY_ID at draw time.
 _vine_meta = _CORNER_ORNAMENT_BY_ID[_CORNER_DEFAULT_ID]
-_CORNER_CENTROID_X = _vine_meta.centroid_x
-_CORNER_CENTROID_Y = _vine_meta.centroid_y
-_CORNER_NUDGE_X = _vine_meta.nudge_x
-_CORNER_NUDGE_Y = _vine_meta.nudge_y
+_CORNER_OX = _vine_meta.ox
+_CORNER_OY = _vine_meta.oy
 
 class ThumbnailWindow(QtWidgets.QWidget):
     """
@@ -82,6 +76,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
     pin_requested_signal = QtCore.pyqtSignal()
     edit_requested_signal = QtCore.pyqtSignal()
     ocr_copy_requested_signal = QtCore.pyqtSignal()
+    open_in_viewer_signal = QtCore.pyqtSignal()
 
     def __init__(self, pil_image: Image.Image):
         super().__init__()
@@ -110,9 +105,10 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self.card_height = THUMBNAIL_HEIGHT
 
         # Optional decorative corner ornament (config 'thumbnail_frame').
-        # A vine PNG hangs on the card's top-left CORNER: its vine centroid lands
-        # on the corner, so dense vines stick out up-left (outside the card, like a
-        # clasp) and only the sparse tail restrains itself over the screenshot.
+        # A square PNG hangs on the card's top-left CORNER: its top-left is nailed
+        # at (card TL + ox, card TL + oy), so dense vines stick out up-left (outside
+        # the card, like a clasp) and only the sparse tail restrains itself over the
+        # screenshot.  ox/oy is hand-set per ornament (scripts/ornament_placer.html).
         # The window is enlarged on the TOP-LEFT side only to room the outward
         # vines; the card's bottom-right stays anchored so the thumbnail still hugs
         # the screen's bottom-right corner and never goes off-screen.  card_rect
@@ -157,27 +153,27 @@ class ThumbnailWindow(QtWidgets.QWidget):
 
         # Ornament draw rect: computed ONCE here as the single source of truth so
         # paintEvent cannot drift from it.  It is a pure function of card_rect +
-        # the constants below - NO screen / DPI / resolution input - so the
-        # ornament stays glued to the card corner on every monitor: the screen
+        # the per-ornament ox/oy offset - NO screen / DPI / resolution input - so
+        # the ornament stays glued to the card corner on every monitor: the screen
         # only decides where the *window* sits on the desktop, and the ornament
-        # rides inside it as a rigid part of the window.  (QPixmap::width() is
-        # already logical px, so the centroid fraction math is DPR-self-consistent.)
+        # rides inside it as a rigid part of the window.  ox/oy is the ornament
+        # canvas's top-left relative to the card's top-left (logical px, hand-set).
         self._ornament_rect = None
         if self._frame_enabled and self._frame_pixmap is not None:
             fp = self._frame_pixmap
             meta = _CORNER_ORNAMENT_BY_ID[self._frame_id]
-            ox = card_x - int(round(fp.width() * meta.centroid_x)) + meta.nudge_x
-            oy = card_y - int(round(fp.height() * meta.centroid_y)) + meta.nudge_y
+            ox = card_x + meta.ox
+            oy = card_y + meta.oy
             self._ornament_rect = QtCore.QRect(ox, oy, fp.width(), fp.height())
             # Guard: the ornament must stay fully inside the window or it clips -
-            # a visible form of misalignment.  A nudge/size/pad change that breaks
+            # a visible form of misalignment.  An ox/oy/size/pad change that breaks
             # this is a regression; log it loudly instead of silently clipping.
             if (ox < 0 or oy < 0
                     or ox + fp.width() > self.display_width
                     or oy + fp.height() > self.display_height):
                 logger.warning(
                     "[FRAME] ornament rect %s outside window %dx%d - will clip; "
-                    "check _CORNER_NUDGE_* / _CORNER_ORNAMENT_SIZE / _CORNER_OUT_PAD",
+                    "check ox/oy / _CORNER_ORNAMENT_SIZE / _CORNER_OUT_PAD",
                     self._ornament_rect, self.display_width, self.display_height,
                 )
 
@@ -452,6 +448,20 @@ class ThumbnailWindow(QtWidgets.QWidget):
         except Exception:
             return 12000 # Fallback to 12s
 
+    def _hit_rect(self) -> QtCore.QRect:
+        """The click/drag hit-test region.
+
+        The card is always hittable.  When a corner ornament is enabled its
+        outward vines extend up-left of the card but are visually part of the
+        thumbnail, so the ornament rect is unioned in - clicking the vines
+        triggers the same action as clicking the card (OCR), rather than being
+        silently ignored.  The ornament's own rect (self._ornament_rect) is
+        window-relative, same coords as card_rect, so the union is direct.
+        """
+        if self._frame_enabled and self._ornament_rect is not None:
+            return self.card_rect.united(self._ornament_rect)
+        return self.card_rect
+
     def _pil_to_qpixmap(self, pil_img: Image.Image) -> QtGui.QPixmap:
         from .editor.utils import _pil_to_qpixmap as _shared
         return _shared(pil_img)
@@ -647,7 +657,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
             pos = event.position().toPoint()
-            if self.card_rect.contains(pos):
+            if self._hit_rect().contains(pos):
                 self._drag_start_pos = pos
 
     def mouseMoveEvent(self, event):
@@ -662,7 +672,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
     def mouseReleaseEvent(self, event):
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
             release_pos = event.position().toPoint()
-            if self.card_rect.contains(release_pos):
+            if self._hit_rect().contains(release_pos):
                 if self.action_pill.geometry().contains(release_pos):
                     return
                 logger.debug("[OCR_CHAIN] thumbnail clicked at %s", release_pos)
@@ -672,7 +682,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
             else:
                 logger.debug(f"Thumbnail release outside card at {release_pos}, click ignored.")
         elif event.button() == QtCore.Qt.MouseButton.RightButton:
-            if self.card_rect.contains(event.position().toPoint()):
+            if self._hit_rect().contains(event.position().toPoint()):
                 self._show_context_menu(event.globalPosition().toPoint())
 
     def _show_context_menu(self, pos):
@@ -695,11 +705,13 @@ class ThumbnailWindow(QtWidgets.QWidget):
 
         # The hover pill already exposes Edit / Pin / Close, so the right-click
         # menu carries only actions the pill does NOT: a silent "copy text" OCR
-        # (no popup - text goes straight to the clipboard with a toast) and
-        # Save to Desktop. Pin and Edit used to live here too but were exact
-        # duplicates of the pill buttons.
+        # (no popup - text goes straight to the clipboard with a toast), View
+        # Original (open the full-size capture in the system's default image
+        # viewer), and Save to Desktop. Pin and Edit used to live here too but
+        # were exact duplicates of the pill buttons.
         ocr_action = menu.addAction(ui_text(lang, "menu_ocr_recognize"))
         menu.addSeparator()
+        view_action = menu.addAction(ui_text(lang, "thumbnail_open_in_viewer"))
         desktop_action = menu.addAction(ui_text(lang, "thumbnail_save_to_desktop"))
 
         action = menu.exec(pos)
@@ -709,6 +721,9 @@ class ThumbnailWindow(QtWidgets.QWidget):
             self.ocr_copy_requested_signal.emit()
             # Do not close: the handler shows the loading bar and dismisses
             # this thumbnail once silent OCR completes (a toast confirms the copy).
+        elif action == view_action:
+            self.open_in_viewer_signal.emit()
+            self.close()
         elif action == desktop_action:
             self.save_to_desktop_signal.emit()
             self.close()
@@ -1056,6 +1071,7 @@ class ThumbnailManager(QtCore.QObject):
     pin_requested = QtCore.pyqtSignal(object, object, object)
     edit_requested = QtCore.pyqtSignal(object)
     ocr_copy_requested = QtCore.pyqtSignal(object)
+    open_in_viewer = QtCore.pyqtSignal(object)
 
     def __init__(self):
         super().__init__()
@@ -1083,6 +1099,7 @@ class ThumbnailManager(QtCore.QObject):
         win.save_to_desktop_signal.connect(lambda: self.save_to_desktop.emit(pil_image))
         win.edit_requested_signal.connect(lambda: self.edit_requested.emit(pil_image))
         win.ocr_copy_requested_signal.connect(lambda: self.ocr_copy_requested.emit(pil_image))
+        win.open_in_viewer_signal.connect(lambda: self.open_in_viewer.emit(pil_image))
         win.pin_requested_signal.connect(
             lambda: self.pin_requested.emit(
                 pil_image,

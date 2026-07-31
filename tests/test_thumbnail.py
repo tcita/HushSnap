@@ -122,11 +122,37 @@ def test_thumbnail_ocr_copy_signal_relay(qapp):
         win.close()
 
 
+def test_thumbnail_open_in_viewer_signal_relay(qapp):
+    """The 'View Original' menu action relays pil_image through the manager.
+
+    The right-click menu emits open_in_viewer_signal, which the manager
+    re-emits as open_in_viewer(pil_image) - the temp-file + os.startfile path.
+    """
+    from hushsnap.ui.thumbnail import ThumbnailManager
+
+    img = Image.new("RGBA", (100, 100), (255, 0, 0, 255))
+    mgr = ThumbnailManager()  # fresh instance: avoid cross-test singleton lifetime
+    mgr._do_show(img)
+    assert len(mgr._windows) == 1
+    win = mgr._windows[0]
+
+    received = []
+    mgr.open_in_viewer.connect(lambda pil: received.append(pil))
+    try:
+        win.open_in_viewer_signal.emit()
+        assert len(received) == 1
+        assert received[0] is img
+    finally:
+        mgr.open_in_viewer.disconnect()
+        win.close()
+
+
 def test_thumbnail_vine_frame_geometry(qapp, monkeypatch):
     """When the corner ornament is enabled the window is enlarged on the top-left
     side only, the card shifts down-right by that padding (its bottom-right stays
-    anchored), and the ornament is scaled to its configured size then nudged to
-    hug the card without being clipped by the window."""
+    anchored), and the ornament is scaled to its configured size then placed at
+    its hand-set ox/oy offset so it hugs the card without being clipped by the
+    window."""
     import hushsnap.config as cfg
     monkeypatch.setattr(cfg, "get_thumbnail_frame", lambda path=None: True)
 
@@ -135,8 +161,7 @@ def test_thumbnail_vine_frame_geometry(qapp, monkeypatch):
     try:
         from hushsnap.ui.thumbnail import (
             _CORNER_ORNAMENT_SIZE, _CORNER_OUT_PAD,
-            _CORNER_CENTROID_X, _CORNER_CENTROID_Y,
-            _CORNER_NUDGE_X, _CORNER_NUDGE_Y,
+            _CORNER_OX, _CORNER_OY,
         )
         assert win._frame_enabled is True
         assert win._frame_pixmap is not None and not win._frame_pixmap.isNull()
@@ -164,11 +189,11 @@ def test_thumbnail_vine_frame_geometry(qapp, monkeypatch):
         assert orr.x() >= 0 and orr.y() >= 0                       # origin inside window
         assert orr.x() + orr.width() <= win.display_width          # not clipped on the right
         assert orr.y() + orr.height() <= win.display_height        # not clipped at the bottom
-        # Card-relative offset is a pure constant (the cross-monitor lock).
-        assert orr.x() - win.card_rect.left() == -int(round(_CORNER_ORNAMENT_SIZE * _CORNER_CENTROID_X)) + _CORNER_NUDGE_X
-        assert orr.y() - win.card_rect.top() == -int(round(_CORNER_ORNAMENT_SIZE * _CORNER_CENTROID_Y)) + _CORNER_NUDGE_Y
+        # Card-relative offset is the hand-set ox/oy (the cross-monitor lock).
+        assert orr.x() - win.card_rect.left() == _CORNER_OX
+        assert orr.y() - win.card_rect.top() == _CORNER_OY
         # outward (up-left of corner) part still fits in the top-left padding.
-        outward_x = int(round(_CORNER_ORNAMENT_SIZE * _CORNER_CENTROID_X))
+        outward_x = -_CORNER_OX
         assert outward_x <= _CORNER_OUT_PAD + 12
     finally:
         win.close()
@@ -185,8 +210,7 @@ def test_thumbnail_ornament_locked_across_screens(qapp, monkeypatch):
     import hushsnap.dpi as dpi
     from hushsnap.ui.thumbnail import (
         _CORNER_ORNAMENT_SIZE, _CORNER_OUT_PAD,
-        _CORNER_CENTROID_X, _CORNER_CENTROID_Y,
-        _CORNER_NUDGE_X, _CORNER_NUDGE_Y,
+        _CORNER_OX, _CORNER_OY,
     )
 
     class _FakeScreen:
@@ -220,8 +244,8 @@ def test_thumbnail_ornament_locked_across_screens(qapp, monkeypatch):
     sp = 12
     card_x = sp + _CORNER_OUT_PAD
     card_y = sp + _CORNER_OUT_PAD
-    exp_ox = card_x - int(round(_CORNER_ORNAMENT_SIZE * _CORNER_CENTROID_X)) + _CORNER_NUDGE_X
-    exp_oy = card_y - int(round(_CORNER_ORNAMENT_SIZE * _CORNER_CENTROID_Y)) + _CORNER_NUDGE_Y
+    exp_ox = card_x + _CORNER_OX
+    exp_oy = card_y + _CORNER_OY
     expected = QtCore.QRect(exp_ox, exp_oy, _CORNER_ORNAMENT_SIZE, _CORNER_ORNAMENT_SIZE)
     assert seen[0] == expected
 
@@ -246,7 +270,7 @@ def test_thumbnail_frame_off_default(qapp, monkeypatch):
 
 def test_thumbnail_ornament_vine2_loads(qapp, monkeypatch):
     """The second ornament ('vine2') loads its own asset and positions via its
-    own centroid/nudge - distinct from the default 'vine' ornament."""
+    own ox/oy - distinct from the default 'vine' ornament."""
     import hushsnap.config as cfg
     monkeypatch.setattr(cfg, "get_thumbnail_frame", lambda path=None: "vine2")
 
@@ -255,7 +279,7 @@ def test_thumbnail_ornament_vine2_loads(qapp, monkeypatch):
     try:
         from hushsnap.ui.thumbnail import (
             _CORNER_ORNAMENT_BY_ID, _CORNER_ORNAMENT_SIZE, _CORNER_OUT_PAD,
-            _CORNER_CENTROID_X, _CORNER_CENTROID_Y,
+            _CORNER_OX, _CORNER_OY,
         )
         assert win._frame_id == "vine2"
         assert win._frame_enabled is True
@@ -265,17 +289,17 @@ def test_thumbnail_ornament_vine2_loads(qapp, monkeypatch):
         meta = _CORNER_ORNAMENT_BY_ID["vine2"]
         orr = win._ornament_rect
         assert orr is not None
-        # Uses vine2's own centroid/nudge from the registry.
+        # Uses vine2's own ox/oy from the registry.
         sp = 12
         card_x = sp + _CORNER_OUT_PAD
         card_y = sp + _CORNER_OUT_PAD
-        exp_ox = card_x - int(round(_CORNER_ORNAMENT_SIZE * meta.centroid_x)) + meta.nudge_x
-        exp_oy = card_y - int(round(_CORNER_ORNAMENT_SIZE * meta.centroid_y)) + meta.nudge_y
+        exp_ox = card_x + meta.ox
+        exp_oy = card_y + meta.oy
         assert orr.x() == exp_ox
         assert orr.y() == exp_oy
-        # Distinct from the default 'vine' rect (different centroid).
-        vine_ox = card_x - int(round(_CORNER_ORNAMENT_SIZE * _CORNER_CENTROID_X)) + meta.nudge_x
-        vine_oy = card_y - int(round(_CORNER_ORNAMENT_SIZE * _CORNER_CENTROID_Y)) + meta.nudge_x
+        # Distinct from the default 'vine' rect (different ox/oy).
+        vine_ox = card_x + _CORNER_OX
+        vine_oy = card_y + _CORNER_OY
         assert (orr.x(), orr.y()) != (vine_ox, vine_oy)
         # Not clipped by the window.
         assert orr.x() >= 0 and orr.y() >= 0
@@ -283,3 +307,45 @@ def test_thumbnail_ornament_vine2_loads(qapp, monkeypatch):
         assert orr.y() + orr.height() <= win.display_height
     finally:
         win.close()
+
+
+def test_thumbnail_ornament_is_clickable(qapp, monkeypatch):
+    """The outward corner ornament is visually part of the thumbnail, so a click
+    landing on the ornament (up-left of the card, outside card_rect) must be
+    treated as a click on the thumbnail, not silently ignored.
+
+    _hit_rect() unions card_rect with the ornament rect when the ornament is on,
+    so a point inside the ornament rect but outside card_rect is hittable.
+    With the ornament off, _hit_rect() is just card_rect (no false hits)."""
+    import hushsnap.config as cfg
+    from hushsnap.ui.thumbnail import _CORNER_ORNAMENT_SIZE
+
+    img = Image.new("RGBA", (1000, 500), (255, 255, 255, 255))
+
+    # --- Ornament ON: a point on the outward vines is hittable ---
+    monkeypatch.setattr(cfg, "get_thumbnail_frame", lambda path=None: True)
+    win = ThumbnailWindow(img)
+    try:
+        orr = win._ornament_rect
+        assert orr is not None
+        # A point clearly inside the ornament but outside the card: pick the
+        # ornament's own top-left (vines stick out up-left, so its TL is outside
+        # card_rect when ox/oy < 0, which the default vine ornament has).
+        vine_pt = QtCore.QPoint(orr.x() + 4, orr.y() + 4)
+        assert not win.card_rect.contains(vine_pt), "test precondition: point must be outside card_rect"
+        assert win._hit_rect().contains(vine_pt), "ornament point should be hittable"
+        # Card itself is still hittable.
+        assert win._hit_rect().contains(win.card_rect.center())
+    finally:
+        win.close()
+
+    # --- Ornament OFF: hit rect is exactly card_rect, no outward hits ---
+    monkeypatch.setattr(cfg, "get_thumbnail_frame", lambda path=None: False)
+    win2 = ThumbnailWindow(img)
+    try:
+        # A point just up-left of the card (where vines would be) is NOT hittable.
+        outside_pt = QtCore.QPoint(win2.card_rect.x() - 10, win2.card_rect.y() - 10)
+        assert not win2._hit_rect().contains(outside_pt)
+        assert win2._hit_rect() == win2.card_rect
+    finally:
+        win2.close()
