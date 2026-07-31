@@ -5,6 +5,7 @@ import sys
 import logging
 import time
 import subprocess
+import tempfile
 from pathlib import Path
 
 from PyQt6 import QtWidgets, QtCore
@@ -311,6 +312,7 @@ class Application(QtCore.QObject):
         thumbnail_manager.save_to_desktop.connect(self._handle_save_to_desktop)
         thumbnail_manager.edit_requested.connect(self._handle_open_editor)
         thumbnail_manager.ocr_copy_requested.connect(self._handle_thumbnail_ocr_copy)
+        thumbnail_manager.open_in_viewer.connect(self._handle_open_in_viewer)
         thumbnail_manager.pin_requested.connect(
             lambda pil, pos, size: pinned_image_manager.pin_image(
                 pil, 
@@ -508,6 +510,28 @@ class Application(QtCore.QObject):
             show_toast(self.translate("pin_saved_to_desktop"))
         except Exception:
             self.logger.exception("Failed to save image to desktop")
+
+    def _handle_open_in_viewer(self, pil_img):
+        """Open the capture in the system's default image viewer via a temp file.
+
+        A temp PNG is written (not to the Desktop - that is Save to Desktop's
+        job) and handed to ``os.startfile``. Stale temp files from prior opens
+        are swept first; a file still locked by an open viewer is skipped.
+        """
+        try:
+            tmp_dir = Path(tempfile.gettempdir())
+            for old in tmp_dir.glob("HushSnap_view_*.png"):
+                try:
+                    old.unlink()
+                except OSError:
+                    pass
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            ms = int(time.time() * 1000) % 1000
+            file_path = tmp_dir / f"HushSnap_view_{timestamp}_{ms:03d}.png"
+            pil_img.save(file_path)
+            os.startfile(str(file_path))
+        except Exception:
+            self.logger.exception("Failed to open image in default viewer")
 
     def _handle_status_toast(self, title_key, body_key, is_error, kwargs):
         from .ui.toast import show_toast
