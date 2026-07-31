@@ -9,7 +9,7 @@ project_root = Path(spec_file).resolve().parent if spec_file else Path.cwd()
 from PyInstaller.utils.hooks import collect_data_files
 
 # Collect SVG icons — loaded via filesystem reads (open / QIcon path), not Python imports
-icons_glob = [str(f) for f in (project_root / 'hushsnap' / 'ui' / 'icons').glob('*.svg')]
+icons_glob = [str(f) for f in (project_root / 'hushsnap' / 'ui' / 'icons').glob('*') if f.suffix in ('.svg', '.png')]
 bundle_datas = [('hushsnap.ico', '.')] + collect_data_files('rapidocr') + [(f, 'hushsnap/ui/icons') for f in icons_glob]
 
 a = Analysis(
