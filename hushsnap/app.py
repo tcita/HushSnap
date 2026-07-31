@@ -310,6 +310,7 @@ class Application(QtCore.QObject):
         thumbnail_manager.clicked.connect(self._handle_thumbnail_clicked)
         thumbnail_manager.save_to_desktop.connect(self._handle_save_to_desktop)
         thumbnail_manager.edit_requested.connect(self._handle_open_editor)
+        thumbnail_manager.ocr_copy_requested.connect(self._handle_thumbnail_ocr_copy)
         thumbnail_manager.pin_requested.connect(
             lambda pil, pos, size: pinned_image_manager.pin_image(
                 pil, 
@@ -418,6 +419,40 @@ class Application(QtCore.QObject):
             QtGui.QImage.Format.Format_RGBA8888,
         ).copy()
         self.ocr_controller.start_request(QtGui.QPixmap.fromImage(qimage))
+
+    def _handle_thumbnail_ocr_copy(self, pil_img):
+        """Silent OCR: recognize text and copy to the clipboard without the popup.
+
+        Routes through ocr_controller.copy_text_from_image - the same no-popup
+        path the pinned-image menu uses - so the result goes straight to the
+        clipboard with a toast, instead of opening the editable OCR popup that a
+        left-click produces.  The thumbnail switches to its loading state and is
+        dismissed once OCR completes.
+        """
+        self.logger.debug("[OCR_CHAIN] thumbnail silent-OCR copy handled")
+        from .ui.thumbnail import thumbnail_manager
+        thumb_win = thumbnail_manager.current_window()
+        if thumb_win is None:
+            return
+        thumb_win.start_loading()
+
+        from PyQt6 import QtGui
+        if pil_img.mode != "RGBA":
+            pil_img = pil_img.convert("RGBA")
+        data = pil_img.tobytes("raw", "RGBA")
+        qimage = QtGui.QImage(
+            data, pil_img.size[0], pil_img.size[1],
+            QtGui.QImage.Format.Format_RGBA8888,
+        ).copy()
+        pixmap = QtGui.QPixmap.fromImage(qimage)
+
+        def _dismiss():
+            try:
+                thumb_win.dismiss()
+            except RuntimeError:
+                pass
+
+        self.ocr_controller.copy_text_from_image(pixmap, thumb_win, on_done=_dismiss)
 
     def _handle_open_editor(self, pil_img):
         """Open the lightweight image editor for the given PIL image."""

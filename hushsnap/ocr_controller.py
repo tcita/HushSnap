@@ -104,21 +104,27 @@ class OcrController:
         self._detach_if_pinned()
         self.popup.set_anchor_pos(x, y, width, height)
 
-    def copy_text_from_image(self, pixmap, toast_window):
-        """Run OCR on *pixmap* and copy recognized text to clipboard."""
+    def copy_text_from_image(self, pixmap, toast_window, on_done=None):
+        """Run OCR on *pixmap* and copy recognized text to clipboard.
+
+        ``on_done`` is an optional no-arg callback invoked after the result is
+        handled (text copied, toast shown).  The thumbnail's silent-OCR path
+        uses it to dismiss the thumbnail once OCR completes; the pinned-image
+        caller leaves it None.
+        """
         from PyQt6 import QtGui
         image = pixmap.toImage() if isinstance(pixmap, QtGui.QPixmap) else pixmap
         request = OcrRequest(pixmap=image, debug_dir=None)
 
         bridge = _ToastBridge()
         bridge.done.connect(
-            lambda resp: self._on_toast_ocr_done(resp, toast_window),
+            lambda resp: self._on_toast_ocr_done(resp, toast_window, on_done),
             QtCore.Qt.ConnectionType.QueuedConnection,
         )
         self.service.recognize_async(request, bridge.done.emit)
         self._toast_bridge = bridge
 
-    def _on_toast_ocr_done(self, response, toast_window):
+    def _on_toast_ocr_done(self, response, toast_window, on_done=None):
         """Main-thread handler: copy OCR text and show global toast."""
         self._toast_bridge = None
         self._trim_timer.start(5000)
@@ -130,15 +136,18 @@ class OcrController:
                 clipboard.setText(text)
         
         try:
-            if not toast_window.isVisible():
-                return
+            visible = toast_window.isVisible()
         except RuntimeError:
-            return
+            visible = False
 
-        if text:
-            show_toast(self.translate("pin_ocr_copied"))
-        else:
-            show_toast(self.translate("pin_ocr_empty"), is_error=True)
+        if visible:
+            if text:
+                show_toast(self.translate("pin_ocr_copied"))
+            else:
+                show_toast(self.translate("pin_ocr_empty"), is_error=True)
+
+        if on_done:
+            on_done()
 
     def schedule_ocr(self):
         # Internal/debug-only hook: arms the "auto-OCR on next capture" flag.
