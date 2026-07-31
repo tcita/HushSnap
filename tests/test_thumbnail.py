@@ -309,43 +309,26 @@ def test_thumbnail_ornament_vine2_loads(qapp, monkeypatch):
         win.close()
 
 
-def test_thumbnail_ornament_is_clickable(qapp, monkeypatch):
-    """The outward corner ornament is visually part of the thumbnail, so a click
-    landing on the ornament (up-left of the card, outside card_rect) must be
-    treated as a click on the thumbnail, not silently ignored.
-
-    _hit_rect() unions card_rect with the ornament rect when the ornament is on,
-    so a point inside the ornament rect but outside card_rect is hittable.
-    With the ornament off, _hit_rect() is just card_rect (no false hits)."""
+def test_thumbnail_ornament_clicks_passthrough(qapp, monkeypatch):
+    """The corner ornament is purely decorative: it never participates in hit
+    testing.  A click landing on the ornament (up-left of the card, outside
+    card_rect) is ignored whether the ornament is on or off - the clickable
+    region is always exactly card_rect, so toggling the ornament cannot change
+    click behavior."""
     import hushsnap.config as cfg
-    from hushsnap.ui.thumbnail import _CORNER_ORNAMENT_SIZE
 
     img = Image.new("RGBA", (1000, 500), (255, 255, 255, 255))
 
-    # --- Ornament ON: a point on the outward vines is hittable ---
-    monkeypatch.setattr(cfg, "get_thumbnail_frame", lambda path=None: True)
-    win = ThumbnailWindow(img)
-    try:
-        orr = win._ornament_rect
-        assert orr is not None
-        # A point clearly inside the ornament but outside the card: pick the
-        # ornament's own top-left (vines stick out up-left, so its TL is outside
-        # card_rect when ox/oy < 0, which the default vine ornament has).
-        vine_pt = QtCore.QPoint(orr.x() + 4, orr.y() + 4)
-        assert not win.card_rect.contains(vine_pt), "test precondition: point must be outside card_rect"
-        assert win._hit_rect().contains(vine_pt), "ornament point should be hittable"
-        # Card itself is still hittable.
-        assert win._hit_rect().contains(win.card_rect.center())
-    finally:
-        win.close()
+    for frame_on in (True, False):
+        monkeypatch.setattr(cfg, "get_thumbnail_frame", lambda path=None, _f=frame_on: _f)
+        win = ThumbnailWindow(img)
+        try:
+            # A point on the outward ornament (where vines/butterfly stick out)
+            # is outside card_rect and must NOT be hittable, ornament on or off.
+            outside_pt = QtCore.QPoint(win.card_rect.x() - 10, win.card_rect.y() - 10)
+            assert not win.card_rect.contains(outside_pt)
+            # The card center is always hittable.
+            assert win.card_rect.contains(win.card_rect.center())
+        finally:
+            win.close()
 
-    # --- Ornament OFF: hit rect is exactly card_rect, no outward hits ---
-    monkeypatch.setattr(cfg, "get_thumbnail_frame", lambda path=None: False)
-    win2 = ThumbnailWindow(img)
-    try:
-        # A point just up-left of the card (where vines would be) is NOT hittable.
-        outside_pt = QtCore.QPoint(win2.card_rect.x() - 10, win2.card_rect.y() - 10)
-        assert not win2._hit_rect().contains(outside_pt)
-        assert win2._hit_rect() == win2.card_rect
-    finally:
-        win2.close()

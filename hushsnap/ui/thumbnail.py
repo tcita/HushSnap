@@ -96,6 +96,11 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_NativeWindow)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setAcceptDrops(True)
+        # Receive mouse-move events with no button held so hover can follow the
+        # cursor into/out of card_rect (the click region).  Without this Qt only
+        # delivers mouseMoveEvent while a button is pressed, so the hover glow
+        # could not be turned off when the cursor drifts out onto the ornament.
+        self.setMouseTracking(True)
         
         # Shadow padding for custom drop shadow
         self.shadow_padding = 12
@@ -448,20 +453,6 @@ class ThumbnailWindow(QtWidgets.QWidget):
         except Exception:
             return 12000 # Fallback to 12s
 
-    def _hit_rect(self) -> QtCore.QRect:
-        """The click/drag hit-test region.
-
-        The card is always hittable.  When a corner ornament is enabled its
-        outward vines extend up-left of the card but are visually part of the
-        thumbnail, so the ornament rect is unioned in - clicking the vines
-        triggers the same action as clicking the card (OCR), rather than being
-        silently ignored.  The ornament's own rect (self._ornament_rect) is
-        window-relative, same coords as card_rect, so the union is direct.
-        """
-        if self._frame_enabled and self._ornament_rect is not None:
-            return self.card_rect.united(self._ornament_rect)
-        return self.card_rect
-
     def _pil_to_qpixmap(self, pil_img: Image.Image) -> QtGui.QPixmap:
         from .editor.utils import _pil_to_qpixmap as _shared
         return _shared(pil_img)
@@ -600,26 +591,44 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self._start_timer()
         self._start_countdown()
 
+    def _cursor_over_card(self) -> bool:
+        """Whether the cursor is currently inside the card_rect (the click region).
+
+        Hover and click share this single region so their behavior can never
+        diverge - the corner ornament, which extends the window up-left of the
+        card, is irrelevant to both."""
+        return self.card_rect.contains(self.mapFromGlobal(QtGui.QCursor.pos()))
+
+    def _set_hovered(self, over_card: bool) -> None:
+        """Set hover visuals (green glow + action pill) on/off, no-op if unchanged.
+
+        Single write site for _hovered + pill visibility, so enter/move/leave
+        can't drift out of sync."""
+        if over_card == self._hovered:
+            return
+        self._hovered = over_card
+        self.update()
+        if over_card:
+            self.action_pill.show()
+            self.action_pill.raise_()
+        else:
+            self.action_pill.hide()
+
     def enterEvent(self, event):
-        """Pause timer on hover, activate visual feedback, and show buttons."""
+        """Pause auto-hide on entering the window; light up only if over the card."""
         self.timer.stop()
         self.fade_anim.stop()
         self._pause_countdown()
         self.setWindowOpacity(1.0)
-        self._hovered = True
-        self.update()
-        self.action_pill.show()
-        self.action_pill.raise_()
+        self._set_hovered(self._cursor_over_card())
 
     def leaveEvent(self, event):
-        """Resume timer on leave, deactivate visual feedback, and hide buttons."""
+        """Resume auto-hide on leaving the window; clear hover visuals."""
         if not self._is_dragging and not self._menu_active:
             self._start_timer()
             self._start_countdown()
-        self._hovered = False
-        self.update()
+        self._set_hovered(False)
         self._restore_pill_style()
-        self.action_pill.hide()
 
     # ── Pill hover ─────────────────────────────────────────────────
     # Hover state is tracked via self._pill_state and rendered in paintEvent.
@@ -657,11 +666,13 @@ class ThumbnailWindow(QtWidgets.QWidget):
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
             pos = event.position().toPoint()
-            if self._hit_rect().contains(pos):
+            if self.card_rect.contains(pos):
                 self._drag_start_pos = pos
 
     def mouseMoveEvent(self, event):
+        # Plain hover moves (no button): keep the glow + pill glued to card_rect.
         if not (event.buttons() & QtCore.Qt.MouseButton.LeftButton):
+            self._set_hovered(self.card_rect.contains(event.position().toPoint()))
             return
         if not self._drag_start_pos:
             return
@@ -672,17 +683,15 @@ class ThumbnailWindow(QtWidgets.QWidget):
     def mouseReleaseEvent(self, event):
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
             release_pos = event.position().toPoint()
-            if self._hit_rect().contains(release_pos):
+            if self.card_rect.contains(release_pos):
                 if self.action_pill.geometry().contains(release_pos):
                     return
                 logger.debug("[OCR_CHAIN] thumbnail clicked at %s", release_pos)
                 self.clicked_signal.emit()
                 if not self._loading:
                     self.close()
-            else:
-                logger.debug(f"Thumbnail release outside card at {release_pos}, click ignored.")
         elif event.button() == QtCore.Qt.MouseButton.RightButton:
-            if self._hit_rect().contains(event.position().toPoint()):
+            if self.card_rect.contains(event.position().toPoint()):
                 self._show_context_menu(event.globalPosition().toPoint())
 
     def _show_context_menu(self, pos):
