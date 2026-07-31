@@ -39,7 +39,6 @@ class ThumbnailWindow(QtWidgets.QWidget):
     save_to_desktop_signal = QtCore.pyqtSignal()
     pin_requested_signal = QtCore.pyqtSignal()
     edit_requested_signal = QtCore.pyqtSignal()
-    copy_image_signal = QtCore.pyqtSignal()
 
     def __init__(self, pil_image: Image.Image):
         super().__init__()
@@ -517,7 +516,6 @@ class ThumbnailWindow(QtWidgets.QWidget):
         apply_menu_shadow(menu)
 
         pin_action = menu.addAction(ui_text(lang, "thumbnail_pin"))
-        copy_action = menu.addAction(ui_text(lang, "pin_copy_image"))
         edit_action = menu.addAction(ui_text(lang, "thumbnail_edit"))
         menu.addSeparator()
         desktop_action = menu.addAction(ui_text(lang, "thumbnail_save_to_desktop"))
@@ -525,10 +523,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
         action = menu.exec(pos)
         self._menu_active = False
 
-        if action == copy_action:
-            self.copy_image_signal.emit()
-            self.close()
-        elif action == edit_action:
+        if action == edit_action:
             self.edit_requested_signal.emit()
             self.close()
         elif action == desktop_action:
@@ -872,7 +867,6 @@ class ThumbnailManager(QtCore.QObject):
     save_to_desktop = QtCore.pyqtSignal(object)
     pin_requested = QtCore.pyqtSignal(object, object, object)
     edit_requested = QtCore.pyqtSignal(object)
-    copy_image = QtCore.pyqtSignal(object)
 
     def __init__(self):
         super().__init__()
@@ -899,7 +893,6 @@ class ThumbnailManager(QtCore.QObject):
         win.clicked_signal.connect(lambda: self.clicked.emit(pil_image))
         win.save_to_desktop_signal.connect(lambda: self.save_to_desktop.emit(pil_image))
         win.edit_requested_signal.connect(lambda: self.edit_requested.emit(pil_image))
-        win.copy_image_signal.connect(lambda: self.copy_image.emit(pil_image))
         win.pin_requested_signal.connect(
             lambda: self.pin_requested.emit(
                 pil_image,
