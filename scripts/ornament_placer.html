@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ornament Placer · HushSnap</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+    background: #e9ecef; color: #2c3038; user-select: none;
+  }
+  .toolbar {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 14px 20px; background: #fff; border-bottom: 1px solid #d4d9e0;
+    box-shadow: 0 1px 4px rgba(0,0,0,.05);
+  }
+  .toolbar label { font-size: 14px; color: #5a6270; }
+  .btn {
+    padding: 8px 16px; border: 1px solid #c6cbd3; border-radius: 6px;
+    background: #fff; cursor: pointer; font-size: 14px; color: #2c3038;
+    transition: all .15s;
+  }
+  .btn:hover { background: #f0f2f5; border-color: #9aa3b0; }
+  .btn-primary { background: #d8423e; color: #fff; border-color: #d8423e; }
+  .btn-primary:hover { background: #c33834; }
+  .readout {
+    font-family: 'Consolas', 'Cascadia Code', monospace; font-size: 22px;
+    font-weight: 600; color: #2078c8; padding: 4px 14px;
+    background: #eef4fc; border-radius: 6px; min-width: 180px; text-align: center;
+  }
+  .readout .lbl { color: #8a93a3; font-weight: 400; font-size: 16px; }
+  select { padding: 7px 10px; border: 1px solid #c6cbd3; border-radius: 6px; font-size: 14px; }
+  .hint { font-size: 12px; color: #8a93a3; margin-left: auto; }
+  .hint b { color: #5a6270; }
+  .status { font-size: 13px; font-weight: 600; min-width: 120px; }
+  .status.ok { color: #2a9d4a; }
+  .status.err { color: #d8423e; }
+
+  .canvas-wrap { padding: 10px 30px 30px; overflow: auto; }
+  .stage { position: relative; }
+
+  .thumb {
+    position: absolute; overflow: hidden; background: #fafbfc;
+    border: 2px solid #c6cbd3;
+  }
+  .thumb .line { position: absolute; border-radius: 3px; }
+
+  /* origin marker on the card's TL corner */
+  .origin {
+    position: absolute; width: 14px; height: 14px; border-radius: 50%;
+    background: #d8423e; border: 2px solid #fff; z-index: 20;
+    transform: translate(-50%, -50%); pointer-events: none;
+  }
+  .origin-lbl {
+    position: absolute; z-index: 20; font-size: 13px; font-weight: 600;
+    color: #d8423e; pointer-events: none; white-space: nowrap;
+  }
+
+  /* offset guide lines: origin -> ornament TL */
+  .guide-h, .guide-v { position: absolute; z-index: 15; pointer-events: none; }
+  .guide-h { border-top: 1.5px dashed #2078c8; }
+  .guide-v { border-left: 1.5px dashed #2078c8; }
+
+  .ornament-wrap {
+    position: absolute; cursor: grab; z-index: 30;
+    box-shadow: 0 0 0 1px rgba(32,120,200,.4);
+  }
+  .ornament-wrap.dragging { cursor: grabbing; }
+  .ornament-wrap img { width: 100%; height: 100%; display: block; pointer-events: none; }
+  /* ornament TL corner marker */
+  .ornament-wrap::before {
+    content: ''; position: absolute; left: -7px; top: -7px;
+    width: 13px; height: 13px; border-radius: 50%;
+    background: #2078c8; border: 2px solid #fff; z-index: 31;
+  }
+  .ornament-wrap::after {
+    content: attr(data-coord); position: absolute; left: 12px; top: -26px;
+    font-family: 'Consolas', monospace; font-size: 13px; font-weight: 600;
+    color: #fff; background: #2078c8; padding: 2px 8px; border-radius: 4px;
+    white-space: nowrap; z-index: 31;
+  }
+
+  .placeholder {
+    position: absolute; display: flex; align-items: center; justify-content: center;
+    color: #9aa3b0; font-size: 15px; text-align: center; pointer-events: none;
+  }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <label>Ornament PNG:</label>
+    <input type="file" id="file" accept="image/png" class="btn">
+    <button class="btn" id="reset">Reset to origin</button>
+    <div class="readout">
+      <span class="lbl">ox</span> <span id="ox">—</span>
+      &nbsp;&nbsp;
+      <span class="lbl">oy</span> <span id="oy">—</span>
+    </div>
+    <button class="btn btn-primary" id="copy">Copy ox, oy</button>
+    <span class="status" id="status"></span>
+    <div class="hint">Display <b>4×</b> · readings in real logical px · ornament fixed at <b>120×120</b> · just drag</div>
+  </div>
+
+  <div class="canvas-wrap">
+    <div class="stage" id="stage">
+      <div class="thumb" id="thumb"></div>
+      <div class="origin" id="origin"></div>
+      <div class="origin-lbl" id="originLbl">0,0 (card top-left)</div>
+      <div class="guide-h" id="guideH"></div>
+      <div class="guide-v" id="guideV"></div>
+      <div class="ornament-wrap" id="ornWrap" style="display:none">
+        <img id="ornImg" alt="">
+      </div>
+    </div>
+  </div>
+
+<script>
+// ── Runtime constants (mirror hushsnap/constants.py + thumbnail.py) ──
+const SCALE   = 4;          // display zoom; readings are divided back to real px
+const CARD_W  = 240, CARD_H = 150, CARD_R = 12;
+const ORN_SIZE = 120;       // runtime ornament canvas edge (square)
+// Slack (real px) around the card on every side so the ornament can be dragged
+// freely in any direction - up-left (vines stick out) AND down-right (onto card).
+const SLACK   = 160;
+
+const stage   = document.getElementById('stage');
+const thumb   = document.getElementById('thumb');
+const ornWrap = document.getElementById('ornWrap');
+const ornImg  = document.getElementById('ornImg');
+const oxEl    = document.getElementById('ox');
+const oyEl    = document.getElementById('oy');
+
+// stage sized to fit card + slack on all four sides
+const stageW = (CARD_W + 2 * SLACK) * SCALE;
+const stageH = (CARD_H + 2 * SLACK) * SCALE;
+stage.style.width  = stageW + 'px';
+stage.style.height = stageH + 'px';
+
+// card placement: slack on every side so the ornament drags freely; top slack
+// is trimmed so the thumbnail sits high (toolbar + thumbnail visible together),
+// bottom keeps full slack for downward dragging.
+const thumbX = (SLACK - 75) * SCALE;    // 75 real px less than SLACK => 300 display px left
+const thumbY = (SLACK - 100) * SCALE;   // 100 real px less than SLACK
+thumb.style.left   = thumbX + 'px';
+thumb.style.top    = thumbY + 'px';
+thumb.style.width  = CARD_W * SCALE + 'px';
+thumb.style.height = CARD_H * SCALE + 'px';
+thumb.style.borderRadius = (CARD_R * SCALE) + 'px';
+
+// origin marker on the card TL corner
+const origin = document.getElementById('origin');
+origin.style.left = thumbX + 'px';
+origin.style.top  = thumbY + 'px';
+const originLbl = document.getElementById('originLbl');
+originLbl.style.left = (thumbX + 12) + 'px';
+originLbl.style.top  = (thumbY + 10) + 'px';
+
+// fake screenshot content lines removed - keep the card a clean empty canvas
+
+// tick numbers along top + left edges of the card
+// (removed - ox/oy readout is the single source of truth)
+
+
+// ── Import ornament PNG ──
+// No validation: any image the user picks is accepted as-is. Read as a data URL
+// because under file:// protocol blob: URLs are treated as a different origin
+// and the browser refuses to load them into an <img>; a data: URL bypasses that.
+const statusEl = document.getElementById('status');
+let currentFileName = '';   // remembered for the copy summary
+function setStatus(msg, ok) {
+  statusEl.textContent = msg;
+  statusEl.className = 'status ' + (ok ? 'ok' : 'err');
+}
+document.getElementById('file').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  currentFileName = f.name;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const dataUrl = reader.result;
+    const probe = new Image();
+    probe.onload = () => {
+      const w = probe.naturalWidth, h = probe.naturalHeight;
+      // Apply to the stage ornament.
+      ornWrap.style.display = 'block';
+      ornWrap.style.width  = ORN_SIZE * SCALE + 'px';
+      ornWrap.style.height = ORN_SIZE * SCALE + 'px';
+      ornWrap.style.left = thumbX + 'px';
+      ornWrap.style.top  = thumbY + 'px';
+      ornImg.onload = () => { update(); setStatus(`${w}x${h} loaded`, true); };
+      ornImg.onerror = (ev) => console.error('[placer] ornImg onerror:', ev);
+      ornImg.src = dataUrl;
+    };
+    probe.onerror = () => { setStatus('Could not read image', false); e.target.value = ''; };
+    probe.src = dataUrl;
+  };
+  reader.onerror = () => { setStatus('Could not read file', false); e.target.value = ''; };
+  reader.readAsDataURL(f);
+});
+
+// ── Drag ──
+let dragging = false, sx, sy, sLeft, sTop;
+const ornSizePx = ORN_SIZE * SCALE;
+ornWrap.addEventListener('mousedown', e => {
+  dragging = true;
+  ornWrap.classList.add('dragging');
+  sx = e.clientX; sy = e.clientY;
+  sLeft = parseInt(ornWrap.style.left); sTop = parseInt(ornWrap.style.top);
+  e.preventDefault();
+});
+document.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  let nl = sLeft + (e.clientX - sx);
+  let nt = sTop  + (e.clientY - sy);
+  // keep the ornament within the stage
+  nl = Math.max(0, Math.min(nl, stageW - ornSizePx));
+  nt = Math.max(0, Math.min(nt, stageH - ornSizePx));
+  ornWrap.style.left = nl + 'px';
+  ornWrap.style.top  = nt + 'px';
+  update();
+});
+document.addEventListener('mouseup', () => {
+  dragging = false;
+  ornWrap.classList.remove('dragging');
+});
+
+// ── Readout: ornament TL relative to card TL (origin), in real px ──
+function update() {
+  const ox = Math.round((parseInt(ornWrap.style.left) - thumbX) / SCALE);
+  const oy = Math.round((parseInt(ornWrap.style.top)  - thumbY) / SCALE);
+  oxEl.textContent = ox;
+  oyEl.textContent = oy;
+  ornWrap.dataset.coord = `ox=${ox} oy=${oy}`;
+  // guide lines from origin to ornament TL
+  const oLeft = parseInt(ornWrap.style.left), oTop = parseInt(ornWrap.style.top);
+  const gH = document.getElementById('guideH');
+  const gV = document.getElementById('guideV');
+  gH.style.left   = Math.min(thumbX, oLeft) + 'px';
+  gH.style.top    = oTop + 'px';
+  gH.style.width  = Math.abs(oLeft - thumbX) + 'px';
+  gH.style.height = '0px';
+  gV.style.left   = thumbX + 'px';
+  gV.style.top    = Math.min(thumbY, oTop) + 'px';
+  gV.style.width  = '0px';
+  gV.style.height = Math.abs(oTop - thumbY) + 'px';
+}
+
+document.getElementById('reset').addEventListener('click', () => {
+  if (ornWrap.style.display === 'none') return;
+  ornWrap.style.left = thumbX + 'px';
+  ornWrap.style.top  = thumbY + 'px';
+  update();
+});
+
+document.getElementById('copy').addEventListener('click', () => {
+  const ox = oxEl.textContent, oy = oyEl.textContent;
+  if (ox === '-') return;
+  const name = currentFileName || '(unknown)';
+  const summary =
+    `image:  ${name}\n` +
+    `path:   hushsnap/ui/icons/${name}\n` +
+    `ox, oy: ${ox}, ${oy}`;
+  navigator.clipboard.writeText(summary).then(() => {
+    const b = document.getElementById('copy');
+    const old = b.textContent;
+    b.textContent = 'Copied ✓';
+    setTimeout(() => b.textContent = old, 1200);
+  });
+});
+</script>
+</body>
+</html>
