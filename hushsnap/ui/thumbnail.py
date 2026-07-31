@@ -2,6 +2,7 @@ import math
 import os
 import time
 import logging
+from collections import namedtuple
 from pathlib import Path
 
 from PyQt6 import QtCore, QtGui, QtWidgets
@@ -29,6 +30,47 @@ _ELEVATION_PASSES = 5
 _ELEVATION_ALPHA_PER_PASS = 45
 _COUNTDOWN_WARN_S = 2.0
 
+# ── Decorative corner ornament (optional, opt-in via config 'thumbnail_frame') ─
+# A transparent PNG (ui/icons/corner_vine*.png) whose vine content is concentrated
+# in the top-left and fades toward the bottom-right.  When enabled it hangs on the
+# thumbnail card's top-left CORNER: the ornament's vine centroid lands on the
+# card's top-left corner, so the dense vines stick out up-left (outside the card,
+# like a clasp biting the corner) and only the sparse tail restrains itself over
+# the screenshot.  The window is enlarged on the TOP-LEFT side only to give the
+# outward vines room; the card's bottom-right stays anchored (thumbnail still
+# hugs the screen's bottom-right corner, never off-screen).
+#
+# Available ornaments are registered below.  The id is stored in config
+# 'thumbnail_frame' ("" = none).  centroid_x/y is the asset's alpha-weighted
+# center (canvas fraction); the ornament is placed so this point lands on the
+# card's TL corner, then nudged.  nudge_x/y is a perceptual bottom-right pull
+# (+X onto the card, +Y down its left edge) so the dense bulk drapes over the
+# corner ("wrapping") instead of floating up-left of it - the alpha centroid
+# already sits on the corner at nudge 0, but the dense bulk lies up-left of that
+# centroid, so 0 reads as "sticking out".  Per-asset because each vine's mass
+# distribution differs; values measured from each PNG.
+_CornerOrnament = namedtuple(
+    "_CornerOrnament", "id filename centroid_x centroid_y nudge_x nudge_y"
+)
+_CORNER_ORNAMENTS = (
+    _CornerOrnament("vine",       "corner_vine.png",       0.26, 0.28, 15, 15),
+    _CornerOrnament("vine2",      "corner_vine2.png",      0.27, 0.26, 15, 15),
+    # Butterfly artwork by gustavorezende (openclipart), via rawpixel - see icons/ATTRIBUTION.md
+    _CornerOrnament("butterfly",  "corner_butterfly.png",  0.40, 0.28, 20, 0),
+)
+_CORNER_ORNAMENT_BY_ID = {o.id: o for o in _CORNER_ORNAMENTS}
+_CORNER_DEFAULT_ID = "vine"          # legacy bool True migrates to this ornament
+_CORNER_ORNAMENT_SIZE = 120          # square canvas edge, px (restrained intrusion)
+_CORNER_OUT_PAD = 36                 # extra window padding on top-left sides for outward vines
+# Default-ornament constants (aliases of the "vine" entry above) - the named
+# reference used by the ornament-rect math and by tests.  Other ornaments read
+# their own centroid/nudge from _CORNER_ORNAMENT_BY_ID at draw time.
+_vine_meta = _CORNER_ORNAMENT_BY_ID[_CORNER_DEFAULT_ID]
+_CORNER_CENTROID_X = _vine_meta.centroid_x
+_CORNER_CENTROID_Y = _vine_meta.centroid_y
+_CORNER_NUDGE_X = _vine_meta.nudge_x
+_CORNER_NUDGE_Y = _vine_meta.nudge_y
+
 class ThumbnailWindow(QtWidgets.QWidget):
     """
     Floating thumbnail window with slide-in animation, auto-hide, 
@@ -39,6 +81,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
     save_to_desktop_signal = QtCore.pyqtSignal()
     pin_requested_signal = QtCore.pyqtSignal()
     edit_requested_signal = QtCore.pyqtSignal()
+    ocr_copy_requested_signal = QtCore.pyqtSignal()
 
     def __init__(self, pil_image: Image.Image):
         super().__init__()
@@ -61,23 +104,82 @@ class ThumbnailWindow(QtWidgets.QWidget):
         
         # Shadow padding for custom drop shadow
         self.shadow_padding = 12
-        
+
         # The card size is fixed
         self.card_width = THUMBNAIL_WIDTH
         self.card_height = THUMBNAIL_HEIGHT
-        
-        # The window size includes shadow padding
-        self.display_width = self.card_width + 2 * self.shadow_padding
-        self.display_height = self.card_height + 2 * self.shadow_padding
+
+        # Optional decorative corner ornament (config 'thumbnail_frame').
+        # A vine PNG hangs on the card's top-left CORNER: its vine centroid lands
+        # on the corner, so dense vines stick out up-left (outside the card, like a
+        # clasp) and only the sparse tail restrains itself over the screenshot.
+        # The window is enlarged on the TOP-LEFT side only to room the outward
+        # vines; the card's bottom-right stays anchored so the thumbnail still hugs
+        # the screen's bottom-right corner and never goes off-screen.  card_rect
+        # remains the single hit-test target - the outward vines are not clickable.
+        self._frame_id = self._read_selected_ornament()   # "" or a registry id
+        self._frame_enabled = bool(self._frame_id)
+        self._frame_pixmap = None
+        # Extra top-left padding so outward vines have room.  0 when ornament off.
+        self._corner_out_pad = 0
+        if self._frame_id:
+            self._frame_pixmap = self._build_corner_ornament(self._frame_id)
+            if self._frame_pixmap is None:
+                logger.warning("[FRAME] ornament %r enabled in config but asset unavailable; downgrading to no ornament", self._frame_id)
+                self._frame_id = ""
+                self._frame_enabled = False
+            else:
+                self._corner_out_pad = _CORNER_OUT_PAD
+                logger.debug(
+                    "[FRAME] on: ornament=%s %dx%d out_pad=%d (hangs on card TL corner)",
+                    self._frame_id, self._frame_pixmap.width(), self._frame_pixmap.height(), self._corner_out_pad,
+                )
+
+        # Window size: card + shadow_padding on every side, PLUS extra top-left
+        # padding when the ornament is on (vines stick out up-left only).
+        self.display_width = self.card_width + 2 * self.shadow_padding + self._corner_out_pad
+        self.display_height = self.card_height + 2 * self.shadow_padding + self._corner_out_pad
         self.setFixedSize(self.display_width, self.display_height)
 
-        # Card rect within the window
-        self.card_rect = QtCore.QRect(
-            self.shadow_padding, 
-            self.shadow_padding, 
-            self.card_width, 
-            self.card_height
+        # Card sits at shadow_padding + out_pad from the top-left, so the extra
+        # padding (and the outward vines) are above/left of the card.  The card's
+        # bottom-right thus stays at the same window-relative spot as the no-ornament
+        # case, keeping the screen-corner anchoring unchanged.
+        card_x = self.shadow_padding + self._corner_out_pad
+        card_y = self.shadow_padding + self._corner_out_pad
+        self.card_rect = QtCore.QRect(card_x, card_y, self.card_width, self.card_height)
+        logger.debug(
+            "[FRAME] window=%dx%d card_rect=%s (ornament %s)",
+            self.display_width, self.display_height,
+            f"({card_x},{card_y},{self.card_width}x{self.card_height})",
+            "on" if self._frame_enabled else "off",
         )
+
+        # Ornament draw rect: computed ONCE here as the single source of truth so
+        # paintEvent cannot drift from it.  It is a pure function of card_rect +
+        # the constants below - NO screen / DPI / resolution input - so the
+        # ornament stays glued to the card corner on every monitor: the screen
+        # only decides where the *window* sits on the desktop, and the ornament
+        # rides inside it as a rigid part of the window.  (QPixmap::width() is
+        # already logical px, so the centroid fraction math is DPR-self-consistent.)
+        self._ornament_rect = None
+        if self._frame_enabled and self._frame_pixmap is not None:
+            fp = self._frame_pixmap
+            meta = _CORNER_ORNAMENT_BY_ID[self._frame_id]
+            ox = card_x - int(round(fp.width() * meta.centroid_x)) + meta.nudge_x
+            oy = card_y - int(round(fp.height() * meta.centroid_y)) + meta.nudge_y
+            self._ornament_rect = QtCore.QRect(ox, oy, fp.width(), fp.height())
+            # Guard: the ornament must stay fully inside the window or it clips -
+            # a visible form of misalignment.  A nudge/size/pad change that breaks
+            # this is a regression; log it loudly instead of silently clipping.
+            if (ox < 0 or oy < 0
+                    or ox + fp.width() > self.display_width
+                    or oy + fp.height() > self.display_height):
+                logger.warning(
+                    "[FRAME] ornament rect %s outside window %dx%d - will clip; "
+                    "check _CORNER_NUDGE_* / _CORNER_ORNAMENT_SIZE / _CORNER_OUT_PAD",
+                    self._ornament_rect, self.display_width, self.display_height,
+                )
 
         # Scale original pixmap to fit inside the fixed card dimensions using KeepAspectRatio.
         self.scaled_pixmap = self.pixmap.scaled(
@@ -89,8 +191,8 @@ class ThumbnailWindow(QtWidgets.QWidget):
         # Center the scaled pixmap inside the card_rect
         pw = self.scaled_pixmap.width()
         ph = self.scaled_pixmap.height()
-        px = self.shadow_padding + (self.card_width - pw) // 2
-        py = self.shadow_padding + (self.card_height - ph) // 2
+        px = self.card_rect.x() + (self.card_width - pw) // 2
+        py = self.card_rect.y() + (self.card_height - ph) // 2
         self.pixmap_rect = QtCore.QRect(px, py, pw, ph)
 
         # 3. Blurred background: crop-to-fill → Gaussian blur → QPixmap
@@ -161,8 +263,8 @@ class ThumbnailWindow(QtWidgets.QWidget):
         pill_layout.addWidget(self.close_btn)
         
         # Center the pill at the top of the card
-        pill_x = self.shadow_padding + (self.card_width - self.action_pill.width()) // 2
-        self.action_pill.move(pill_x, self.shadow_padding + 6)
+        pill_x = self.card_rect.x() + (self.card_width - self.action_pill.width()) // 2
+        self.action_pill.move(pill_x, self.card_rect.y() + 6)
         self.action_pill.hide()
 
         # 4. Position and Animation
@@ -181,19 +283,34 @@ class ThumbnailWindow(QtWidgets.QWidget):
             screen = QtCore.QRect(0, 0, 0, 0)
         else:
             screen = active_screen.availableGeometry()
-        self.end_x = screen.x() + screen.width() - self.display_width - THUMBNAIL_MARGIN + self.shadow_padding
-        self.end_y = screen.y() + screen.height() - self.display_height - THUMBNAIL_MARGIN + self.shadow_padding
+        # Position so the thumbnail *card's* bottom-right corner sits THUMBNAIL_MARGIN
+        # in from the screen's bottom-right.  We anchor on the card (not the window):
+        # card_off is the card's offset within the window.  Since the corner ornament
+        # overlays the card without resizing the window, card_off == shadow_padding
+        # always, so the card lands in the same spot whether the ornament is on/off.
+        # Position so the thumbnail *card's* bottom-right corner sits THUMBNAIL_MARGIN
+        # in from the screen's bottom-right - identical to the no-ornament case so
+        # toggling the ornament never moves the card.  We anchor on the card's
+        # bottom-right, not the window's: the ornament enlarges the window on the
+        # TOP-LEFT only, so the card's BR is offset from the window's BR by exactly
+        # shadow_padding (the right/bottom shadow band, which is unchanged).  Thus:
+        #   window_BR = card_BR + shadow_padding
+        #   card_BR_target = screen_BR - MARGIN
+        #   end_xy (window top-left) = window_BR - display_size
+        sp = self.shadow_padding
+        self.end_x = screen.x() + screen.width() - THUMBNAIL_MARGIN + sp - self.display_width
+        self.end_y = screen.y() + screen.height() - THUMBNAIL_MARGIN + sp - self.display_height
         # Slide-in start point. Previously this was ``screen.x() + screen.width()``
-        # — the screen's right edge, which is also the *neighbour* screen's
+        # - the screen's right edge, which is also the *neighbour* screen's
         # left edge. The window was therefore born straddling the monitor
         # boundary, and Qt re-associated it between the two screens (different
-        # DPRs ⇒ different logical coord spaces) as the slide animation pulled
+        # DPRs => different logical coord spaces) as the slide animation pulled
         # it inward, producing the visible "pop to the wrong spot then snap
         # back" jitter on the first frames. Keeping the start point inside the
         # target screen (clamped so the full window fits) means the window
         # never crosses the boundary during the slide, so no screen
         # re-association and no jitter.
-        slide = THUMBNAIL_MARGIN - self.shadow_padding
+        slide = THUMBNAIL_MARGIN - sp
         if slide < 4:
             slide = 4
         self.start_x = min(self.end_x + slide,
@@ -265,6 +382,67 @@ class ThumbnailWindow(QtWidgets.QWidget):
     def _make_close_icon():
         from .icon_utils import load_svg_icon
         return load_svg_icon("close", "#ffffff", "#ff5c5c", size=24)
+
+    @staticmethod
+    def _read_selected_ornament():
+        """Read the selected corner-ornament id from config ('thumbnail_frame').
+
+        Returns "" (none) or a registry id such as "vine".  Normalizes legacy
+        bool values (True -> default ornament, False/None -> "") so old configs
+        and bool test stubs keep working; unknown string ids fall back to "".
+        """
+        try:
+            from ..config import get_thumbnail_frame, get_config_path
+            raw = get_thumbnail_frame(get_config_path())
+        except Exception:
+            logger.warning("[FRAME] failed to read 'thumbnail_frame' config; defaulting to off", exc_info=True)
+            return ""
+        if raw is True:
+            return _CORNER_DEFAULT_ID
+        if raw is False or raw is None:
+            return ""
+        if isinstance(raw, str):
+            return raw if raw in _CORNER_ORNAMENT_BY_ID else ""
+        return ""
+
+    def _build_corner_ornament(self, ornament_id):
+        """Load the named corner-ornament PNG and scale it to overlay the card's
+        top-left.
+
+        ornament_id selects an asset from _CORNER_ORNAMENTS.  The asset is a
+        square transparent canvas whose vine content is concentrated in the
+        top-left and fades toward the bottom-right.  We scale it to the ornament
+        size and the caller draws it at the card's top-left corner, so the dense
+        TL vines sit on the corner and the sparse tail trails across the card.
+        Returns the scaled QPixmap, or None if the id is unknown or the asset is
+        missing/unreadable.
+        """
+        meta = _CORNER_ORNAMENT_BY_ID.get(ornament_id)
+        if meta is None:
+            logger.warning("[FRAME] unknown ornament id %r; cannot load", ornament_id)
+            return None
+        import os
+        path = os.path.join(os.path.dirname(__file__), "icons", meta.filename)
+        pixmap = QtGui.QPixmap(path)
+        if pixmap.isNull():
+            logger.warning("[FRAME] %s missing/unreadable at %s", meta.filename, path)
+            return None
+
+        orig_w, orig_h = pixmap.width(), pixmap.height()
+        logger.debug("[FRAME] loaded %s (%dx%d)", path, orig_w, orig_h)
+
+        # Scale the square canvas to the ornament size so the TL cluster covers
+        # roughly the top-left quarter of the card.
+        target = _CORNER_ORNAMENT_SIZE
+        pixmap = pixmap.scaled(
+            target, target,
+            QtCore.Qt.AspectRatioMode.IgnoreAspectRatio,
+            QtCore.Qt.TransformationMode.SmoothTransformation,
+        )
+        logger.debug("[FRAME] ornament %s scaled to %dx%d", ornament_id, pixmap.width(), pixmap.height())
+        return pixmap
+
+
 
     def _get_display_ms(self) -> int:
         """Get the configured display duration from settings."""
@@ -515,24 +693,25 @@ class ThumbnailWindow(QtWidgets.QWidget):
         menu.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
         apply_menu_shadow(menu)
 
-        pin_action = menu.addAction(ui_text(lang, "thumbnail_pin"))
-        edit_action = menu.addAction(ui_text(lang, "thumbnail_edit"))
+        # The hover pill already exposes Edit / Pin / Close, so the right-click
+        # menu carries only actions the pill does NOT: a silent "copy text" OCR
+        # (no popup - text goes straight to the clipboard with a toast) and
+        # Save to Desktop. Pin and Edit used to live here too but were exact
+        # duplicates of the pill buttons.
+        ocr_action = menu.addAction(ui_text(lang, "menu_ocr_recognize"))
         menu.addSeparator()
         desktop_action = menu.addAction(ui_text(lang, "thumbnail_save_to_desktop"))
 
         action = menu.exec(pos)
         self._menu_active = False
 
-        if action == edit_action:
-            self.edit_requested_signal.emit()
-            self.close()
+        if action == ocr_action:
+            self.ocr_copy_requested_signal.emit()
+            # Do not close: the handler shows the loading bar and dismisses
+            # this thumbnail once silent OCR completes (a toast confirms the copy).
         elif action == desktop_action:
             self.save_to_desktop_signal.emit()
             self.close()
-        elif action == pin_action:
-            self.pin_requested_signal.emit()
-            # Don't close yet — the pinned window will dismiss us
-            # after it appears, keeping the transition seamless.
         else:
             self._hovered = False
             self.update()
@@ -813,6 +992,15 @@ class ThumbnailWindow(QtWidgets.QWidget):
             painter.setPen(QtGui.QPen(QtGui.QColor(BRAND_GREEN), 1.5))
             painter.drawRoundedRect(QtCore.QRectF(self.card_rect).adjusted(1, 1, -1, -1), THUMBNAIL_CORNER_RADIUS, THUMBNAIL_CORNER_RADIUS)
 
+        # ── Corner ornament (optional, hugs the card's top-left corner) ──
+        # Drawn AFTER the card content/border but BEFORE the action pill, using
+        # the rect computed once in __init__ (self._ornament_rect) so the painted
+        # position can never drift from the intended one.  NOT clipped by the card
+        # path - the vine is meant to cross the card border and reach outside,
+        # like a clasp biting the corner.
+        if self._frame_enabled and self._frame_pixmap is not None and self._ornament_rect is not None:
+            painter.drawPixmap(self._ornament_rect.topLeft(), self._frame_pixmap)
+
         # ── Pill background ────────────────────────────────────────────────
         # Drawn by the parent painter so Qt never pre-fills a child-widget
         # bounding rect with white before border-radius is applied.
@@ -867,6 +1055,7 @@ class ThumbnailManager(QtCore.QObject):
     save_to_desktop = QtCore.pyqtSignal(object)
     pin_requested = QtCore.pyqtSignal(object, object, object)
     edit_requested = QtCore.pyqtSignal(object)
+    ocr_copy_requested = QtCore.pyqtSignal(object)
 
     def __init__(self):
         super().__init__()
@@ -893,6 +1082,7 @@ class ThumbnailManager(QtCore.QObject):
         win.clicked_signal.connect(lambda: self.clicked.emit(pil_image))
         win.save_to_desktop_signal.connect(lambda: self.save_to_desktop.emit(pil_image))
         win.edit_requested_signal.connect(lambda: self.edit_requested.emit(pil_image))
+        win.ocr_copy_requested_signal.connect(lambda: self.ocr_copy_requested.emit(pil_image))
         win.pin_requested_signal.connect(
             lambda: self.pin_requested.emit(
                 pil_image,

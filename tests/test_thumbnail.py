@@ -12,8 +12,12 @@ def qapp():
         app = QtWidgets.QApplication([])
     return app
 
-def test_thumbnail_fixed_size(qapp):
+def test_thumbnail_fixed_size(qapp, monkeypatch):
     """The thumbnail window must always have a fixed card size regardless of the input image size."""
+    # Pin frame off so window size = card + 2*shadow_padding (independent of env config).
+    import hushsnap.config as cfg
+    monkeypatch.setattr(cfg, "get_thumbnail_frame", lambda path=None: False)
+
     # Landscape image (wide)
     img_wide = Image.new("RGBA", (1000, 200), (255, 0, 0, 255))
     win_wide = ThumbnailWindow(img_wide)
@@ -37,8 +41,13 @@ def test_thumbnail_fixed_size(qapp):
     assert win_tiny.card_width == THUMBNAIL_WIDTH
     assert win_tiny.card_height == THUMBNAIL_HEIGHT
 
-def test_thumbnail_scaling_and_centering(qapp):
+def test_thumbnail_scaling_and_centering(qapp, monkeypatch):
     """The screenshot must be scaled preserving aspect ratio and centered inside the fixed card_rect."""
+    # Pin the frame off so the card sits at shadow_padding=12 (independent of
+    # whatever the dev machine's config happens to say).
+    import hushsnap.config as cfg
+    monkeypatch.setattr(cfg, "get_thumbnail_frame", lambda path=None: False)
+
     # Test with wide image (1000x500 -> aspect ratio 2:1)
     # Target size is 240x150.
     # Scaled width should be 240. Scaled height should be 120.
@@ -86,3 +95,191 @@ def test_thumbnail_manager_single_instance(qapp):
     win2 = thumbnail_manager._windows[0]
     
     assert win1 != win2
+
+
+def test_thumbnail_ocr_copy_signal_relay(qapp):
+    """The silent-OCR menu action relays pil_image through the manager.
+
+    The right-click menu emits ocr_copy_requested_signal, which the manager
+    re-emits as ocr_copy_requested(pil_image) - the silent (no-popup) OCR path.
+    """
+    from hushsnap.ui.thumbnail import ThumbnailManager
+
+    img = Image.new("RGBA", (100, 100), (255, 0, 0, 255))
+    mgr = ThumbnailManager()  # fresh instance: avoid cross-test singleton lifetime
+    mgr._do_show(img)
+    assert len(mgr._windows) == 1
+    win = mgr._windows[0]
+
+    received = []
+    mgr.ocr_copy_requested.connect(lambda pil: received.append(pil))
+    try:
+        win.ocr_copy_requested_signal.emit()
+        assert len(received) == 1
+        assert received[0] is img
+    finally:
+        mgr.ocr_copy_requested.disconnect()
+        win.close()
+
+
+def test_thumbnail_vine_frame_geometry(qapp, monkeypatch):
+    """When the corner ornament is enabled the window is enlarged on the top-left
+    side only, the card shifts down-right by that padding (its bottom-right stays
+    anchored), and the ornament is scaled to its configured size then nudged to
+    hug the card without being clipped by the window."""
+    import hushsnap.config as cfg
+    monkeypatch.setattr(cfg, "get_thumbnail_frame", lambda path=None: True)
+
+    img = Image.new("RGBA", (1000, 500), (255, 255, 255, 255))
+    win = ThumbnailWindow(img)
+    try:
+        from hushsnap.ui.thumbnail import (
+            _CORNER_ORNAMENT_SIZE, _CORNER_OUT_PAD,
+            _CORNER_CENTROID_X, _CORNER_CENTROID_Y,
+            _CORNER_NUDGE_X, _CORNER_NUDGE_Y,
+        )
+        assert win._frame_enabled is True
+        assert win._frame_pixmap is not None and not win._frame_pixmap.isNull()
+
+        # Card size unchanged.
+        assert win.card_rect.width() == THUMBNAIL_WIDTH
+        assert win.card_rect.height() == THUMBNAIL_HEIGHT
+
+        # Window enlarged by out_pad on BOTH axes (extra top-left padding only,
+        # but window is square-grown: card + 2*shadow + out_pad).
+        assert win.display_width == THUMBNAIL_WIDTH + 2 * 12 + _CORNER_OUT_PAD
+        assert win.display_height == THUMBNAIL_HEIGHT + 2 * 12 + _CORNER_OUT_PAD
+
+        # Card shifted down-right by out_pad (so its bottom-right stays anchored).
+        assert win.card_rect.x() == 12 + _CORNER_OUT_PAD
+        assert win.card_rect.y() == 12 + _CORNER_OUT_PAD
+
+        # Ornament scaled to configured square size.
+        assert win._frame_pixmap.width() == _CORNER_ORNAMENT_SIZE
+        assert win._frame_pixmap.height() == _CORNER_ORNAMENT_SIZE
+
+        # Ornament draw rect is computed once in __init__ (single source of truth).
+        orr = win._ornament_rect
+        assert orr is not None
+        assert orr.x() >= 0 and orr.y() >= 0                       # origin inside window
+        assert orr.x() + orr.width() <= win.display_width          # not clipped on the right
+        assert orr.y() + orr.height() <= win.display_height        # not clipped at the bottom
+        # Card-relative offset is a pure constant (the cross-monitor lock).
+        assert orr.x() - win.card_rect.left() == -int(round(_CORNER_ORNAMENT_SIZE * _CORNER_CENTROID_X)) + _CORNER_NUDGE_X
+        assert orr.y() - win.card_rect.top() == -int(round(_CORNER_ORNAMENT_SIZE * _CORNER_CENTROID_Y)) + _CORNER_NUDGE_Y
+        # outward (up-left of corner) part still fits in the top-left padding.
+        outward_x = int(round(_CORNER_ORNAMENT_SIZE * _CORNER_CENTROID_X))
+        assert outward_x <= _CORNER_OUT_PAD + 12
+    finally:
+        win.close()
+
+
+def test_thumbnail_ornament_locked_across_screens(qapp, monkeypatch):
+    """The ornament's window-relative position is a pure function of constants -
+    it does NOT depend on which monitor (geometry / origin) the thumbnail lands
+    on.  The screen only places the *window* on the desktop; the ornament rides
+    inside it glued to the card corner.  Faking two very different screens must
+    yield an identical ornament rect, equal to the constant-derived value."""
+    import hushsnap.config as cfg
+    monkeypatch.setattr(cfg, "get_thumbnail_frame", lambda path=None: True)
+    import hushsnap.dpi as dpi
+    from hushsnap.ui.thumbnail import (
+        _CORNER_ORNAMENT_SIZE, _CORNER_OUT_PAD,
+        _CORNER_CENTROID_X, _CORNER_CENTROID_Y,
+        _CORNER_NUDGE_X, _CORNER_NUDGE_Y,
+    )
+
+    class _FakeScreen:
+        def __init__(self, geo):
+            self._geo = geo
+        def availableGeometry(self):
+            return self._geo
+
+    # Two wildly different screens: a 1920x1080 at origin, and a 2560x1600 whose
+    # top-left is off-origin at (-2560, 0) (a left-hand secondary monitor).
+    seen = []
+    ends = []
+    for fake_geo in (QtCore.QRect(0, 0, 1920, 1080),
+                     QtCore.QRect(-2560, 0, 2560, 1600)):
+        monkeypatch.setattr(dpi, "cursor_screen",
+                            lambda g=fake_geo: _FakeScreen(g))
+        win = ThumbnailWindow(Image.new("RGBA", (1000, 500), (255, 255, 255, 255)))
+        try:
+            seen.append(QtCore.QRect(win._ornament_rect))  # defensive copy
+            ends.append((win.end_x, win.end_y))
+        finally:
+            win.close()
+
+    # The fake screen actually drives window placement (end_x/y differ) - this
+    # proves the two monitors really are distinct contexts, so the next check
+    # (ornament unchanged) is meaningful rather than vacuous.
+    assert ends[0] != ends[1]
+    # Identical ornament rect on both monitors -> locked, no drift / 乱飘.
+    assert seen[0] == seen[1]
+    # And it equals the pure-constant formula (screen-independent by construction).
+    sp = 12
+    card_x = sp + _CORNER_OUT_PAD
+    card_y = sp + _CORNER_OUT_PAD
+    exp_ox = card_x - int(round(_CORNER_ORNAMENT_SIZE * _CORNER_CENTROID_X)) + _CORNER_NUDGE_X
+    exp_oy = card_y - int(round(_CORNER_ORNAMENT_SIZE * _CORNER_CENTROID_Y)) + _CORNER_NUDGE_Y
+    expected = QtCore.QRect(exp_ox, exp_oy, _CORNER_ORNAMENT_SIZE, _CORNER_ORNAMENT_SIZE)
+    assert seen[0] == expected
+
+
+def test_thumbnail_frame_off_default(qapp, monkeypatch):
+    """Frame off (default): window is the original card + 2*shadow_padding size,
+    card at shadow_padding offset, no frame pixmap."""
+    import hushsnap.config as cfg
+    monkeypatch.setattr(cfg, "get_thumbnail_frame", lambda path=None: False)
+
+    img = Image.new("RGBA", (1000, 500), (255, 255, 255, 255))
+    win = ThumbnailWindow(img)
+    try:
+        assert win._frame_enabled is False
+        assert win._frame_pixmap is None
+        assert win.display_width == THUMBNAIL_WIDTH + 2 * 12
+        assert win.card_rect.x() == 12
+        assert win.card_rect.y() == 12
+    finally:
+        win.close()
+
+
+def test_thumbnail_ornament_vine2_loads(qapp, monkeypatch):
+    """The second ornament ('vine2') loads its own asset and positions via its
+    own centroid/nudge - distinct from the default 'vine' ornament."""
+    import hushsnap.config as cfg
+    monkeypatch.setattr(cfg, "get_thumbnail_frame", lambda path=None: "vine2")
+
+    img = Image.new("RGBA", (1000, 500), (255, 255, 255, 255))
+    win = ThumbnailWindow(img)
+    try:
+        from hushsnap.ui.thumbnail import (
+            _CORNER_ORNAMENT_BY_ID, _CORNER_ORNAMENT_SIZE, _CORNER_OUT_PAD,
+            _CORNER_CENTROID_X, _CORNER_CENTROID_Y,
+        )
+        assert win._frame_id == "vine2"
+        assert win._frame_enabled is True
+        assert win._frame_pixmap is not None and not win._frame_pixmap.isNull()
+        assert win._frame_pixmap.width() == _CORNER_ORNAMENT_SIZE
+
+        meta = _CORNER_ORNAMENT_BY_ID["vine2"]
+        orr = win._ornament_rect
+        assert orr is not None
+        # Uses vine2's own centroid/nudge from the registry.
+        sp = 12
+        card_x = sp + _CORNER_OUT_PAD
+        card_y = sp + _CORNER_OUT_PAD
+        exp_ox = card_x - int(round(_CORNER_ORNAMENT_SIZE * meta.centroid_x)) + meta.nudge_x
+        exp_oy = card_y - int(round(_CORNER_ORNAMENT_SIZE * meta.centroid_y)) + meta.nudge_y
+        assert orr.x() == exp_ox
+        assert orr.y() == exp_oy
+        # Distinct from the default 'vine' rect (different centroid).
+        vine_ox = card_x - int(round(_CORNER_ORNAMENT_SIZE * _CORNER_CENTROID_X)) + meta.nudge_x
+        vine_oy = card_y - int(round(_CORNER_ORNAMENT_SIZE * _CORNER_CENTROID_Y)) + meta.nudge_x
+        assert (orr.x(), orr.y()) != (vine_ox, vine_oy)
+        # Not clipped by the window.
+        assert orr.x() >= 0 and orr.y() >= 0
+        assert orr.x() + orr.width() <= win.display_width
+        assert orr.y() + orr.height() <= win.display_height
+    finally:
+        win.close()

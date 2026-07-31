@@ -79,6 +79,7 @@ _CONFIG_DEFAULTS = {
     "copy_image_to_clipboard": True,
     "auto_copy_ocr_result": True,
     "thumbnail_display_time": THUMBNAIL_DISPLAY_MS,
+    "thumbnail_frame": "",
     "show_capture_dimension_label": True,
 }
 
@@ -89,7 +90,7 @@ _CONFIG_DEFAULTS = {
 # stamped by ``_migrate_config`` so pre-version files (no field) are treated as
 # v1 and run through the migration ladder, rather than being back-filled as if
 # they had always been current.
-_CONFIG_VERSION = 1
+_CONFIG_VERSION = 2
 
 
 def is_running_as_package() -> bool:
@@ -259,11 +260,20 @@ def _migrate_config(config_data):
     """
     changed = False
     v = config_data.get("config_version", 1)
-    # ── v1 → v2: reserved for the first breaking change ──
-    # When needed, add:
-    #     if v < 2:
-    #         <migrate values, log a warning per change>
-    #         changed = True
+    # ── v1 → v2: first breaking change: thumbnail_frame bool -> ornament id ──
+    # v1 -> v2: 'thumbnail_frame' changed from a bool on/off toggle to a string
+    # selecting which ornament ("" = off, "vine"/... = a registered ornament).
+    # Preserve the user's on/off choice.  Must run before the empty-string repair
+    # pass in _ensure_default_config_exists, which would otherwise clobber the bool.
+    if v < 2:
+        tf = config_data.get("thumbnail_frame")
+        if isinstance(tf, bool):
+            config_data["thumbnail_frame"] = "vine" if tf else ""
+            changed = True
+            logger.debug(
+                "Config migrated v1->v2: thumbnail_frame %r -> %r",
+                tf, config_data["thumbnail_frame"],
+            )
     if v != _CONFIG_VERSION or "config_version" not in config_data:
         config_data["config_version"] = _CONFIG_VERSION
         changed = True
@@ -298,6 +308,12 @@ def _ensure_default_config_exists(config_path):
                     "Config migrated — added keys: %s", list(missing.keys())
                 )
 
+            # Apply breaking version-gated migrations BEFORE the repair pass so
+            # the repair logic sees post-migration values (e.g. a bool turned
+            # into a string) instead of clobbering them as "non-string / empty".
+            if _migrate_config(config_data):
+                changed = True
+
             # Repair string-typed keys that are present but empty.
             for key, default_val in _CONFIG_DEFAULTS.items():
                 if key in config_data and isinstance(default_val, str):
@@ -309,8 +325,6 @@ def _ensure_default_config_exists(config_path):
                             "Config key '%s' was empty — repaired to default.", key
                         )
 
-            if _migrate_config(config_data):
-                changed = True
             if changed:
                 _write_config_data(config_path, config_data)
             return
@@ -801,6 +815,44 @@ def update_thumbnail_display_time(ms, config_path=None):
         _write_config_data(config_path, config_data)
     except Exception as e:
         logger.error(f"Failed to update thumbnail_display_time: {e}")
+
+
+def get_thumbnail_frame(config_path=None):
+    """Read 'thumbnail_frame' (which corner ornament to show on the thumbnail).
+
+    Returns the ornament id string ("" = none/off).  Legacy bool values are
+    migrated: True -> "vine" (the default ornament), False -> "".  This mirrors
+    the v1->v2 on-disk migration so reads are safe even before the file is
+    rewritten.
+    """
+    if config_path is None:
+        config_path = get_config_path()
+    config_data = _load_config_data(config_path)
+    raw = config_data.get("thumbnail_frame", "")
+    if isinstance(raw, bool):
+        return "vine" if raw else ""
+    if isinstance(raw, str):
+        return raw
+    logger.warning(
+        "Config key 'thumbnail_frame' has unsupported value %r; falling back to off.",
+        raw,
+    )
+    return ""
+
+
+def update_thumbnail_frame(ornament_id, config_path=None):
+    """Update and persist 'thumbnail_frame' in config.
+
+    ornament_id is the ornament id string ("" = none/off).
+    """
+    if config_path is None:
+        config_path = get_config_path()
+    config_data = _load_config_data(config_path)
+    config_data["thumbnail_frame"] = ornament_id or ""
+    try:
+        _write_config_data(config_path, config_data)
+    except Exception as e:
+        logger.error(f"Failed to update thumbnail_frame: {e}")
 
 
 def get_ocr_engine(state_path=None, config_path=None):

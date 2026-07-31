@@ -24,6 +24,8 @@ from ..config import (
     update_show_capture_dimension_label,
     get_thumbnail_display_time,
     update_thumbnail_display_time,
+    get_thumbnail_frame,
+    update_thumbnail_frame,
 )
 from ..constants import MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN
 from ..system import startup_manager
@@ -1177,6 +1179,28 @@ class SettingsDialogController(QtCore.QObject):
         )
         combo_thumb.currentIndexChanged.connect(change_thumb_time)
         capture_layout.addWidget(card_thumb)
+
+        # Thumbnail decorative corner ornament (pick one, or none)
+        def on_thumb_frame(index):
+            ornament_id = combo_frame.itemData(index)
+            update_thumbnail_frame(ornament_id, self.config_path)
+            # A change only affects the *next* thumbnail shown; the currently
+            # visible one was built with a fixed window size, so we can't
+            # reshape it live.  No refresh needed - next capture picks it up.
+        frame_options = [
+            (self.translate("settings_ornament_off"), ""),
+            (self.translate("settings_ornament_vine"), "vine"),
+            (self.translate("settings_ornament_vine2"), "vine2"),
+            (self.translate("settings_ornament_butterfly"), "butterfly"),
+        ]
+        card_frame, combo_frame = _make_language_card(
+            self.translate("settings_thumbnail_frame_label"),
+            self.translate("settings_thumbnail_frame_subtitle"),
+            get_thumbnail_frame(self.config_path),
+            frame_options,
+        )
+        combo_frame.currentIndexChanged.connect(on_thumb_frame)
+        capture_layout.addWidget(card_frame)
 
         # Auto-copy Image
         def on_copy_img(checked):
