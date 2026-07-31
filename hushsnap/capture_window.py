@@ -195,7 +195,7 @@ class CopiedToast(QtWidgets.QWidget):
             "  border-bottom-right-radius: 6px;"
             "  font-size: 12px;"
             "  font-weight: 500;"
-            "  font-family: \"Microsoft YaHei\", \"Segoe UI\", sans-serif;"
+            "  font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", \"Segoe UI\", sans-serif;"
             "}"
         )
         layout.addWidget(label)
@@ -287,7 +287,7 @@ class ExitHintToast(QtWidgets.QWidget):
             "  font-size: 13px;"
             "  font-weight: 500;"
             "  letter-spacing: 0.2px;"
-            "  font-family: \"Microsoft YaHei\", \"Segoe UI\", sans-serif;"
+            "  font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", \"Segoe UI\", sans-serif;"
             "}"
         )
         layout.addWidget(label)

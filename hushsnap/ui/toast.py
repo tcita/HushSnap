@@ -62,7 +62,7 @@ class Toast(QtWidgets.QFrame):
             " padding: 12px 20px;"
             " font-size: 14px;"
             " font-weight: 500;"
-            " font-family: \"Microsoft YaHei\", \"Segoe UI\", sans-serif;"
+            " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", \"Segoe UI\", sans-serif;"
             "}"
         )
         layout.addWidget(self.label)
