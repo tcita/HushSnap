@@ -6,6 +6,51 @@ from .constants import TEXT_OUTLINE_WIDTH, TEXT_OUTLINE_COLOR, TEXT_FILL_COLOR
 
 logger = logging.getLogger(__name__)
 
+# Per-UI-language preferred annotation fonts (HushSnap's own UI language, not
+# the OS display language). Each is the canonical system font for that script
+# on Windows, with complete glyph coverage and stable metrics - important
+# because the editor's outlined text (_draw_outlined_text) scales stroke width
+# to the font's pixel size, so a metrics-stable font renders cleanly. Absent a
+# matching UI language, the editor falls back to the OS GeneralFont and then to
+# Qt's default sans-serif (see _default_annotation_font).
+_LANG_FONTS = {
+    "zh": "Microsoft YaHei",
+    "zh_tw": "Microsoft JhengHei",
+    "ja": "Yu Gothic UI",
+}
+
+
+def _default_annotation_font(lang: str) -> str:
+    """Return the default annotation font family for the given UI language.
+
+    Three-tier fallback:
+      1. The script-appropriate system font for HushSnap's UI language, used
+         only if it is actually installed. This keeps the annotation font
+         aligned with the UI language the user chose - e.g. a Simplified-Chinese
+         UI defaults to Microsoft YaHei rather than the OS-display-language
+         GeneralFont (which may be Segoe UI and lack CJK glyphs, forcing an
+         unstable Qt fallback chain for outlined text).
+      2. The OS GeneralFont (Windows = Segoe UI). A concrete, latin-complete
+         system font for the common case where tier 1 doesn't apply.
+      3. Empty string -> let Qt pick a default sans-serif. Almost never
+         reached; a defensive guard if GeneralFont itself returns nothing.
+
+    HushSnap runs on Windows only, so the families above are the Windows ones.
+    QFontDatabase.hasFamily is not exposed as a static method in PyQt6, so we
+    check membership in families() instead.
+    """
+    installed = set(QtGui.QFontDatabase.families())
+    preferred = _LANG_FONTS.get(lang)
+    if preferred and preferred in installed:
+        return preferred
+    sys_family = QtGui.QFontDatabase.systemFont(
+        QtGui.QFontDatabase.SystemFont.GeneralFont
+    ).family()
+    if sys_family:
+        return sys_family
+    return ""
+
+
 def _load_editor_icon(name: str, color: QtGui.QColor = QtGui.QColor("#ccc")) -> QtGui.QIcon:
     """Load an SVG icon, apply color, and return QIcon."""
     icon_path = os.path.join(os.path.dirname(__file__), "..", "icons", f"edit_{name}.svg")

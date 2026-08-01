@@ -7,11 +7,18 @@ from ..widgets.inline_editor import _InlineTextEditor
 class TextTool(BaseTool):
     """Text annotation tool."""
 
-    def __init__(self, editor):
+    def __init__(self, editor, default_family: str = ""):
         super().__init__(editor)
-        self.font_family = QtGui.QFontDatabase.systemFont(
-            QtGui.QFontDatabase.SystemFont.GeneralFont
-        ).family()
+        # default_family is the editor's UI-language-aware default annotation
+        # font (see ImageEditorWindow._default_font_family); empty falls back
+        # to the OS GeneralFont below. This keeps new text annotations aligned
+        # with the chosen UI language rather than the OS display language.
+        if default_family:
+            self.font_family = default_family
+        else:
+            self.font_family = QtGui.QFontDatabase.systemFont(
+                QtGui.QFontDatabase.SystemFont.GeneralFont
+            ).family()
         self.font_size = 32
 
         self._dragging_item: Optional[TextItem] = None

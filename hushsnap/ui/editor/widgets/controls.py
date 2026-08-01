@@ -4,8 +4,54 @@ from ..constants import (
 )
 from ...styles import BRAND_GREEN
 
-class _EditorFontComboBox(QtWidgets.QFontComboBox):
-    """QFontComboBox variant with the same frameless popup treatment."""
+
+# Curated font list for the text tool. A plain QComboBox (not QFontComboBox)
+# so we control exactly which families are shown - the full 300+ system list is
+# noise for a screenshot annotation tool. Each item is rendered in its own
+# family via Qt.FontRole, so the popup still gives a live preview per row.
+#
+# Win10/11 constants (always present, not probed): Segoe UI, Consolas.
+# Probed families: Arial, Times New Roman, and the three CJK UI fonts. The CJK
+# three are listed together (not gated by UI language) - a machine with
+# multiple language packs may have several installed, and the user may want to
+# annotate in a script other than their UI language. "命中即显示"。
+_CURATED_ALWAYS = ["Segoe UI", "Consolas"]
+_CURATED_PROBED = ["Arial", "Times New Roman", "Microsoft YaHei",
+                   "Microsoft JhengHei", "Yu Gothic UI"]
+
+
+class _CuratedFontComboBox(QtWidgets.QComboBox):
+    """Font picker showing a small curated list of installed families.
+
+    A plain QComboBox (not QFontComboBox) so we control exactly which families
+    are shown - the full 300+ system list is noise for a screenshot annotation
+    tool. Each item is rendered in its own family via Qt.FontRole, so the popup
+    still gives a live preview per row. The set is intentionally fixed and
+    small: if a family isn't listed, it isn't selectable - the curated choice
+    trades exhaustive freedom for a glanceable list, which suits the
+    quick-annotation use case.
+    """
+
+    def __init__(self, parent: QtWidgets.QWidget = None):
+        super().__init__(parent)
+        self._populate()
+
+    def _add_family(self, family: str) -> None:
+        """Append a family item rendered in its own font via FontRole."""
+        self.addItem(family)
+        i = self.count() - 1
+        f = QtGui.QFont(family)
+        f.setPointSize(11)
+        self.setItemData(i, f, QtCore.Qt.ItemDataRole.FontRole)
+
+    def _populate(self) -> None:
+        self.clear()
+        installed = set(QtGui.QFontDatabase.families())
+        for fam in _CURATED_ALWAYS:
+            self._add_family(fam)
+        for fam in _CURATED_PROBED:
+            if fam in installed:
+                self._add_family(fam)
 
     def showPopup(self) -> None:
         popup = self.view().window()

@@ -460,7 +460,7 @@ class Application(QtCore.QObject):
         """Open the lightweight image editor for the given PIL image."""
         try:
             from .ui.image_editor import show_image_editor
-            win = show_image_editor(pil_img, self.translate)
+            win = show_image_editor(pil_img, self.translate, self.ui_language)
             self._editor_windows.append(win)
             self._editor_window = win
             win.destroyed.connect(lambda _obj=None, w=win: self._untrack_editor_window(w))

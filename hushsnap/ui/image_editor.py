@@ -25,7 +25,7 @@ from .editor.constants import (
 )
 from .editor.utils import (
     _load_editor_icon, _pil_to_qpixmap, _qpixmap_to_pil,
-    _make_circle_cursor, _draw_outlined_text
+    _make_circle_cursor, _draw_outlined_text, _default_annotation_font
 )
 from .editor.models import UndoChangeType, TextItem, _UndoEntry
 from .editor.tools.base import BaseTool
@@ -36,7 +36,7 @@ from .editor.tools.navigation import PanTool
 from .editor.tools.transform import CropTool, MosaicTool, RotateTool, ResizeTool
 from .editor.widgets.canvas import EditorCanvas
 from .editor.widgets.controls import (
-    _EditorFontComboBox, _ColorButton, _SwatchPopup
+    _CuratedFontComboBox, _ColorButton, _SwatchPopup
 )
 
 logger = logging.getLogger(__name__)
@@ -68,10 +68,15 @@ class ImageEditorWindow(QtWidgets.QWidget):
         translate_fn: Callable[[str], str],
         parent: Optional[QtWidgets.QWidget] = None,
         screen: Optional[QtGui.QScreen] = None,
+        ui_language: str = "en",
     ):
         super().__init__(parent)
         self._tr = translate_fn
         self._pil_image = pil_image.copy()
+        # HushSnap's own UI language (not the OS display language). Drives the
+        # default annotation font so the editor's text tool matches the UI the
+        # user chose - see _default_font_family / _default_annotation_font.
+        self._ui_language = ui_language
 
         # Resolve the target screen (multi-monitor aware). The cursor-screen
         # lookup is deferred to _resolve_target_screen (called after the window
@@ -454,15 +459,16 @@ class ImageEditorWindow(QtWidgets.QWidget):
                 lbl = QtWidgets.QLabel(self._tr("editor_font") + ":")
                 lbl.setObjectName("optionLabel")
                 layout.addWidget(lbl)
-                combo = _EditorFontComboBox()
-                combo.setFontFilters(
-                    QtWidgets.QFontComboBox.FontFilter.ScalableFonts
-                )
-                combo.setWritingSystem(QtGui.QFontDatabase.WritingSystem.Any)
-                sys_family = QtGui.QFontDatabase.systemFont(
-                    QtGui.QFontDatabase.SystemFont.GeneralFont
-                ).family()
-                idx = combo.findText(sys_family)
+                combo = _CuratedFontComboBox()
+                # Initial selection follows the editor's default annotation
+                # font (UI-language-aware), not the OS GeneralFont - so the
+                # combo shows the same family the text tool will actually use.
+                default_family = self._default_font_family()
+                idx = combo.findText(default_family) if default_family else -1
+                if idx < 0:
+                    # Default resolved to something outside the curated set
+                    # (rare); fall back to Segoe UI which is always present.
+                    idx = combo.findText("Segoe UI")
                 if idx >= 0:
                     combo.setCurrentIndex(idx)
                 combo.setObjectName(f"fontCombo_{tool_id}")
@@ -730,7 +736,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
             "eraser": EraserTool(self),
             "mosaic": MosaicTool(self),
             "crop": CropTool(self),
-            "text": TextTool(self),
+            "text": TextTool(self, self._default_font_family()),
             "rectangle": ShapeTool(self, "rectangle"),
             "ellipse": ShapeTool(self, "ellipse"),
             "line": ShapeTool(self, "line"),
@@ -805,6 +811,20 @@ class ImageEditorWindow(QtWidgets.QWidget):
 
     def _effective_scale(self) -> float:
         return self._scale / self._dpr
+
+    def _default_font_family(self) -> str:
+        """Default annotation font family for this editor's UI language.
+
+        Memoized on first call so repeated hasFamily/systemFont lookups during
+        tool construction and option-page setup don't repeat. Used to keep the
+        text tool's default font and the font combo box's initial selection in
+        sync - both must reflect the UI language, not the OS display language.
+        """
+        cached = getattr(self, "_default_font_family_cache", None)
+        if cached is None:
+            cached = _default_annotation_font(self._ui_language)
+            self._default_font_family_cache = cached
+        return cached
 
     def _update_tool_cursor(self) -> None:
         if self._active_tool and hasattr(self._active_tool, "size"):
@@ -1834,6 +1854,7 @@ class ImageEditorWindow(QtWidgets.QWidget):
 def show_image_editor(
     pil_image: Image.Image,
     translate_fn: Callable[[str], str],
+    ui_language: str = "en",
 ) -> ImageEditorWindow:
     """Create and show the image editor window for the given PIL image.
 
@@ -1846,7 +1867,7 @@ def show_image_editor(
     and offered little for a short task where the cursor already picks the
     screen; size is screen-independent so it has none of those problems.
     """
-    win = ImageEditorWindow(pil_image, translate_fn)
+    win = ImageEditorWindow(pil_image, translate_fn, ui_language=ui_language)
     win.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
     win._resolve_target_screen()
     target = win._target_screen or QtWidgets.QApplication.primaryScreen()
