@@ -2,6 +2,24 @@
 Release notes (newest first)
 ================================================================================
 
+### v1.5.0
+
+· 缩略图新增装饰角花：可在设置中挑选藤蔓、蝴蝶或花卉样式，点缀在缩略图左上角。
+· 右键缩略图新增"识别并复制文字"：静默识别截图文字并直接复制到剪贴板，不弹出结果窗口。
+· 右键缩略图新增"查看原图"：用系统默认看图器打开本次截图。
+
+· 縮略圖新增裝飾角花：可在設定中挑選藤蔓、蝴蝶或花卉樣式，點綴在縮略圖左上角。
+· 右鍵縮略圖新增「辨識並複製文字」：靜默辨識截圖文字並直接複製到剪貼簿，不彈出結果視窗。
+· 右鍵縮略圖新增「查看原圖」：用系統預設看圖軟體開啟本次截圖。
+
+· Thumbnail corner ornament: pick a vine, butterfly, or floral style in settings to adorn the thumbnail's top-left corner.
+· New right-click action "Copy Text from Image" - silently recognizes text in the shot and copies it straight to the clipboard, no result popup.
+· New right-click action "View Original" - opens the capture in your system's default image viewer.
+
+· サムネイルに装飾角花を追加：設定で蔦・蝶・花から選べ、サムネイルの左上隅を彩ります。
+· 右クリックメニューに「画像からテキストをコピー」を追加：スクリーンショットの文字をサイレントに認識し、クリップボードへ直接コピーします（結果ポップアップなし）。
+· 右クリックメニューに「元画像を表示」を追加：今回のスクリーンショットをシステム標準の画像ビューアーで開きます。
+
 ### v1.4.0
 
 · OCR 间距更忠实原图：数字与标点间不再错误插入空格（如 3.14、v1.0、12:30），并保留原文缩进。
