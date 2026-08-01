@@ -12,7 +12,7 @@
 <tr>
 <td align="left">
 
-HushSnap is an offline screenshot & OCR tool - local, fully offline, with snappy recognition on everyday captures. Your screenshots and OCR results never leave your device. It lives in your system tray. Press a hotkey and a crosshair overlay appears instantly - select a region or click for the full screen, and the shot lands on your clipboard immediately. No pre-launching menus or windows; the UI surfaces only when you need it.
+HushSnap bridges screenshots and OCR into one fluid flow. Press a hotkey and a crosshair overlay appears instantly - select a region (or click for the full screen) and the shot lands on your clipboard right away. A thumbnail slides in at the bottom-right corner; left-click it and the recognized text pops up, already reformatted into a clean, readable layout you can edit on the spot. Everything runs locally - your screenshots and recognized text never leave your device. It lives quietly in the system tray, so there are no windows or menus to pre-launch: the UI surfaces only when you need it, then fades away.
 
 [HushSnap Website](https://tcita.github.io/HushSnap/)
 
