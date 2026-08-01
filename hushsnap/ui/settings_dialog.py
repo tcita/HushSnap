@@ -108,6 +108,16 @@ class SleekComboBox(QtWidgets.QComboBox):
             popup.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
         super().showPopup()
 
+    def wheelEvent(self, event):
+        # Swallow the wheel so hovering a combo and scrolling moves the
+        # settings page instead of silently changing the selected value.
+        # QComboBox's default cycles the current index on the scroll wheel,
+        # which users trip over while just trying to scroll down - a value
+        # change should be a deliberate click-to-open-the-dropdown action,
+        # never an accidental scroll. Ignoring (not accepting) lets the
+        # event propagate to the enclosing QScrollArea so the page scrolls.
+        event.ignore()
+
 
 class CategoryList(QtWidgets.QListWidget):
     def __init__(self, parent=None):
@@ -1049,7 +1059,31 @@ class SettingsDialogController(QtCore.QObject):
             scroll = QtWidgets.QScrollArea()
             scroll.setWidgetResizable(True)
             scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
-            scroll.setStyleSheet("background: transparent;")
+            # Modern slim scrollbar (matches the OCR popup's), replacing the
+            # chunky Windows-XP-style default that appears once a page (e.g.
+            # Capture, after the Corner Ornament row was added) overflows.
+            scroll.setStyleSheet(
+                "QScrollArea { background: transparent; }"
+                "QScrollBar:vertical {"
+                " background: transparent;"
+                " width: 8px;"
+                " margin: 4px 0px 4px 0px;"
+                "}"
+                "QScrollBar::handle:vertical {"
+                " background: #C8C8C8;"
+                " min-height: 30px;"
+                " border-radius: 4px;"
+                "}"
+                "QScrollBar::handle:vertical:hover {"
+                f" background: {BRAND_GREEN};"
+                "}"
+                "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {"
+                " height: 0px;"
+                "}"
+                "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {"
+                " background: transparent;"
+                "}"
+            )
             
             container = QtWidgets.QWidget()
             container.setStyleSheet("background: transparent;")
