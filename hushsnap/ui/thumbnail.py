@@ -896,7 +896,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
             alpha = int(_SHADOW_ALPHA_PER_PASS * (1.0 - (i / (_SHADOW_PASSES + 1))))
             painter.setPen(QtGui.QPen(QtGui.QColor(0, 0, 0, alpha), 2))
             painter.drawRoundedRect(
-                QtCore.QRectF(self.card_rect).adjusted(-i + 0.5, -i + 3.5, i - 0.5, i + 3.5),
+                QtCore.QRectF(self.card_rect).adjusted(-i + 0.5, -i + 2.0, i - 0.5, i + 2.0),
                 THUMBNAIL_CORNER_RADIUS + i,
                 THUMBNAIL_CORNER_RADIUS + i
             )
