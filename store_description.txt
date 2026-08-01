@@ -28,7 +28,7 @@ OCR 识别出的文字会整理成更易读的排版，不会像多数 OCR 软�
 支持简体中文、繁体中文、英文、日文的界面和文字识别，效果已验证良好；其中中文与日文还支持竖排文字识别。其他语言可能有一定识别效果，但不作保证，部分语言暂不支持。
 
 开源：
-代码开源（GPL-3.0），源码见 GitHub：tcita/HushSnap
+代码开源（GPL-3.0），源码见 github.com/tcita/HushSnap
 
 
 ----------------------------------------
@@ -59,7 +59,7 @@ OCR 辨識出的文字會整理成更易讀的排版，不會像多數 OCR 軟�
 支援簡體中文、繁體中文、英文、日文的介面與文字辨識，效果已驗證良好；其中中文與日文還支援直排文字辨識。其他語言可能有一定辨識效果，但不作保證，部分語言暫不支援。
 
 開源：
-程式碼開源（GPL-3.0），原始碼見 GitHub：tcita/HushSnap
+程式碼開源（GPL-3.0），原始碼見 github.com/tcita/HushSnap
 
 
 ----------------------------------------
@@ -90,7 +90,7 @@ Language Support:
 Interface and text recognition are supported in Simplified Chinese, Traditional Chinese, English, and Japanese, all well tested. Chinese and Japanese also support vertical text recognition. Other languages may work to some extent but are not guaranteed, and some are not supported yet.
 
 Open Source:
-Source code is open under GPL-3.0, available on GitHub: tcita/HushSnap
+Source code is open under GPL-3.0, available on github.com/tcita/HushSnap
 
 
 ----------------------------------------
@@ -121,4 +121,4 @@ OCR で認識したテキストは読みやすいレイアウトに整形され�
 インターフェースと文字認識は簡体字中国語・繁体字中国語・英語・日本語に対応しており、動作を確認済みです。中国語と日本語は縦書きテキストの認識にも対応しています。その他の言語は一定の認識精度が期待できる場合がありますが、保証はできません。また一部の言語は現時点では未対応です。
 
 オープンソース：
-ソースコードは GPL-3.0 でオープンソース公開されています。GitHub：tcita/HushSnap
+ソースコードは GPL-3.0 でオープンソース公開されています。github.com/tcita/HushSnap
