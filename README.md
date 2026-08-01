@@ -39,12 +39,12 @@ After capture, a thumbnail slides in at the bottom-right corner of your screen. 
 
 - **Hover** to pause auto-hide and reveal an action pill with **Edit**, **Pin**, and **Close** buttons.
 - **Drag and drop** the thumbnail anywhere to save the image - into a chat, an email, a folder, or another app.
-- **Left-click** the thumbnail to run **offline OCR**. Recognized text opens in a floating popup where you can edit, copy, resize, or pin the window to keep it visible. By default text is also auto-copied to your clipboard.
-- **Edit** (the brush button on the action pill) opens the built-in **image editor** - annotate, redact, crop, rotate, resize, then copy or save. See [Image Editor](#image-editor) below.
+- **Left-click** the thumbnail to run **OCR**. Recognized text opens in a floating popup where you can edit, copy, resize, or pin the window to keep it visible. By default the text is also auto-copied to your clipboard.
+- **Edit** (the brush button on the action pill) opens the built-in **image editor** - see [Image Editor](#image-editor) below for the full toolset.
 - **Right-click** the thumbnail for **Copy Text from Image** (silent OCR - text straight to the clipboard, no popup) or **Save to Desktop**.
 - Optionally overlay a decorative **vine ornament** on the thumbnail’s top-left corner (enable it in Settings - Capture). It is purely cosmetic; it does not change the thumbnail’s hit area or any behavior.
 
-HushSnap is controlled from the **system tray**: single-click the tray icon to start a capture, or right-click to access Screenshot, Settings, the config folder, and Quit. The **Settings** dialog (with General, Capture, and OCR pages) lets you rebind the global hotkey (default `Alt+Q`), switch UI language, change how long the thumbnail stays visible, toggle auto-copy behavior, adjust OCR font size, toggle a decorative vine ornament on the thumbnail corner, and more.
+HushSnap lives in the **system tray** - right-click the icon for Screenshot, Settings, the config folder, and Quit; a single-click also starts a capture. The **Settings** dialog (with General, Capture, and OCR pages) lets you rebind the global hotkey (default `Alt+Q`), switch UI language, change how long the thumbnail stays visible, toggle auto-copy behavior, adjust OCR font size, and more.
 
 Because HushSnap works at the Windows level, the hotkey responds from any app, anywhere. Everything runs locally - your screenshots and OCR results never leave your device.
 
