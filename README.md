@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/logo.png" alt="HushSnap" width="120">
+  <img src="assets/logo-rounded.png" alt="HushSnap" width="120">
   <h1>HushSnap</h1>
   <a href="https://apps.microsoft.com/detail/9p0qzv5z8njz">
     <img src="https://get.microsoft.com/images/en-us%20dark.svg" alt="Download from the Microsoft Store" width="200">
