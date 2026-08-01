@@ -1,10 +1,26 @@
-# HushSnap
+<div align="center">
+  <img src="assets/logo.png" alt="HushSnap" width="120">
+  <h1>HushSnap</h1>
+  <a href="https://apps.microsoft.com/detail/9p0qzv5z8njz">
+    <img src="https://get.microsoft.com/images/en-us%20dark.svg" alt="Download from the Microsoft Store" width="200">
+  </a>
+</div>
+
+<br><br>
+
+<table align="center" width="600">
+<tr>
+<td align="left">
 
 HushSnap is an offline screenshot & OCR tool - local, fully offline, with snappy recognition on everyday captures. Your screenshots and OCR results never leave your device. It lives in your system tray. Press a hotkey and a crosshair overlay appears instantly - select a region or click for the full screen, and the shot lands on your clipboard immediately. No pre-launching menus or windows; the UI surfaces only when you need it.
 
 [HushSnap Website](https://tcita.github.io/HushSnap/)
 
 [Demo Video](https://youtu.be/untWW6_Ea3M)
+
+</td>
+</tr>
+</table>
 
 <table>
   <tr>
@@ -120,6 +136,4 @@ The build requires HEAD at a git tag (e.g. `v0.3.0`). For local testing, `sign_f
 ## Installation
 
 HushSnap is distributed exclusively through the [Microsoft Store](https://apps.microsoft.com/detail/9p0qzv5z8njz).
-
----
 
