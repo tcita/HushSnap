@@ -3,7 +3,7 @@ REM build_crashlib.bat - compile native/crashlib.c to assets/crashlib.dll (x64)
 REM
 REM Standalone diagnostic only — NOT bundled by HushSnap.spec and not referenced
 REM by app code. Invoke trigger_crash() from a separate Python process to verify
-REM the WinDbg JIT crash path on this machine. See scripts/NATIVE_CRASH_DEBUGGING.md.
+REM native crash handling on this machine (faulthandler stack in log, WER dump).
 REM
 REM Requires MSVC Build Tools. Locates vcvars64.bat via vswhere.
 REM

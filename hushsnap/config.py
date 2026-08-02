@@ -105,49 +105,6 @@ def is_running_as_package() -> bool:
         return False
 
 
-def jit_debugger_configured() -> bool:
-    """True if this machine has a JIT debugger registered with Windows Error
-    Reporting (e.g. WinDbg was installed and set with ``windbg -I``).
-
-    Presence of ``HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\AeDebug
-    \\Debugger`` (non-empty) is the authoritative signal that an unhandled
-    exception will be handed to a debugger instead of (or in addition to)
-    WER's default handling.
-
-    When True, faulthandler is intentionally NOT enabled (see HushSnap.py and
-    logging_config.py): faulthandler's fatal-exception handler re-raises after
-    dumping the Python stack, and on Windows that re-raise does not reliably
-    reach the JIT debugger — the process dies before WinDbg can attach.
-    Skipping faulthandler lets the AV flow through WER's unhandled-exception
-    dispatch straight to WinDbg, which freezes the process at the fault site
-    with full heap readable.
-
-    Installing WinDbg and running ``windbg -I`` is a deliberate, admin-only
-    action that no ordinary user performs, so this single gate is enough to
-    keep the behavior off on production machines — no env-var opt-in needed.
-    Failure is visible, not silent: if WinDbg is installed but a native crash
-    is still swallowed, the cause is right here (WinDbg not registered, or
-    not actually installed), not a forgotten env var.
-    """
-    if os.name != "nt":
-        return False
-    try:
-        import winreg
-        with winreg.OpenKey(
-            winreg.HKEY_LOCAL_MACHINE,
-            r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\AeDebug",
-        ) as key:
-            debugger, _ = winreg.QueryValueEx(key, "Debugger")
-            return bool(debugger and debugger.strip())
-    except FileNotFoundError:
-        # Key or value not present — no JIT debugger registered.
-        return False
-    except OSError:
-        return False
-    except Exception:
-        return False
-
-
 def get_current_package_family_name() -> str | None:
     """Get the current package family name if running as packaged app."""
     try:

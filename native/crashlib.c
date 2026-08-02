@@ -9,8 +9,10 @@
  *
  *     python -c "import ctypes; ctypes.WinDLL(r'assets/crashlib.dll').trigger_crash()"
  *
- * Expected: an access violation (0xC0000005) at crashlib!trigger_crash, with
- * WinDbg freezing the process at the fault site. See scripts/NATIVE_CRASH_DEBUGGING.md.
+ * Expected: an access violation (0xC0000005) at crashlib!trigger_crash.
+ * HushSnap's faulthandler (always on) will log the Python stack to the
+ * log file. For a full debugger session, attach WinDbg manually or
+ * configure WER LocalDumps via scripts/setup_wer_dumps.ps1.
  */
 
 #include <windows.h>

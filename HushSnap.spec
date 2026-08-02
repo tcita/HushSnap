@@ -54,6 +54,18 @@ a = Analysis(
         'openvino', 'openvino_telemetry',
         'cv2.videoio', 'cv2.samples', 'PIL._avif',
         'hushsnap.benchmark',
+        # Heavy libs pulled into the dev env by OTHER tools (e.g. a CUDA/ML
+        # stack), not used by HushSnap. PyInstaller's static analysis sees
+        # them on the path and bundles them anyway - ~190 MB of dead weight
+        # (llvmlite.dll alone is 115 MB). rapidocr uses onnxruntime, never
+        # numba/scipy. Exclude the whole chain. (The build venv makes these
+        # unreachable in practice, but they stay as a defensive net in case
+        # someone packages against a polluted interpreter.)
+        'numba', 'llvmlite',
+        'scipy', 'highspy',
+        # pandas + its IO deps arrive via gradio (another tool's dependency);
+        # rapidocr does not import pandas. ~13 MB.
+        'pandas', 'pyarrow', 'fastparquet',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -65,13 +77,39 @@ a = Analysis(
 def filter_binaries(binaries):
     # Only drop very obvious heavy but unused DLLs if necessary.
     excluded_dlls = [
-        'Qt6Pdf.dll', 'qpdf.dll', 
+        'Qt6Pdf.dll', 'qpdf.dll',
         'opencv_videoio_ffmpeg', # 27MB, not needed for screenshots
         'Qt6Qml.dll', 'Qt6Quick.dll', 'Qt6VirtualKeyboard.dll',
         'Qt6Network.dll', # 1.7MB, no network usage
         'opengl32sw.dll' # 5.5MB, software renderer fallback (most systems have HW)
     ]
-    return [b for b in binaries if not any(dll.lower() in b[0].lower() for dll in excluded_dlls)]
+    result = [b for b in binaries if not any(dll.lower() in b[0].lower() for dll in excluded_dlls)]
+
+    # --- winrt bundled VC++ runtime duplicate (ABI hazard) -----------------
+    # winrt-runtime 3.x wheels ship a private copy of MSVCP140.dll pinned to
+    # 14.29.30157.0 (VS 2019, 2020) inside winrt/. PyInstaller follows the
+    # wheel RECORD and bundles it verbatim. The rest of the app (PyQt6, cv2,
+    # onnxruntime, compiled with VS 2022) carries 14.44.35211.0 at
+    # _internal/msvcp140.dll. A frozen process that loads BOTH MSVCP140s gets
+    # an ABI mismatch: STL object layouts differ across the two versions, and
+    # the private winrt copy shadows the system-grade one for winrt's pyd
+    # (DLL search prefers the same directory). This manifested as a recurring
+    # 0xc0000005 access violation at offset 0x13080 inside MSVCP140 whenever
+    # winrt loaded (Launch-at-Startup path) - silent in packaged builds
+    # (native AV in a windowed app with no console).
+    # VC++ runtime is forward-compatible: 14.44 satisfies winrt's 14.29 link,
+    # so dropping the private copy lets winrt fall back to the single shared
+    # _internal/msvcp140.dll. Also drop the matching vcruntime/concrt if the
+    # wheel ever bundles them, for the same reason.
+    def _is_winrt_vcruntime(dest):
+        # dest is the relative path inside _internal (TOC entry's first elem).
+        parts = dest.replace('\\', '/').lower().split('/')
+        if 'winrt' not in parts:
+            return False
+        return parts[-1] in ('msvcp140.dll', 'vcruntime140.dll',
+                             'vcruntime140_1.dll', 'concrt140.dll')
+    result = [b for b in result if not _is_winrt_vcruntime(b[0])]
+    return result
 
 def filter_datas(datas):
     # Drop ALL Qt translation packs (.qm). HushSnap does its own i18n via

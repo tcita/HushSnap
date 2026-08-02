@@ -19,16 +19,20 @@ $ErrorActionPreference = 'Stop'
 $key = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\HushSnap.exe'
 New-Item -Path $key -Force | Out-Null
 
-# DumpFolder is expanded per-user, so %LOCALAPPDATA% resolves correctly for
-# whoever the crashing process runs as.
 Set-ItemProperty -Path $key -Name 'DumpFolder' -Value '%LOCALAPPDATA%\HushSnap\dumps' -Type ExpandString
 Set-ItemProperty -Path $key -Name 'DumpCount'  -Value 20                          -Type DWord
-# DumpType 2 = full dump (includes heap + all threads). 0 = custom, 1 = mini.
 Set-ItemProperty -Path $key -Name 'DumpType'   -Value 2                           -Type DWord
+
+# Also cover dev-mode crashes (python HushSnap.py). Process name matching means
+# every Python crash on this machine writes a dump, so keep a smaller cap.
+$pyKey = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\python.exe'
+New-Item -Path $pyKey -Force | Out-Null
+Set-ItemProperty -Path $pyKey -Name 'DumpFolder' -Value '%LOCALAPPDATA%\HushSnap\dumps' -Type ExpandString
+Set-ItemProperty -Path $pyKey -Name 'DumpCount'  -Value 10                          -Type DWord
+Set-ItemProperty -Path $pyKey -Name 'DumpType'   -Value 2                           -Type DWord
 
 $dumpDir = Join-Path $env:LOCALAPPDATA 'HushSnap\dumps'
 New-Item -Path $dumpDir -ItemType Directory -Force | Out-Null
 
-Write-Host "WER LocalDumps configured for HushSnap.exe." -ForegroundColor Green
+Write-Host "WER LocalDumps configured for HushSnap.exe and python.exe." -ForegroundColor Green
 Write-Host "Crash dumps will be written to: $dumpDir"
-Write-Host "Run scripts\stress_test_ocr.py to start testing."

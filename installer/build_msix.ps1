@@ -104,7 +104,7 @@ function Stop-HushSnapProcessesInPaths {
 }
 
 function Invoke-PreBuildValidation {
-    param([string]$RootDir, [string]$SpecPath)
+    param([string]$RootDir, [string]$SpecPath, [string]$PythonExe)
     Write-ValidationHeader "Pre-build validation"
 
     $errors = 0
@@ -182,7 +182,7 @@ function Invoke-PreBuildValidation {
     # 1.4 ── Critical Python imports resolve ────────────────────────
     $criticalModules = @("rapidocr", "onnxruntime", "PyQt6", "numpy", "winrt")
     foreach ($mod in $criticalModules) {
-        $result = & python.exe -c "import $mod" 2>&1
+        $result = & $PythonExe -c "import $mod" 2>&1
         if ($LASTEXITCODE -ne 0) {
             Write-Fail "Cannot import '$mod': $result"
             $errors++
@@ -202,7 +202,7 @@ function Invoke-PreBuildValidation {
             $hiMatches = [regex]::Matches($hiBlock, "'([^']+)'")
             $hiList = $hiMatches | ForEach-Object { $_.Groups[1].Value }
             foreach ($hi in $hiList) {
-                $result = & python.exe -c "import $hi" 2>&1
+                $result = & $PythonExe -c "import $hi" 2>&1
                 if ($LASTEXITCODE -ne 0) {
                     $errMsg = ($result -join ' ') -replace '\s+', ' '
                     Write-Fail "hiddenimport '$hi' is NOT importable — $errMsg"
@@ -292,8 +292,8 @@ function Invoke-PreBuildValidation {
 
     # 1.10 ── No debug/artifact files in project tree ───────────────
     # Skip gitignored local dirs via $ignoreDirs. This covers build\crashlib\,
-    # whose crashlib.pdb / vc140.pdb are intentional WinDbg symbols (see
-    # scripts/NATIVE_CRASH_DEBUGGING.md), never bundled (.spec ignores crashlib),
+    # whose crashlib.pdb / vc140.pdb are dev-only WinDbg symbols, never
+    # bundled (.spec ignores crashlib),
     # as well as any stray ocr_debug_*.png / .pdb in scratch/ or stress_results/.
     $debugArtifacts = Get-ChildItem -Path $RootDir -Recurse -Include @("ocr_debug_*.png", "*.pdb") -ErrorAction SilentlyContinue |
         Where-Object { $_.FullName -notmatch $ignoreDirs }
@@ -519,6 +519,66 @@ $distDir = Join-Path $rootDir "dist\HushSnap"
 $stageDir = Join-Path $rootDir "build\msix_stage"
 
 # ══════════════════════════════════════════════════════════════════════
+#  2b. Build virtual environment (isolated from dev-site-packages pollution)
+# ══════════════════════════════════════════════════════════════════════
+#
+# The dev interpreter accumulates packages from other tools (gradio pulls
+# pandas, ML stacks pull numba/llvmlite/scipy, ...). PyInstaller's static
+# analysis sees them on sys.path and bundles them - the Aug 2026 build
+# ballooned to ~186 MB because pandas/llvmlite/scipy leaked in. A fresh venv
+# installed only from requirements.txt is the root-cause fix: nothing extra
+# exists to scan. Created fresh each run so a stale/polluted venv can never
+# silently ship junk. pip's download cache still avoids re-fetching wheels,
+# so rebuilds are only as slow as the install step itself.
+
+$buildVenvDir = Join-Path $rootDir ".venv-build"
+$pythonExe = Join-Path $buildVenvDir "Scripts\python.exe"
+$pyinstallerExe = Join-Path $buildVenvDir "Scripts\pyinstaller.exe"
+$requirementsPath = Join-Path $rootDir "requirements.txt"
+
+Write-Host "Creating clean build virtual environment..." -ForegroundColor Cyan
+
+# Remove any prior venv so a polluted one can never be reused.
+if (Test-Path $buildVenvDir) {
+    Remove-Item -Path $buildVenvDir -Recurse -Force
+}
+
+# Resolve the base interpreter: prefer the project's dev python (so the venv
+# matches the Python version cv2.pyd / onnxruntime were built for), not just
+# whatever 'python' resolves to on PATH.
+$basePython = (Get-Command python.exe -ErrorAction SilentlyContinue).Source
+if (-not $basePython) {
+    throw "python.exe not found on PATH - cannot create build venv."
+}
+
+& $basePython -m venv $buildVenvDir
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to create venv at $buildVenvDir (exit $LASTEXITCODE)."
+}
+
+Write-Host "  Installing dependencies from requirements.txt (this may take a few minutes)..." -ForegroundColor Cyan
+# Use a project-local persistent pip cache. The shared cache at
+# AppData\Local\pip\cache is used by every Python install on the machine
+# (including other tools) and can hold wheel files with ACLs/locks this
+# build cannot write to - observed as "Permission denied" on a cached
+# antlr4 wheel mid-install. A project-local cache outside the venv
+# persists across builds so wheels are only downloaded once; pip still
+# installs into the fresh venv each time.
+$pipCacheDir = Join-Path $rootDir ".pip-cache"
+& $pythonExe -m pip install --cache-dir $pipCacheDir -r $requirementsPath
+if ($LASTEXITCODE -ne 0) {
+    throw "pip install -r requirements.txt failed (exit $LASTEXITCODE)."
+}
+
+# Sanity: PyInstaller must be present in the venv (it is in requirements.txt).
+if (-not (Test-Path $pyinstallerExe)) {
+    throw "pyinstaller.exe not found in venv after install - check requirements.txt includes 'pyinstaller'."
+}
+
+$pyVer = & $pythonExe -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')"
+Write-Host "  [OK] Build venv ready: Python $pyVer at $buildVenvDir" -ForegroundColor Green
+
+# ══════════════════════════════════════════════════════════════════════
 #  3. Version resolution
 # ══════════════════════════════════════════════════════════════════════
 
@@ -570,7 +630,7 @@ Write-Host "Configured MSIX package version to '$quadVersion'" -ForegroundColor 
 # ══════════════════════════════════════════════════════════════════════
 
 if (-not $SkipValidation) {
-    Invoke-PreBuildValidation -RootDir $rootDir -SpecPath (Join-Path $rootDir "HushSnap.spec")
+    Invoke-PreBuildValidation -RootDir $rootDir -SpecPath (Join-Path $rootDir "HushSnap.spec") -PythonExe $pythonExe
 }
 
 # ══════════════════════════════════════════════════════════════════════
@@ -598,7 +658,7 @@ try {
     Stop-HushSnapProcessesInPaths -RootPaths @($distDir, $stageDir)
 
     $specPath = Join-Path $rootDir "HushSnap.spec"
-    & pyinstaller "--noconfirm", "--clean", $specPath
+    & $pyinstallerExe "--noconfirm", "--clean", $specPath
     if ($LASTEXITCODE -ne 0) {
         throw "PyInstaller build failed with exit code $LASTEXITCODE"
     }
@@ -663,14 +723,14 @@ $iconGeneratorScript = Join-Path $rootDir "scripts\generate_icon.py"
 $logoSource = Join-Path $rootDir "assets\logo.png"
 if (Test-Path $iconGeneratorScript) {
     Write-Host "  regenerating hushsnap.ico from $logoSource (rounded corners)..." -ForegroundColor DarkGray
-    & python.exe $iconGeneratorScript --source $logoSource | Out-Null
+    & $pythonExe $iconGeneratorScript --source $logoSource | Out-Null
 } else {
     Write-Host "  [warn] scripts\generate_icon.py not found — using existing hushsnap.ico as-is" -ForegroundColor Yellow
 }
 
 $icoPath = Join-Path $rootDir "hushsnap.ico"
 $generatorScript = Join-Path $rootDir "installer\generate_msix_assets.py"
-& python.exe $generatorScript $icoPath $assetsStageDir
+& $pythonExe $generatorScript $icoPath $assetsStageDir
 
 # ══════════════════════════════════════════════════════════════════════
 #  7. Compile AppxManifest.xml
