@@ -9,8 +9,12 @@
 # stack, so without a .dmp we only know *that* it crashed in the engine, not
 # *where*. WER writes a full dump to %LOCALAPPDATA%\HushSnap\dumps on every
 # crash; open it in WinDbg/x64dbg for the native call stack.
+# Dumps land at %LOCALAPPDATA%\hushsnap_dumps (flat directory, not nested
+# under an old config directory).
 #
-# To disable later: Remove-Item "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\HushSnap.exe" -Recurse
+# To disable later:
+#   Remove-Item "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\HushSnap.exe" -Recurse
+#   Remove-Item "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\python.exe" -Recurse
 
 #Requires -RunAsAdministrator
 
@@ -19,7 +23,7 @@ $ErrorActionPreference = 'Stop'
 $key = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\HushSnap.exe'
 New-Item -Path $key -Force | Out-Null
 
-Set-ItemProperty -Path $key -Name 'DumpFolder' -Value '%LOCALAPPDATA%\HushSnap\dumps' -Type ExpandString
+Set-ItemProperty -Path $key -Name 'DumpFolder' -Value '%LOCALAPPDATA%\hushsnap_dumps' -Type ExpandString
 Set-ItemProperty -Path $key -Name 'DumpCount'  -Value 20                          -Type DWord
 Set-ItemProperty -Path $key -Name 'DumpType'   -Value 2                           -Type DWord
 
@@ -27,11 +31,11 @@ Set-ItemProperty -Path $key -Name 'DumpType'   -Value 2                         
 # every Python crash on this machine writes a dump, so keep a smaller cap.
 $pyKey = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\python.exe'
 New-Item -Path $pyKey -Force | Out-Null
-Set-ItemProperty -Path $pyKey -Name 'DumpFolder' -Value '%LOCALAPPDATA%\HushSnap\dumps' -Type ExpandString
+Set-ItemProperty -Path $pyKey -Name 'DumpFolder' -Value '%LOCALAPPDATA%\hushsnap_dumps' -Type ExpandString
 Set-ItemProperty -Path $pyKey -Name 'DumpCount'  -Value 10                          -Type DWord
 Set-ItemProperty -Path $pyKey -Name 'DumpType'   -Value 2                           -Type DWord
 
-$dumpDir = Join-Path $env:LOCALAPPDATA 'HushSnap\dumps'
+$dumpDir = Join-Path $env:LOCALAPPDATA 'hushsnap_dumps'
 New-Item -Path $dumpDir -ItemType Directory -Force | Out-Null
 
 Write-Host "WER LocalDumps configured for HushSnap.exe and python.exe." -ForegroundColor Green
