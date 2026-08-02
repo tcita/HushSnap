@@ -2,6 +2,25 @@
 Release notes (newest first)
 ================================================================================
 
+### v1.5.2
+
+· 编辑器标注字体默认跟随界面语言，字体选择器改为精选列表。
+· 设置页面下拉框不再随鼠标滚轮误切换选项，滚动条样式更现代。
+· 增加了软件的稳定性。
+
+
+· 編輯器標註字型預設跟隨介面語言，字型選擇器改為精選列表。
+· 設定頁面下拉框不再隨滑鼠滾輪誤切換選項，捲動條樣式更現代。
+· 增加了軟體的穩定性。
+
+· Editor annotation font now defaults to your UI language, and the font picker shows a curated list.
+· Settings dropdowns no longer accidentally change values when you scroll the page; the scrollbar now has a cleaner modern look.
+· Stability improvements.
+
+· エディターの注釈フォントがUI言語に応じた初期値になり、フォント選択肢が精選リストに。
+· 設定画面のドロップダウンがマウスホイールで誤って切り替わらなくなり、スクロールバーがよりモダンに。
+· 安定性を向上させました。
+
 ### v1.5.0
 
 · 缩略图新增装饰角花：可在设置中挑选藤蔓、蝴蝶或花卉样式，点缀在缩略图左上角。
