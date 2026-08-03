@@ -1,3 +1,4 @@
+import ctypes
 import gc
 import os
 import shutil
@@ -184,6 +185,16 @@ class Application(QtCore.QObject):
         
         if not self.instance_lock:
             self.logger.warning("HushSnap is already running. Exiting launch.")
+            try:
+                ctypes.windll.user32.MessageBoxW(
+                    0,
+                    "HushSnap is already running.\n\n"
+                    "Check the system tray or close the other instance before launching again.",
+                    "HushSnap",
+                    0x00002000,  # MB_OK | MB_TOPMOST (no icon → no sound)
+                )
+            except Exception:
+                pass
             return
 
         # --- Component Initialization ---

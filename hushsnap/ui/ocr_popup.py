@@ -6,11 +6,13 @@ import logging
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
-from ..config import get_ocr_font_size, get_resource_dir
+from ..config import get_close_ocr_popup_on_focus_loss, get_ocr_font_size, get_resource_dir
 from ..constants import APP_ICON_FILENAME
 from ..dpi import cursor_screen
 from ..ocr.text import _iter_url_spans, find_url_at_position, normalize_url
 from .styles import BRAND_GREEN
+
+logger = logging.getLogger(__name__)
 
 # Minimum window size to prevent collapsing to zero
 WINDOW_MIN_WIDTH = 280
@@ -1111,6 +1113,7 @@ class OcrPopup(QtWidgets.QWidget):
             event.type() == QtCore.QEvent.Type.ActivationChange
             and not self._pinned
             and not self.isActiveWindow()
+            and get_close_ocr_popup_on_focus_loss()
         ):
             self.hide()
         super().changeEvent(event)

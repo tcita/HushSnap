@@ -20,6 +20,8 @@ from ..config import (
     update_copy_image_to_clipboard,
     get_auto_copy_ocr_result,
     update_auto_copy_ocr_result,
+    get_close_ocr_popup_on_focus_loss,
+    update_close_ocr_popup_on_focus_loss,
     get_show_capture_dimension_label,
     update_show_capture_dimension_label,
     get_thumbnail_display_time,
@@ -1303,7 +1305,18 @@ class SettingsDialogController(QtCore.QObject):
         )
         switch_ocr_copy.clicked.connect(on_copy_ocr)
         ocr_layout.addWidget(card_ocr_copy)
-        
+
+        # Close OCR popup on click outside
+        def on_close_on_click_outside(checked):
+            update_close_ocr_popup_on_focus_loss(checked, self.config_path)
+        card_ocr_click_outside, switch_ocr_click_outside = _make_startup_card(
+            self.translate("settings_close_ocr_on_click_outside_label"),
+            self.translate("settings_close_ocr_on_click_outside_subtitle"),
+            get_close_ocr_popup_on_focus_loss(self.config_path),
+        )
+        switch_ocr_click_outside.clicked.connect(on_close_on_click_outside)
+        ocr_layout.addWidget(card_ocr_click_outside)
+
         ocr_layout.addStretch()
         content_stack.addWidget(ocr_page)
 
