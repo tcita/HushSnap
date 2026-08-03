@@ -1,4 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
 import re
 from pathlib import Path
 
@@ -109,6 +110,34 @@ def filter_binaries(binaries):
         return parts[-1] in ('msvcp140.dll', 'vcruntime140.dll',
                              'vcruntime140_1.dll', 'concrt140.dll')
     result = [b for b in result if not _is_winrt_vcruntime(b[0])]
+
+    # --- Prefer system CRT over Python's bundled copy -----------------------
+    # Python 3.13 ships VCRUNTIME140.dll 14.42; the system VC++ Redist (14.44
+    # as of 2026-08) is newer and patched.  Swap the top-level
+    # VCRUNTIME140.dll (and _1.dll) source to System32 so the MSIX always
+    # carries the latest system CRT regardless of the Python install.
+    #
+    # NOTE: This is NOT a fix for the onnxruntime import slowdown — that
+    # regression (1.22+ → ~7 s) is caused by SetupDiGetClassDevsA GPU
+    # enumeration inside PyInit, not CRT version.  The real fix is pinning
+    # onnxruntime==1.21.1 (last version without DML provider probing).
+    # See memory/ for full investigation.
+    _SYSTEM32 = r'C:\Windows\System32'
+    result = [
+        (
+            dest,
+            os.path.join(_SYSTEM32, os.path.basename(dest)),
+            kind,
+        )
+        if (
+            dest.replace('\\', '/').count('/') == 1
+            and os.path.basename(dest).lower()
+            in ('vcruntime140.dll', 'vcruntime140_1.dll')
+            and os.path.exists(os.path.join(_SYSTEM32, os.path.basename(dest)))
+        )
+        else b
+        for b in result
+    ]
     return result
 
 def filter_datas(datas):

@@ -82,9 +82,13 @@ Parameter choices vs RapidOCR defaults
       Recognition runs sequentially on CPU — batching only adds threading
       overhead without parallelism.
 
-  intra_op_num_threads = 8 (default -1)
-      U-curve bottoms at 8 threads on consumer CPUs.  Beyond that, scheduling
-      overhead and cache contention overtake remaining throughput.
+  intra_op_num_threads = -1 (default -1)
+      Left at the ONNX Runtime default.  Manual tuning has been attempted
+      but the optimal value drifts across ORT versions (1.20 → 8, 1.28 →
+      12, 1.21 → 14) and is only measurable on large/dense screenshots.
+      On typical captures (≤200 chars) the difference is in the noise.
+      Let ORT's own heuristics choose — they are maintained alongside the
+      thread pool and adapt across versions.
 
   inter_op_num_threads = 1 (default -1)
       Det → Rec pipeline is strictly sequential; inter-op parallelism has
@@ -412,7 +416,7 @@ _DEFAULT_ENGINE_PARAMS: dict = {
     # (updated: reversed to False).
     # det-use-dilation-true (updated: reversed to False).
     "Det.use_dilation": False,
-    "EngineConfig.onnxruntime.intra_op_num_threads": 8,
+    "EngineConfig.onnxruntime.intra_op_num_threads": -1,
     "EngineConfig.onnxruntime.inter_op_num_threads": 1,
     "EngineConfig.onnxruntime.enable_cpu_mem_arena": False,
 }
