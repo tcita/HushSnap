@@ -995,11 +995,7 @@ class SettingsDialogController(QtCore.QObject):
         self._screenshot_pills = None
 
     def is_visible(self) -> bool:
-        """Return True if the settings dialog is currently visible.
-
-        Used by IdleMemoryManager to defer working-set trim while
-        the user is interacting with settings.
-        """
+        """Return True if the settings dialog is currently visible."""
         return self._dialog is not None and self._dialog.isVisible()
 
     def _refresh_pills(self):

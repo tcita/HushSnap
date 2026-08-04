@@ -168,7 +168,6 @@ class Application(QtCore.QObject):
         self.capture_session = None
         self.hotkey_manager = None
         self.settings_controller = None
-        self.idle_manager = None
         self._editor_window = None  # most recent visible image-editor reference
         self._editor_windows = []  # all active image-editor references
 
@@ -204,7 +203,6 @@ class Application(QtCore.QObject):
 
         # --- Final Polish ---
         self.startup_profiler.log_summary()
-        QtCore.QTimer.singleShot(5000, self._initial_memory_trim)
 
         # Show a one-time "ready" toast on the first launch after install so
         # the user learns the capture hotkey. Never shown again afterwards.
@@ -337,9 +335,6 @@ class Application(QtCore.QObject):
             lambda pix, win: self.ocr_controller.copy_text_from_image(pix, win)
         )
         pinned_image_manager.edit_requested.connect(self._handle_open_editor)
-
-        # 6. Idle Memory Manager
-        self.idle_manager = self._init_idle_manager(thumbnail_manager, pinned_image_manager)
 
     def _init_ui_shell(self):
         with self.startup_profiler.step("Shell integration initialized"):
@@ -586,52 +581,6 @@ class Application(QtCore.QObject):
                 None, self.translate("open_dir_failed"), self.translate("open_dir_failed_body")
             )
 
-    def _init_idle_manager(self, tm, pm):
-        app_ref = self  # capture for the closure below
-
-        class IdleMemoryManager(QtCore.QObject):
-            def __init__(self, tm, pm, oc):
-                super().__init__()
-                self.tm, self.pm, self.oc = tm, pm, oc
-                self.idle_timer = QtCore.QTimer()
-                self.idle_timer.setSingleShot(True)
-                self.idle_timer.timeout.connect(self._do_trim)
-                self.check_timer = QtCore.QTimer()
-                self.check_timer.timeout.connect(self._check_and_start)
-                self.check_timer.start(5000)
-
-            def _is_truly_idle(self):
-                # Trimming is deferred while the user has any app UI visible.
-                # Conditions that block the idle timer:
-                #   thumbnail / pinned image / editor / settings window visible
-                #   OCR recognition running or waiting for a result
-                #   OCR popup visible
-                editor_active = app_ref._has_visible_editor_window()
-                settings_visible = (
-                    app_ref.settings_controller is not None
-                    and app_ref.settings_controller.is_visible()
-                )
-                return (not self.tm._windows and not self.pm._windows
-                        and not self.oc.is_busy() and not self.oc.has_visible_popups()
-                        and not editor_active and not settings_visible)
-
-            def _check_and_start(self):
-                if self._is_truly_idle():
-                    if not self.idle_timer.isActive():
-                        self.idle_timer.start(30000)
-                else:
-                    self.idle_timer.stop()
-
-            def _do_trim(self):
-                if self._is_truly_idle():
-                    from .system.memory_utils import trim_working_set
-                    trim_working_set()
-
-        return IdleMemoryManager(tm, pm, self.ocr_controller)
-
-    def _initial_memory_trim(self):
-        from .system.memory_utils import trim_working_set
-        trim_working_set()
 
 
 def main(boot_start_time=None):
