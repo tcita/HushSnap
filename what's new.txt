@@ -2,6 +2,24 @@
 Release notes (newest first)
 ================================================================================
 
+### v1.5.3
+
+· OCR 弹窗新增"点击外部关闭"：可在设置中开启或关闭，开启后点击弹窗以外的区域自动关闭识别结果。
+· 后台内存管理优化，长时间使用更稳定。
+· 增加了软件的稳定性。
+
+· OCR 彈窗新增「點擊外部關閉」：可在設定中開啟或關閉，開啟後點擊彈窗以外的區域自動關閉辨識結果。
+· 後台記憶體管理最佳化，長時間使用更穩定。
+· 增加了軟體的穩定性。
+
+· OCR popup now closes when you click outside it — toggle it on or off in Settings.
+· Smarter background memory management keeps things smooth during long sessions.
+· Stability improvements.
+
+· OCR ポップアップが外部クリックで閉じられるようになりました。設定でオン/オフを切り替え可能です。
+· バックグラウンドのメモリ管理を改善し、長時間の使用でも快適に。
+· 安定性を向上させました。
+
 ### v1.5.2
 
 · 编辑器标注字体默认跟随界面语言，字体选择器改为精选列表。
