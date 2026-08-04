@@ -193,7 +193,7 @@ def test_memory_trim_timer_behavior(monkeypatch, qapp, tmp_path, sample_pixmap):
         OcrResponse(text="test", error="", pixmap=sample_pixmap, recognition=OcrRecognition())
     )
     assert controller._trim_timer.isActive()
-    assert controller._trim_timer.interval() == 5000
+    assert controller._trim_timer.interval() == 30000
 
     # 3. Verify trim_engine is called on timeout
     trimmed_engine = []
