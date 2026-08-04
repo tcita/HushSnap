@@ -565,7 +565,7 @@ Write-Host "  Installing dependencies from requirements.txt (this may take a few
 # persists across builds so wheels are only downloaded once; pip still
 # installs into the fresh venv each time.
 $pipCacheDir = Join-Path $rootDir ".pip-cache"
-& $pythonExe -m pip install --cache-dir $pipCacheDir -r $requirementsPath
+& $pythonExe -m pip install --disable-pip-version-check --cache-dir $pipCacheDir -r $requirementsPath
 if ($LASTEXITCODE -ne 0) {
     throw "pip install -r requirements.txt failed (exit $LASTEXITCODE)."
 }

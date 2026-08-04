@@ -135,8 +135,8 @@ def filter_binaries(binaries):
             in ('vcruntime140.dll', 'vcruntime140_1.dll')
             and os.path.exists(os.path.join(_SYSTEM32, os.path.basename(dest)))
         )
-        else b
-        for b in result
+        else (dest, src, kind)
+        for (dest, src, kind) in result
     ]
     return result
 
