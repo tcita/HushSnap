@@ -570,6 +570,22 @@ if ($LASTEXITCODE -ne 0) {
     throw "pip install -r requirements.txt failed (exit $LASTEXITCODE)."
 }
 
+# Strip stale winrt-bundled VC++ runtime from the build venv.
+# The winrt-runtime wheel ships msvcp140.dll 14.29 (VS2019) which
+# conflicts with System32's 14.44 when PyInstaller isolated child
+# processes load both versions simultaneously — null-pointer crash
+# in mtx_do_lock at process exit. The VC++ runtime is forward-
+# compatible: 14.44 satisfies winrt's 14.29 link target, so
+# dropping the private copy lets everything use the single system
+# copy. (The .spec filter_binaries handles the packaged output;
+# this handles the build venv used by PyInstaller's own workers.)
+$winrtPkgDir = Join-Path $buildVenvDir "Lib\site-packages\winrt"
+$winrtDlls = Get-ChildItem -Path $winrtPkgDir -Filter "*.dll" -ErrorAction SilentlyContinue
+foreach ($dll in $winrtDlls) {
+    Remove-Item -Path $dll.FullName -Force
+    Write-Host "  Removed stale winrt-bundled DLL: $($dll.Name)" -ForegroundColor DarkGray
+}
+
 # Sanity: PyInstaller must be present in the venv (it is in requirements.txt).
 if (-not (Test-Path $pyinstallerExe)) {
     throw "pyinstaller.exe not found in venv after install - check requirements.txt includes 'pyinstaller'."
