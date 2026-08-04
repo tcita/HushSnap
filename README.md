@@ -44,9 +44,6 @@ After capture, a thumbnail slides in at the bottom-right corner of your screen. 
 - **Right-click** the thumbnail for **Copy Text from Image** (silent OCR - text straight to the clipboard, no popup) or **Save to Desktop**.
 - Optionally overlay a decorative **vine ornament** on the thumbnail’s top-left corner (enable it in Settings - Capture). It is purely cosmetic; it does not change the thumbnail’s hit area or any behavior.
 
-HushSnap lives in the **system tray** - right-click the icon for Screenshot, Settings, the config folder, and Quit; a single-click also starts a capture. The **Settings** dialog (with General, Capture, and OCR pages) lets you rebind the global hotkey (default `Alt+Q`), switch UI language, change how long the thumbnail stays visible, toggle auto-copy behavior, adjust OCR font size, and more.
-
-Because HushSnap works at the Windows level, the hotkey responds from any app, anywhere. Everything runs locally - your screenshots and OCR results never leave your device.
 
 As the project continues to evolve, some parts of this README may occasionally lag behind the latest behavior or features.
 
