@@ -596,30 +596,36 @@ class Application(QtCore.QObject):
                 self.idle_timer = QtCore.QTimer()
                 self.idle_timer.setSingleShot(True)
                 self.idle_timer.timeout.connect(self._do_trim)
-                self._already_trimmed = False
                 self.check_timer = QtCore.QTimer()
                 self.check_timer.timeout.connect(self._check_and_start)
                 self.check_timer.start(5000)
 
             def _is_truly_idle(self):
+                # Trimming is deferred while the user has any app UI visible.
+                # Conditions that block the idle timer:
+                #   thumbnail / pinned image / editor / settings window visible
+                #   OCR recognition running or waiting for a result
+                #   OCR popup visible
                 editor_active = app_ref._has_visible_editor_window()
+                settings_visible = (
+                    app_ref.settings_controller is not None
+                    and app_ref.settings_controller.is_visible()
+                )
                 return (not self.tm._windows and not self.pm._windows
                         and not self.oc.is_busy() and not self.oc.has_visible_popups()
-                        and not editor_active)
+                        and not editor_active and not settings_visible)
 
             def _check_and_start(self):
                 if self._is_truly_idle():
-                    if not self.idle_timer.isActive() and not self._already_trimmed:
-                        self.idle_timer.start(20000)
+                    if not self.idle_timer.isActive():
+                        self.idle_timer.start(30000)
                 else:
                     self.idle_timer.stop()
-                    self._already_trimmed = False
 
             def _do_trim(self):
                 if self._is_truly_idle():
                     from .system.memory_utils import trim_working_set
                     trim_working_set()
-                    self._already_trimmed = True
 
         return IdleMemoryManager(tm, pm, self.ocr_controller)
 
