@@ -127,7 +127,7 @@ class OcrController:
     def _on_toast_ocr_done(self, response, toast_window, on_done=None):
         """Main-thread handler: copy OCR text and show global toast."""
         self._toast_bridge = None
-        self._trim_timer.start(30000)
+        self._trim_timer.start(0)
         text = response.text or ""
             
         if text:
@@ -229,7 +229,7 @@ class OcrController:
         return False
 
     def on_ocr_finished(self, response, target_popup=None):
-        self._trim_timer.start(30000)
+        self._trim_timer.start(0)
         logging.info(
             "[OCR_CHAIN] on_ocr_finished entered, text_len=%d, has_error=%s, target_is_active=%s",
             len(response.text or ""),
