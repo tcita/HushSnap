@@ -385,6 +385,9 @@ class Application(QtCore.QObject):
                     self.config_path,
                     self.hotkey_manager,
                     on_font_size_changed=self.ocr_controller.apply_font_sizes,
+                    on_dim_label_changed=lambda enabled: setattr(
+                        self.capture_session, "show_dimension_label", enabled
+                    ),
                 )
                 settings_action.triggered.connect(self.settings_controller.show)
                 self.settings_controller.language_changed.connect(self._handle_restart_requested)

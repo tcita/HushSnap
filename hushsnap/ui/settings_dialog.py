@@ -984,12 +984,14 @@ class SettingsDialogController(QtCore.QObject):
     """Settings panel with categories (General, Capture, OCR)."""
     language_changed = QtCore.pyqtSignal()
 
-    def __init__(self, translate, config_path, hotkey_manager, on_font_size_changed=None):
+    def __init__(self, translate, config_path, hotkey_manager,
+                 on_font_size_changed=None, on_dim_label_changed=None):
         super().__init__()
         self.translate = translate
         self.config_path = config_path
         self.hotkey_manager = hotkey_manager
         self._on_font_size_changed = on_font_size_changed
+        self._on_dim_label_changed = on_dim_label_changed
         self._dialog = None
         self._screenshot_pills_container = None
         self._screenshot_pills = None
@@ -1256,6 +1258,8 @@ class SettingsDialogController(QtCore.QObject):
         # Show Size & Position label on the capture overlay
         def on_show_dim(checked):
             update_show_capture_dimension_label(checked, self.config_path)
+            if self._on_dim_label_changed is not None:
+                self._on_dim_label_changed(checked)
         card_dim, switch_dim = _make_startup_card(
             self.translate("settings_show_dimension_label"),
             self.translate("settings_show_dimension_subtitle"),
