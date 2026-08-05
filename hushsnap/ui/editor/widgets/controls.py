@@ -137,6 +137,7 @@ class _SwatchPopup(QtWidgets.QFrame):
             | QtCore.Qt.WindowType.FramelessWindowHint
         )
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setStyleSheet("_SwatchPopup { background: #333; border: 1px solid #555; border-radius: 6px; }")
 
         grid = QtWidgets.QGridLayout(self)
