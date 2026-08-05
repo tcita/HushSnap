@@ -48,6 +48,17 @@ _log_file_path = None
 _translate = None
 
 
+def _flush_log_handlers():
+    """Flush every RotatingFileHandler owned by the root logger so that a
+    subsequent copy of the log file sees all buffered writes on disk."""
+    root = logging.getLogger()
+    for h in root.handlers:
+        try:
+            h.flush()
+        except Exception:
+            pass
+
+
 def exception_hook(exctype, value, tb):
     """
     Global unhandled exception handler.
@@ -57,6 +68,17 @@ def exception_hook(exctype, value, tb):
     logger = logging.getLogger("HushSnap")
     # 1. Log the full traceback to the log file.
     logger.critical("Unhandled exception occurred:", exc_info=(exctype, value, tb))
+
+    # 1b. Dump loaded native module list for post-mortem diagnosis
+    #     (ABI mismatches, stale DLLs, unexpected driver loads).
+    try:
+        wer.log_loaded_modules(logger)
+    except Exception:
+        pass
+
+    # 1c. Flush everything to disk so the copy / open below sees the
+    #     complete log including the traceback and module list just written.
+    _flush_log_handlers()
 
     # 2. If a QApplication instance exists, show a graphical error dialog.
     if QtWidgets.QApplication.instance():
@@ -93,20 +115,23 @@ def exception_hook(exctype, value, tb):
             except Exception:
                 logger.exception("Failed to open log file")
 
-    # 3. Hand the crash to Windows Error Reporting so Partner Center
-    #    at least records the crash count.  A plain Python unhandled
-    #    exception exits the process cleanly, which WER ignores.
-    #    RaiseFailFastException turns it into a WER-reportable crash.
-    #    The dialog above already ran (it blocks), so the user has had
-    #    their chance to save or open the log.
-    wer.raise_fail_fast()
+    # 3. Clean exit.  Partner Center's crash count has no diagnostic
+    #    value (retail Windows produces "Uncategorized" with no stacks
+    #    or .cab files), and RaiseFailFastException adds WER overhead
+    #    that keeps the cursor spinning after the dialog closes.
+    #    os._exit() stops the process immediately — the log is already
+    #    flushed above, so no data loss.
+    os._exit(1)
 
 
 def _save_log_to_desktop(log_path):
-    """Copy the full log file to the user's desktop."""
+    """Copy the full log file to the user's desktop.
+    Uses ``shutil.copy`` (not ``copy2``) — metadata preservation is
+    pointless in a crash handler and ``os.utime`` on the destination
+    can be unexpectedly slow when Desktop is OneDrive-backed."""
     desktop = Path.home() / "Desktop"
     dest = desktop / "HushSnap_crash.log"
-    shutil.copy2(log_path, dest)
+    shutil.copy(log_path, dest)
 
 
 def _open_log_file(log_path):
@@ -213,7 +238,7 @@ class Application(QtCore.QObject):
             self.ocr_controller.bridge.warmup_finished.connect(
                 lambda: QtCore.QTimer.singleShot(300, self._show_startup_ready_toast)
             )
-        
+
         return self.qt_app.exec()
 
     def translate(self, key, **kwargs):

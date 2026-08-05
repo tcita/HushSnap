@@ -25,7 +25,11 @@ New-Item -Path $key -Force | Out-Null
 
 Set-ItemProperty -Path $key -Name 'DumpFolder' -Value '%LOCALAPPDATA%\hushsnap_dumps' -Type ExpandString
 Set-ItemProperty -Path $key -Name 'DumpCount'  -Value 20                          -Type DWord
-Set-ItemProperty -Path $key -Name 'DumpType'   -Value 2                           -Type DWord
+Set-ItemProperty -Path $key -Name 'DumpType'   -Value 1                           -Type DWord
+# DumpType 1 = minidump (call stacks + module list; ~tens of MB).
+# DumpType 2 = full dump (entire process memory; ~committed size).
+# Full dumps are excessive for a ~1.5 GB Python process — minidump has
+# everything needed to diagnose a native crash inside onnxruntime.
 
 # Also cover dev-mode crashes (python HushSnap.py). Process name matching means
 # every Python crash on this machine writes a dump, so keep a smaller cap.
@@ -33,7 +37,7 @@ $pyKey = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\py
 New-Item -Path $pyKey -Force | Out-Null
 Set-ItemProperty -Path $pyKey -Name 'DumpFolder' -Value '%LOCALAPPDATA%\hushsnap_dumps' -Type ExpandString
 Set-ItemProperty -Path $pyKey -Name 'DumpCount'  -Value 10                          -Type DWord
-Set-ItemProperty -Path $pyKey -Name 'DumpType'   -Value 2                           -Type DWord
+Set-ItemProperty -Path $pyKey -Name 'DumpType'   -Value 1                           -Type DWord
 
 $dumpDir = Join-Path $env:LOCALAPPDATA 'hushsnap_dumps'
 New-Item -Path $dumpDir -ItemType Directory -Force | Out-Null
