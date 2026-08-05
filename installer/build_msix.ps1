@@ -518,6 +518,18 @@ $rootDir = Resolve-Path (Join-Path $scriptDir "..")
 $distDir = Join-Path $rootDir "dist\HushSnap"
 $stageDir = Join-Path $rootDir "build\msix_stage"
 
+# ── Purge stale MSIX output so a crashed/torn build can never be
+#    mistaken for the current run's output ──────────────────────────
+@(
+    (Join-Path $rootDir "dist-installer\HushSnap.msix"),
+    (Join-Path $rootDir "dist-installer-test\HushSnap_Test_Signed.msix")
+) | ForEach-Object {
+    if (Test-Path $_) {
+        Remove-Item -Path $_ -Force -ErrorAction SilentlyContinue
+        Write-Host "Removed stale MSIX: $_" -ForegroundColor Cyan
+    }
+}
+
 # ══════════════════════════════════════════════════════════════════════
 #  2b. Build virtual environment (isolated from dev-site-packages pollution)
 # ══════════════════════════════════════════════════════════════════════
