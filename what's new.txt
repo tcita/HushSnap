@@ -2,6 +2,28 @@
 Release notes (newest first)
 ================================================================================
 
+### v1.5.4
+
+· 修复"显示尺寸标签"开关需重启应用才能生效的问题。
+· 简化内存回收机制，合并冗余的闲置清理策略。
+· 修复取消固定按钮的提示文字始终显示"失焦自动隐藏"的误导。
+· 崩溃日志新增已加载模块记录，便于问题排查。
+
+· 修復「顯示尺寸標籤」開關需重啟應用才能生效的問題。
+· 簡化記憶體回收機制，合併冗餘的閒置清理策略。
+· 修復取消固定按鈕的提示文字始終顯示「失焦自動隱藏」的誤導。
+· 崩潰日誌新增已載入模組記錄，便於問題排查。
+
+· Fixed the "Show Dimension Label" toggle requiring an app restart to take effect.
+· Simplified memory management by removing redundant idle-trim paths.
+· Fixed the unpin button tooltip incorrectly showing "auto-hide on focus loss" regardless of the actual setting.
+· Crash logs now include loaded native-module information for easier troubleshooting.
+
+· 「寸法ラベルを表示」の切り替えがアプリの再起動なしで反映されるよう修正しました。
+· メモリ管理を簡素化し、冗長なアイドル時解放の経路を統合しました。
+· 固定解除ボタンのツールチップに設定状態に関わらず「フォーカス喪失時に自動非表示」と表示される誤解を修正しました。
+· クラッシュログに読み込み済みモジュール情報を追加し、問題の切り分けを容易にしました。
+
 ### v1.5.3
 
 · OCR 弹窗新增"点击外部关闭"：可在设置中开启或关闭，开启后点击弹窗以外的区域自动关闭识别结果。
