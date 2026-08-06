@@ -235,3 +235,13 @@ memory-for-speed tradeoff. If it ever needs addressing, the lever is wiring up
   (limit_side_len=32 keeps big tensors)
 - `ocr_batch/run_ocr.py` - single-image debug entry (times the cold inference)
 - `hushsnap/benchmark/_runner.py` - reports warm avg, excludes iter 0
+
+## ORT version pin
+
+`onnxruntime==1.21.1` is the last fast version. 1.22+ changed Environment
+init from lazy (Meyer's Singleton, first `GetEnv()` call) to eager
+(`OrtEnv::GetOrCreateInstance` during `PYBIND11_MODULE` / `import`).
+The eager init creates global thread pools, probes hardware devices via
+`GetSortedOrtHardwareDevices()`, and takes ~7 s on this dual-GPU laptop.
+
+See memory: [[onnxruntime-import-slowdown-getorcreateinstance]]
