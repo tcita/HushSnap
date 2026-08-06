@@ -28,9 +28,11 @@ Output:
 Notes:
     - A QApplication (offscreen) is required because the OCR path uses QImage /
       QPixmap. We construct one but never run its event loop.
-    - The engine is a singleton (ppocr._get_engine); the first call loads the
-      ONNX models (warmup), subsequent calls reuse them. The first round's
-      timing therefore includes warmup and is reported separately.
+    - The engine is a singleton (ppocr.get_ppocr_engine); the first call loads the
+      ONNX models (model load) and commits det tensor buffers (first inference).
+      The first round's timing therefore includes both cold-start costs and is
+      reported separately.  Subsequent rounds are warm (buffers committed,
+      engine loaded).
     - ONNX inference is floating-point and some operators are non-deterministic
       across runs by default; small differences on borderline characters are
       expected. This test quantifies HOW different, and whether the differences
@@ -102,7 +104,7 @@ def main():
         return 2
     print(f"image: {image_path}  ({source_image.width()}x{source_image.height()})")
     print(f"rounds={args.rounds}  engine={OCR_ENGINE_PPOCR}  language_tag={args.language_tag!r}")
-    print("first round includes model warmup (loading ONNX)...\n")
+    print("first round includes model load + first-inference buffer commit ...\n")
 
     # ── run N rounds ──────────────────────────────────────────────────────────
     results = []  # list of (round, elapsed_s, text, text_hash, lines_hash, error)
@@ -127,7 +129,7 @@ def main():
                 parts.append(f"{ln.text}|{b.x:.1f},{b.y:.1f},{b.width:.1f},{b.height:.1f}")
             lh = text_hash("\n".join(parts))
         results.append((i, dt, text, th, lh, err))
-        tag = f"warmup" if i == 1 else f"{dt:.3f}s"
+        tag = f"cold" if i == 1 else f"{dt:.3f}s"
         print(f"  [round {i:4d}] {tag:8} len={len(text):5d} text_hash={th} "
               f"{'lines_hash=' + lh if lh else ''} {'ERR=' + err if err else ''}")
 
@@ -147,11 +149,11 @@ def main():
     if line_hashes:
         print(f"distinct line/box sets: {len(set(line_hashes))}")
 
-    timings = [r[1] for r in results[1:]]  # exclude warmup
+    timings = [r[1] for r in results[1:]]  # exclude cold (round 1 = model load + buffer commit)
     if timings:
-        print(f"timing (excl warmup):   min={min(timings):.3f}s  max={max(timings):.3f}s  "
+        print(f"timing (warm, excl cold): min={min(timings):.3f}s  max={max(timings):.3f}s  "
               f"avg={sum(timings)/len(timings):.3f}s")
-    print(f"warmup round:           {results[0][1]:.3f}s")
+    print(f"cold round (model load + first inference): {results[0][1]:.3f}s")
 
     print(f"\ndistinct text variants ({len(distinct_text)}):")
     for h, count in distinct_text.most_common():

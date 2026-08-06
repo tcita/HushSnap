@@ -32,7 +32,7 @@ import numpy as np
 
 from hushsnap.ocr.preprocess import run_minimal_pipeline
 from hushsnap.ocr.ppocr import (
-    _get_engine,
+    get_ppocr_engine,
     _recognize_without_detection,
     recognize_ppocr_qimage,
 )
@@ -70,7 +70,7 @@ ptr = qimg.bits()
 ptr.setsize(qimg.sizeInBytes())
 arr = np.frombuffer(ptr, dtype=np.uint8).reshape((h, w, 4))[:, :, :3].copy()
 
-engine = _get_engine()
+engine = get_ppocr_engine()
 print("engine loaded.\n")
 
 # ── COLD first det+rec call: commits ORT mid-tensors for this input size ────

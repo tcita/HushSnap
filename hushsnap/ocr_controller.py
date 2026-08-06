@@ -35,7 +35,7 @@ class OcrController:
         save_debug_image=False,
         popup=None,
         service=None,
-        warmup=True,
+        load=True,
     ):
         self.app = app
         self.translate = translate
@@ -55,7 +55,7 @@ class OcrController:
         self._current_engine = OCR_ENGINE_PPOCR
 
         self.bridge.ocr_result.connect(self.on_ocr_finished)
-        self.bridge.warmup_finished.connect(self._schedule_post_warmup_trim)
+        self.bridge.load_finished.connect(self._schedule_post_load_trim)
         
         # New popups always start unpinned to avoid "sticky" state confusion.
         self.popup.pin_toggled.connect(self._handle_pin_toggled)
@@ -64,10 +64,10 @@ class OcrController:
         self._trim_timer.setSingleShot(True)
         self._trim_timer.timeout.connect(self._trim_current_engine)
 
-        # Warm up background engine
-        if warmup:
-            logging.debug("[OcrController] Scheduling background warmup on event loop start...")
-            QtCore.QTimer.singleShot(0, self._background_warmup)
+        # Load engine in background (model init only, no inference)
+        if load:
+            logging.debug("[OcrController] Scheduling background load on event loop start...")
+            QtCore.QTimer.singleShot(0, self._background_load)
 
     def set_capture_requester(self, capture_requester):
         """Set callback used to request screenshot captures on demand."""
@@ -160,7 +160,7 @@ class OcrController:
         # causes handle_capture_completed() to run OCR on the *next* captured
         # pixmap instead of ignoring it. No network, no persistence, local only.
         # If this ever gets promoted to a real user-facing "auto-OCR" setting,
-        # gate it behind a config flag and re-audit the warmup/trim interactions.
+        # gate it behind a config flag and re-audit the load/trim interactions.
         self.needs_ocr = True
 
     def _trim_current_engine(self):
@@ -323,24 +323,24 @@ class OcrController:
         self.service.recognize_async(request, lambda resp: self.bridge.ocr_result.emit(resp, target))
         logging.debug("[OCR_CHAIN] start_request dispatched")
 
-    def _background_warmup(self):
+    def _background_load(self):
         import threading
-        from .ocr.engine import warmup_engine
+        from .ocr.engine import load_engine
         if self.needs_ocr or self._expecting_ocr_result:
-            self.bridge.warmup_finished.emit()
+            self.bridge.load_finished.emit()
             return
 
-        def run_warmup():
+        def run_load():
             try:
-                warmup_engine(self._current_engine)
+                load_engine(self._current_engine)
             except Exception:
-                logging.error("Warmup failed", exc_info=True)
+                logging.error("Load failed", exc_info=True)
             finally:
-                self.bridge.warmup_finished.emit()
+                self.bridge.load_finished.emit()
 
-        threading.Thread(target=run_warmup, daemon=True).start()
+        threading.Thread(target=run_load, daemon=True).start()
 
-    def _schedule_post_warmup_trim(self):
+    def _schedule_post_load_trim(self):
         if self.needs_ocr or self._expecting_ocr_result:
             return
         self._trim_timer.start(0)

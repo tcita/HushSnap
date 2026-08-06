@@ -115,8 +115,8 @@ def main() -> int:
     # inference.  Without this the first image would include ONNX model
     # loading (~200-500ms) in its elapsed time.
     t_warm = time.perf_counter()
-    from hushsnap.ocr.ppocr import _get_engine
-    _get_engine()
+    from hushsnap.ocr.ppocr import get_ppocr_engine
+    get_ppocr_engine()
     dt_warm = time.perf_counter() - t_warm
     print(f"Engine loaded ({dt_warm*1000:.0f}ms)", file=sys.stderr)
     print(file=sys.stderr)

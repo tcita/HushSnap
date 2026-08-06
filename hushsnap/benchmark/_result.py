@@ -39,7 +39,7 @@ class BenchmarkResult:
     # Two distinct one-time costs precede steady state (see
     # scripts/OCR_FIRST_INFERENCE.md, "Two cold starts"):
     #   (1) model load - session build, mmap, graph opt.  Paid by
-    #       warmup_ppocr / _wait_for_warmup BEFORE the loop, so no
+    #       get_ppocr_engine / _wait_for_load BEFORE the loop, so no
     #       iteration here sees it.
     #   (2) first-inference buffer commit - on the first engine(arr) ORT
     #       commits the detector's input-sized intermediate tensors,
@@ -49,9 +49,9 @@ class BenchmarkResult:
     # This benchmark measures steady-state throughput, so the latency
     # aggregates below exclude iteration 0 and keep it standalone as
     # cold_duration_ms.  "cold" in that field name = (2) the first-
-    # inference buffer commit, NOT (1) the model load warmup already
-    # eliminated.  The two are unrelated one-time costs that share the
-    # colloquial "cold start" label; do not conflate them.
+    # inference buffer commit, NOT (1) the model load already
+    # eliminated by engine load.  The two are unrelated one-time costs that
+    # share the colloquial "cold start" label; do not conflate them.
     avg_duration_ms: float = 0.0      # mean over warm iterations only
     best_duration_ms: float = 0.0     # min over warm iterations only
     cold_duration_ms: float = 0.0     # iteration 0 - first-inference buffer commit (2), not model load (1)

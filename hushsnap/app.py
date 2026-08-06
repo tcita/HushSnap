@@ -231,11 +231,11 @@ class Application(QtCore.QObject):
 
         # Show a one-time "ready" toast on the first launch after install so
         # the user learns the capture hotkey. Never shown again afterwards.
-        # Wait for OCR warmup to finish (same signal that reveals the tray
+        # Wait for OCR engine load to finish (same signal that reveals the tray
         # icon) so the toast appears after the app is fully ready, then add a
         # short settle delay for the tray icon to render.
         if not get_onboarding_toast_shown():
-            self.ocr_controller.bridge.warmup_finished.connect(
+            self.ocr_controller.bridge.load_finished.connect(
                 lambda: QtCore.QTimer.singleShot(300, self._show_startup_ready_toast)
             )
 
@@ -375,7 +375,7 @@ class Application(QtCore.QObject):
             )
 
             self.ocr_controller.tray_icon = self.tray_icon
-            self.ocr_controller.bridge.warmup_finished.connect(self.tray_icon.show)
+            self.ocr_controller.bridge.load_finished.connect(self.tray_icon.show)
             self.hotkey_manager.tray_icon = self.tray_icon
 
             # Settings Dialog

@@ -55,8 +55,8 @@ def get_engine():
         import sys
         QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 
-        from hushsnap.ocr.ppocr import _get_engine as _ppocr_get_engine
-        _engine = _ppocr_get_engine()
+        from hushsnap.ocr.ppocr import get_ppocr_engine
+        _engine = get_ppocr_engine()
     return _engine
 
 

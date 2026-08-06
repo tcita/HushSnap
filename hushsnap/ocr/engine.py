@@ -9,7 +9,7 @@ _ENGINES: dict[str, dict] = {}
 _DEFAULT_ENGINE: str | None = None
 
 
-def register_engine(engine_id: str, *, recognize, release=None, trim=None, warmup=None, metadata=None):
+def register_engine(engine_id: str, *, recognize, release=None, trim=None, load=None, metadata=None):
     """Register an OCR engine implementation.
 
     Args:
@@ -17,7 +17,7 @@ def register_engine(engine_id: str, *, recognize, release=None, trim=None, warmu
         recognize: Callable(image: QImage, language_tag: str) -> OcrRecognition.
         release: Optional zero-arg callable to free engine resources.
         trim: Optional zero-arg callable to trim engine resident memory.
-        warmup: Optional zero-arg callable to pre-initialize engine resources.
+        load: Optional zero-arg callable to pre-initialize engine resources.
         metadata: Optional dict (display_name, error_prefixes list, etc.).
     """
     global _DEFAULT_ENGINE
@@ -26,7 +26,7 @@ def register_engine(engine_id: str, *, recognize, release=None, trim=None, warmu
         "recognize": recognize,
         "release": release if release is not None else (existing["release"] if existing else None),
         "trim": trim if trim is not None else (existing["trim"] if existing else None),
-        "warmup": warmup if warmup is not None else (existing["warmup"] if existing else None),
+        "load": load if load is not None else (existing["load"] if existing else None),
         "metadata": metadata if metadata is not None else (existing["metadata"] if existing else {}),
     }
     if _DEFAULT_ENGINE is None:
@@ -57,17 +57,17 @@ def trim_engine(engine_id: str):
         entry["trim"]()
 
 
-def warmup_engine(engine_id: str):
-    """Pre-initialize resources for a specific engine (no-op if no warmup hook)."""
+def load_engine(engine_id: str):
+    """Pre-initialize resources for a specific engine (no-op if no load hook)."""
     entry = _ENGINES.get(engine_id)
-    if entry and entry.get("warmup"):
-        logger.debug("[engine] Calling warmup hook for: %s", engine_id)
+    if entry and entry.get("load"):
+        logger.debug("[engine] Calling load hook for: %s", engine_id)
         t0 = time.perf_counter()
-        entry["warmup"]()
+        entry["load"]()
         elapsed = (time.perf_counter() - t0) * 1000
-        logger.debug("[engine] Warmup hook finished for %s in %.1fms", engine_id, elapsed)
+        logger.debug("[engine] Load hook finished for %s in %.1fms", engine_id, elapsed)
     else:
-        logger.debug("[engine] No warmup hook registered for: %s", engine_id)
+        logger.debug("[engine] No load hook registered for: %s", engine_id)
 
 
 def identify_engine_error(error_message: str) -> str | None:

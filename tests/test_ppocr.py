@@ -8,7 +8,7 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 from hushsnap.constants import OCR_ENGINE_PPOCR
 from hushsnap.ocr.ppocr import (
     _apply_cjk_spacing,
-    _get_engine,
+    get_ppocr_engine,
     _normalize_blocks,
     compose_ppocr_structures,
     compose_ppocr_text,
@@ -227,18 +227,18 @@ def test_compose_ppocr_text_missing_text_key():
 def test_engine_singleton_returns_same_instance(monkeypatch):
     import hushsnap.ocr.ppocr as ppocr_module
 
-    # Drain any in-progress daemon warmup thread from previous tests.
-    # _get_engine() blocks on _engine_lock until the thread finishes,
+    # Drain any in-progress daemon load thread from previous tests.
+    # get_ppocr_engine() blocks on _engine_lock until the thread finishes,
     # so after this call no background thread will race with our
     # monkeypatch below.
-    _get_engine()
+    get_ppocr_engine()
 
     monkeypatch.setattr(ppocr_module, "_engine", None)
     fake = object()
     monkeypatch.setattr(ppocr_module, "PPOCR", lambda **kwargs: fake)
 
-    e1 = _get_engine()
-    e2 = _get_engine()
+    e1 = get_ppocr_engine()
+    e2 = get_ppocr_engine()
     assert e1 is e2 is fake
 
 
@@ -260,7 +260,7 @@ def test_release_engine_waits_while_request_is_loading_engine(monkeypatch, qapp)
 
     monkeypatch.setattr(ppocr_module, "_engine", fake_engine)
     monkeypatch.setattr(ppocr_module, "_active_requests", 0)
-    monkeypatch.setattr(ppocr_module, "_get_engine", _blocking_get_engine)
+    monkeypatch.setattr(ppocr_module, "get_ppocr_engine", _blocking_get_engine)
     monkeypatch.setattr(ppocr_module, "_trim_working_set", lambda: None)
 
     img = QtGui.QImage(100, 100, QtGui.QImage.Format.Format_ARGB32)
@@ -317,7 +317,7 @@ def test_recognize_ppocr_qimage_blank_image(monkeypatch, qapp):
     import hushsnap.ocr.ppocr as ppocr_module
 
     fake_engine = _FakeRapidOCREngine([])
-    monkeypatch.setattr(ppocr_module, "_get_engine", lambda: fake_engine)
+    monkeypatch.setattr(ppocr_module, "get_ppocr_engine", lambda: fake_engine)
     monkeypatch.setattr(ppocr_module, "_engine", fake_engine)
 
     img = QtGui.QImage(100, 100, QtGui.QImage.Format.Format_ARGB32)
@@ -334,7 +334,7 @@ def test_recognize_ppocr_qimage_with_text(monkeypatch, qapp):
     fake_engine = _FakeRapidOCREngine([
         ([[0, 0], [50, 0], [50, 20], [0, 20]], "hello", 0.98),
     ])
-    monkeypatch.setattr(ppocr_module, "_get_engine", lambda: fake_engine)
+    monkeypatch.setattr(ppocr_module, "get_ppocr_engine", lambda: fake_engine)
     monkeypatch.setattr(ppocr_module, "_engine", fake_engine)
 
     img = QtGui.QImage(100, 100, QtGui.QImage.Format.Format_ARGB32)
@@ -350,7 +350,7 @@ def test_recognize_ppocr_qimage_save_failure(monkeypatch, qapp):
     import hushsnap.ocr.ppocr as ppocr_module
 
     fake_engine = object()
-    monkeypatch.setattr(ppocr_module, "_get_engine", lambda: fake_engine)
+    monkeypatch.setattr(ppocr_module, "get_ppocr_engine", lambda: fake_engine)
     monkeypatch.setattr(ppocr_module, "_engine", fake_engine)
 
     img = QtGui.QImage()  # null image — save returns False
@@ -367,7 +367,7 @@ def test_recognize_ppocr_qimage_engine_exception(monkeypatch, qapp):
 
     fake = _FakeRapidOCREngine([])
     monkeypatch.setattr(fake, "__call__", _boom)
-    monkeypatch.setattr(ppocr_module, "_get_engine", lambda: fake)
+    monkeypatch.setattr(ppocr_module, "get_ppocr_engine", lambda: fake)
     monkeypatch.setattr(ppocr_module, "_engine", fake)
 
     img = QtGui.QImage(100, 100, QtGui.QImage.Format.Format_ARGB32)
@@ -384,7 +384,7 @@ def test_recognize_ppocr_result_from_pixmap_null(monkeypatch, qapp):
     import hushsnap.ocr.ppocr as ppocr_module
 
     fake_engine = object()
-    monkeypatch.setattr(ppocr_module, "_get_engine", lambda: fake_engine)
+    monkeypatch.setattr(ppocr_module, "get_ppocr_engine", lambda: fake_engine)
     monkeypatch.setattr(ppocr_module, "_engine", fake_engine)
 
     result = recognize_ppocr_result_from_pixmap(QtGui.QPixmap())
@@ -397,7 +397,7 @@ def test_recognize_ppocr_result_from_pixmap_with_text(monkeypatch, qapp):
     fake_engine = _FakeRapidOCREngine([
         ([[0, 0], [60, 0], [60, 25], [0, 25]], "hello world", 0.99),
     ])
-    monkeypatch.setattr(ppocr_module, "_get_engine", lambda: fake_engine)
+    monkeypatch.setattr(ppocr_module, "get_ppocr_engine", lambda: fake_engine)
     monkeypatch.setattr(ppocr_module, "_engine", fake_engine)
 
     image = QtGui.QImage(100, 100, QtGui.QImage.Format.Format_RGB32)

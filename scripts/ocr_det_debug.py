@@ -117,7 +117,7 @@ def main():
     # ── Run the OCR pipeline with instrumentation ─────────────────────────
     from hushsnap.ocr.preprocess import prepare_ocr_image
     from hushsnap.ocr.ppocr import (
-        _get_engine,
+        get_ppocr_engine,
         _acquire_request,
         _release_request,
         _is_vertical_json,
@@ -148,7 +148,7 @@ def main():
     t0 = time.perf_counter()
     _acquire_request()
     try:
-        engine = _get_engine()
+        engine = get_ppocr_engine()
         result = engine(arr)
         elapse = getattr(result, "elapse_list", None)
         json_data = result.to_json()

@@ -2,16 +2,16 @@
 
 Why the first OCR on a large screenshot is markedly slower than steady-state
 (and a single-line crop is fast even cold), what gets allocated, and why we
-intentionally do **not** add a dummy warmup inference.
+intentionally do **not** add a dummy inference to pre-commit buffers.
 
 ## TL;DR
 
-- There are **two distinct cold-start costs**, and the existing `warmup_ppocr`
+- There are **two distinct cold-start costs**, and `get_ppocr_engine`
   only addresses one of them:
   1. Model load (session construction, mmap, graph optimization) - ~300ms,
-     paid by `warmup_ppocr`/`_get_engine()` before any inference.
-  2. First-inference buffer commit - the cost this doc is about; warmup does
-     NOT touch it.
+     paid by `get_ppocr_engine()` before any inference.
+  2. First-inference buffer commit - the cost this doc is about; engine load
+     does NOT touch it.
 - First-inference slowness is **not** from reading ONNX weight pages (measured:
   zero disk I/O on first inference). It is ONNX Runtime committing the
   **detector's intermediate tensor buffers** (size tracks the input image) and
@@ -24,9 +24,9 @@ intentionally do **not** add a dummy warmup inference.
 - `idle-trim` only moves physical pages to the standby list; it does not free
   the committed buffers. The next inference **soft-faults** them back cheaply
   (~tens of ms extra vs warm), because the pages are still in RAM on standby.
-- Decision: **do not add a dummy warmup.** Buffer size self-adapts to the
-  user's actual capture sizes, which is strictly better than pre-committing a
-  guessed size.
+- Decision: **do not add a dummy inference to pre-commit buffers.** Buffer size
+  self-adapts to the user's actual capture sizes, which is strictly better than
+  pre-committing a guessed size.
 
 ## Two cold starts (do not confuse them)
 
@@ -35,16 +35,16 @@ one-time costs:
 
 1. **Model-load cold start** - process/session initialization. Constructing
    `RapidOCR`, building the ORT `InferenceSession`, mmap'ing the `.onnx`
-   files, graph optimization. ~300ms, ~40k faults. This is what `warmup_ppocr`
-   eliminates by calling `_get_engine()` ahead of time.
+   files, graph optimization. ~300ms, ~40k faults. This is what `get_ppocr_engine`
+   eliminates by calling `get_ppocr_engine()` ahead of time.
 2. **First-inference cold start** - the intermediate-tensor buffers have never
    been allocated. The first `engine(arr)` commits them and first-writes them,
    triggering demand-zero faults. This is the ~1s+ cost on large images that
-   `run_ocr` exposes. `warmup_ppocr` does NOT run an inference, so it does
+   `run_ocr` exposes. `get_ppocr_engine` does NOT run an inference, so it does
    nothing for this cost.
 
-Verified in the benchmark's own path: `_wait_for_warmup` blocks until
-`warmup_finished`, by which point WS ~140MB / ~40k faults (model load only,
+Verified in the benchmark's own path: `_wait_for_load` blocks until
+`load_finished`, by which point WS ~140MB / ~40k faults (model load only,
 no inference). Iteration 0 then pays the first-inference cost on top - so
 iter0 is clean first-inference cold start, not contaminated by model load.
 
@@ -53,7 +53,7 @@ iter0 is clean first-inference cold start, not contaminated by model load.
 `run_ocr.py` on a full screenshot reports a latency in the same range as the
 benchmark's **cold** iteration; the benchmark reports its **warm** average,
 which is markedly lower. Both run the identical pipeline
-(`OcrService.recognize` -> `recognize_ppocr_qimage` -> `_get_engine()` ->
+(`OcrService.recognize` -> `recognize_ppocr_qimage` -> `get_ppocr_engine()` ->
 `engine(arr)`). The difference is purely **which inference is being timed**:
 run_ocr times the one cold inference; the benchmark reports the warm average
 (`iter_results[1:]`, "excluding cold iteration 0"). Same cold cost, different
@@ -186,7 +186,7 @@ Production never releases the engine, so buffers accompany the `_engine`
 singleton until process exit. The "release on long idle" path does not exist;
 `idle-trim` (physical pages only) is the sole memory-recovery mechanism.
 
-## Why no dummy warmup
+## Why no dummy inference to pre-commit buffers
 
 A dummy inference to pre-commit buffers faces an unsolvable size problem,
 because buffer size is keyed to the input image shape:
@@ -210,7 +210,7 @@ better:
 - The OS standby list handles physical-RAM pressure automatically; commit is
   only freed at process exit.
 
-The current `warmup_ppocr` (session load only, no inference) is the correct
+The current `get_ppocr_engine` (session load only, no inference) is the correct
 minimum: it eliminates the model-load cold start (#1) and defers buffer
 commit to the real first capture so the size self-adapts. The one-time
 first-inference cold start (#2) on a novel large size is acceptable and
@@ -222,12 +222,12 @@ A user who captures one rare huge image keeps that large commit for the
 process lifetime (no reclaim path). The magnitude is small (det-bucket-class,
 nothing like the hundreds of MB of an enabled arena) and fits the established
 memory-for-speed tradeoff. If it ever needs addressing, the lever is wiring up
-`release_engine()` on long idle (currently unused) - NOT a dummy warmup.
+`release_engine()` on long idle (currently unused) - NOT a dummy load inference.
 
 ## Key files
 
-- `hushsnap/ocr/ppocr.py` - `_get_engine` (1240), `release_engine` (1276, dead
-  in prod), `warmup_ppocr` (1574), `_trim_working_set` (1199)
+- `hushsnap/ocr/ppocr.py` - `get_ppocr_engine` (1291), `release_engine` (1338, dead
+  in prod), `get_ppocr_engine` (1291), `_trim_working_set` (1234)
 - `hushsnap/ocr/ocr_service.py` - `OcrService.recognize` (shared pipeline)
 - `hushsnap/system/memory_utils.py` - `trim_working_set`
   (`SetProcessWorkingSetSize(-1,-1)`)

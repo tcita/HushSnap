@@ -13,7 +13,7 @@ from hushsnap.ocr.engine import (
     registered_engines,
     release_engine,
     trim_engine,
-    warmup_engine,
+    load_engine,
 )
 
 
@@ -81,17 +81,17 @@ def test_trim_engine_calls_hook():
     assert trimmed == [True]
 
 
-def test_warmup_engine_calls_hook():
-    warmed = []
+def test_load_engine_calls_hook():
+    loaded = []
     register_engine("t", recognize=_dummy_recognize,
-                    warmup=lambda: warmed.append(True))
-    warmup_engine("t")
-    assert warmed == [True]
+                    load=lambda: loaded.append(True))
+    load_engine("t")
+    assert loaded == [True]
 
 
-def test_warmup_engine_noop_for_no_hook():
+def test_load_engine_noop_for_no_hook():
     register_engine("t", recognize=_dummy_recognize)
-    warmup_engine("t")  # should not raise
+    load_engine("t")  # should not raise
 
 
 def test_identify_engine_error_matches_prefix():

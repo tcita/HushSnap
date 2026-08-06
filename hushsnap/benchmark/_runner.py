@@ -80,7 +80,7 @@ class BenchmarkRunner:
     # ── Timeouts ──────────────────────────────────────────────────
 
     OCR_TIMEOUT_S = 120.0       # max wait for a single OCR call
-    WARMUP_TIMEOUT_S = 60.0     # max wait for engine warmup
+    LOAD_TIMEOUT_S = 60.0     # max wait for engine load
 
     # ── Lifecycle ─────────────────────────────────────────────────
 
@@ -119,8 +119,8 @@ class BenchmarkRunner:
         self._end_time = 0.0
         self._last_text = ""
         self._ocr_error = False
-        self._warmup_done = False
-        self.controller.bridge.warmup_finished.connect(self._on_warmup_done)
+        self._load_done = False
+        self.controller.bridge.load_finished.connect(self._on_load_done)
 
     def __enter__(self):
         return self
@@ -134,8 +134,8 @@ class BenchmarkRunner:
 
     # ── Signal handlers ───────────────────────────────────────────
 
-    def _on_warmup_done(self):
-        self._warmup_done = True
+    def _on_load_done(self):
+        self._load_done = True
 
     def _on_ocr_finished(self, response, target_popup=None):
         """Record completion.  The OCR pipeline emits exactly one final
@@ -170,14 +170,14 @@ class BenchmarkRunner:
         ----------
         iterations:
             Number of OCR calls.  Iteration 0 pays a one-time first-
-            inference cost that later iterations do not: ``_wait_for_warmup``
+            inference cost that later iterations do not: ``_wait_for_load``
             has already loaded the engine (session build, mmap, graph opt
             - the model-load cost), but ORT has not yet committed the
             detector's input-sized intermediate tensors, so iteration 0's
             first ``engine(arr)`` commits them and triggers a demand-zero
             page-fault storm sized by the image.  This first-inference
             buffer-commit cost is distinct from the model-load cost that
-            warmup handles; it scales with image size, not with steady-
+            the load hook handles; it scales with image size, not with steady-
             state throughput, so it is excluded from the latency
             aggregates (``avg_duration_ms`` / ``best_duration_ms``) and
             preserved separately as ``cold_duration_ms``.  See
@@ -234,7 +234,7 @@ class BenchmarkRunner:
                   f"{',  ' + ', '.join(flags) if flags else ''}")
             print(f"{'='*70}")
 
-        self._wait_for_warmup()
+        self._wait_for_load()
 
         iter_results: list[IterationResult] = []
         texts_seen: set[str] = set()
@@ -386,7 +386,7 @@ class BenchmarkRunner:
         # Latency: WARM-ONLY.  Iteration 0 pays the first-inference
         # buffer-commit cost (ORT commits the det intermediate tensors,
         # triggering a demand-zero fault storm sized by the input image).
-        # This is distinct from the model-load cost _wait_for_warmup
+        # This is distinct from the model-load cost _wait_for_load
         # already handled; it is a one-time startup cost, not steady-state
         # throughput, so it is excluded from avg/best and kept standalone
         # as cold_duration_ms.  See scripts/OCR_FIRST_INFERENCE.md.
@@ -486,29 +486,29 @@ class BenchmarkRunner:
         except Exception:
             logger.exception("Idle trim failed")
 
-    def _wait_for_warmup(self):
-        """Block until engine warmup completes (or times out).
+    def _wait_for_load(self):
+        """Block until engine load completes (or times out).
 
-        Spins a nested event loop that exits on ``warmup_finished``
-        or after ``WARMUP_TIMEOUT_S`` seconds.
+        Spins a nested event loop that exits on ``load_finished``
+        or after ``LOAD_TIMEOUT_S`` seconds.
         """
-        if self._warmup_done:
+        if self._load_done:
             return
 
         loop = QtCore.QEventLoop()
-        self.controller.bridge.warmup_finished.connect(loop.quit)
+        self.controller.bridge.load_finished.connect(loop.quit)
         timeout = QtCore.QTimer()
         timeout.setSingleShot(True)
         timeout.timeout.connect(loop.quit)
-        timeout.start(int(self.WARMUP_TIMEOUT_S * 1000))
+        timeout.start(int(self.LOAD_TIMEOUT_S * 1000))
 
-        logger.debug("Waiting for engine warmup (timeout=%.0fs)...", self.WARMUP_TIMEOUT_S)
+        logger.debug("Waiting for engine load (timeout=%.0fs)...", self.LOAD_TIMEOUT_S)
         loop.exec()
 
-        if not self._warmup_done:
+        if not self._load_done:
             logger.warning(
-                "Engine warmup did not complete within %.0fs; proceeding anyway",
-                self.WARMUP_TIMEOUT_S,
+                "Engine load did not complete within %.0fs; proceeding anyway",
+                self.LOAD_TIMEOUT_S,
             )
 
     def _print_summary(self, result: BenchmarkResult):

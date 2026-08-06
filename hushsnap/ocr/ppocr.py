@@ -196,7 +196,7 @@ _BOX_H_TO_FS_RATIO = 1.2
 #
 #   Param            rapidocr cfg default   PaddleOCR                 HushSnap now
 #   ---------------  ---------------------   ------------------------   ------------
-#   Det.ocr_version  "PP-OCRv6"              PP-OCRv6                   PPOCRV6 (set in _get_engine)
+#   Det.ocr_version  "PP-OCRv6"              PP-OCRv6                   PPOCRV6 (set in get_ppocr_engine)
 #   Det.mean         [0.5,0.5,0.5]           [0.485,0.456,0.406] ImNet  [0.485,0.456,0.406] ImNet  (= PP-OCRv6 training)
 #   Det.std          [0.5,0.5,0.5]           [0.229,0.224,0.225] ImNet  [0.229,0.224,0.225] ImNet  (= PP-OCRv6 training)
 #   Det.limit_side_len 736                   null(->code 736)           32   (HushSnap guard; see note)
@@ -1288,7 +1288,7 @@ def _record_engine_success():
         logger.info("[PPOCR] Crash storm cleared — engine recovered")
 
 
-def _get_engine() -> "PPOCR":
+def get_ppocr_engine() -> "PPOCR":
     global _engine
 
     # Crash-storm guard: if the engine has crashed _CRASH_LIMIT times within
@@ -1302,7 +1302,7 @@ def _get_engine() -> "PPOCR":
         )
 
     if _engine is None:
-        logger.debug("[PPOCR] _get_engine: Initializing new engine instance...")
+        logger.debug("[PPOCR] get_ppocr_engine: Initializing new engine instance...")
         with _engine_lock:
             if _engine is None:
                 ws_before = get_working_set_mb()
@@ -1528,7 +1528,7 @@ def recognize_ppocr_qimage(image_or_result, language_tag: str = "") -> OcrRecogn
 
         _acquire_request()
         try:
-            engine = _get_engine()
+            engine = get_ppocr_engine()
             logger.debug("[ANCHOR] INFERENCE_START")
             result = engine(arr)
             logger.debug("[ANCHOR] INFERENCE_END")
@@ -1641,23 +1641,6 @@ def recognize_ppocr_result_from_pixmap(
     return recognize_ppocr_qimage(image_or_result, language_tag=language_tag)
 
 
-def warmup_ppocr():
-    """Pre-initialize the PP-OCR engine singleton to avoid cold-start latency."""
-    ws_before = get_working_set_mb()
-    t0 = time.perf_counter()
-    logger.debug("[PPOCR] warmup_ppocr: start  %s", fmt_memory())
-    try:
-        _get_engine()
-        elapsed = (time.perf_counter() - t0) * 1000
-        ws_after = get_working_set_mb()
-        logger.debug(
-            "[PPOCR] warmup_ppocr: done  %s (delta=%.1f MB, took %.1fms)",
-            fmt_memory(), ws_after - ws_before, elapsed,
-        )
-    except Exception:
-        logger.exception("PP-OCR engine warmup failed")
-
-
 # Register PP-OCR engine
 from .engine import register_engine  # noqa: E402
 from ..constants import OCR_ENGINE_PPOCR  # noqa: E402
@@ -1666,7 +1649,7 @@ register_engine(
     recognize=recognize_ppocr_result_from_pixmap,
     release=release_engine,
     trim=_trim_working_set,
-    warmup=warmup_ppocr,
+    load=get_ppocr_engine,
     metadata={
         "display_name": "PP-OCR",
         "error_prefixes": [],

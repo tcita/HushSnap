@@ -68,8 +68,8 @@ def main() -> int:
     from run_ocr import _init_qapp, _ocr_image, _collect_images  # type: ignore
 
     _init_qapp()
-    from hushsnap.ocr.ppocr import _get_engine
-    _get_engine()  # warm so per-image timing reflects inference, not model load
+    from hushsnap.ocr.ppocr import get_ppocr_engine
+    get_ppocr_engine()  # warm so per-image timing reflects inference, not model load
 
     images = _collect_images(args.folder)
     if not images:

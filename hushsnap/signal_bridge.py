@@ -10,4 +10,4 @@ class SignalBridge(QtCore.QObject):
     # Specific 2-arg signal (used by OcrController)
     ocr_result = QtCore.pyqtSignal(object, object)
     
-    warmup_finished = QtCore.pyqtSignal()
+    load_finished = QtCore.pyqtSignal()
