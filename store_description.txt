@@ -21,7 +21,7 @@ OCR 识别出的文字会整理成更易读的排版，不会像多数 OCR 软�
 - 本地运行，不会向任何服务器发送你的截图或识别内容
 - 支持多台不同分辨率显示器混用的多屏环境截图
 - 免登录、免注册，不依赖其他软件
-- 常驻系统托盘，空闲时自动回收内存
+- 常驻系统托盘，智能管理内存占用
 - 右键托盘图标进入设置，快捷键可自定义
 
 语言支持：
@@ -52,7 +52,7 @@ OCR 辨識出的文字會整理成更易讀的排版，不會像多數 OCR 軟�
 - 本機運行，不會將你的截圖或辨識內容傳送至任何伺服器
 - 支援多台不同解析度顯示器混用的多螢幕環境截圖
 - 免登入、免註冊，不依賴其他軟體
-- 常駐系統匣，閒置時自動回收記憶體
+- 常駐系統匣，智慧管理記憶體占用
 - 右鍵系統匣圖示進入設定，快速鍵可自訂
 
 語言支援：
@@ -83,7 +83,7 @@ Features:
 - Runs entirely locally — your screenshots and recognized text are never sent to any server
 - Supports multi-monitor setups with mixed resolutions
 - No login, no registration, no dependency on other software
-- Runs in the system tray and automatically frees up memory when idle
+- Runs in the system tray with smart memory management
 - Right-click the tray icon to open settings; hotkeys are fully customizable
 
 Language Support:
@@ -114,7 +114,7 @@ OCR で認識したテキストは読みやすいレイアウトに整形され�
 - ローカルで完結し、スクリーンショットや認識結果をサーバーに送信することはありません
 - 解像度の異なる複数モニターを組み合わせたマルチディスプレイ環境でのスクリーンショットに対応
 - ログイン・登録不要、他のソフトウェアへの依存なし
-- システムトレイに常駐し、アイドル時にはメモリを自動的に解放
+- システムトレイに常駐し、メモリ使用量をスマートに管理
 - トレイアイコンを右クリックして設定画面を開き、ホットキーはカスタマイズ可能
 
 対応言語：
