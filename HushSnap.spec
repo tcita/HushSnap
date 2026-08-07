@@ -210,6 +210,32 @@ def _walk_and_strip_urls(node):
 a.binaries = filter_binaries(a.binaries)
 a.datas = strip_model_urls(filter_datas(a.datas))
 
+# --- Belt-and-suspenders: strip any network module that leaked past the stubs ---
+# pathex=['_stubs'] ensures PyInstaller finds our requests/tqdm stubs FIRST
+# during Analysis.  Because those stubs import nothing third-party, the import
+# tracer stops there — urllib3, certifi, charset_normalizer, and idna are never
+# added to a.pure / a.binaries in the first place.
+#
+# This filter is a safety net: if a future PyInstaller version changes its
+# module-finding behaviour, or a new dependency pulls in a network package
+# through an unexpected path, we strip it here rather than shipping live
+# HTTP-capable code.
+_NETWORK_MODULE_PREFIXES = (
+    'urllib3', 'certifi', 'charset_normalizer', 'idna',
+)
+_NETWORK_BINARY_DIRS = (
+    'charset_normalizer',  # cd.*.pyd, md.*.pyd
+)
+
+a.pure = [
+    m for m in a.pure
+    if not any(m[0].startswith(p) for p in _NETWORK_MODULE_PREFIXES)
+]
+a.binaries = [
+    b for b in a.binaries
+    if not any(d in b[0].replace('\\', '/') for d in _NETWORK_BINARY_DIRS)
+]
+
 # --- Minimal cv2.pyd swap (82MB official -> 24.8MB purpose-built) -------------
 # rapidocr is the only runtime cv2 consumer and uses 30 symbols, all in
 # core/imgproc/imgcodecs (audited by tests/test_cv2_symbol_audit.py).  The
