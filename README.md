@@ -129,11 +129,11 @@ The build requires HEAD at a git tag (e.g. `v0.3.0`). For local testing, `sign_f
 
 Every release is tagged in git — `git checkout v1.5.4`, run `build_msix.bat`, then `sign_for_local_test.bat` to produce a locally-installable MSIX for that version.
 
+[`store_description.txt`](store_description.txt) is the Store listing text (four languages). Release notes live in the Store's "What's New" section — latest release only, due to character limits. For the full version history, see [git tags](https://github.com/tcita/HushSnap/tags).
+
 ---
 
 ## Installation
 
 HushSnap is distributed exclusively through the [Microsoft Store](https://apps.microsoft.com/detail/9p0qzv5z8njz).
-
-Release notes and version history are tracked in [`store_description.txt`](store_description.txt) — the same listing text published to the Store. Because the Store only displays the latest "What's New" (with a character limit), this file is the canonical place to see what changed between releases.
 
