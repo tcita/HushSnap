@@ -127,6 +127,8 @@ sign_for_local_test.bat     # self-sign the package for local install testing
 
 The build requires HEAD at a git tag (e.g. `v0.3.0`). For local testing, `sign_for_local_test.bat` auto-creates a self-signed certificate and trusts it - run as Administrator.
 
+Every release is tagged in git — `git checkout v1.5.4`, run `build_msix.bat`, then `sign_for_local_test.bat` to produce a locally-installable MSIX for that version.
+
 ---
 
 ## Installation

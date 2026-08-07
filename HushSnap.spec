@@ -189,7 +189,7 @@ def strip_model_urls(datas):
 
 
 def _walk_and_strip_urls(node):
-    """Recursively walk the YAML tree.  For dicts: replace model_dir URLs
+    """Recursively walk the YAML tree.  Replace model_dir / path URLs
     with bare filenames, delete dict_url keys.  For lists: recurse."""
     if isinstance(node, dict):
         # Strip model_dir: keep only Path(url).name
@@ -197,6 +197,11 @@ def _walk_and_strip_urls(node):
             url = node['model_dir']
             if isinstance(url, str) and url.startswith('http'):
                 node['model_dir'] = Path(url).name
+        # Strip path (font URLs under fonts:)
+        if 'path' in node:
+            url = node['path']
+            if isinstance(url, str) and url.startswith('http'):
+                node['path'] = Path(url).name
         # Delete dict_url (ONNX dicts are embedded in model metadata)
         node.pop('dict_url', None)
         # Recurse into nested dicts

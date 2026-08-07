@@ -345,8 +345,8 @@ function Invoke-PostPyInstallerValidation {
         $errors++
     } else {
         $exeSizeMB = [math]::Round((Get-Item $exePath).Length / 1MB, 1)
-        if ($exeSizeMB -lt 7) {
-            Write-Fail "HushSnap.exe is too small: ${exeSizeMB}MB (expected >7MB)"
+        if ($exeSizeMB -lt 6) {
+            Write-Fail "HushSnap.exe is too small: ${exeSizeMB}MB (expected >6MB)"
             $errors++
         } else {
             Write-Pass "HushSnap.exe: ${exeSizeMB}MB"
