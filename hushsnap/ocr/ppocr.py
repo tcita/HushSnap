@@ -1570,8 +1570,6 @@ def recognize_ppocr_qimage(image_or_result, language_tag: str = "") -> OcrRecogn
         global _engine
         with _engine_lock:
             _engine = None
-        import gc
-        gc.collect()  # force ORT session destructor → VirtualFree
         return OcrRecognition(engine_type=OCR_ENGINE_PPOCR)
     finally:
         # Explicit GC: ONNX Runtime allocates large native buffers whose
