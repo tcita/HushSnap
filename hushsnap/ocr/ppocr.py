@@ -1205,14 +1205,6 @@ _active_requests = 0
 _active_requests_cv = threading.Condition()
 _engine_params_override: dict | None = None
 
-# Crash-storm guard: if the engine crashes _CRASH_LIMIT times within
-# _CRASH_WINDOW_S seconds, refuse to recreate until the window expires.
-# Persistent failures (corrupt models, ABI mismatch) otherwise loop
-# silently forever — create → crash → _engine=None → next OCR tries again.
-_engine_crash_times: list[float] = []
-_CRASH_LIMIT = 3
-_CRASH_WINDOW_S = 60
-
 
 def set_engine_params_override(params: dict | None):
     """Override engine parameters for the next engine creation.
@@ -1272,34 +1264,8 @@ def _release_request():
         _active_requests_cv.notify_all()
 
 
-def _purge_stale_crash_times():
-    """Remove crash entries older than _CRASH_WINDOW_S."""
-    now = time.monotonic()
-    cutoff = now - _CRASH_WINDOW_S
-    global _engine_crash_times
-    _engine_crash_times = [t for t in _engine_crash_times if t > cutoff]
-
-
-def _record_engine_success():
-    """Clear crash history after a successful OCR pass."""
-    global _engine_crash_times
-    if _engine_crash_times:
-        _engine_crash_times.clear()
-        logger.info("[PPOCR] Crash storm cleared — engine recovered")
-
-
 def get_ppocr_engine() -> "PPOCR":
     global _engine
-
-    # Crash-storm guard: if the engine has crashed _CRASH_LIMIT times within
-    # _CRASH_WINDOW_S, refuse to recreate — persistent failures (corrupt models,
-    # ABI mismatch, OOM) would otherwise loop silently forever.
-    _purge_stale_crash_times()
-    if len(_engine_crash_times) >= _CRASH_LIMIT:
-        raise RuntimeError(
-            f"PP-OCR engine crashed {len(_engine_crash_times)} times "
-            f"in {_CRASH_WINDOW_S}s; refusing to recreate"
-        )
 
     if _engine is None:
         logger.debug("[PPOCR] get_ppocr_engine: Initializing new engine instance...")
@@ -1594,8 +1560,6 @@ def recognize_ppocr_qimage(image_or_result, language_tag: str = "") -> OcrRecogn
                          i, int(b.x), int(b.y), int(b.width), int(b.height),
                          ln.text[:80])
 
-        _record_engine_success()
-
         return OcrRecognition(
             text=text,
             lines=lines,
@@ -1604,8 +1568,6 @@ def recognize_ppocr_qimage(image_or_result, language_tag: str = "") -> OcrRecogn
     except Exception:
         logger.exception("PP-OCR engine call failed — discarding engine for recovery")
         global _engine
-        _engine_crash_times.append(time.monotonic())
-        _purge_stale_crash_times()
         with _engine_lock:
             _engine = None
         import gc
