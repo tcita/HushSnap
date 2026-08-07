@@ -10,6 +10,8 @@ from hushsnap.ocr.ppocr import (
     _apply_cjk_spacing,
     get_ppocr_engine,
     _normalize_blocks,
+    _purge_stale_crash_times,
+    _record_engine_success,
     compose_ppocr_structures,
     compose_ppocr_text,
     is_cjk_or_fullwidth,
@@ -362,13 +364,16 @@ def test_recognize_ppocr_qimage_save_failure(monkeypatch, qapp):
 def test_recognize_ppocr_qimage_engine_exception(monkeypatch, qapp):
     import hushsnap.ocr.ppocr as ppocr_module
 
-    def _boom(*args):
+    def _boom(self, *args, **kwargs):
         raise RuntimeError("OCR engine crashed")
 
     fake = _FakeRapidOCREngine([])
-    monkeypatch.setattr(fake, "__call__", _boom)
+    monkeypatch.setattr(_FakeRapidOCREngine, "__call__", _boom)
     monkeypatch.setattr(ppocr_module, "get_ppocr_engine", lambda: fake)
     monkeypatch.setattr(ppocr_module, "_engine", fake)
+    # Isolate crash history so this test doesn't leak into the engine
+    # singleton's crash-storm guard (which now records crashes).
+    monkeypatch.setattr(ppocr_module, "_engine_crash_times", [])
 
     img = QtGui.QImage(100, 100, QtGui.QImage.Format.Format_ARGB32)
     img.fill(QtCore.Qt.GlobalColor.white)
@@ -544,4 +549,142 @@ def test_apply_indentation():
     cjk_result = _apply(cjk_lines)
     assert cjk_result[0].text == "这是一个正常的段落首行。"
     assert cjk_result[1].text == "    缩进两汉字宽度的行。"
+
+
+# ── Crash-storm guard ─────────────────────────────────────────────────
+
+def test_purge_stale_crash_times_removes_old_entries(monkeypatch):
+    """Entries older than _CRASH_WINDOW_S are purged; recent ones stay."""
+    import hushsnap.ocr.ppocr as ppocr_module
+
+    now = 1000.0
+    monkeypatch.setattr(time, "monotonic", lambda: now)
+    # 3 entries: 2 stale (outside window), 1 fresh
+    ppocr_module._engine_crash_times[:] = [
+        now - ppocr_module._CRASH_WINDOW_S - 10,  # stale
+        now - ppocr_module._CRASH_WINDOW_S,        # exactly at cutoff (not > → purged)
+        now - 10,                                   # fresh
+    ]
+    _purge_stale_crash_times()
+    assert ppocr_module._engine_crash_times == [now - 10]
+
+
+def test_purge_stale_crash_times_empty_list_noop():
+    """Purge on an empty list is a no-op."""
+    import hushsnap.ocr.ppocr as ppocr_module
+
+    ppocr_module._engine_crash_times[:] = []
+    _purge_stale_crash_times()
+    assert ppocr_module._engine_crash_times == []
+
+
+def test_record_engine_success_clears_history(monkeypatch):
+    """A successful OCR pass clears the crash history."""
+    import hushsnap.ocr.ppocr as ppocr_module
+
+    ppocr_module._engine_crash_times[:] = [100.0, 200.0]
+    _record_engine_success()
+    assert ppocr_module._engine_crash_times == []
+
+
+def test_record_engine_success_noop_when_already_empty():
+    """Clearing an already-empty list does nothing."""
+    import hushsnap.ocr.ppocr as ppocr_module
+
+    ppocr_module._engine_crash_times[:] = []
+    _record_engine_success()
+    assert ppocr_module._engine_crash_times == []
+
+
+def test_crash_storm_guard_raises_after_limit(monkeypatch):
+    """After _CRASH_LIMIT crashes within _CRASH_WINDOW_S, get_ppocr_engine
+    raises RuntimeError instead of creating a new engine."""
+    import hushsnap.ocr.ppocr as ppocr_module
+
+    now = 1000.0
+    monkeypatch.setattr(time, "monotonic", lambda: now)
+    monkeypatch.setattr(ppocr_module, "_engine", None)
+
+    ppocr_module._engine_crash_times[:] = [
+        now - 10,
+        now - 20,
+        now - 30,
+    ]
+    assert len(ppocr_module._engine_crash_times) == ppocr_module._CRASH_LIMIT
+
+    with pytest.raises(RuntimeError, match="refusing to recreate"):
+        get_ppocr_engine()
+
+
+def test_crash_storm_guard_allows_after_window_expires(monkeypatch):
+    """After the crash window expires, stale entries are purged and engine
+    creation proceeds normally."""
+    import hushsnap.ocr.ppocr as ppocr_module
+
+    # All crash entries are older than _CRASH_WINDOW_S
+    now = 2000.0
+    monkeypatch.setattr(time, "monotonic", lambda: now)
+    monkeypatch.setattr(ppocr_module, "_engine", None)
+
+    ppocr_module._engine_crash_times[:] = [
+        now - ppocr_module._CRASH_WINDOW_S - 50,
+        now - ppocr_module._CRASH_WINDOW_S - 40,
+        now - ppocr_module._CRASH_WINDOW_S - 30,
+    ]
+
+    # Should succeed — all stale entries purged before the guard check
+    fake = object()
+    monkeypatch.setattr(ppocr_module, "PPOCR", lambda **kwargs: fake)
+    engine = get_ppocr_engine()
+    assert engine is fake
+
+
+def test_crash_storm_guard_allows_below_limit(monkeypatch):
+    """Below the crash limit, engine creation proceeds normally."""
+    import hushsnap.ocr.ppocr as ppocr_module
+
+    now = 1000.0
+    monkeypatch.setattr(time, "monotonic", lambda: now)
+    monkeypatch.setattr(ppocr_module, "_engine", None)
+
+    # Only 2 crashes — below limit of 3
+    ppocr_module._engine_crash_times[:] = [now - 10, now - 20]
+
+    fake = object()
+    monkeypatch.setattr(ppocr_module, "PPOCR", lambda **kwargs: fake)
+    engine = get_ppocr_engine()
+    assert engine is fake
+
+
+def test_engine_exception_discards_engine_and_records_crash(monkeypatch, qapp):
+    """When inference crashes, the engine is discarded, the crash time
+    is recorded, and an empty OcrRecognition is returned."""
+    import hushsnap.ocr.ppocr as ppocr_module
+
+    now = 1000.0
+    monkeypatch.setattr(time, "monotonic", lambda: now)
+    ppocr_module._engine_crash_times[:] = []
+    # Ensure _engine starts non-None so we can verify the exception handler
+    # clears it (regression test for missing `global _engine` in except block).
+    ppocr_module._engine = object()
+
+    def _boom(self, *args, **kwargs):
+        raise RuntimeError("OCR engine crashed")
+
+    fake = _FakeRapidOCREngine([])
+    monkeypatch.setattr(_FakeRapidOCREngine, "__call__", _boom)
+    monkeypatch.setattr(ppocr_module, "get_ppocr_engine", lambda: fake)
+
+    img = QtGui.QImage(100, 100, QtGui.QImage.Format.Format_ARGB32)
+    img.fill(QtCore.Qt.GlobalColor.white)
+
+    result = recognize_ppocr_qimage(img)
+    assert result.engine_type == OCR_ENGINE_PPOCR
+    assert result.text == ""
+
+    # Crash recorded
+    assert len(ppocr_module._engine_crash_times) == 1
+    assert ppocr_module._engine_crash_times[0] == now
+    # Engine discarded
+    assert ppocr_module._engine is None
 

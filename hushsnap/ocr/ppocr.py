@@ -1603,6 +1603,7 @@ def recognize_ppocr_qimage(image_or_result, language_tag: str = "") -> OcrRecogn
         )
     except Exception:
         logger.exception("PP-OCR engine call failed — discarding engine for recovery")
+        global _engine
         _engine_crash_times.append(time.monotonic())
         _purge_stale_crash_times()
         with _engine_lock:
