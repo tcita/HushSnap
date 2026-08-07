@@ -15,7 +15,7 @@ bundle_datas = [('hushsnap.ico', '.')] + collect_data_files('rapidocr') + [(f, '
 
 a = Analysis(
     ['HushSnap.py'],
-    pathex=[],
+    pathex=['_stubs'],  # requests/tqdm stubs → blocks real ~3 MB network chain
     binaries=[],
     datas=bundle_datas,
     hiddenimports=[
