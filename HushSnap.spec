@@ -182,7 +182,7 @@ def strip_model_urls(datas):
                 mode='w', suffix='.yaml', delete=False, encoding='utf-8')
             yaml.dump(data, tmp, default_flow_style=False, allow_unicode=True)
             tmp.close()
-            out.append((dest, tmp.name))
+            out.append((dest, tmp.name, entry[2]))
         else:
             out.append(entry)
     return out

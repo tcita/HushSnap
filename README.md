@@ -133,3 +133,5 @@ The build requires HEAD at a git tag (e.g. `v0.3.0`). For local testing, `sign_f
 
 HushSnap is distributed exclusively through the [Microsoft Store](https://apps.microsoft.com/detail/9p0qzv5z8njz).
 
+Release notes and version history are tracked in [`store_description.txt`](store_description.txt) — the same listing text published to the Store. Because the Store only displays the latest "What's New" (with a character limit), this file is the canonical place to see what changed between releases.
+
