@@ -35,6 +35,19 @@ foreach ($d in $shouldBeGone) {
     Write-Host "  OK: $d/ absent"
 }
 
+Write-Host "`n=== Checking default_models.yaml for URL leakage ==="
+$yamlPath = Join-Path $internal 'rapidocr\default_models.yaml'
+if (Test-Path $yamlPath) {
+    $yamlContent = Get-Content $yamlPath -Raw
+    if ($yamlContent -match 'https?://') {
+        Write-Host "FAIL: URL found in default_models.yaml — strip_model_urls may have missed an entry" -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "  OK: no URLs in default_models.yaml"
+} else {
+    Write-Host "  WARN: default_models.yaml not found (may be embedded in PYZ)"
+}
+
 Write-Host "`n=== Scanning HushSnap.exe for network indicators ==="
 $exe = Join-Path $DistDir 'HushSnap.exe'
 if (-not (Test-Path $exe)) {

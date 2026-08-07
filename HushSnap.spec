@@ -155,8 +155,60 @@ def filter_datas(datas):
         out.append(d)
     return out
 
+def strip_model_urls(datas):
+    """Replace remote URLs in rapidocr/default_models.yaml with bare filenames.
+
+    rapidocr uses this YAML to look up model download URLs (model_dir) and
+    dictionary URLs (dict_url).  HushSnap ships all ONNX models pre-bundled
+    and SHA256-verified, so the URLs are dead weight — and a network risk if
+    the code-level stubs (_stubs/requests, _stubs/tqdm) are ever bypassed.
+
+    This function replaces every model_dir URL with just the filename
+    (e.g. ``PP-OCRv6_det_small.onnx``) and removes every dict_url entry.
+    SHA256 values are preserved so _should_skip_download can still verify
+    the pre-bundled files."""
+    import tempfile
+    import yaml
+
+    out = []
+    for entry in datas:
+        dest, source = entry[0], entry[1]
+        dest_norm = dest.replace('\\', '/')
+        if dest_norm == 'rapidocr/default_models.yaml':
+            with open(source, 'r', encoding='utf-8') as fh:
+                data = yaml.safe_load(fh)
+            _walk_and_strip_urls(data)
+            tmp = tempfile.NamedTemporaryFile(
+                mode='w', suffix='.yaml', delete=False, encoding='utf-8')
+            yaml.dump(data, tmp, default_flow_style=False, allow_unicode=True)
+            tmp.close()
+            out.append((dest, tmp.name))
+        else:
+            out.append(entry)
+    return out
+
+
+def _walk_and_strip_urls(node):
+    """Recursively walk the YAML tree.  For dicts: replace model_dir URLs
+    with bare filenames, delete dict_url keys.  For lists: recurse."""
+    if isinstance(node, dict):
+        # Strip model_dir: keep only Path(url).name
+        if 'model_dir' in node:
+            url = node['model_dir']
+            if isinstance(url, str) and url.startswith('http'):
+                node['model_dir'] = Path(url).name
+        # Delete dict_url (ONNX dicts are embedded in model metadata)
+        node.pop('dict_url', None)
+        # Recurse into nested dicts
+        for _key, value in node.items():
+            _walk_and_strip_urls(value)
+    elif isinstance(node, list):
+        for item in node:
+            _walk_and_strip_urls(item)
+
+
 a.binaries = filter_binaries(a.binaries)
-a.datas = filter_datas(a.datas)
+a.datas = strip_model_urls(filter_datas(a.datas))
 
 # --- Minimal cv2.pyd swap (82MB official -> 24.8MB purpose-built) -------------
 # rapidocr is the only runtime cv2 consumer and uses 30 symbols, all in
