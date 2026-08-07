@@ -129,7 +129,7 @@ The build requires HEAD at a git tag (e.g. `v0.3.0`). For local testing, `sign_f
 
 Every release is tagged in git — `git checkout v1.5.4`, run `build_msix.bat`, then `sign_for_local_test.bat` to produce a locally-installable MSIX for that version.
 
-Release notes (four languages, newest first) are in [`what's new.txt`](what's%20new.txt). The [`store_description.txt`](store_description.txt) is the Store listing text published alongside each release.
+Release notes (four languages, newest first) are in [`what's new.txt`](what's%20new.txt). 
 
 ---
 
