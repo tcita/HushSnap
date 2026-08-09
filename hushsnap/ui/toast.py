@@ -69,8 +69,10 @@ class Toast(QtWidgets.QFrame):
         
         self.adjustSize()
 
-        # Position logic
-        screen = QtWidgets.QApplication.primaryScreen().availableGeometry()
+        # Position: follow the cursor's screen, not the primary screen.
+        from ..dpi import cursor_screen
+        active = cursor_screen() or QtWidgets.QApplication.primaryScreen()
+        screen = active.availableGeometry() if active else QtWidgets.QApplication.primaryScreen().availableGeometry()
         if position:
             target_x = position.x() - self.width() // 2
             target_y = position.y() - self.height() // 2

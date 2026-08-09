@@ -451,6 +451,17 @@ class Application(QtCore.QObject):
             if center is not None:
                 self.ocr_controller.set_popup_anchor(*center)
 
+        # If auto-OCR is already running, redirect its result to the popup
+        # instead of starting a second inference.  Otherwise the user waits
+        # for both OCR runs to finish sequentially, perceiving a multi-second
+        # gap.  The auto-OCR is always for the current thumbnail's screenshot
+        # (only one thumbnail exists at a time), so no image-identity check
+        # is needed — the flag alone is sufficient.
+        if self.ocr_controller._auto_ocr_in_flight:
+            self.logger.debug("[OCR_CHAIN] redirecting in-flight auto-OCR to popup")
+            self.ocr_controller.redirect_auto_ocr_to_popup()
+            return
+
         from PyQt6 import QtGui
         if pil_img.mode != "RGBA":
             pil_img = pil_img.convert("RGBA")

@@ -49,6 +49,8 @@ class OcrController:
         self.needs_ocr = False
         self._expecting_ocr_result = False
         self._toast_bridge = None
+        self._auto_ocr_in_flight = False          # True while auto-OCR is running
+        self._auto_ocr_redirect_to_popup = False  # user clicked during auto-OCR
         self._pinned_popups = []
 
         self._current_engine = OCR_ENGINE_PPOCR
@@ -75,6 +77,14 @@ class OcrController:
     def is_busy(self):
         """Return True if an OCR request is currently in progress."""
         return self._expecting_ocr_result or self._toast_bridge is not None
+
+    def redirect_auto_ocr_to_popup(self):
+        """User clicked thumbnail while auto-OCR is in flight.
+
+        Instead of starting a second OCR (which would double processing
+        time), redirect the in-flight auto-OCR result to the popup.
+        """
+        self._auto_ocr_redirect_to_popup = True
 
     def _detach_if_pinned(self):
         """If the active popup is pinned and contains content/is visible, move it to _pinned_popups
@@ -128,12 +138,12 @@ class OcrController:
         self._toast_bridge = None
         self._trim_timer.start(0)
         text = response.text or ""
-            
+
         if text:
             clipboard = self.app.clipboard()
             if clipboard:
                 clipboard.setText(text)
-        
+
         try:
             visible = toast_window.isVisible()
         except RuntimeError:
@@ -165,11 +175,21 @@ class OcrController:
         )
         self.service.recognize_async(request, bridge.done.emit)
         self._toast_bridge = bridge
+        self._auto_ocr_in_flight = True
 
     def _on_auto_ocr_done(self, response):
-        """Main-thread handler for auto-OCR: copy text and show toast."""
+        """Main-thread handler for auto-OCR: copy text and show toast,
+        or redirect to popup if the user clicked the thumbnail meanwhile."""
         self._toast_bridge = None
+        self._auto_ocr_in_flight = False
         self._trim_timer.start(0)
+
+        if self._auto_ocr_redirect_to_popup:
+            self._auto_ocr_redirect_to_popup = False
+            # User clicked — treat this as a popup OCR result.
+            self.on_ocr_finished(response, target_popup=self.popup)
+            return
+
         text = response.text or ""
         if text:
             clipboard = self.app.clipboard()
@@ -278,9 +298,9 @@ class OcrController:
 
         # Only reset the global flag if this result belongs to the *current* active popup
         # or if we don't have a specific target (legacy/fallback).
-        if target_popup is None or target_popup is self.popup:
+        _is_active_request = (target_popup is None or target_popup is self.popup)
+        if _is_active_request:
             self._expecting_ocr_result = False
-            thumbnail_manager.dismiss_current()
 
         target = target_popup or self.popup
         text = response.text
@@ -316,25 +336,28 @@ class OcrController:
                 f"{self.translate('ocr_failed_title')}\n{self.translate('ocr_failed_body')}",
                 pixmap=pixmap,
             )
-            return
-
-        recognized = text or ""
-        if not recognized:
+        elif not (text or ""):
             logging.debug("OCR result is empty.")
             logging.debug("[OCR_CHAIN] on_ocr_finished calling show_text (empty)")
             target.show_text(self.translate("ocr_empty_popup_hint"), pixmap=pixmap)
-            return
+        else:
+            recognized = text or ""
+            clipboard = self.app.clipboard()
+            if clipboard:
+                clipboard.setText(recognized)
 
-        clipboard = self.app.clipboard()
-        if clipboard:
-            clipboard.setText(recognized)
+            logging.debug("[OCR_CHAIN] on_ocr_finished calling show_text (result)")
+            target.show_text(
+                recognized,
+                pixmap=pixmap,
+                lines=response.recognition.lines if response.recognition else None,
+            )
 
-        logging.debug("[OCR_CHAIN] on_ocr_finished calling show_text (result)")
-        target.show_text(
-            recognized,
-            pixmap=pixmap,
-            lines=response.recognition.lines if response.recognition else None,
-        )
+        # Dismiss thumbnail AFTER showing popup so there's no visible gap
+        # between two top-level windows (DWM briefly exposes the desktop if
+        # the thumbnail closes before the popup appears).
+        if _is_active_request:
+            thumbnail_manager.dismiss_current()
         
     def start_request(self, pixmap):
         self._trim_timer.stop()

@@ -360,6 +360,14 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self._loading_anim = None  # QVariantAnimation for pulsing bar
         self._pill_state = 'none'  # 'none' | 'edit' | 'pin' | 'close' — drives paintEvent
 
+        # Ripple effect on click — two concentric expanding rings from the
+        # press point, like a pebble dropped in water. Second ring starts
+        # ~120 ms after the first, fainter.
+        self._ripple_center = None       # QtCore.QPointF or None
+        self._ripple_progress = 0.0       # ring 1: 0.0 → 1.0
+        self._ripple_progress2 = 0.0      # ring 2: 0.0 → 1.0 (delayed)
+        self._ripple_anim = None          # QVariantAnimation
+
         # Countdown progress bar — thin line at card bottom that shrinks
         # over the display duration, so the user always knows how much
         # time is left before the thumbnail auto-dismisses.
@@ -505,13 +513,49 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self._loading_progress = value
         self.update()
 
+    # ── Ripple effect ─────────────────────────────────────────────────
+    def _start_ripple(self, pos):
+        """Begin a subtle expanding-circle ripple from *pos* (card-relative px)."""
+        self._ripple_center = QtCore.QPointF(pos)
+        self._ripple_progress = 0.0
+        if self._ripple_anim is not None:
+            self._ripple_anim.stop()
+        self._ripple_anim = QtCore.QVariantAnimation(self)
+        self._ripple_anim.setDuration(700)
+        self._ripple_anim.setStartValue(0.0)
+        self._ripple_anim.setEndValue(1.0)
+        self._ripple_anim.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
+        self._ripple_anim.valueChanged.connect(self._on_ripple_tick)
+        self._ripple_anim.finished.connect(self._on_ripple_done)
+        self._ripple_anim.start()
+
+    _RIPPLE_RING2_DELAY = 0.17  # fraction of total duration (~120 ms at 700 ms)
+
+    def _on_ripple_tick(self, value: float):
+        self._ripple_progress = value
+        # Second ring starts after the delay, then scales to fill the remaining time.
+        d = self._RIPPLE_RING2_DELAY
+        self._ripple_progress2 = (value - d) / (1.0 - d) if value > d else 0.0
+        self.update()
+
+    def _on_ripple_done(self):
+        self._ripple_center = None
+        self._ripple_progress = 0.0
+        self._ripple_progress2 = 0.0
+        self._ripple_anim = None
+        self.update()
+
     def dismiss(self):
-        """Stop loading and close the thumbnail (called when OCR popup is ready)."""
+        """Stop loading / ripple and close the thumbnail (called when OCR popup is ready)."""
         self._loading = False
         self._stop_countdown()
         if self._loading_anim is not None:
             self._loading_anim.stop()
             self._loading_anim = None
+        if self._ripple_anim is not None:
+            self._ripple_anim.stop()
+            self._ripple_anim = None
+        self._ripple_center = None
         self.close()
 
     def _start_timer(self):
@@ -668,6 +712,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
             pos = event.position().toPoint()
             if self.card_rect.contains(pos):
                 self._drag_start_pos = pos
+                self._start_ripple(pos)
 
     def mouseMoveEvent(self, event):
         # Plain hover moves (no button): keep the glow + pill glued to card_rect.
@@ -688,8 +733,8 @@ class ThumbnailWindow(QtWidgets.QWidget):
                     return
                 logger.debug("[OCR_CHAIN] thumbnail clicked at %s", release_pos)
                 self.clicked_signal.emit()
-                if not self._loading:
-                    self.close()
+                # Don't close here — the ripple plays while OCR starts,
+                # and dismiss() interrupts the ripple when the popup is ready.
         elif event.button() == QtCore.Qt.MouseButton.RightButton:
             if self.card_rect.contains(event.position().toPoint()):
                 self._show_context_menu(event.globalPosition().toPoint())
@@ -1007,6 +1052,22 @@ class ThumbnailWindow(QtWidgets.QWidget):
 
             # Reset brush so it doesn't leak into the card border fill below
             painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+
+        # Ripple — two thin expanding rings, like a pebble dropped in water.
+        # Ring 2 starts ~120 ms later and is fainter (60 % opacity of ring 1).
+        # Clipped to the card so the rings stay inside the bounds.
+        if self._ripple_center is not None:
+            for progress, alpha_scale in [(self._ripple_progress, 1.0),
+                                           (self._ripple_progress2, 0.6)]:
+                if progress <= 0:
+                    continue
+                max_r = 55.0
+                r = max_r * progress
+                alpha = int(18 * alpha_scale * (1.0 - progress))
+                pen_w = 1.5 * (1.0 - progress * 0.4)
+                painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, alpha), pen_w))
+                painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+                painter.drawEllipse(self._ripple_center, r, r)
 
         painter.setClipping(False)
         painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 40), 1))
