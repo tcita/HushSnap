@@ -78,7 +78,7 @@ class Toast(QtWidgets.QFrame):
             target_y = position.y() - self.height() // 2
         else:
             target_x = screen.center().x() - self.width() // 2
-            target_y = screen.y() + screen.height() - self.height() - 60
+            target_y = screen.y() + screen.height() - self.height() - 20
 
         # Slide-up animation start position
         self.move(target_x, target_y + 20)
