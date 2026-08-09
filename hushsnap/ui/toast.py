@@ -160,10 +160,9 @@ class OcrCopyChip(QtWidgets.QFrame):
         "font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", "
         "\"Segoe UI\", \"Noto Sans SC\", sans-serif;"
     )
-    _OFFSET_X = 8   # px right of cursor
-    _OFFSET_Y = 3   # px below cursor
+    _OFFSET_X = 12  # px right of cursor (breathing room, still reachable)
     _FADE_IN_MS = 120
-    _DURATION_MS = 4500
+    _DURATION_MS = 3000
     _FADE_OUT_MS = 300
 
     def __init__(self, full_text: str):
@@ -215,12 +214,15 @@ class OcrCopyChip(QtWidgets.QFrame):
         active_screen = cursor_screen() or QtWidgets.QApplication.primaryScreen()
         screen = active_screen.availableGeometry() if active_screen else QtWidgets.QApplication.primaryScreen().availableGeometry()
 
+        # Vertically centered on cursor hotspot (like a context-menu item)
         x = cursor.x() + self._OFFSET_X
-        y = cursor.y() + self._OFFSET_Y
+        y = cursor.y() - self.height() // 2
         if x + self.width() > screen.right():
             x = cursor.x() - self.width() - self._OFFSET_X
         if y + self.height() > screen.bottom():
-            y = cursor.y() - self.height() - self._OFFSET_Y
+            y = screen.bottom() - self.height()
+        if y < screen.top():
+            y = screen.top()
         x = max(screen.left(), min(x, screen.right() - self.width()))
         y = max(screen.top(), min(y, screen.bottom() - self.height()))
 
