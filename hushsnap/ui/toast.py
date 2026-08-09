@@ -198,7 +198,7 @@ class OcrCopyToast(QtWidgets.QFrame):
         accent.setFixedWidth(4)
         hbox.addWidget(accent)
 
-        display = "点击复制识别文字"
+        display = "复制文字"
 
         self._label = QtWidgets.QLabel(display)
         self._label.setStyleSheet(
