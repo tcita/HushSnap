@@ -1199,6 +1199,27 @@ class SettingsDialogController(QtCore.QObject):
         # Section: Shortcuts & Behavior
         capture_layout.addWidget(QtWidgets.QLabel(self.translate("settings_section_capture").upper()))
 
+        # Auto OCR after capture
+        def on_auto_ocr(checked):
+            update_auto_ocr_after_capture(checked, self.config_path)
+            hint_clip.setVisible(checked)
+        card_auto_ocr, switch_auto_ocr = _make_startup_card(
+            self.translate("settings_auto_ocr_after_capture_label"),
+            self.translate("settings_auto_ocr_after_capture_subtitle"),
+            get_auto_ocr_after_capture(self.config_path),
+        )
+        switch_auto_ocr.clicked.connect(on_auto_ocr)
+        capture_layout.addWidget(card_auto_ocr)
+
+        hint_clip = QtWidgets.QLabel(self.translate("settings_auto_ocr_clipboard_hint"))
+        hint_clip.setWordWrap(True)
+        hint_clip.setStyleSheet(
+            "font-size:11px; color:#999; padding:2px 14px 0 14px;"
+            "font-family:\"Microsoft YaHei\",\"Microsoft JhengHei\",sans-serif;"
+        )
+        hint_clip.setVisible(switch_auto_ocr.isChecked())
+        capture_layout.addWidget(hint_clip)
+
         # Thumbnail Time
         def change_thumb_time(index):
             val = combo_thumb.itemData(index)
@@ -1220,27 +1241,6 @@ class SettingsDialogController(QtCore.QObject):
         )
         combo_thumb.currentIndexChanged.connect(change_thumb_time)
         capture_layout.addWidget(card_thumb)
-
-        # Auto OCR after capture
-        def on_auto_ocr(checked):
-            update_auto_ocr_after_capture(checked, self.config_path)
-            hint_clip.setVisible(checked)
-        card_auto_ocr, switch_auto_ocr = _make_startup_card(
-            self.translate("settings_auto_ocr_after_capture_label"),
-            self.translate("settings_auto_ocr_after_capture_subtitle"),
-            get_auto_ocr_after_capture(self.config_path),
-        )
-        switch_auto_ocr.clicked.connect(on_auto_ocr)
-        capture_layout.addWidget(card_auto_ocr)
-
-        hint_clip = QtWidgets.QLabel(self.translate("settings_auto_ocr_clipboard_hint"))
-        hint_clip.setWordWrap(True)
-        hint_clip.setStyleSheet(
-            "font-size:11px; color:#999; padding:2px 14px 0 14px;"
-            "font-family:\"Microsoft YaHei\",\"Microsoft JhengHei\",sans-serif;"
-        )
-        hint_clip.setVisible(switch_auto_ocr.isChecked())
-        capture_layout.addWidget(hint_clip)
 
         # Show Size & Position label on the capture overlay
         def on_show_dim(checked):
