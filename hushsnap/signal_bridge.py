@@ -21,6 +21,17 @@ class _OcrResultEvent(QtCore.QEvent):
         self.kind = kind
 
 
+class _LoadFinishedEvent(QtCore.QEvent):
+    """Lightweight event posted from the background load thread to the main
+    thread via QCoreApplication.postEvent().  Carries no payload — the
+    receiver just emits load_finished on the main thread."""
+
+    _EVENT_TYPE = QtCore.QEvent.Type(QtCore.QEvent.registerEventType())
+
+    def __init__(self):
+        super().__init__(self._EVENT_TYPE)
+
+
 class SignalBridge(QtCore.QObject):
     """Thread-safe bridge that receives OCR results from worker threads
     via postEvent and emits them as Qt signals on the main thread."""
@@ -42,5 +53,8 @@ class SignalBridge(QtCore.QObject):
                 self.ocr_result.emit(event.response)
             elif event.kind == "toast":
                 self.auto_ocr_done.emit(event.response)
+            return True
+        if isinstance(event, _LoadFinishedEvent):
+            self.load_finished.emit()
             return True
         return super().event(event)

@@ -10,7 +10,7 @@ from .constants import (
 )
 from .ocr import OcrRequest, OcrService
 
-from .signal_bridge import SignalBridge
+from .signal_bridge import SignalBridge, _LoadFinishedEvent
 from .system.memory_utils import get_working_set_mb, fmt_memory
 from .ui.ocr_popup import OcrPopup
 from .ui.thumbnail import thumbnail_manager
@@ -289,7 +289,9 @@ class OcrController:
             except Exception:
                 logging.error("Load failed", exc_info=True)
             finally:
-                self.bridge.load_finished.emit()
+                QtCore.QCoreApplication.postEvent(
+                    self.bridge, _LoadFinishedEvent(),
+                )
 
         threading.Thread(target=run_load, daemon=True).start()
 

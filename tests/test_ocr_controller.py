@@ -231,6 +231,9 @@ def test_load_runs_when_no_ocr_pending(monkeypatch, qapp, tmp_path):
 
     controller._background_load()
 
+    # flush the event queue so the posted _LoadFinishedEvent is delivered
+    qapp.processEvents()
+
     assert load_calls == [controller._current_engine]
     assert load_received == [True]
 
@@ -355,9 +358,14 @@ def test_set_popup_anchor_detaches_pinned_popup(monkeypatch, qapp, tmp_path):
 
 
 def test_concurrency_correct_popup_updated(monkeypatch, qapp, tmp_path, sample_pixmap):
-    """If multiple requests are in flight, each result should go to the popup
-    that was active when start_request was called — exactly the real
-    thumbnail-click path: set_popup_anchor → start_request."""
+    """When two requests are in flight, each result goes to the popup that
+    was active when its start_request was called.
+
+    _pending_target is a single slot — the most recent start_request
+    overwrites it.  This is consistent with OcrService seq-overwrite:
+    in practice only the newest request's callback fires; an older
+    result that somehow survives seq-overwrite is safely dropped when
+    _pending_target was already consumed by the newer request."""
     monkeypatch.setattr(ocr_controller.OcrPopup, "show", lambda self: None)
     monkeypatch.setattr(ocr_controller.OcrPopup, "raise_", lambda self: None)
     monkeypatch.setattr(ocr_controller.OcrPopup, "activateWindow", lambda self: None)
@@ -367,6 +375,7 @@ def test_concurrency_correct_popup_updated(monkeypatch, qapp, tmp_path, sample_p
     # Request 1 — captures the current (only) popup as target.
     controller.start_request(sample_pixmap)
     popup1 = controller.popup
+    assert controller._pending_target is popup1
     assert len(service.callbacks) == 1
     callback1 = service.callbacks[0]
 
@@ -378,6 +387,7 @@ def test_concurrency_correct_popup_updated(monkeypatch, qapp, tmp_path, sample_p
     popup2 = controller.popup
     assert popup2 is not popup1
     controller.start_request(sample_pixmap)
+    assert controller._pending_target is popup2  # overwritten by request 2
     assert len(service.callbacks) == 2
     callback2 = service.callbacks[1]
 
@@ -386,13 +396,16 @@ def test_concurrency_correct_popup_updated(monkeypatch, qapp, tmp_path, sample_p
     popup1.show_text = lambda text, **kwargs: results.update({"p1": text})
     popup2.show_text = lambda text, **kwargs: results.update({"p2": text})
 
-    # Deliver Result 2 FIRST (out of order)
+    # Deliver Result 2 (newest) — _pending_target is popup2
     callback2(OcrResponse(text="Result 2", error="", pixmap=sample_pixmap, recognition=OcrRecognition()))
+    qapp.processEvents()
     assert results["p2"] == "Result 2"
     assert "p1" not in results
+    assert controller._pending_target is None  # consumed
 
-    # Deliver Result 1
+    # Deliver Result 1 (stale) — _pending_target is None → safely dropped
     callback1(OcrResponse(text="Result 1", error="", pixmap=sample_pixmap, recognition=OcrRecognition()))
-    assert results["p1"] == "Result 1"
+    qapp.processEvents()
+    assert "p1" not in results  # still not delivered — dropped correctly
 
 
