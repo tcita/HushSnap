@@ -97,31 +97,6 @@ def test_thumbnail_manager_single_instance(qapp):
     assert win1 != win2
 
 
-def test_thumbnail_ocr_copy_signal_relay(qapp):
-    """The silent-OCR menu action relays pil_image through the manager.
-
-    The right-click menu emits ocr_copy_requested_signal, which the manager
-    re-emits as ocr_copy_requested(pil_image) - the silent (no-popup) OCR path.
-    """
-    from hushsnap.ui.thumbnail import ThumbnailManager
-
-    img = Image.new("RGBA", (100, 100), (255, 0, 0, 255))
-    mgr = ThumbnailManager()  # fresh instance: avoid cross-test singleton lifetime
-    mgr._do_show(img)
-    assert len(mgr._windows) == 1
-    win = mgr._windows[0]
-
-    received = []
-    mgr.ocr_copy_requested.connect(lambda pil: received.append(pil))
-    try:
-        win.ocr_copy_requested_signal.emit()
-        assert len(received) == 1
-        assert received[0] is img
-    finally:
-        mgr.ocr_copy_requested.disconnect()
-        win.close()
-
-
 def test_thumbnail_open_in_viewer_signal_relay(qapp):
     """The 'View Original' menu action relays pil_image through the manager.
 

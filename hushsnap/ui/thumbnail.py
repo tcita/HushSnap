@@ -75,7 +75,6 @@ class ThumbnailWindow(QtWidgets.QWidget):
     save_to_desktop_signal = QtCore.pyqtSignal()
     pin_requested_signal = QtCore.pyqtSignal()
     edit_requested_signal = QtCore.pyqtSignal()
-    ocr_copy_requested_signal = QtCore.pyqtSignal()
     open_in_viewer_signal = QtCore.pyqtSignal()
 
     def __init__(self, pil_image: Image.Image):
@@ -753,24 +752,15 @@ class ThumbnailWindow(QtWidgets.QWidget):
         apply_menu_shadow(menu)
 
         # The hover pill already exposes Edit / Pin / Close, so the right-click
-        # menu carries only actions the pill does NOT: a silent "copy text" OCR
-        # (no popup - text goes straight to the clipboard with a toast), View
-        # Original (open the full-size capture in the system's default image
-        # viewer), and Save to Desktop. Pin and Edit used to live here too but
-        # were exact duplicates of the pill buttons.
-        ocr_action = menu.addAction(ui_text(lang, "menu_ocr_recognize"))
-        menu.addSeparator()
+        # menu carries only actions the pill does NOT: View Original and
+        # Save to Desktop.
         view_action = menu.addAction(ui_text(lang, "thumbnail_open_in_viewer"))
         desktop_action = menu.addAction(ui_text(lang, "thumbnail_save_to_desktop"))
 
         action = menu.exec(pos)
         self._menu_active = False
 
-        if action == ocr_action:
-            self.ocr_copy_requested_signal.emit()
-            # Do not close: the handler shows the loading bar and dismisses
-            # this thumbnail once silent OCR completes (a toast confirms the copy).
-        elif action == view_action:
+        if action == view_action:
             self.open_in_viewer_signal.emit()
             self.close()
         elif action == desktop_action:
@@ -1152,7 +1142,6 @@ class ThumbnailManager(QtCore.QObject):
     save_to_desktop = QtCore.pyqtSignal(object)
     pin_requested = QtCore.pyqtSignal(object, object, object)
     edit_requested = QtCore.pyqtSignal(object)
-    ocr_copy_requested = QtCore.pyqtSignal(object)
     open_in_viewer = QtCore.pyqtSignal(object)
 
     def __init__(self):
@@ -1180,7 +1169,6 @@ class ThumbnailManager(QtCore.QObject):
         win.clicked_signal.connect(lambda: self.clicked.emit(pil_image))
         win.save_to_desktop_signal.connect(lambda: self.save_to_desktop.emit(pil_image))
         win.edit_requested_signal.connect(lambda: self.edit_requested.emit(pil_image))
-        win.ocr_copy_requested_signal.connect(lambda: self.ocr_copy_requested.emit(pil_image))
         win.open_in_viewer_signal.connect(lambda: self.open_in_viewer.emit(pil_image))
         win.pin_requested_signal.connect(
             lambda: self.pin_requested.emit(

@@ -22,10 +22,6 @@ class DebugInterface:
 
         logger.info("[DebugInterface] Simulating manual OCR workflow for: %s", image_path)
 
-        # 1. Simulate hotkey trigger intent
-        controller.schedule_ocr()
-
-        # 2. Simulate capture window closing and returning Pixmap
-        # This is the original entry point for OcrController to receive images,
-        # which will trigger all subsequent signals.
-        controller.handle_capture_completed(pixmap)
+        # Dispatch OCR directly — same path as a thumbnail left-click.
+        # No intermediate schedule_ocr / handle_capture_completed needed.
+        controller.start_request(pixmap)

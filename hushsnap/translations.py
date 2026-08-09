@@ -84,7 +84,7 @@ UI_TEXT = {
         "menu_screenshot": "Screenshot",
         "menu_screenshot_ocr": "Screenshot and OCR",
         "menu_settings": "Settings...",
-        "menu_ocr_recognize": "Copy Text from Image",
+
         "menu_about": "About...",
         "menu_open_install_dir": "Config Folder",
         "menu_quit": "Quit",
@@ -262,7 +262,7 @@ UI_TEXT = {
         "menu_screenshot": "截图",
         "menu_screenshot_ocr": "截图并识别",
         "menu_settings": "设置...",
-        "menu_ocr_recognize": "识别并复制文字",
+
         "menu_about": "关于...",
         "menu_open_install_dir": "配置目录",
         "menu_quit": "退出",
@@ -440,7 +440,7 @@ UI_TEXT = {
         "menu_screenshot": "截圖",
         "menu_screenshot_ocr": "截圖並辨識",
         "menu_settings": "設定...",
-        "menu_ocr_recognize": "辨識並複製文字",
+
         "menu_about": "關於...",
         "menu_open_install_dir": "設定目錄",
         "menu_quit": "退出",
@@ -618,7 +618,7 @@ UI_TEXT = {
         "menu_screenshot": "スクリーンショット",
         "menu_screenshot_ocr": "スクリーンショット＋OCR",
         "menu_settings": "設定...",
-        "menu_ocr_recognize": "画像からテキストをコピー",
+
         "menu_about": "HushSnap について...",
         "menu_open_install_dir": "設定フォルダー",
         "menu_quit": "終了",

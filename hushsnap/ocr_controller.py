@@ -45,12 +45,7 @@ class OcrController:
         self.service = service or OcrService()
         self.bridge = SignalBridge()
         self.tray_icon = None
-        self.capture_requester = None
-        self.needs_ocr = False
         self._expecting_ocr_result = False
-        self._toast_bridge = None
-        self._auto_ocr_in_flight = False          # True while auto-OCR is running
-        self._auto_ocr_redirect_to_popup = False  # user clicked during auto-OCR
         self._pinned_popups = []
 
         self._current_engine = OCR_ENGINE_PPOCR
@@ -69,22 +64,6 @@ class OcrController:
         if load:
             logging.debug("[OcrController] Scheduling background load on event loop start...")
             QtCore.QTimer.singleShot(0, self._background_load)
-
-    def set_capture_requester(self, capture_requester):
-        """Set callback used to request screenshot captures on demand."""
-        self.capture_requester = capture_requester
-
-    def is_busy(self):
-        """Return True if an OCR request is currently in progress."""
-        return self._expecting_ocr_result or self._toast_bridge is not None
-
-    def redirect_auto_ocr_to_popup(self):
-        """User clicked thumbnail while auto-OCR is in flight.
-
-        Instead of starting a second OCR (which would double processing
-        time), redirect the in-flight auto-OCR result to the popup.
-        """
-        self._auto_ocr_redirect_to_popup = True
 
     def _detach_if_pinned(self):
         """If the active popup is pinned and contains content/is visible, move it to _pinned_popups
@@ -113,56 +92,14 @@ class OcrController:
         self._detach_if_pinned()
         self.popup.set_anchor_pos(x, y, width, height)
 
-    def copy_text_from_image(self, pixmap, toast_window, on_done=None):
-        """Run OCR on *pixmap* and copy recognized text to clipboard.
-
-        ``on_done`` is an optional no-arg callback invoked after the result is
-        handled (text copied, toast shown).  The thumbnail's silent-OCR path
-        uses it to dismiss the thumbnail once OCR completes; the pinned-image
-        caller leaves it None.
-        """
-        from PyQt6 import QtGui
-        image = pixmap.toImage() if isinstance(pixmap, QtGui.QPixmap) else pixmap
-        request = OcrRequest(pixmap=image, debug_dir=None)
-
-        bridge = _ToastBridge()
-        bridge.done.connect(
-            lambda resp: self._on_toast_ocr_done(resp, toast_window, on_done),
-            QtCore.Qt.ConnectionType.QueuedConnection,
-        )
-        self.service.recognize_async(request, bridge.done.emit)
-        self._toast_bridge = bridge
-
-    def _on_toast_ocr_done(self, response, toast_window, on_done=None):
-        """Main-thread handler: copy OCR text and show global toast."""
-        self._toast_bridge = None
-        self._trim_timer.start(0)
-        text = response.text or ""
-
-        if text:
-            clipboard = self.app.clipboard()
-            if clipboard:
-                clipboard.setText(text)
-
-        try:
-            visible = toast_window.isVisible()
-        except RuntimeError:
-            visible = False
-
-        if visible:
-            if text:
-                show_toast(self.translate("pin_ocr_copied"))
-            else:
-                show_toast(self.translate("pin_ocr_empty"), is_error=True)
-
-        if on_done:
-            on_done()
-
     def auto_ocr_to_clipboard(self, pixmap):
         """Run OCR silently and copy recognized text to clipboard.
 
         Fire-and-forget: the result arrives as a toast ("Text copied" or
         "No text found").  No popup, no thumbnail interaction.
+
+        A later OCR request (e.g. thumbnail click) may supersede this one
+        via OcrService's seq-overwrite — a correct "last wins" outcome.
         """
         from PyQt6 import QtGui
         image = pixmap.toImage() if isinstance(pixmap, QtGui.QPixmap) else pixmap
@@ -174,22 +111,10 @@ class OcrController:
             QtCore.Qt.ConnectionType.QueuedConnection,
         )
         self.service.recognize_async(request, bridge.done.emit)
-        self._toast_bridge = bridge
-        self._auto_ocr_in_flight = True
 
     def _on_auto_ocr_done(self, response):
-        """Main-thread handler for auto-OCR: copy text and show toast,
-        or redirect to popup if the user clicked the thumbnail meanwhile."""
-        self._toast_bridge = None
-        self._auto_ocr_in_flight = False
+        """Main-thread handler: copy text and show toast."""
         self._trim_timer.start(0)
-
-        if self._auto_ocr_redirect_to_popup:
-            self._auto_ocr_redirect_to_popup = False
-            # User clicked — treat this as a popup OCR result.
-            self.on_ocr_finished(response, target_popup=self.popup)
-            return
-
         text = response.text or ""
         if text:
             clipboard = self.app.clipboard()
@@ -199,22 +124,8 @@ class OcrController:
         else:
             show_toast(self.translate("pin_ocr_empty"), is_error=True)
 
-    def schedule_ocr(self):
-        # Internal/debug-only hook: arms the "auto-OCR on next capture" flag.
-        # The normal capture flow does NOT call this — after a screenshot the
-        # user triggers OCR explicitly by clicking the thumbnail. This entry
-        # point exists for the debug interface (hushsnap.system.debug_interface)
-        # and tests so they can drive the auto-OCR path without going through
-        # the UI. It is intentionally not wired into production capture.
-        # Safety: setting needs_ocr=True alone does nothing harmful — it only
-        # causes handle_capture_completed() to run OCR on the *next* captured
-        # pixmap instead of ignoring it. No network, no persistence, local only.
-        # If this ever gets promoted to a real user-facing "auto-OCR" setting,
-        # gate it behind a config flag and re-audit the load/trim interactions.
-        self.needs_ocr = True
-
     def _trim_current_engine(self):
-        if self.needs_ocr or self._expecting_ocr_result:
+        if self._expecting_ocr_result:
             return
         from .ocr.engine import trim_engine
         try:
@@ -242,17 +153,6 @@ class OcrController:
     def _remove_pinned_popup(self, popup):
         if popup in self._pinned_popups:
             self._pinned_popups.remove(popup)
-
-    def handle_capture_completed(self, captured_pixmap):
-        if not self.needs_ocr:
-            return
-
-        self.needs_ocr = False
-        self._detach_if_pinned()
-
-        self.popup.clear_anchor()
-        self.popup.show_loading(pixmap=captured_pixmap)
-        self.start_request(captured_pixmap.copy())
 
     def apply_font_sizes(self):
         """Apply font size settings to both the active popup and all active pinned popups."""
@@ -378,7 +278,7 @@ class OcrController:
     def _background_load(self):
         import threading
         from .ocr.engine import load_engine
-        if self.needs_ocr or self._expecting_ocr_result:
+        if self._expecting_ocr_result:
             self.bridge.load_finished.emit()
             return
 
@@ -393,6 +293,6 @@ class OcrController:
         threading.Thread(target=run_load, daemon=True).start()
 
     def _schedule_post_load_trim(self):
-        if self.needs_ocr or self._expecting_ocr_result:
+        if self._expecting_ocr_result:
             return
         self._trim_timer.start(0)

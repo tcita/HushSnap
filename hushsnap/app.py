@@ -315,8 +315,6 @@ class Application(QtCore.QObject):
             self._on_capture_completed,
             show_dimension_label=get_show_capture_dimension_label(),
         )
-        self.ocr_controller.set_capture_requester(self.capture_session.request_capture)
-
         # 3. Hotkey Manager
         with self.startup_profiler.step("Startup config loaded"):
             modifier, vk, name, _ = load_hotkey_setting()
@@ -346,7 +344,6 @@ class Application(QtCore.QObject):
         thumbnail_manager.clicked.connect(self._handle_thumbnail_clicked)
         thumbnail_manager.save_to_desktop.connect(self._handle_save_to_desktop)
         thumbnail_manager.edit_requested.connect(self._handle_open_editor)
-        thumbnail_manager.ocr_copy_requested.connect(self._handle_thumbnail_ocr_copy)
         thumbnail_manager.open_in_viewer.connect(self._handle_open_in_viewer)
         thumbnail_manager.pin_requested.connect(
             lambda pil, pos, size: pinned_image_manager.pin_image(
@@ -357,9 +354,6 @@ class Application(QtCore.QObject):
             )
         )
         
-        pinned_image_manager.ocr_requested.connect(
-            lambda pix, win: self.ocr_controller.copy_text_from_image(pix, win)
-        )
         pinned_image_manager.edit_requested.connect(self._handle_open_editor)
 
     def _init_ui_shell(self):
@@ -404,32 +398,17 @@ class Application(QtCore.QObject):
     def _on_capture_completed(self, captured_pixmap, logical_size):
         """Callback after screenshot is copied to clipboard."""
         self.logger.debug("[OCR_CHAIN] capture completed callback")
-        if not self.ocr_controller.needs_ocr:
-            try:
-                pil_img = qpixmap_to_pil(captured_pixmap)
-                # Store selection-based logical size as source of truth
-                pil_img.info["logical_size"] = logical_size
-                # No deferred show: a previous revision deferred show_thumbnail
-                # by 50ms "so CaptureWindow is fully destroyed before the
-                # thumbnail is shown" (commit 03cb8ea, avoiding an MSIX DWM
-                # focus race that flashed-then-dismissed the thumbnail). That
-                # race is prevented by ThumbnailWindow's
-                # WA_ShowWithoutActivating + WA_NativeWindow attributes (added
-                # in the same commit), not by the delay: a 300-cycle MSIX
-                # stress test (high-pressure + clean) showed the CaptureWindow
-                # destroyed() signal never fires within the 50ms window, and
-                # zero flash-dismiss events. The 50ms only added ~57ms of
-                # thumbnail-appear latency, so it is removed.
-                show_thumbnail(pil_img)
-                self.logger.debug("[OCR_CHAIN] thumbnail shown")
-            except Exception:
-                self.logger.exception("Failed to show thumbnail")
+        try:
+            pil_img = qpixmap_to_pil(captured_pixmap)
+            pil_img.info["logical_size"] = logical_size
+            show_thumbnail(pil_img)
+            self.logger.debug("[OCR_CHAIN] thumbnail shown")
+        except Exception:
+            self.logger.exception("Failed to show thumbnail")
 
-            if get_auto_ocr_after_capture():
-                self.logger.debug("[OCR_CHAIN] auto-OCR triggered")
-                self.ocr_controller.auto_ocr_to_clipboard(captured_pixmap)
-
-        self.ocr_controller.handle_capture_completed(captured_pixmap)
+        if get_auto_ocr_after_capture():
+            self.logger.debug("[OCR_CHAIN] auto-OCR triggered")
+            self.ocr_controller.auto_ocr_to_clipboard(captured_pixmap)
 
     def _handle_thumbnail_clicked(self, pil_img):
         self.logger.debug("[OCR_CHAIN] thumbnail click handled")
@@ -451,17 +430,10 @@ class Application(QtCore.QObject):
             if center is not None:
                 self.ocr_controller.set_popup_anchor(*center)
 
-        # If auto-OCR is already running, redirect its result to the popup
-        # instead of starting a second inference.  Otherwise the user waits
-        # for both OCR runs to finish sequentially, perceiving a multi-second
-        # gap.  The auto-OCR is always for the current thumbnail's screenshot
-        # (only one thumbnail exists at a time), so no image-identity check
-        # is needed — the flag alone is sufficient.
-        if self.ocr_controller._auto_ocr_in_flight:
-            self.logger.debug("[OCR_CHAIN] redirecting in-flight auto-OCR to popup")
-            self.ocr_controller.redirect_auto_ocr_to_popup()
-            return
-
+        # OcrService.recognize_async has built-in seq-overwrite semantics:
+        # a later request supersedes any in-flight one, so clicking the
+        # thumbnail while auto-OCR is running is safe — start_request
+        # wins, the auto-OCR callback is silently dropped.
         from PyQt6 import QtGui
         if pil_img.mode != "RGBA":
             pil_img = pil_img.convert("RGBA")
@@ -471,40 +443,6 @@ class Application(QtCore.QObject):
             QtGui.QImage.Format.Format_RGBA8888,
         ).copy()
         self.ocr_controller.start_request(QtGui.QPixmap.fromImage(qimage))
-
-    def _handle_thumbnail_ocr_copy(self, pil_img):
-        """Silent OCR: recognize text and copy to the clipboard without the popup.
-
-        Routes through ocr_controller.copy_text_from_image - the same no-popup
-        path the pinned-image menu uses - so the result goes straight to the
-        clipboard with a toast, instead of opening the editable OCR popup that a
-        left-click produces.  The thumbnail switches to its loading state and is
-        dismissed once OCR completes.
-        """
-        self.logger.debug("[OCR_CHAIN] thumbnail silent-OCR copy handled")
-        from .ui.thumbnail import thumbnail_manager
-        thumb_win = thumbnail_manager.current_window()
-        if thumb_win is None:
-            return
-        thumb_win.start_loading()
-
-        from PyQt6 import QtGui
-        if pil_img.mode != "RGBA":
-            pil_img = pil_img.convert("RGBA")
-        data = pil_img.tobytes("raw", "RGBA")
-        qimage = QtGui.QImage(
-            data, pil_img.size[0], pil_img.size[1],
-            QtGui.QImage.Format.Format_RGBA8888,
-        ).copy()
-        pixmap = QtGui.QPixmap.fromImage(qimage)
-
-        def _dismiss():
-            try:
-                thumb_win.dismiss()
-            except RuntimeError:
-                pass
-
-        self.ocr_controller.copy_text_from_image(pixmap, thumb_win, on_done=_dismiss)
 
     def _handle_open_editor(self, pil_img):
         """Open the lightweight image editor for the given PIL image."""

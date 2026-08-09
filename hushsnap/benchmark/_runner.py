@@ -149,8 +149,8 @@ class BenchmarkRunner:
             self._last_text = ""
             self._ocr_error = True
         self._finished = True
-        # Mirror the production handler's flag reset so that internal
-        # guards (is_busy, _trim_current_engine) see the correct state.
+        # Mirror the production handler's flag reset so that
+        # _trim_current_engine sees the correct state.
         self.controller._expecting_ocr_result = False
 
     # ── Public API ────────────────────────────────────────────────

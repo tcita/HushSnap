@@ -22,7 +22,6 @@ class PinnedImageWindow(QtWidgets.QWidget):
     """
     Floating, resizable, and draggable image window.
     """
-    ocr_requested = QtCore.pyqtSignal(object, object)  # pixmap, source_win
     edit_requested = QtCore.pyqtSignal(object)  # pil_image
 
     def __init__(self, pil_image: Image.Image, logical_size: QtCore.QSize = None, screen=None):
@@ -424,7 +423,6 @@ class PinnedImageWindow(QtWidgets.QWidget):
         menu.setStyleSheet(MODERN_MENU_STYLE)
         menu.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
         apply_menu_shadow(menu)
-        ocr_action = menu.addAction(ui_text(lang, "menu_ocr_recognize"))
         copy_action = menu.addAction(ui_text(lang, "pin_copy_image"))
         edit_action = menu.addAction(ui_text(lang, "thumbnail_edit"))
         menu.addSeparator()
@@ -450,12 +448,9 @@ class PinnedImageWindow(QtWidgets.QWidget):
                 self.pil_image.save(file_path)
                 show_toast(ui_text(lang, "pin_saved_to_desktop"))
             except Exception: logger.exception("Failed to save pinned image to desktop")
-        elif action == ocr_action:
-            self.ocr_requested.emit(self.pixmap, self)
 
 class PinnedImageManager(QtCore.QObject):
     """Manages multiple pinned image windows."""
-    ocr_requested = QtCore.pyqtSignal(object, object)
     edit_requested = QtCore.pyqtSignal(object)
 
     def __init__(self):
@@ -486,7 +481,6 @@ class PinnedImageManager(QtCore.QObject):
             if y + win.height() > avail.bottom(): y = avail.bottom() - win.height()
             win.move(x, y)
             win.set_morph_source(morph_pos, morph_size)
-            win.ocr_requested.connect(self.ocr_requested.emit)
             win.edit_requested.connect(self.edit_requested.emit)
             win.show()
             win.raise_()  # bump to front of topmost Z-band

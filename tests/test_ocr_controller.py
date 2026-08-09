@@ -103,17 +103,6 @@ def _build_controller(monkeypatch, qapp, tmp_path, service=None):
     return controller, tray_icon
 
 
-def test_capture_completed_starts_ocr_request(monkeypatch, qapp, tmp_path, sample_pixmap):
-    service = FakeService()
-    controller, _ = _build_controller(monkeypatch, qapp, tmp_path, service=service)
-    controller.schedule_ocr()
-
-    controller.handle_capture_completed(sample_pixmap)
-
-    assert len(service.requests) == 1
-    assert service.requests[0].language_tag == ""
-    assert service.requests[0].debug_dir == Path("data")
-
 
 def test_ocr_finished_copies_text_and_updates_popup(monkeypatch, qapp, tmp_path, sample_pixmap):
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
@@ -137,24 +126,7 @@ def test_ocr_finished_copies_text_and_updates_popup(monkeypatch, qapp, tmp_path,
     assert shown["pixmap"] is sample_pixmap
 
 
-def test_schedule_ocr_sets_needs_ocr(monkeypatch, qapp, tmp_path):
-    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    assert controller.needs_ocr is False
-
-    controller.schedule_ocr()
-    assert controller.needs_ocr is True
-
-
-def test_handle_capture_completed_skips_when_not_enabled(monkeypatch, qapp, tmp_path, sample_pixmap):
-    service = FakeService()
-    controller, _ = _build_controller(monkeypatch, qapp, tmp_path, service=service)
-
-    controller.handle_capture_completed(sample_pixmap)
-
-    assert len(service.requests) == 0
-
-
-def test_on_ocr_finished_clears_needs_ocr(monkeypatch, qapp, tmp_path, sample_pixmap):
+def test_on_ocr_finished_clears_expecting_result(monkeypatch, qapp, tmp_path, sample_pixmap):
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
     qapp.clipboard().clear()
 
@@ -210,7 +182,7 @@ def test_load_skipped_when_ocr_already_requested(monkeypatch, qapp, tmp_path):
     """If user already triggered OCR, skip load — the OCR path will
     initialize the engine on its own."""
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    controller.needs_ocr = True
+    controller._expecting_ocr_result = True
 
     load_calls = []
     monkeypatch.setattr(
@@ -221,14 +193,13 @@ def test_load_skipped_when_ocr_already_requested(monkeypatch, qapp, tmp_path):
     controller._background_load()
 
     assert load_calls == []
-    assert controller.needs_ocr is True
+    assert controller._expecting_ocr_result is True
 
 
 def test_load_runs_when_no_ocr_pending(monkeypatch, qapp, tmp_path):
     """Load should initialize the engine and emit load_finished
     when no OCR request is in progress."""
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    controller.needs_ocr = False
     controller._expecting_ocr_result = False
 
     load_calls = []
@@ -276,7 +247,7 @@ def test_post_load_trim_starts_timer_when_idle(monkeypatch, qapp, tmp_path):
     """_schedule_post_load_trim should start the trim timer (interval=0)
     when no OCR is pending."""
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    controller.needs_ocr = False
+    controller._expecting_ocr_result = False
     controller._expecting_ocr_result = False
 
     controller._trim_timer.stop()
@@ -304,9 +275,8 @@ def test_ocr_request_cancels_pending_trim(monkeypatch, qapp, tmp_path, sample_pi
 
 
 def test_start_request_does_not_show_loading(monkeypatch, qapp, tmp_path, sample_pixmap):
-    """start_request should NOT call show_loading — loading is now shown
-    on the thumbnail (for the thumbnail-click path) or by handle_capture_completed
-    (for the OCR-hotkey path)."""
+    """start_request should NOT call show_loading — loading is shown
+    on the thumbnail, not on the popup."""
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
 
     loading_called = []
@@ -319,28 +289,10 @@ def test_start_request_does_not_show_loading(monkeypatch, qapp, tmp_path, sample
     assert len(loading_called) == 0, "start_request must not call show_loading"
 
 
-def test_handle_capture_completed_shows_loading(monkeypatch, qapp, tmp_path, sample_pixmap):
-    """handle_capture_completed (OCR-hotkey path) should call show_loading
-    since there is no thumbnail to show loading on."""
-    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-
-    loading_pixmap = []
-    def _show_loading(pixmap=None):
-        loading_pixmap.append(pixmap)
-
-    controller.popup.show_loading = _show_loading
-    controller.needs_ocr = True
-    controller.handle_capture_completed(sample_pixmap)
-
-    assert len(loading_pixmap) == 1
-    assert loading_pixmap[0] is sample_pixmap
-
-
 def test_load_finished_signal_triggers_trim(monkeypatch, qapp, tmp_path):
     """The load_finished Qt signal must be connected to
     _schedule_post_load_trim, which starts the trim timer when idle."""
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    controller.needs_ocr = False
     controller._expecting_ocr_result = False
 
     controller._trim_timer.stop()
@@ -370,49 +322,6 @@ def test_trim_current_engine_skips_when_ocr_active(monkeypatch, qapp, tmp_path):
     assert trim_calls == []  # trim was skipped
 
 
-def test_handle_capture_completed_detaches_pinned_popup(monkeypatch, qapp, tmp_path, sample_pixmap):
-    """If the active popup is pinned and contains content/is visible, handle_capture_completed
-    should detach it and create a new active popup."""
-    # Globally mock show/raise/activateWindow for all popups created in this test
-    monkeypatch.setattr(ocr_controller.OcrPopup, "show", lambda self: None)
-    monkeypatch.setattr(ocr_controller.OcrPopup, "raise_", lambda self: None)
-    monkeypatch.setattr(ocr_controller.OcrPopup, "activateWindow", lambda self: None)
-
-    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-
-    # Simulate first popup is pinned and visible
-    controller.popup.set_pinned(True)
-    monkeypatch.setattr(controller.popup, "isVisible", lambda: True)
-
-    original_popup = controller.popup
-
-    # Perform a capture completed
-    controller.needs_ocr = True
-    controller.handle_capture_completed(sample_pixmap)
-
-    # The active popup should be a new instance now
-    assert controller.popup is not original_popup
-
-    # The old popup should be in _pinned_popups list
-    assert original_popup in controller._pinned_popups
-
-    # The old popup should have WA_DeleteOnClose set
-    assert original_popup.testAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
-
-    # The old popup's pin signal should be disconnected from the controller
-    assert original_popup.receivers(original_popup.pin_toggled) == 0
-
-    # _clean_pinned_popups removes stale entries whose C++ objects are gone.
-    # Simulate this by deleting the old popup, then calling clean.
-    # Remove the instance-level isVisible monkeypatch first so the real Qt
-    # method (which raises RuntimeError once the C++ object is gone) is used.
-    del original_popup.isVisible
-    original_popup.deleteLater()
-    QtWidgets.QApplication.sendPostedEvents(None, QtCore.QEvent.Type.DeferredDelete)
-    controller._clean_pinned_popups()
-    assert original_popup not in controller._pinned_popups
-
-
 def test_set_popup_anchor_detaches_pinned_popup(monkeypatch, qapp, tmp_path):
     """If the active popup is pinned and contains content/is visible, set_popup_anchor
     (triggered by clicking a thumbnail) should detach it and create a new active popup instance."""
@@ -440,38 +349,42 @@ def test_set_popup_anchor_detaches_pinned_popup(monkeypatch, qapp, tmp_path):
 
 
 def test_concurrency_correct_popup_updated(monkeypatch, qapp, tmp_path, sample_pixmap):
-    """If multiple requests are in flight, each result should go to the popup 
-    that was active when the request started."""
+    """If multiple requests are in flight, each result should go to the popup
+    that was active when start_request was called — exactly the real
+    thumbnail-click path: set_popup_anchor → start_request."""
+    monkeypatch.setattr(ocr_controller.OcrPopup, "show", lambda self: None)
+    monkeypatch.setattr(ocr_controller.OcrPopup, "raise_", lambda self: None)
+    monkeypatch.setattr(ocr_controller.OcrPopup, "activateWindow", lambda self: None)
     service = FakeService()
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path, service=service)
-    
-    # Request 1
-    controller.schedule_ocr()
+
+    # Request 1 — captures the current (only) popup as target.
+    controller.start_request(sample_pixmap)
     popup1 = controller.popup
-    controller.handle_capture_completed(sample_pixmap)
     assert len(service.callbacks) == 1
     callback1 = service.callbacks[0]
-    
-    # Request 2 (pins popup1 and creates popup2)
+
+    # Pin popup1, then simulate a second thumbnail click: set_popup_anchor
+    # detaches popup1 and creates popup2, then start_request captures popup2.
     popup1.set_pinned(True)
     monkeypatch.setattr(popup1, "isVisible", lambda: True)
-    controller.schedule_ocr()
-    controller.handle_capture_completed(sample_pixmap)
+    controller.set_popup_anchor(100, 100)
     popup2 = controller.popup
     assert popup2 is not popup1
+    controller.start_request(sample_pixmap)
     assert len(service.callbacks) == 2
     callback2 = service.callbacks[1]
-    
+
     # Mock show_text for both
     results = {}
     popup1.show_text = lambda text, **kwargs: results.update({"p1": text})
     popup2.show_text = lambda text, **kwargs: results.update({"p2": text})
-    
+
     # Deliver Result 2 FIRST (out of order)
     callback2(OcrResponse(text="Result 2", error="", pixmap=sample_pixmap, recognition=OcrRecognition()))
     assert results["p2"] == "Result 2"
     assert "p1" not in results
-    
+
     # Deliver Result 1
     callback1(OcrResponse(text="Result 1", error="", pixmap=sample_pixmap, recognition=OcrRecognition()))
     assert results["p1"] == "Result 1"
