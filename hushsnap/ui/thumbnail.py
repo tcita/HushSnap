@@ -360,12 +360,10 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self._loading_anim = None  # QVariantAnimation for pulsing bar
         self._pill_state = 'none'  # 'none' | 'edit' | 'pin' | 'close' — drives paintEvent
 
-        # Ripple effect on click — two concentric expanding rings from the
-        # press point, like a pebble dropped in water. Second ring starts
-        # ~120 ms after the first, fainter.
+        # Ripple effect on click — 4 concentric wave rings from the press
+        # point, each with a dark trough + bright crest for a wave feel.
         self._ripple_center = None       # QtCore.QPointF or None
-        self._ripple_progress = 0.0       # ring 1: 0.0 → 1.0
-        self._ripple_progress2 = 0.0      # ring 2: 0.0 → 1.0 (delayed)
+        self._ripple_progress = 0.0       # master progress 0.0 → 1.0
         self._ripple_anim = None          # QVariantAnimation
 
         # Countdown progress bar — thin line at card bottom that shrinks
@@ -514,14 +512,17 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self.update()
 
     # ── Ripple effect ─────────────────────────────────────────────────
+    _RIPPLE_RING_COUNT = 4
+    _RIPPLE_RING_STAGGER = 0.07  # ~70 ms between rings at 1000 ms total
+
     def _start_ripple(self, pos):
-        """Begin a subtle expanding-circle ripple from *pos* (card-relative px)."""
+        """Begin a 4-ring wave ripple from *pos* (card-relative px)."""
         self._ripple_center = QtCore.QPointF(pos)
         self._ripple_progress = 0.0
         if self._ripple_anim is not None:
             self._ripple_anim.stop()
         self._ripple_anim = QtCore.QVariantAnimation(self)
-        self._ripple_anim.setDuration(700)
+        self._ripple_anim.setDuration(1000)
         self._ripple_anim.setStartValue(0.0)
         self._ripple_anim.setEndValue(1.0)
         self._ripple_anim.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
@@ -529,19 +530,13 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self._ripple_anim.finished.connect(self._on_ripple_done)
         self._ripple_anim.start()
 
-    _RIPPLE_RING2_DELAY = 0.17  # fraction of total duration (~120 ms at 700 ms)
-
     def _on_ripple_tick(self, value: float):
         self._ripple_progress = value
-        # Second ring starts after the delay, then scales to fill the remaining time.
-        d = self._RIPPLE_RING2_DELAY
-        self._ripple_progress2 = (value - d) / (1.0 - d) if value > d else 0.0
         self.update()
 
     def _on_ripple_done(self):
         self._ripple_center = None
         self._ripple_progress = 0.0
-        self._ripple_progress2 = 0.0
         self._ripple_anim = None
         self.update()
 
@@ -1053,20 +1048,37 @@ class ThumbnailWindow(QtWidgets.QWidget):
             # Reset brush so it doesn't leak into the card border fill below
             painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
 
-        # Ripple — two thin expanding rings, like a pebble dropped in water.
-        # Ring 2 starts ~120 ms later and is fainter (60 % opacity of ring 1).
-        # Clipped to the card so the rings stay inside the bounds.
+        # Ripple — 4 concentric wave rings, each with a dark trough
+        # (water dips, reflects less light) + a bright crest (water piles
+        # up, catches light). Staggered ~70 ms apart for a wave feel.
         if self._ripple_center is not None:
-            for progress, alpha_scale in [(self._ripple_progress, 1.0),
-                                           (self._ripple_progress2, 0.6)]:
-                if progress <= 0:
+            stagger = self._RIPPLE_RING_STAGGER
+            for i in range(self._RIPPLE_RING_COUNT):
+                delay = i * stagger
+                if self._ripple_progress <= delay:
                     continue
-                max_r = 55.0
-                r = max_r * progress
-                alpha = int(18 * alpha_scale * (1.0 - progress))
-                pen_w = 1.5 * (1.0 - progress * 0.4)
-                painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, alpha), pen_w))
+                p = (self._ripple_progress - delay) / (1.0 - delay)
+                scale = 1.0 - i * 0.18  # later rings progressively fainter
+
+                max_r = 85.0
+                r = max_r * p
+
+                # Trough — dark band just inside the crest. Narrow gap
+                # that widens toward the end as the wave flattens.
+                trough_gap = 5.0 * (1.0 - p * 0.6)
+                trough_r = max(r - trough_gap, 0.0)
+                trough_alpha = int(16 * scale * (1.0 - p))
+                painter.setPen(QtGui.QPen(
+                    QtGui.QColor(0, 0, 0, trough_alpha), 1.8))
                 painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+                if trough_r > 0:
+                    painter.drawEllipse(self._ripple_center, trough_r, trough_r)
+
+                # Crest — bright outer stroke at the wave peak.
+                crest_alpha = int(32 * scale * (1.0 - p))
+                pen_w = 2.0 * (1.0 - p * 0.3)
+                painter.setPen(QtGui.QPen(
+                    QtGui.QColor(255, 255, 255, crest_alpha), pen_w))
                 painter.drawEllipse(self._ripple_center, r, r)
 
         painter.setClipping(False)
