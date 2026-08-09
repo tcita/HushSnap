@@ -12,7 +12,7 @@
 <tr>
 <td align="left">
 
-HushSnap bridges screenshots and OCR into one fluid flow. Press a hotkey and a crosshair overlay appears instantly - select a region (or click for the full screen) and the shot lands on your clipboard right away. A thumbnail slides in at the bottom-right corner; left-click it and the recognized text pops up, already reformatted into a clean, readable layout you can edit on the spot. Everything runs locally - your screenshots and recognized text never leave your device. It lives quietly in the system tray, so there are no windows or menus to pre-launch: the UI surfaces only when you need it, then fades away.
+HushSnap bridges screenshots and OCR into one fluid flow. Press a hotkey and a crosshair overlay appears instantly - select a region (or click for the full screen) and the shot lands on your clipboard right away. A thumbnail fades in at the bottom-right corner; left-click it and the recognized text pops up, already reformatted into a clean, readable layout you can edit on the spot. Everything runs locally - your screenshots and recognized text never leave your device. It lives quietly in the system tray, so there are no windows or menus to pre-launch: the UI surfaces only when you need it, then fades away.
 
 [HushSnap Website](https://tcita.github.io/HushSnap/)
 
@@ -35,7 +35,7 @@ HushSnap bridges screenshots and OCR into one fluid flow. Press a hotkey and a c
   </tr>
 </table>
 
-After capture, a thumbnail slides in at the bottom-right corner of your screen. This thumbnail is the heart of HushSnap's post-capture flow:
+After capture, a thumbnail fades in at the bottom-right corner of your screen. This thumbnail is the heart of HushSnap's post-capture flow:
 
 - **Hover** to pause auto-hide and reveal an action pill with **Edit**, **Pin**, and **Close** buttons.
 - **Drag and drop** the thumbnail anywhere to save the image - into a chat, an email, a folder, or another app.
