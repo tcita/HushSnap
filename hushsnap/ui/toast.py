@@ -165,9 +165,11 @@ class OcrCopyChip(QtWidgets.QFrame):
     _DURATION_MS = 3000
     _FADE_OUT_MS = 300
 
-    def __init__(self, full_text: str):
+    def __init__(self, full_text: str, *, label: str = "Copy text",
+                 done_label: str = "Copied"):
         super().__init__(None)
         self._full_text = full_text
+        self._done_label = done_label
         self._label: QtWidgets.QLabel | None = None
 
         prev = OcrCopyChip._active
@@ -192,7 +194,7 @@ class OcrCopyChip(QtWidgets.QFrame):
         hbox.setContentsMargins(0, 0, 0, 0)
         hbox.setSpacing(0)
 
-        self._label = QtWidgets.QLabel("复制文字")
+        self._label = QtWidgets.QLabel(label)
         self._label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self._label.setStyleSheet(
             "QLabel {"
@@ -281,7 +283,7 @@ class OcrCopyChip(QtWidgets.QFrame):
                 clipboard.setText(self._full_text)
             self._dismiss_timer.stop()
             if self._label:
-                self._label.setText("✓ 已复制")
+                self._label.setText(self._done_label)
             QtCore.QTimer.singleShot(700, self._fade_out)
         return super().mouseReleaseEvent(event)
 
@@ -301,6 +303,7 @@ class OcrCopyChip(QtWidgets.QFrame):
         self.deleteLater()
 
 
-def show_ocr_copy_toast(full_text: str):
+def show_ocr_copy_toast(full_text: str, *, label: str = "Copy text",
+                        done_label: str = "Copied"):
     """Show a clickable OCR-copy chip beside the cursor."""
-    return OcrCopyChip(full_text)
+    return OcrCopyChip(full_text, label=label, done_label=done_label)

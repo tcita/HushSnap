@@ -121,7 +121,11 @@ class OcrController:
         text = response.text or ""
         if text:
             from .ui.toast import show_ocr_copy_toast
-            show_ocr_copy_toast(text)
+            show_ocr_copy_toast(
+                text,
+                label=self.translate("ocr_copy_chip_label"),
+                done_label=self.translate("ocr_copy_chip_copied"),
+            )
         else:
             show_toast(self.translate("pin_ocr_empty"), is_error=True)
 
