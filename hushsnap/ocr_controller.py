@@ -17,11 +17,6 @@ from .ui.thumbnail import thumbnail_manager
 from .ui.toast import show_toast
 
 
-class _ToastBridge(QtCore.QObject):
-    """Temporary signal bridge for pinned image OCR results."""
-    done = QtCore.pyqtSignal(object)
-
-
 class OcrController:
     """Coordinate OCR requests, results, popup interactions, and persisted settings."""
 
@@ -52,6 +47,7 @@ class OcrController:
         self._current_engine = OCR_ENGINE_PPOCR
 
         self.bridge.ocr_result.connect(self.on_ocr_finished)
+        self.bridge.auto_ocr_done.connect(self._on_auto_ocr_done)
         self.bridge.load_finished.connect(self._schedule_post_load_trim)
         
         # New popups always start unpinned to avoid "sticky" state confusion.
@@ -96,22 +92,24 @@ class OcrController:
     def auto_ocr_to_clipboard(self, pixmap):
         """Run OCR silently and copy recognized text to clipboard.
 
-        Fire-and-forget: the result arrives as a toast ("Text copied" or
-        "No text found").  No popup, no thumbnail interaction.
+        Fire-and-forget: the result arrives as a toast.  No popup.
 
-        A later OCR request (e.g. thumbnail click) may supersede this one
-        via OcrService's seq-overwrite — a correct "last wins" outcome.
+        Uses QCoreApplication.postEvent (thread-safe per Qt docs) to
+        hand the response from the worker thread to the main thread,
+        avoiding any cross-thread Qt signal emission.
         """
         from PyQt6 import QtGui
+        from .signal_bridge import _OcrResultEvent
+
         image = pixmap.toImage() if isinstance(pixmap, QtGui.QPixmap) else pixmap
         request = OcrRequest(pixmap=image, debug_dir=None)
 
-        bridge = _ToastBridge()
-        bridge.done.connect(
-            lambda resp: self._on_auto_ocr_done(resp),
-            QtCore.Qt.ConnectionType.QueuedConnection,
+        self.service.recognize_async(
+            request,
+            lambda resp: QtCore.QCoreApplication.postEvent(
+                self.bridge, _OcrResultEvent(resp, "toast"),
+            ),
         )
-        self.service.recognize_async(request, bridge.done.emit)
 
     def _on_auto_ocr_done(self, response):
         """Main-thread handler: copy text and show toast."""
@@ -261,18 +259,19 @@ class OcrController:
     def start_request(self, pixmap):
         self._trim_timer.stop()
         self._expecting_ocr_result = True
-        # Store the target popup as a FIELD so on_ocr_finished can read
-        # it safely on the main thread.  Do NOT pass it through the
-        # cross-thread signal (see signal_bridge.py for rationale).
         self._pending_target = self.popup
         logging.debug("[OCR_CHAIN] start_request")
 
         from PyQt6 import QtGui
+        from .signal_bridge import _OcrResultEvent
+
         image = pixmap.toImage() if isinstance(pixmap, QtGui.QPixmap) else pixmap
         request = OcrRequest(pixmap=image, engine=OCR_ENGINE_PPOCR, debug_dir=debug_dir)
         self.service.recognize_async(
             request,
-            lambda resp: self.bridge.ocr_result.emit(resp),
+            lambda resp: QtCore.QCoreApplication.postEvent(
+                self.bridge, _OcrResultEvent(resp, "popup"),
+            ),
         )
         logging.debug("[OCR_CHAIN] start_request dispatched")
 
