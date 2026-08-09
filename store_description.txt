@@ -6,7 +6,7 @@ HushSnap
 
 HushSnap 是一款连接了截图与 OCR 的桌面工具，本地运行、不传数据，日常截图识别跟手。
 
-按下快捷键（默认 Alt+Q），框选区域，截图即复制到剪贴板，右下角随即滑出一张缩略图：
+按下快捷键（默认 Alt+Q），框选区域，截图即复制到剪贴板，右下角随即淡入一张缩略图：
 
 左击缩略图 → 弹出 OCR 识别结果
 左击按钮 → 编辑图片，或钉在桌面上
@@ -37,7 +37,7 @@ OCR 识别出的文字会整理成更易读的排版，不会像多数 OCR 软�
 
 HushSnap 是一款連接了截圖與 OCR 的桌面工具，本地運行、不傳資料，日常截圖辨識跟手。
 
-按下快速鍵（預設 Alt+Q），框選區域，截圖即複製到剪貼簿，右下角隨即滑出一張縮圖：
+按下快速鍵（預設 Alt+Q），框選區域，截圖即複製到剪貼簿，右下角隨即淡入一張縮圖：
 
 左鍵點擊縮圖 → 彈出 OCR 辨識結果
 左鍵點擊按鈕 → 編輯圖片，或釘在桌面上
@@ -68,7 +68,7 @@ OCR 辨識出的文字會整理成更易讀的排版，不會像多數 OCR 軟�
 
 HushSnap is a desktop tool that bridges screenshots and OCR — runs entirely locally, no data ever leaves your machine, and stays responsive for everyday capture-and-recognize workflows.
 
-Press the hotkey (default Alt+Q), select an area, and the screenshot is copied to your clipboard instantly. A thumbnail then slides in from the bottom-right corner:
+Press the hotkey (default Alt+Q), select an area, and the screenshot is copied to your clipboard instantly. A thumbnail then fades in at the bottom-right corner:
 
 Left-click the thumbnail → shows the OCR result
 Left-click the button → edit the image, or pin it to the desktop
@@ -99,7 +99,7 @@ Source code is open under GPL-3.0, available on github.com/tcita/HushSnap
 
 HushSnap は、スクリーンショットと OCR をつなぐデスクトップツールです。すべてローカルで動作し、データが外部に送信されることはなく、日常的なスクリーンショット認識に軽快に応えます。
 
-ホットキー（デフォルトは Alt+Q）を押して範囲を選択すると、スクリーンショットが即座にクリップボードにコピーされ、画面右下からサムネイルがスライドして表示されます：
+ホットキー（デフォルトは Alt+Q）を押して範囲を選択すると、スクリーンショットが即座にクリップボードにコピーされ、画面右下にサムネイルがフェードインして表示されます：
 
 サムネイルを左クリック → OCR 認識結果を表示
 ボタンを左クリック → 画像を編集、またはデスクトップにピン留め
