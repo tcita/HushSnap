@@ -170,7 +170,6 @@ class OcrCopyChip(QtWidgets.QFrame):
         super().__init__(None)
         self._full_text = full_text
         self._done_label = done_label
-        self._remaining = self._DURATION_MS
         self._label: QtWidgets.QLabel | None = None
 
         prev = OcrCopyChip._active
@@ -250,7 +249,6 @@ class OcrCopyChip(QtWidgets.QFrame):
     # ── hover (pause / resume countdown) ──────────────────────────────
     def enterEvent(self, event):
         self._dismiss_timer.stop()
-        self._remaining = max(0, self._dismiss_timer.remainingTime())
         if self._label:
             self._label.setStyleSheet(
                 "QLabel {"
@@ -265,7 +263,7 @@ class OcrCopyChip(QtWidgets.QFrame):
             )
 
     def leaveEvent(self, event):
-        self._dismiss_timer.start(self._remaining)
+        self._dismiss_timer.start(self._DURATION_MS)
         if self._label:
             self._label.setStyleSheet(
                 "QLabel {"
