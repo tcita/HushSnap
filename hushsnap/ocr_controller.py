@@ -46,6 +46,7 @@ class OcrController:
         self.bridge = SignalBridge()
         self.tray_icon = None
         self._expecting_ocr_result = False
+        self._pending_target = None   # popup that start_request captured
         self._pinned_popups = []
 
         self._current_engine = OCR_ENGINE_PPOCR
@@ -178,54 +179,52 @@ class OcrController:
                 pass
         return False
 
-    def on_ocr_finished(self, response, target_popup=None):
+    def on_ocr_finished(self, response):
+        """Deliver OCR result to the popup that was active when start_request
+        was called.  _pending_target is set on the main thread by
+        start_request and read here on the main thread (via QueuedConnection),
+        so there is no cross-thread QObject pointer in flight."""
         self._trim_timer.start(0)
+
+        target = self._pending_target
+        self._pending_target = None
+
+        if target is None:
+            return
+
         logging.info(
-            "[OCR_CHAIN] on_ocr_finished entered, text_len=%d, has_error=%s, target_is_active=%s",
+            "[OCR_CHAIN] on_ocr_finished entered, text_len=%d, has_error=%s",
             len(response.text or ""),
             bool(response.error),
-            target_popup is None or target_popup is self.popup,
         )
         logging.debug("[on_ocr_finished] engine=%s, text_len=%d",
                       response.recognition.engine_type if response.recognition else "unknown",
                       len(response.text or ""))
 
-        # If this is a stale result for a request we no longer track as 'busy'
-        # (e.g. multiple requests in flight), we still allow it to show in its 
-        # dedicated popup.
-        if not self._expecting_ocr_result and target_popup is None:
-            return
-
-        # Only reset the global flag if this result belongs to the *current* active popup
-        # or if we don't have a specific target (legacy/fallback).
-        _is_active_request = (target_popup is None or target_popup is self.popup)
+        # If the popup was rotated (user pinned it, then took another
+        # screenshot), this result goes to the pinned popup — not the
+        # current active one.  Only reset _expecting_ocr_result when
+        # the target is still the active popup.
+        _is_active_request = (target is self.popup)
         if _is_active_request:
             self._expecting_ocr_result = False
+        elif not self._expecting_ocr_result:
+            # Stale result for a retired popup and no request is pending.
+            return
 
-        target = target_popup or self.popup
         text = response.text
         error = response.error
         pixmap = response.pixmap
 
-        # Use-after-free guard: ``target`` was captured in start_request at
-        # request-dispatch time (``target = self.popup``). If the active popup
-        # was since retired — _detach_if_pinned retires a pinned popup and
-        # marks it WA_DeleteOnClose, after which Qt frees the C++ OcrPopup
-        # once it closes — ``target`` may now point to a Python wrapper whose
-        # underlying C++ object is gone. Any attribute access on such a
-        # wrapper raises ``RuntimeError: wrapped C/C++ object of type OcrPopup
-        # has been deleted``; a *native* call through the dangling pointer
-        # (the 0x9fa04 / mov rax,[rcx] vtable read) crashes the process
-        # instead. Probe with a lightweight attribute access before any
-        # show_text() path touches the object; on RuntimeError, log and drop
-        # the result rather than dereference freed memory.
+        # Use-after-free guard: if the popup was retired (_detach_if_pinned
+        # sets WA_DeleteOnClose) and the user closed it, the C++ QObject is
+        # gone.  Probe before touching anything.
         try:
             _ = target.isVisible()
         except RuntimeError:
             logging.warning(
                 "[OCR_CHAIN] on_ocr_finished: target popup already deleted "
-                "(use-after-free guard) — dropping result, target=%r",
-                target_popup,
+                "(use-after-free guard) — dropping result",
             )
             return
 
@@ -262,17 +261,19 @@ class OcrController:
     def start_request(self, pixmap):
         self._trim_timer.stop()
         self._expecting_ocr_result = True
+        # Store the target popup as a FIELD so on_ocr_finished can read
+        # it safely on the main thread.  Do NOT pass it through the
+        # cross-thread signal (see signal_bridge.py for rationale).
+        self._pending_target = self.popup
         logging.debug("[OCR_CHAIN] start_request")
-        debug_dir = self.user_data_dir if self.save_debug_image else None
-
-        # Capture current popup instance to ensure result is delivered correctly
-        # even if self.popup changes before the request finishes.
-        target = self.popup
 
         from PyQt6 import QtGui
         image = pixmap.toImage() if isinstance(pixmap, QtGui.QPixmap) else pixmap
         request = OcrRequest(pixmap=image, engine=OCR_ENGINE_PPOCR, debug_dir=debug_dir)
-        self.service.recognize_async(request, lambda resp: self.bridge.ocr_result.emit(resp, target))
+        self.service.recognize_async(
+            request,
+            lambda resp: self.bridge.ocr_result.emit(resp),
+        )
         logging.debug("[OCR_CHAIN] start_request dispatched")
 
     def _background_load(self):

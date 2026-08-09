@@ -137,10 +137,9 @@ class BenchmarkRunner:
     def _on_load_done(self):
         self._load_done = True
 
-    def _on_ocr_finished(self, response, target_popup=None):
-        """Record completion.  The OCR pipeline emits exactly one final
-        response per request — there are no intermediate status updates,
-        so every signal emission marks completion."""
+    def _on_ocr_finished(self, response):
+        """Record completion — the OCR pipeline emits exactly one final
+        response per request."""
         self._end_time = time.perf_counter()
         if response.recognition is not None:
             self._last_text = response.text or ""

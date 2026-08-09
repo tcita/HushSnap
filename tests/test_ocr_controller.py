@@ -107,6 +107,7 @@ def _build_controller(monkeypatch, qapp, tmp_path, service=None):
 def test_ocr_finished_copies_text_and_updates_popup(monkeypatch, qapp, tmp_path, sample_pixmap):
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
     controller._expecting_ocr_result = True
+    controller._pending_target = controller.popup
 
     shown = {}
 
@@ -124,6 +125,7 @@ def test_ocr_finished_copies_text_and_updates_popup(monkeypatch, qapp, tmp_path,
     assert qapp.clipboard().text() == "hello world"
     assert shown["text"] == "hello world"
     assert shown["pixmap"] is sample_pixmap
+    assert controller._pending_target is None  # consumed by on_ocr_finished
 
 
 def test_on_ocr_finished_clears_expecting_result(monkeypatch, qapp, tmp_path, sample_pixmap):
@@ -131,6 +133,7 @@ def test_on_ocr_finished_clears_expecting_result(monkeypatch, qapp, tmp_path, sa
     qapp.clipboard().clear()
 
     controller._expecting_ocr_result = True
+    controller._pending_target = controller.popup
     controller.on_ocr_finished(
         OcrResponse(text="test", error="", pixmap=sample_pixmap, recognition=OcrRecognition())
     )
@@ -138,11 +141,14 @@ def test_on_ocr_finished_clears_expecting_result(monkeypatch, qapp, tmp_path, sa
     assert controller._expecting_ocr_result is False
 
 
-def test_on_ocr_finished_skips_when_not_enabled(monkeypatch, qapp, tmp_path, sample_pixmap):
+def test_on_ocr_finished_skips_when_no_target(monkeypatch, qapp, tmp_path, sample_pixmap):
+    """If _pending_target is None (no start_request captured a popup),
+    on_ocr_finished must be a no-op."""
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
     qapp.clipboard().clear()
 
     controller._expecting_ocr_result = False
+    controller._pending_target = None
     controller.on_ocr_finished(
         OcrResponse(text="should not appear", error="", pixmap=sample_pixmap, recognition=OcrRecognition())
     )
