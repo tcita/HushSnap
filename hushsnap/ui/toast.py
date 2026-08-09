@@ -162,7 +162,7 @@ class OcrCopyChip(QtWidgets.QFrame):
     )
     _OFFSET_X = 12  # px right of cursor (breathing room, still reachable)
     _FADE_IN_MS = 120
-    _DURATION_MS = 3000
+    _DURATION_MS = 2000
     _FADE_OUT_MS = 300
 
     def __init__(self, full_text: str, *, label: str = "Copy text",
@@ -170,6 +170,7 @@ class OcrCopyChip(QtWidgets.QFrame):
         super().__init__(None)
         self._full_text = full_text
         self._done_label = done_label
+        self._remaining = self._DURATION_MS
         self._label: QtWidgets.QLabel | None = None
 
         prev = OcrCopyChip._active
@@ -246,8 +247,10 @@ class OcrCopyChip(QtWidgets.QFrame):
         self._dismiss_timer.timeout.connect(self._fade_out)
         self._dismiss_timer.start(self._DURATION_MS)
 
-    # ── hover ──────────────────────────────────────────────────────
+    # ── hover (pause / resume countdown) ──────────────────────────────
     def enterEvent(self, event):
+        self._dismiss_timer.stop()
+        self._remaining = max(0, self._dismiss_timer.remainingTime())
         if self._label:
             self._label.setStyleSheet(
                 "QLabel {"
@@ -262,6 +265,10 @@ class OcrCopyChip(QtWidgets.QFrame):
             )
 
     def leaveEvent(self, event):
+        # Resume with remaining time, but at least 1 s so the user
+        # isn't rushed after briefly glancing elsewhere.
+        resume_ms = max(self._remaining, 1000) if self._remaining > 0 else 1000
+        self._dismiss_timer.start(resume_ms)
         if self._label:
             self._label.setStyleSheet(
                 "QLabel {"
