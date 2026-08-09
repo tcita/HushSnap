@@ -112,14 +112,16 @@ class OcrController:
         )
 
     def _on_auto_ocr_done(self, response):
-        """Main-thread handler: copy text and show toast."""
+        """Main-thread handler: show click-to-copy toast near cursor.
+
+        The screenshot stays on the clipboard untouched; the toast offers
+        one-click copy of the recognized text when the user wants it.
+        """
         self._trim_timer.start(0)
         text = response.text or ""
         if text:
-            clipboard = self.app.clipboard()
-            if clipboard:
-                clipboard.setText(text)
-            show_toast(self.translate("pin_ocr_copied"))
+            from .ui.toast import show_ocr_copy_toast
+            show_ocr_copy_toast(text)
         else:
             show_toast(self.translate("pin_ocr_empty"), is_error=True)
 
