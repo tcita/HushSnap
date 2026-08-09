@@ -14,6 +14,7 @@ from PyQt6 import QtWidgets, QtCore
 from .capture_session import CaptureSession
 from .config import (
     get_app_id,
+    get_auto_ocr_after_capture,
     get_config_path,
     get_debug_enabled,
     get_onboarding_toast_shown,
@@ -423,6 +424,10 @@ class Application(QtCore.QObject):
                 self.logger.debug("[OCR_CHAIN] thumbnail shown")
             except Exception:
                 self.logger.exception("Failed to show thumbnail")
+
+            if get_auto_ocr_after_capture():
+                self.logger.debug("[OCR_CHAIN] auto-OCR triggered")
+                self.ocr_controller.auto_ocr_to_clipboard(captured_pixmap)
 
         self.ocr_controller.handle_capture_completed(captured_pixmap)
 

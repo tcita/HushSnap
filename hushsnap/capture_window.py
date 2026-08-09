@@ -10,7 +10,6 @@ import traceback
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
-from .config import get_copy_image_to_clipboard
 from .dpi import (
     cursor_physical_pos,
     cursor_screen,
@@ -32,10 +31,6 @@ from .ui.styles import BRAND_GREEN, BRAND_GREEN_RGB
 
 logger = get_logger(__name__)
 
-FLOAT_UP_PX = 20
-FLOAT_DURATION_MS = 600
-
-
 # ── Selection-handle / dimension-label drawing constants ─────────────────────
 _SELECTION_HANDLE_SIZE = 10
 _DIMENSION_LABEL_FONT_SIZE = 9
@@ -46,9 +41,6 @@ _DIMENSION_LABEL_BG = (0, 0, 0, 180)
 _DIMENSION_LABEL_OFFSET = 5
 
 # ── Toast / hint visual constants ────────────────────────────────────────────
-_TOAST_SHADOW_MARGIN = (12, 12, 12, 14)
-_TOAST_SHADOW_BLUR = 10
-_TOAST_SHADOW_OFFSET = (0, 2)
 _HINT_SHADOW_MARGIN = (16, 12, 16, 14)
 _HINT_SHADOW_BLUR = 16
 _HINT_SHADOW_OFFSET = (0, 3)
@@ -143,101 +135,6 @@ def claim_foreground(widget, *, primary: bool = True):
 
 
 
-
-
-class CopiedToast(QtWidgets.QWidget):
-    """A tiny, sleek floating notification that appears at the cursor position."""
-
-    def __init__(self, text: str, global_pos: QtCore.QPoint):
-        super().__init__()
-        self.setWindowFlags(
-            QtCore.Qt.WindowType.FramelessWindowHint
-            | QtCore.Qt.WindowType.WindowStaysOnTopHint
-            | QtCore.Qt.WindowType.Tool
-        )
-        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
-        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_ShowWithoutActivating)
-
-        # Main layout for the top-level CopiedToast widget (transparent wrapper)
-        outer_layout = QtWidgets.QVBoxLayout(self)
-        outer_layout.setContentsMargins(*_TOAST_SHADOW_MARGIN)
-        outer_layout.setSpacing(0)
-
-        # Container widget for actual content
-        self.container = QtWidgets.QFrame()
-        self.container.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
-        outer_layout.addWidget(self.container)
-
-        # Horizontal layout for content inside container
-        layout = QtWidgets.QHBoxLayout(self.container)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-
-        # Left accent bar (HushSnap Green)
-        accent = QtWidgets.QFrame()
-        accent.setFixedWidth(3)
-        accent.setStyleSheet(
-            f"background-color: {BRAND_GREEN};"
-            "border-top-left-radius: 6px;"
-            "border-bottom-left-radius: 6px;"
-        )
-        layout.addWidget(accent)
-
-        # Label content
-        label = QtWidgets.QLabel(text)
-        label.setStyleSheet(
-            "QLabel {"
-            "  color: #FFFFFF;"
-            "  background: rgba(26, 26, 26, 0.98);"
-            "  padding: 6px 14px;"
-            "  border-top-right-radius: 6px;"
-            "  border-bottom-right-radius: 6px;"
-            "  font-size: 12px;"
-            "  font-weight: 500;"
-            "  font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", \"Segoe UI\", sans-serif;"
-            "}"
-        )
-        layout.addWidget(label)
-        
-        self.adjustSize()
-
-        # Drop shadow on the container widget to render inside the top-level window
-        shadow = QtWidgets.QGraphicsDropShadowEffect(self.container)
-        shadow.setBlurRadius(_TOAST_SHADOW_BLUR)
-        shadow.setColor(QtGui.QColor(0, 0, 0, 100))
-        shadow.setOffset(*_TOAST_SHADOW_OFFSET)
-        self.container.setGraphicsEffect(shadow)
-
-        # Center on cursor (accounting for its own width)
-        target_pos = global_pos + QtCore.QPoint(-self.width() // 2, -self.height() // 2)
-        self.move(target_pos)
-
-        # Float upward animation
-        self._float_anim = QtCore.QPropertyAnimation(self, b"pos")
-        self._float_anim.setDuration(FLOAT_DURATION_MS)
-        self._float_anim.setStartValue(target_pos)
-        self._float_anim.setEndValue(target_pos + QtCore.QPoint(0, -FLOAT_UP_PX))
-        self._float_anim.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
-
-        # Fade out animation
-        self._fade_anim = QtCore.QPropertyAnimation(self, b"windowOpacity")
-        self._fade_anim.setDuration(FLOAT_DURATION_MS)
-        self._fade_anim.setStartValue(1.0)
-        self._fade_anim.setEndValue(0.0)
-
-        # Run both in parallel, close when done
-        self._group = QtCore.QParallelAnimationGroup(self)
-        self._group.addAnimation(self._float_anim)
-        self._group.addAnimation(self._fade_anim)
-        self._group.finished.connect(self.close)
-        self._group.start()
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        # Animation already started in __init__; ensure it runs.
-        if self._group.state() == QtCore.QAbstractAnimation.State.Stopped:
-            self._group.start()
 
 
 class ExitHintToast(QtWidgets.QWidget):
@@ -807,26 +704,22 @@ class CaptureWindow(QtWidgets.QWidget):
 
                 # Check drag threshold (click_threshold is logical px; the
                 # selection is physical, so scale by this screen's DPR).
-                copy_to_clipboard = get_copy_image_to_clipboard()
                 threshold = self.click_threshold * (self.dpr or 1.0)
                 if (global_curr - global_start).manhattanLength() <= threshold:
                     # Capture full screen under cursor
                     full = self.pixmap.copy()
                     full.setDevicePixelRatio(self.pixmap.devicePixelRatio())
-                    if copy_to_clipboard:
-                        self._set_clipboard_pixmap(full, "fullscreen")
+                    self._set_clipboard_pixmap(full, "fullscreen")
                     captured = full
                     logical_size = self.rect().size()
                 else:
                     global_rect = QtCore.QRect(global_start, global_curr).normalized()
                     captured, logical_size = self.session.crop_global_rect(global_rect)
-                    if captured is not None and copy_to_clipboard:
+                    if captured is not None:
                         self._set_clipboard_pixmap(captured, "region")
 
                 if captured is not None:
                     self._notify_captured(captured, logical_size)
-                    if copy_to_clipboard:
-                        self._show_copied_toast(QtGui.QCursor.pos())
 
                 self.session.global_start_pos = None
                 self.session.global_curr_pos = None
@@ -840,12 +733,10 @@ class CaptureWindow(QtWidgets.QWidget):
                 captured = None
                 logical_size = None
 
-                copy_to_clipboard = get_copy_image_to_clipboard()
                 if (self.curr_pos - self.start_pos).manhattanLength() <= self.click_threshold:
                     full = self.pixmap.copy()
                     full.setDevicePixelRatio(self.pixmap.devicePixelRatio())
-                    if copy_to_clipboard:
-                        self._set_clipboard_pixmap(full, "fullscreen")
+                    self._set_clipboard_pixmap(full, "fullscreen")
                     captured = full
                     logical_size = self.rect().size()
                 else:
@@ -853,15 +744,12 @@ class CaptureWindow(QtWidgets.QWidget):
                     physical = logical_to_physical_rect(rect, dpr=ratio)
                     final = self.pixmap.copy(physical)
                     final.setDevicePixelRatio(ratio)
-                    if copy_to_clipboard:
-                        self._set_clipboard_pixmap(final, "region")
+                    self._set_clipboard_pixmap(final, "region")
                     captured = final
                     logical_size = rect.size()
 
                 if captured is not None:
                     self._notify_captured(captured, logical_size)
-                    if copy_to_clipboard:
-                        self._show_copied_toast(QtGui.QCursor.pos())
 
                 self.start_pos = self.curr_pos = None
                 self.close()
@@ -870,26 +758,6 @@ class CaptureWindow(QtWidgets.QWidget):
         """Keyboard handling: Esc exits capture mode."""
         if event.key() == QtCore.Qt.Key.Key_Escape:
             self.close()
-
-    def _show_copied_toast(self, global_pos: QtCore.QPoint):
-        """Show a floating 'Copied' toast at the cursor position.
-
-        ``global_pos`` should come from ``QCursor.pos()`` rather than the
-        release event's ``globalPosition()``: on a mixed-DPR multi-monitor
-        setup the event position is in Qt's *logical* desktop coords, which
-        are discontinuous across monitors of different DPR — a release ending
-        in that dead zone yields a point on no real screen, and the toast
-        would appear in the wrong place. ``QCursor.pos()`` reads the actual
-        cursor and is anchored to a real screen.
-        """
-        try:
-            from .config import resolve_ui_lang, ui_text, get_config_path
-            lang = resolve_ui_lang(get_config_path())
-            text = ui_text(lang, "capture_copied")
-            toast = CopiedToast(text, global_pos)
-            toast.show()
-        except Exception:
-            logger.error(f"copied_toast_err | trace={traceback.format_exc().strip()}")
 
     def _show_exit_hint(self):
         """Show the non-dismissing 'right-click or Esc' hint after HINT_DELAY_MS.

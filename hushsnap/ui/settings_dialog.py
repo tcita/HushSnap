@@ -16,10 +16,8 @@ from ..config import (
     update_ui_lang_in_config,
     get_ocr_font_size,
     update_ocr_font_size,
-    get_copy_image_to_clipboard,
-    update_copy_image_to_clipboard,
-    get_auto_copy_ocr_result,
-    update_auto_copy_ocr_result,
+    get_auto_ocr_after_capture,
+    update_auto_ocr_after_capture,
     get_close_ocr_popup_on_focus_loss,
     update_close_ocr_popup_on_focus_loss,
     get_show_capture_dimension_label,
@@ -1244,16 +1242,19 @@ class SettingsDialogController(QtCore.QObject):
         combo_frame.currentIndexChanged.connect(on_thumb_frame)
         capture_layout.addWidget(card_frame)
 
-        # Auto-copy Image
-        def on_copy_img(checked):
-            update_copy_image_to_clipboard(checked, self.config_path)
-        card_copy, switch_copy = _make_startup_card(
-            self.translate("settings_copy_image_label"),
-            self.translate("settings_copy_image_subtitle"),
-            get_copy_image_to_clipboard(self.config_path),
+        # Auto OCR after capture
+        def on_auto_ocr(checked):
+            update_auto_ocr_after_capture(checked, self.config_path)
+            hint_clip.setVisible(checked)
+        card_auto_ocr, switch_auto_ocr = _make_startup_card(
+            self.translate("settings_auto_ocr_after_capture_label"),
+            self.translate("settings_auto_ocr_after_capture_subtitle"),
+            get_auto_ocr_after_capture(self.config_path),
         )
-        switch_copy.clicked.connect(on_copy_img)
-        capture_layout.addWidget(card_copy)
+        switch_auto_ocr.clicked.connect(on_auto_ocr)
+        capture_layout.addWidget(card_auto_ocr)
+
+        hint_clip = QtWidgets.QLabel(self.translate("settings_auto_ocr_clipboard_hint"))
 
         # Show Size & Position label on the capture overlay
         def on_show_dim(checked):
@@ -1267,7 +1268,13 @@ class SettingsDialogController(QtCore.QObject):
         )
         switch_dim.clicked.connect(on_show_dim)
         capture_layout.addWidget(card_dim)
-        
+        hint_clip.setStyleSheet(
+            "font-size:11px; color:#999; padding:2px 14px 0 14px;"
+            "font-family:\"Microsoft YaHei\",\"Microsoft JhengHei\",sans-serif;"
+        )
+        hint_clip.setVisible(switch_auto_ocr.isChecked())
+        capture_layout.addWidget(hint_clip)
+
         capture_layout.addStretch()
         content_stack.addWidget(capture_page)
 
@@ -1302,17 +1309,6 @@ class SettingsDialogController(QtCore.QObject):
         step.value_changed.connect(on_font_val)
         l_font.addWidget(step, 0, QtCore.Qt.AlignmentFlag.AlignVCenter)
         ocr_layout.addWidget(card_font)
-
-        # Auto-copy OCR
-        def on_copy_ocr(checked):
-            update_auto_copy_ocr_result(checked, self.config_path)
-        card_ocr_copy, switch_ocr_copy = _make_startup_card(
-            self.translate("settings_auto_copy_ocr_label"),
-            self.translate("settings_auto_copy_ocr_subtitle"),
-            get_auto_copy_ocr_result(self.config_path),
-        )
-        switch_ocr_copy.clicked.connect(on_copy_ocr)
-        ocr_layout.addWidget(card_ocr_copy)
 
         # Close OCR popup on click outside
         def on_close_on_click_outside(checked):

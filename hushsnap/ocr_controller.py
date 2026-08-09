@@ -3,7 +3,6 @@ import logging
 from PyQt6 import QtCore
 
 from .config import (
-    get_auto_copy_ocr_result,
     get_config_path,
 )
 from .constants import (
@@ -148,6 +147,37 @@ class OcrController:
 
         if on_done:
             on_done()
+
+    def auto_ocr_to_clipboard(self, pixmap):
+        """Run OCR silently and copy recognized text to clipboard.
+
+        Fire-and-forget: the result arrives as a toast ("Text copied" or
+        "No text found").  No popup, no thumbnail interaction.
+        """
+        from PyQt6 import QtGui
+        image = pixmap.toImage() if isinstance(pixmap, QtGui.QPixmap) else pixmap
+        request = OcrRequest(pixmap=image, debug_dir=None)
+
+        bridge = _ToastBridge()
+        bridge.done.connect(
+            lambda resp: self._on_auto_ocr_done(resp),
+            QtCore.Qt.ConnectionType.QueuedConnection,
+        )
+        self.service.recognize_async(request, bridge.done.emit)
+        self._toast_bridge = bridge
+
+    def _on_auto_ocr_done(self, response):
+        """Main-thread handler for auto-OCR: copy text and show toast."""
+        self._toast_bridge = None
+        self._trim_timer.start(0)
+        text = response.text or ""
+        if text:
+            clipboard = self.app.clipboard()
+            if clipboard:
+                clipboard.setText(text)
+            show_toast(self.translate("pin_ocr_copied"))
+        else:
+            show_toast(self.translate("pin_ocr_empty"), is_error=True)
 
     def schedule_ocr(self):
         # Internal/debug-only hook: arms the "auto-OCR on next capture" flag.
@@ -295,10 +325,9 @@ class OcrController:
             target.show_text(self.translate("ocr_empty_popup_hint"), pixmap=pixmap)
             return
 
-        if get_auto_copy_ocr_result(self.config_path):
-            clipboard = self.app.clipboard()
-            if clipboard:
-                clipboard.setText(recognized)
+        clipboard = self.app.clipboard()
+        if clipboard:
+            clipboard.setText(recognized)
 
         logging.debug("[OCR_CHAIN] on_ocr_finished calling show_text (result)")
         target.show_text(

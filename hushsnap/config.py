@@ -75,12 +75,11 @@ _CONFIG_DEFAULTS = {
     "hotkey": DEFAULT_HOTKEY,
     "language": UI_LANG_AUTO,
     "debug": not _is_frozen,
-    "copy_image_to_clipboard": True,
-    "auto_copy_ocr_result": True,
     "thumbnail_display_time": THUMBNAIL_DISPLAY_MS,
     "thumbnail_frame": "",
     "show_capture_dimension_label": True,
     "close_ocr_popup_on_focus_loss": True,
+    "auto_ocr_after_capture": False,
 }
 
 # Schema version of the on-disk config file. Bump on any breaking change to
@@ -616,33 +615,6 @@ def get_debug_enabled(config_path=None):
     return raw
 
 
-def get_copy_image_to_clipboard(config_path=None):
-    """Read 'copy_image_to_clipboard' from config (default True)."""
-    if config_path is None:
-        config_path = get_config_path()
-    config_data = _load_config_data(config_path)
-    raw = config_data.get("copy_image_to_clipboard", True)
-    if not isinstance(raw, bool):
-        logger.warning(
-            "Config key 'copy_image_to_clipboard' has non-boolean value %r; falling back to default True.",
-            raw,
-        )
-        return True
-    return raw
-
-
-def update_copy_image_to_clipboard(enabled, config_path=None):
-    """Update and persist 'copy_image_to_clipboard' in config."""
-    if config_path is None:
-        config_path = get_config_path()
-    config_data = _load_config_data(config_path)
-    config_data["copy_image_to_clipboard"] = bool(enabled)
-    try:
-        _write_config_data(config_path, config_data)
-    except Exception as e:
-        logger.error(f"Failed to update copy_image_to_clipboard: {e}")
-
-
 def get_show_capture_dimension_label(config_path=None):
     """Read 'show_capture_dimension_label' from config (default True).
 
@@ -675,31 +647,36 @@ def update_show_capture_dimension_label(enabled, config_path=None):
         logger.error(f"Failed to update show_capture_dimension_label: {e}")
 
 
-def get_auto_copy_ocr_result(config_path=None):
-    """Read 'auto_copy_ocr_result' from config (default True)."""
+def get_auto_ocr_after_capture(config_path=None):
+    """Read 'auto_ocr_after_capture' from config (default False).
+
+    When True, OCR runs silently after every screenshot and copies recognized
+    text to the clipboard with a toast confirmation.
+    """
     if config_path is None:
         config_path = get_config_path()
     config_data = _load_config_data(config_path)
-    raw = config_data.get("auto_copy_ocr_result", True)
+    raw = config_data.get("auto_ocr_after_capture", False)
     if not isinstance(raw, bool):
         logger.warning(
-            "Config key 'auto_copy_ocr_result' has non-boolean value %r; falling back to default True.",
+            "Config key 'auto_ocr_after_capture' has non-boolean value %r "
+            "— falling back to default False.",
             raw,
         )
-        return True
+        return False
     return raw
 
 
-def update_auto_copy_ocr_result(enabled, config_path=None):
-    """Update and persist 'auto_copy_ocr_result' in config."""
+def update_auto_ocr_after_capture(enabled, config_path=None):
+    """Update and persist 'auto_ocr_after_capture' in config."""
     if config_path is None:
         config_path = get_config_path()
     config_data = _load_config_data(config_path)
-    config_data["auto_copy_ocr_result"] = bool(enabled)
+    config_data["auto_ocr_after_capture"] = bool(enabled)
     try:
         _write_config_data(config_path, config_data)
     except Exception as e:
-        logger.error(f"Failed to update auto_copy_ocr_result: {e}")
+        logger.error(f"Failed to update auto_ocr_after_capture: {e}")
 
 
 def get_close_ocr_popup_on_focus_loss(config_path=None):

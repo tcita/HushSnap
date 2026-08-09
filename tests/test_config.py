@@ -21,8 +21,6 @@ from hushsnap.config import (
     get_close_ocr_popup_on_focus_loss,
     update_close_ocr_popup_on_focus_loss,
     get_debug_enabled,
-    get_copy_image_to_clipboard,
-    get_auto_copy_ocr_result,
     get_show_capture_dimension_label,
     get_thumbnail_display_time,
     get_ocr_engine,
@@ -213,7 +211,6 @@ def test_config_migration_adds_missing_keys(tmp_path):
     assert data["language"] == "zh"
     # Default keys injected
     assert data["debug"] is True  # dev-mode default
-    assert data["copy_image_to_clipboard"] is True
     assert data["thumbnail_display_time"] == 12000
 
 
@@ -221,13 +218,13 @@ def test_config_migration_does_not_overwrite_existing_keys(tmp_path):
     """Keys already present in config must not be overwritten by defaults."""
     config_path = tmp_path / "hushsnap_config.toml"
     config_path.write_text(
-        'hotkey = "Alt+X"\ncopy_image_to_clipboard = false\n', encoding="utf-8"
+        'hotkey = "Alt+X"\nclose_ocr_popup_on_focus_loss = false\n', encoding="utf-8"
     )
 
     _ensure_default_config_exists(config_path)
 
     data = tomllib.loads(config_path.read_text(encoding="utf-8"))
-    assert data["copy_image_to_clipboard"] is False  # user's choice
+    assert data["close_ocr_popup_on_focus_loss"] is False  # user's choice
 
 
 # ── Editor window size persistence ─────────────────────────────────────
@@ -296,20 +293,8 @@ def test_debug_enabled_bad_value_falls_back_and_logs(tmp_path, caplog):
                and r.levelno == logging.WARNING for r in caplog.records)
 
 
-def test_copy_image_to_clipboard_bad_value_falls_back(tmp_path, caplog):
-    config_path = tmp_path / "hushsnap_config.toml"
-    _write_config(config_path, 'copy_image_to_clipboard = "yes"\n')
-    with caplog.at_level(logging.WARNING, logger="hushsnap.config"):
-        assert get_copy_image_to_clipboard(config_path) is True  # default
-    assert any("copy_image_to_clipboard" in r.message for r in caplog.records)
 
 
-def test_auto_copy_ocr_result_bad_value_falls_back(tmp_path, caplog):
-    config_path = tmp_path / "hushsnap_config.toml"
-    _write_config(config_path, "auto_copy_ocr_result = 123\n")  # int, not bool
-    with caplog.at_level(logging.WARNING, logger="hushsnap.config"):
-        assert get_auto_copy_ocr_result(config_path) is True  # default
-    assert any("auto_copy_ocr_result" in r.message for r in caplog.records)
 
 
 def test_show_capture_dimension_label_bad_value_falls_back(tmp_path, caplog):
