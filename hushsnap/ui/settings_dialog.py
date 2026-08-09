@@ -1154,15 +1154,6 @@ class SettingsDialogController(QtCore.QObject):
         )
         switch_start.clicked.connect(on_startup_toggled)
         general_layout.addWidget(card_start)
-        
-        general_layout.addStretch()
-        content_stack.addWidget(general_page)
-
-        # ── Page: Capture ──────────────────────────────────────────
-        capture_page, capture_layout = create_page()
-        
-        # Section: Shortcuts & Behavior
-        capture_layout.addWidget(QtWidgets.QLabel(self.translate("settings_section_capture").upper()))
 
         # Hotkey
         def change_hotkey():
@@ -1197,7 +1188,16 @@ class SettingsDialogController(QtCore.QObject):
             self.translate("settings_change_hotkey_btn"),
         )
         btn_hot.clicked.connect(change_hotkey)
-        capture_layout.addWidget(card_hot)
+        general_layout.addWidget(card_hot)
+
+        general_layout.addStretch()
+        content_stack.addWidget(general_page)
+
+        # ── Page: Capture ──────────────────────────────────────────
+        capture_page, capture_layout = create_page()
+        
+        # Section: Shortcuts & Behavior
+        capture_layout.addWidget(QtWidgets.QLabel(self.translate("settings_section_capture").upper()))
 
         # Thumbnail Time
         def change_thumb_time(index):
@@ -1221,13 +1221,43 @@ class SettingsDialogController(QtCore.QObject):
         combo_thumb.currentIndexChanged.connect(change_thumb_time)
         capture_layout.addWidget(card_thumb)
 
+        # Auto OCR after capture
+        def on_auto_ocr(checked):
+            update_auto_ocr_after_capture(checked, self.config_path)
+            hint_clip.setVisible(checked)
+        card_auto_ocr, switch_auto_ocr = _make_startup_card(
+            self.translate("settings_auto_ocr_after_capture_label"),
+            self.translate("settings_auto_ocr_after_capture_subtitle"),
+            get_auto_ocr_after_capture(self.config_path),
+        )
+        switch_auto_ocr.clicked.connect(on_auto_ocr)
+        capture_layout.addWidget(card_auto_ocr)
+
+        hint_clip = QtWidgets.QLabel(self.translate("settings_auto_ocr_clipboard_hint"))
+        hint_clip.setStyleSheet(
+            "font-size:11px; color:#999; padding:2px 14px 0 14px;"
+            "font-family:\"Microsoft YaHei\",\"Microsoft JhengHei\",sans-serif;"
+        )
+        hint_clip.setVisible(switch_auto_ocr.isChecked())
+        capture_layout.addWidget(hint_clip)
+
+        # Show Size & Position label on the capture overlay
+        def on_show_dim(checked):
+            update_show_capture_dimension_label(checked, self.config_path)
+            if self._on_dim_label_changed is not None:
+                self._on_dim_label_changed(checked)
+        card_dim, switch_dim = _make_startup_card(
+            self.translate("settings_show_dimension_label"),
+            self.translate("settings_show_dimension_subtitle"),
+            get_show_capture_dimension_label(self.config_path),
+        )
+        switch_dim.clicked.connect(on_show_dim)
+        capture_layout.addWidget(card_dim)
+
         # Thumbnail decorative corner ornament (pick one, or none)
         def on_thumb_frame(index):
             ornament_id = combo_frame.itemData(index)
             update_thumbnail_frame(ornament_id, self.config_path)
-            # A change only affects the *next* thumbnail shown; the currently
-            # visible one was built with a fixed window size, so we can't
-            # reshape it live.  No refresh needed - next capture picks it up.
         frame_options = [
             (self.translate("settings_ornament_off"), ""),
             (self.translate("settings_ornament_vine"), "vine"),
@@ -1242,39 +1272,6 @@ class SettingsDialogController(QtCore.QObject):
         )
         combo_frame.currentIndexChanged.connect(on_thumb_frame)
         capture_layout.addWidget(card_frame)
-
-        # Auto OCR after capture
-        def on_auto_ocr(checked):
-            update_auto_ocr_after_capture(checked, self.config_path)
-            hint_clip.setVisible(checked)
-        card_auto_ocr, switch_auto_ocr = _make_startup_card(
-            self.translate("settings_auto_ocr_after_capture_label"),
-            self.translate("settings_auto_ocr_after_capture_subtitle"),
-            get_auto_ocr_after_capture(self.config_path),
-        )
-        switch_auto_ocr.clicked.connect(on_auto_ocr)
-        capture_layout.addWidget(card_auto_ocr)
-
-        hint_clip = QtWidgets.QLabel(self.translate("settings_auto_ocr_clipboard_hint"))
-
-        # Show Size & Position label on the capture overlay
-        def on_show_dim(checked):
-            update_show_capture_dimension_label(checked, self.config_path)
-            if self._on_dim_label_changed is not None:
-                self._on_dim_label_changed(checked)
-        card_dim, switch_dim = _make_startup_card(
-            self.translate("settings_show_dimension_label"),
-            self.translate("settings_show_dimension_subtitle"),
-            get_show_capture_dimension_label(self.config_path),
-        )
-        switch_dim.clicked.connect(on_show_dim)
-        capture_layout.addWidget(card_dim)
-        hint_clip.setStyleSheet(
-            "font-size:11px; color:#999; padding:2px 14px 0 14px;"
-            "font-family:\"Microsoft YaHei\",\"Microsoft JhengHei\",sans-serif;"
-        )
-        hint_clip.setVisible(switch_auto_ocr.isChecked())
-        capture_layout.addWidget(hint_clip)
 
         capture_layout.addStretch()
         content_stack.addWidget(capture_page)
