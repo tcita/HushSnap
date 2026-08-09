@@ -1234,6 +1234,7 @@ class SettingsDialogController(QtCore.QObject):
         capture_layout.addWidget(card_auto_ocr)
 
         hint_clip = QtWidgets.QLabel(self.translate("settings_auto_ocr_clipboard_hint"))
+        hint_clip.setWordWrap(True)
         hint_clip.setStyleSheet(
             "font-size:11px; color:#999; padding:2px 14px 0 14px;"
             "font-family:\"Microsoft YaHei\",\"Microsoft JhengHei\",sans-serif;"
