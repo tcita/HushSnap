@@ -265,6 +265,7 @@ class OcrController:
         from PyQt6 import QtGui
         from .signal_bridge import _OcrResultEvent
 
+        debug_dir = self.user_data_dir if self.save_debug_image else None
         image = pixmap.toImage() if isinstance(pixmap, QtGui.QPixmap) else pixmap
         request = OcrRequest(pixmap=image, engine=OCR_ENGINE_PPOCR, debug_dir=debug_dir)
         self.service.recognize_async(
