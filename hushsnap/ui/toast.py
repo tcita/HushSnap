@@ -265,10 +265,7 @@ class OcrCopyChip(QtWidgets.QFrame):
             )
 
     def leaveEvent(self, event):
-        # Resume with remaining time, but at least 1 s so the user
-        # isn't rushed after briefly glancing elsewhere.
-        resume_ms = max(self._remaining, 1000) if self._remaining > 0 else 1000
-        self._dismiss_timer.start(resume_ms)
+        self._dismiss_timer.start(self._remaining)
         if self._label:
             self._label.setStyleSheet(
                 "QLabel {"
