@@ -67,7 +67,7 @@ QFrame#headerBar {{
 HEADER_TITLE_STYLE = f"""
 QLabel#headerTitle {{
     color: {SETTINGS_HEADER_TEXT};
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 600;
     border: none;
     background: transparent;
@@ -78,7 +78,7 @@ QLabel#headerTitle {{
 HEADER_ICON_STYLE = f"""
 QLabel#headerIcon {{
     color: {SETTINGS_SUBTITLE_COLOR};
-    font-size: 16px;
+    font-size: 17px;
     border: none;
     background: transparent;
 }}
@@ -88,7 +88,7 @@ QLabel#headerIcon {{
 ROW_LABEL_STYLE = f"""
 QLabel#rowLabel {{
     color: {SETTINGS_LABEL_COLOR};
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
     border: none;
     background: transparent;
@@ -100,7 +100,7 @@ QLabel#rowLabel {{
 SUBTITLE_STYLE = f"""
 QLabel#subtitle {{
     color: {SETTINGS_SUBTITLE_COLOR};
-    font-size: 12px;
+    font-size: 13px;
     border: none;
     background: transparent;
     font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
@@ -115,7 +115,7 @@ QLabel#kbdPill {{
     background: {SETTINGS_KBD_BG};
     padding: 3px 7px;
     font-family: "Consolas", "Segoe UI", monospace;
-    font-size: 12px;
+    font-size: 13px;
     color: {SETTINGS_KBD_TEXT};
 }}
 """
@@ -124,7 +124,7 @@ QLabel#kbdPill {{
 PLUS_LABEL_STYLE = f"""
 QLabel#plusLabel {{
     color: {SETTINGS_PLUS_COLOR};
-    font-size: 12px;
+    font-size: 13px;
     font-family: "Consolas", "Segoe UI", monospace;
     border: none;
     background: transparent;
@@ -140,7 +140,7 @@ QPushButton#ghostButton {{
     border-radius: 4px;
     padding: 4px 10px;
     color: {SETTINGS_GHOST_TEXT};
-    font-size: 11px;
+    font-size: 12px;
     margin-left: 6px;
     font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
 }}
@@ -157,7 +157,7 @@ QPushButton#ghostButton:pressed {{
 STATUS_LABEL_STYLE = f"""
 QLabel#statusLabel {{
     color: {SETTINGS_LABEL_COLOR};
-    font-size: 12px;
+    font-size: 13px;
     padding: 0 4px;
     border: none;
     background: transparent;
@@ -178,7 +178,7 @@ QLineEdit {{
     border-radius: 6px;
     padding: 10px 14px;
     font-family: "Consolas", "Segoe UI", monospace;
-    font-size: 18px;
+    font-size: 19px;
     color: {SETTINGS_LABEL_COLOR};
     background: {SETTINGS_KBD_BG};
 }}
@@ -190,7 +190,7 @@ QLineEdit:focus {{
 CAPTURE_HINT_STYLE = f"""
 QLabel#captureHint {{
     color: #999;
-    font-size: 12px;
+    font-size: 13px;
     border: none;
     background: transparent;
     font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
@@ -199,7 +199,7 @@ QLabel#captureHint {{
 
 CAPTURE_FEEDBACK_STYLE = f"""
 QLabel#captureFeedback {{
-    font-size: 12px;
+    font-size: 13px;
     border: none;
     background: transparent;
     font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
@@ -213,7 +213,7 @@ QPushButton#saveButton {{
     border-radius: 5px;
     padding: 7px 20px;
     color: white;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 500;
     font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
 }}
@@ -236,7 +236,7 @@ QPushButton#cancelButton {{
     border-radius: 5px;
     padding: 7px 16px;
     color: {SETTINGS_GHOST_TEXT};
-    font-size: 12px;
+    font-size: 13px;
     font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
 }}
 QPushButton#cancelButton:hover {{
@@ -254,7 +254,7 @@ QComboBox#settingsCombo {{
     border: 0.5px solid {SETTINGS_GHOST_BORDER};
     border-radius: 6px;
     padding: 6px 12px;
-    font-size: 13px;
+    font-size: 14px;
     color: {SETTINGS_LABEL_COLOR};
     min-width: 120px;
     font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
@@ -283,14 +283,14 @@ QComboBox#settingsCombo QAbstractItemView {{
     selection-background-color: {SETTINGS_GHOST_HOVER_BG};
     selection-color: {SETTINGS_LABEL_COLOR};
     color: {SETTINGS_LABEL_COLOR};
-    font-size: 13px;
+    font-size: 14px;
     font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
 }}
 QComboBox#settingsCombo QAbstractItemView::item {{
     padding: 7px 14px;
     min-height: 30px;
     color: {SETTINGS_LABEL_COLOR};
-    font-size: 13px;
+    font-size: 14px;
     font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
 }}
 QComboBox#settingsCombo QAbstractItemView::item:hover {{
@@ -302,7 +302,7 @@ QComboBox#settingsCombo QAbstractItemView::item:hover {{
 SECTION_HEADER_STYLE = f"""
 QLabel#sectionHeader {{
     color: {SETTINGS_SUBTITLE_COLOR};
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
     padding: 10px 4px 4px 4px;
     border: none;
@@ -318,7 +318,7 @@ QMessageBox {{
 }}
 QMessageBox QLabel {{
     color: {SETTINGS_LABEL_COLOR};
-    font-size: 13px;
+    font-size: 14px;
     font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
 }}
 QMessageBox QPushButton {{
@@ -327,7 +327,7 @@ QMessageBox QPushButton {{
     border-radius: 4px;
     padding: 5px 15px;
     color: {SETTINGS_LABEL_COLOR};
-    font-size: 12px;
+    font-size: 13px;
     min-width: 60px;
     font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
 }}
@@ -346,7 +346,7 @@ QMenu {
 }
 QMenu::item {
     padding: 8px 32px 8px 16px;
-    font-size: 13px;
+    font-size: 14px;
     color: #e0e0e0;
     background-color: transparent;
     border-radius: 6px;

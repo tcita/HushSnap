@@ -134,7 +134,7 @@ class CategoryList(QtWidgets.QListWidget):
             "QListWidget::item {"
             "  padding: 10px 16px;"
             "  color: #777;"
-            "  font-size: 13px;"
+            "  font-size: 14px;"
             "  font-weight: 500;"
             "  border: none;"
             "  font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
@@ -393,7 +393,7 @@ class FontSizeStepper(QtWidgets.QWidget):
         " border: 0.5px solid #D5D5D5;"
         " border-radius: 4px;"
         " color: #555;"
-        " font-size: 13px;"
+        " font-size: 14px;"
         " font-weight: 600;"
         " min-width: 26px;"
         " max-width: 26px;"
@@ -423,7 +423,7 @@ class FontSizeStepper(QtWidgets.QWidget):
         self._label = QtWidgets.QLabel(f"{self._current} px")
         self._label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self._label.setStyleSheet(
-            "color: #333; font-size: 13px; font-weight: 500;"
+            "color: #333; font-size: 14px; font-weight: 500;"
             " border: none; background: transparent;"
             " min-width: 44px;"
             " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
@@ -723,7 +723,7 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
         
         self.status_title = QtWidgets.QLabel(self.translate("settings_hotkey_capture_waiting"))
         self.status_title.setStyleSheet(
-            f"font-size: 13px; font-weight: bold; color: {BRAND_GREEN}; "
+            f"font-size: 14px; font-weight: bold; color: {BRAND_GREEN}; "
             "font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", \"Segoe UI\", sans-serif; "
             "background: transparent; border: none;"
         )
@@ -804,7 +804,7 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
 
         placeholder = QtWidgets.QLabel(self.translate("settings_hotkey_capture_placeholder"))
         placeholder.setStyleSheet(
-            "color: #999999; font-size: 13px; font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
+            "color: #999999; font-size: 14px; font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
             "background: transparent; border: none;"
         )
         self.pills_layout.addWidget(placeholder, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
@@ -834,7 +834,7 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
             pill.setStyleSheet(
                 f"border: 1.5px solid {accent}; border-radius: 5px; background: #FFFFFF; "
                 "padding: 4px 10px; font-family: 'Consolas', 'Segoe UI', monospace; "
-                f"font-size: 13px; font-weight: bold; color: {accent};"
+                f"font-size: 14px; font-weight: bold; color: {accent};"
             )
             self.pills_layout.addWidget(pill, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
 
@@ -883,14 +883,14 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
         if state == "warning":
             self.pulse_dot.set_color(SETTINGS_WARNING_COLOR)
             self.status_title.setStyleSheet(
-                f"font-size: 13px; font-weight: bold; color: {SETTINGS_WARNING_COLOR}; "
+                f"font-size: 14px; font-weight: bold; color: {SETTINGS_WARNING_COLOR}; "
                 "font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", \"Segoe UI\", sans-serif; "
                 "background: transparent; border: none;"
             )
         else:
             self.pulse_dot.set_color(BRAND_GREEN)
             self.status_title.setStyleSheet(
-                f"font-size: 13px; font-weight: bold; color: {BRAND_GREEN}; "
+                f"font-size: 14px; font-weight: bold; color: {BRAND_GREEN}; "
                 "font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", \"Segoe UI\", sans-serif; "
                 "background: transparent; border: none;"
             )
@@ -905,7 +905,7 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
             color = "#777"
             weight = "400"
         self.feedback_label.setStyleSheet(
-            f"font-size: 12px; font-weight: {weight}; border: none;"
+            f"font-size: 13px; font-weight: {weight}; border: none;"
             f" background: transparent; color: {color};"
             " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
         )
@@ -1214,7 +1214,7 @@ class SettingsDialogController(QtCore.QObject):
         hint_clip = QtWidgets.QLabel(self.translate("settings_auto_ocr_clipboard_hint"))
         hint_clip.setWordWrap(True)
         hint_clip.setStyleSheet(
-            "font-size:11px; color:#999; padding:2px 14px 0 14px;"
+            "font-size: 12px; color:#999; padding:2px 14px 0 14px;"
             "font-family:\"Microsoft YaHei\",\"Microsoft JhengHei\",sans-serif;"
         )
         hint_clip.setVisible(switch_auto_ocr.isChecked())
@@ -1335,7 +1335,7 @@ class SettingsDialogController(QtCore.QObject):
         footer_layout.setContentsMargins(0, 0, 0, 8)
         version_label = QtWidgets.QLabel(f"HushSnap v{__version__}  ·  TCITA Studio")
         version_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        version_label.setStyleSheet("font-size: 10px; color: #BBB; border: none; background: transparent; font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;")
+        version_label.setStyleSheet("font-size: 11px; color: #BBB; border: none; background: transparent; font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;")
         footer_layout.addWidget(version_label)
         
         # Add footer to content side
