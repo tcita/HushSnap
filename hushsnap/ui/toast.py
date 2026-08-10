@@ -145,7 +145,7 @@ def show_toast(text, duration_ms=2000, is_error=False, position=None):
 class OcrCopyChip(QtWidgets.QFrame):
     """A floating action chip that rides beside the cursor.
 
-    Rounded pill with icon + label, soft drop shadow, no accent bar.
+    A high-contrast action chip with an icon badge and label.
     Click copies the full recognized text; the screenshot stays on the
     system clipboard untouched.
     """
@@ -153,9 +153,17 @@ class OcrCopyChip(QtWidgets.QFrame):
     _active: "OcrCopyChip | None" = None
 
     # ── visual constants ────────────────────────────────────────────
-    _BG = "rgba(38, 38, 42, 0.97)"       # near-opaque warm dark
-    _BG_HOVER = "rgba(55, 55, 60, 0.98)"  # subtle lift on hover
-    _FG = "#e8e8ec"
+    # Dark surface matching the app's toast / context-menu tone, with
+    # brand-green (#5FC98A) accents. A drop-shadow keeps the chip legible
+    # even when it floats over a dark screenshot region.
+    _BG = "rgba(36, 36, 36, 0.96)"
+    _BG_HOVER = "rgba(46, 46, 46, 0.98)"
+    _BG_COPIED = "rgba(50, 74, 60, 0.98)"
+    _BORDER = "#464646"
+    _BORDER_HOVER = "#5FC98A"
+    _FG = "#e0e0e0"
+    _ICON_BG = "#5FC98A"
+    _ICON_BG_HOVER = "#4AB87A"
     _FONT = (
         "font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", "
         "\"Segoe UI\", \"Noto Sans SC\", sans-serif;"
@@ -166,16 +174,20 @@ class OcrCopyChip(QtWidgets.QFrame):
     _FADE_OUT_MS = 300
 
     # ── pill-stylesheet helper ─────────────────────────────────────
-    def _pill_sheet(self, hover: bool = False) -> str:
-        bg = self._BG_HOVER if hover else self._BG
+    def _pill_sheet(self, hover: bool = False, copied: bool = False) -> str:
+        bg = self._BG_COPIED if copied else (self._BG_HOVER if hover else self._BG)
+        border = self._BORDER_HOVER if (hover or copied) else self._BORDER
         return (
+            "QWidget#ocrCopyChipSurface {"
             f"background-color: {bg};"
-            "border-radius: 8px;"
+            f"border: 1px solid {border};"
+            "border-radius: 10px;"
+            "}"
         )
 
     # ── label-stylesheet helper ────────────────────────────────────
     def _label_sheet(self, hover: bool = False, size: int = 13) -> str:
-        fg = "#ffffff" if hover else self._FG
+        fg = BRAND_GREEN if hover else self._FG
         return (
             f"color: {fg};"
             f"font-size: {size}px;"
@@ -189,6 +201,7 @@ class OcrCopyChip(QtWidgets.QFrame):
         super().__init__(None)
         self._full_text = full_text
         self._done_label = done_label
+        self._copied = False
         self._label: QtWidgets.QLabel | None = None
 
         prev = OcrCopyChip._active
@@ -211,12 +224,13 @@ class OcrCopyChip(QtWidgets.QFrame):
 
         # ── inner pill (carries background + shadow) ────────────────
         pill = QtWidgets.QWidget(self)
-        pill.setStyleSheet(f"QWidget {{ {self._pill_sheet()} }}")
+        pill.setObjectName("ocrCopyChipSurface")
+        pill.setStyleSheet(self._pill_sheet())
 
         shadow = QtWidgets.QGraphicsDropShadowEffect(pill)
-        shadow.setBlurRadius(12)
-        shadow.setOffset(0, 2)
-        shadow.setColor(QtGui.QColor(0, 0, 0, 50))
+        shadow.setBlurRadius(18)
+        shadow.setOffset(0, 4)
+        shadow.setColor(QtGui.QColor(0, 0, 0, 100))
         pill.setGraphicsEffect(shadow)
         self._pill = pill
 
@@ -226,10 +240,18 @@ class OcrCopyChip(QtWidgets.QFrame):
 
         # ── label ────────────────────────────────────────────────
         hbox = QtWidgets.QHBoxLayout(pill)
-        hbox.setContentsMargins(12, 6, 12, 6)
-        hbox.setSpacing(0)
+        hbox.setContentsMargins(7, 6, 12, 6)
+        hbox.setSpacing(7)
+
+        self._icon = QtWidgets.QLabel()
+        self._icon.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self._icon.setFixedSize(24, 24)
+        self._icon.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        hbox.addWidget(self._icon)
+        self._set_icon("copy_simple")
 
         self._label = QtWidgets.QLabel(label)
+        self._label.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self._label.setStyleSheet(self._label_sheet())
         hbox.addWidget(self._label)
         self.adjustSize()
@@ -272,16 +294,22 @@ class OcrCopyChip(QtWidgets.QFrame):
 
     # ── hover (pause / resume countdown) ──────────────────────────────
     def enterEvent(self, event):
+        if self._copied:
+            return
         self._dismiss_timer.stop()
-        self._pill.setStyleSheet(f"QWidget {{ {self._pill_sheet(hover=True)} }}")
+        self._pill.setStyleSheet(self._pill_sheet(hover=True))
         if self._label:
             self._label.setStyleSheet(self._label_sheet(hover=True))
+        self._set_icon("copy_simple", hover=True)
 
     def leaveEvent(self, event):
+        if self._copied:
+            return
         self._dismiss_timer.start(self._DURATION_MS)
-        self._pill.setStyleSheet(f"QWidget {{ {self._pill_sheet()} }}")
+        self._pill.setStyleSheet(self._pill_sheet())
         if self._label:
             self._label.setStyleSheet(self._label_sheet())
+        self._set_icon("copy_simple")
 
     # ── click → copy + flash + dismiss ─────────────────────────────
     def mouseReleaseEvent(self, event):
@@ -289,11 +317,26 @@ class OcrCopyChip(QtWidgets.QFrame):
             clipboard = QtWidgets.QApplication.clipboard()
             if clipboard:
                 clipboard.setText(self._full_text)
+            self._copied = True
             self._dismiss_timer.stop()
             if self._label:
                 self._label.setText(self._done_label)
+                self._label.setStyleSheet(self._label_sheet(hover=True))
+            self._pill.setStyleSheet(self._pill_sheet(copied=True))
+            self._set_icon("check", copied=True)
             QtCore.QTimer.singleShot(700, self._fade_out)
         return super().mouseReleaseEvent(event)
+
+    def _set_icon(self, name: str, *, hover: bool = False, copied: bool = False):
+        """Render the small, always-visible action/status badge."""
+        from .icon_utils import load_svg_icon
+
+        background = self._ICON_BG_HOVER if (hover or copied) else self._ICON_BG
+        icon = load_svg_icon(name, "#ffffff", size=14)
+        self._icon.setPixmap(icon.pixmap(14, 14))
+        self._icon.setStyleSheet(
+            f"background-color: {background}; border-radius: 12px;"
+        )
 
     # ── fade-out ───────────────────────────────────────────────────
     def _fade_out(self):
