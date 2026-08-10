@@ -1237,7 +1237,6 @@ class SettingsDialogController(QtCore.QObject):
             thumbnail_manager.refresh_current()
 
         thumb_options = [
-            (self.translate("settings_thumbnail_time_3s"), 3000),
             (self.translate("settings_thumbnail_time_5s"), 5000),
             (self.translate("settings_thumbnail_time_12s"), 12000),
             (self.translate("settings_thumbnail_time_30s"), 30000),

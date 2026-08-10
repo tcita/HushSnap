@@ -48,8 +48,6 @@ def _translate(key, **kwargs):
         "ocr_update_btn": "Update",
         "ocr_cancel_btn": "Cancel",
         "back_to_image_btn": "Back to Image",
-        "ocr_copy_chip_label": "Copy text",
-        "ocr_copy_chip_copied": "Copied",
     }
     return table[key].format(**kwargs)
 
@@ -444,11 +442,6 @@ def test_on_auto_ocr_done_caches_success(monkeypatch, qapp, tmp_path, sample_pix
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
     controller._auto_ocr_in_flight = True
 
-    monkeypatch.setattr(
-        "hushsnap.ui.toast.show_ocr_copy_toast",
-        lambda *a, **kw: None,
-    )
-
     response = OcrResponse(
         text="hello", error="", pixmap=sample_pixmap, recognition=OcrRecognition(),
     )
@@ -462,11 +455,6 @@ def test_on_auto_ocr_done_does_not_cache_empty(monkeypatch, qapp, tmp_path):
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
     controller._auto_ocr_in_flight = True
 
-    monkeypatch.setattr(
-        "hushsnap.ui.toast.show_ocr_copy_toast",
-        lambda *a, **kw: None,
-    )
-
     controller._on_auto_ocr_done(
         OcrResponse(text="", error="", pixmap=None, recognition=OcrRecognition()),
     )
@@ -478,11 +466,6 @@ def test_on_auto_ocr_done_does_not_cache_empty(monkeypatch, qapp, tmp_path):
 def test_on_auto_ocr_done_does_not_cache_error(monkeypatch, qapp, tmp_path):
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
     controller._auto_ocr_in_flight = True
-
-    monkeypatch.setattr(
-        "hushsnap.ui.toast.show_ocr_copy_toast",
-        lambda *a, **kw: None,
-    )
 
     controller._on_auto_ocr_done(
         OcrResponse(text="some text", error="OCR failed", pixmap=None, recognition=OcrRecognition()),
@@ -563,10 +546,6 @@ def test_on_auto_ocr_done_delivers_to_pending_popup(monkeypatch, qapp, tmp_path,
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
     monkeypatch.setattr(
         "hushsnap.ocr_controller.get_auto_ocr_after_capture", lambda: True,
-    )
-    monkeypatch.setattr(
-        "hushsnap.ui.toast.show_ocr_copy_toast",
-        lambda *a, **kw: None,
     )
 
     controller._auto_ocr_in_flight = True

@@ -139,14 +139,11 @@ class OcrController:
         if text and not response.error:
             self._auto_ocr_cache = response
 
-        # ── toast + clipboard (always — do not interfere with auto-OCR behaviour) ──
+        # ── clipboard (always) ──
+        # Auto OCR overwrites the screenshot in the clipboard with recognised
+        # text.  The chip was removed — it was redundant (clipboard already
+        # holds the text) and the settings subtitle explains the trade-off.
         if text:
-            from .ui.toast import show_ocr_copy_toast
-            show_ocr_copy_toast(
-                text,
-                label=self.translate("ocr_copy_chip_label"),
-                done_label=self.translate("ocr_copy_chip_copied"),
-            )
             clipboard = self.app.clipboard()
             if clipboard:
                 clipboard.setText(text)
