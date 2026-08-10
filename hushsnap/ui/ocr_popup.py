@@ -112,6 +112,10 @@ class OcrPopup(QtWidgets.QWidget):
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, False)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_Hover, True)
+        # Appear without stealing activation — the copy chip (also top-most)
+        # stays above instead of being buried by the newly-activated popup.
+        # The user can still click the popup to activate and edit text.
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setMouseTracking(True)
 
         self._app_icon = QtGui.QIcon(str(get_resource_dir() / APP_ICON_FILENAME))
@@ -201,8 +205,10 @@ class OcrPopup(QtWidgets.QWidget):
         # This guarantees perfect whitespace preservation and native scrolling.
         self.text_edit = QtWidgets.QPlainTextEdit()
         self.text_edit.setObjectName("ocrText")
-        # Don't force IBeamCursor — let the parent's edge-detection
-        # show resize cursors at window borders.
+        # Only accept focus on explicit click — no auto-focus, no misleading
+        # blinking cursor when the popup first appears.  The popup itself is
+        # WA_ShowWithoutActivating so it does not steal OS-level activation.
+        self.text_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
         self.text_edit.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Expanding,
             QtWidgets.QSizePolicy.Policy.Expanding,
@@ -443,7 +449,6 @@ class OcrPopup(QtWidgets.QWidget):
         self._refresh_labels()
         self.show()
         self.raise_()
-        self.activateWindow()
 
     def show_text(self, text, pixmap=None, lines=None):
         logging.debug("[OCR_CHAIN] show_text entered, text_len=%d", len(text or ""))
@@ -473,7 +478,6 @@ class OcrPopup(QtWidgets.QWidget):
         self._update_button_positions()
         self.show()
         self.raise_()
-        self.activateWindow()
         logging.info("[OCR_CHAIN] show_text done, visible=%s", self.isVisible())
 
     def set_intended_geom(self, geom):

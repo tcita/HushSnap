@@ -18,6 +18,7 @@ SWP_NOSIZE = 0x0001       # Keep current size
 SWP_NOMOVE = 0x0002       # Keep current position
 SWP_FRAMECHANGED = 0x0020 # Send frame-changed message
 SWP_SHOWWINDOW = 0x0040   # Show window
+SWP_NOACTIVATE = 0x0010  # Don't activate / change foreground
 SW_SHOW = 5               # Activate and show window
 
 def get_hwnd_value(hwnd):
@@ -111,3 +112,33 @@ def get_window_snapshot(hwnd):
         f"title={buf_title.value.replace('\n', ' ').strip()!r},"
         f"visible={visible},topmost={topmost},style=0x{style:08X},ex=0x{ex_style:08X},rect={rect_text}"
     )
+
+
+def force_raise_topmost(widget) -> bool:
+    """Re-insert *widget* at the top of the top-most z-order band.
+
+    Qt's ``raise_()`` for ``WindowStaysOnTopHint`` windows internally
+    does the same ``SetWindowPos(HWND_TOPMOST, SWP_NOACTIVATE)``, so
+    this helper is functionally equivalent.  It exists as an explicit,
+    self-documenting alternative when the intent is "force to top of
+    the top-most band without activating."
+
+    Returns True if the call succeeded, False otherwise.
+    """
+    import sys
+    if sys.platform != "win32":
+        return False
+    try:
+        hwnd = get_hwnd_value(widget.winId()) if widget.winId() else None
+        if not hwnd:
+            return False
+        ctypes.windll.user32.SetWindowPos(
+            wintypes.HWND(hwnd),
+            wintypes.HWND(HWND_TOPMOST),
+            0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        )
+        return True
+    except Exception:
+        logger.debug("force_raise_topmost: SetWindowPos failed", exc_info=True)
+        return False
