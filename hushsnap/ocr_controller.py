@@ -14,7 +14,6 @@ from .signal_bridge import SignalBridge, _LoadFinishedEvent
 from .system.memory_utils import get_working_set_mb, fmt_memory
 from .ui.ocr_popup import OcrPopup
 from .ui.thumbnail import thumbnail_manager
-from .ui.toast import show_toast
 
 
 class OcrController:
@@ -126,8 +125,6 @@ class OcrController:
                 label=self.translate("ocr_copy_chip_label"),
                 done_label=self.translate("ocr_copy_chip_copied"),
             )
-        else:
-            show_toast(self.translate("pin_ocr_empty"), is_error=True)
 
     def _trim_current_engine(self):
         if self._expecting_ocr_result:

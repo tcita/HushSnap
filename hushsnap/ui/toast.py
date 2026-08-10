@@ -143,27 +143,46 @@ def show_toast(text, duration_ms=2000, is_error=False, position=None):
 
 
 class OcrCopyChip(QtWidgets.QFrame):
-    """A tiny floating action chip that rides beside the cursor.
+    """A floating action chip that rides beside the cursor.
 
-    Dark pill-shaped button, no shadow, no accent bar — designed to read as
-    clickable rather than as a passive notification.  Click copies the full
-    recognized text; the screenshot stays on the system clipboard untouched.
+    Rounded pill with icon + label, soft drop shadow, no accent bar.
+    Click copies the full recognized text; the screenshot stays on the
+    system clipboard untouched.
     """
 
     _active: "OcrCopyChip | None" = None
 
     # ── visual constants ────────────────────────────────────────────
-    _BG = "rgba(38, 38, 42, 0.94)"       # warm dark, not pure black
-    _BG_HOVER = "rgba(55, 55, 60, 0.96)"  # subtle lift on hover
+    _BG = "rgba(38, 38, 42, 0.97)"       # near-opaque warm dark
+    _BG_HOVER = "rgba(55, 55, 60, 0.98)"  # subtle lift on hover
     _FG = "#e8e8ec"
     _FONT = (
         "font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", "
         "\"Segoe UI\", \"Noto Sans SC\", sans-serif;"
     )
-    _OFFSET_X = 12  # px right of cursor (breathing room, still reachable)
+    _OFFSET_X = 12  # px right of cursor
     _FADE_IN_MS = 120
-    _DURATION_MS = 2000
+    _DURATION_MS = 3500
     _FADE_OUT_MS = 300
+
+    # ── pill-stylesheet helper ─────────────────────────────────────
+    def _pill_sheet(self, hover: bool = False) -> str:
+        bg = self._BG_HOVER if hover else self._BG
+        return (
+            f"background-color: {bg};"
+            "border-radius: 8px;"
+        )
+
+    # ── label-stylesheet helper ────────────────────────────────────
+    def _label_sheet(self, hover: bool = False, size: int = 13) -> str:
+        fg = "#ffffff" if hover else self._FG
+        return (
+            f"color: {fg};"
+            f"font-size: {size}px;"
+            "font-weight: 500;"
+            "background: transparent;"
+            f"{self._FONT}"
+        )
 
     def __init__(self, full_text: str, *, label: str = "Copy text",
                  done_label: str = "Copied"):
@@ -189,24 +208,28 @@ class OcrCopyChip(QtWidgets.QFrame):
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
 
-        # ── pill label ──────────────────────────────────────────────
-        hbox = QtWidgets.QHBoxLayout(self)
-        hbox.setContentsMargins(0, 0, 0, 0)
+        # ── inner pill (carries background + shadow) ────────────────
+        pill = QtWidgets.QWidget(self)
+        pill.setStyleSheet(f"QWidget {{ {self._pill_sheet()} }}")
+
+        shadow = QtWidgets.QGraphicsDropShadowEffect(pill)
+        shadow.setBlurRadius(12)
+        shadow.setOffset(0, 2)
+        shadow.setColor(QtGui.QColor(0, 0, 0, 50))
+        pill.setGraphicsEffect(shadow)
+        self._pill = pill
+
+        outer = QtWidgets.QHBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(pill)
+
+        # ── label ────────────────────────────────────────────────
+        hbox = QtWidgets.QHBoxLayout(pill)
+        hbox.setContentsMargins(12, 6, 12, 6)
         hbox.setSpacing(0)
 
         self._label = QtWidgets.QLabel(label)
-        self._label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        self._label.setStyleSheet(
-            "QLabel {"
-            f"  background-color: {self._BG};"
-            f"  color: {self._FG};"
-            "  border-radius: 10px;"
-            "  padding: 4px 12px;"
-            "  font-size: 12px;"
-            "  font-weight: 500;"
-            f"  {self._FONT}"
-            "}"
-        )
+        self._label.setStyleSheet(self._label_sheet())
         hbox.addWidget(self._label)
         self.adjustSize()
 
@@ -237,7 +260,7 @@ class OcrCopyChip(QtWidgets.QFrame):
         self._fade_in.setDuration(self._FADE_IN_MS)
         self._fade_in.setStartValue(0.0)
         self._fade_in.setEndValue(1.0)
-        self._fade_in.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
+        self._fade_in.setEasingCurve(QtCore.QEasingCurve.Type.OutBack)
         self._fade_in.start()
 
         # ── auto-dismiss ────────────────────────────────────────────
@@ -249,33 +272,15 @@ class OcrCopyChip(QtWidgets.QFrame):
     # ── hover (pause / resume countdown) ──────────────────────────────
     def enterEvent(self, event):
         self._dismiss_timer.stop()
+        self._pill.setStyleSheet(f"QWidget {{ {self._pill_sheet(hover=True)} }}")
         if self._label:
-            self._label.setStyleSheet(
-                "QLabel {"
-                f"  background-color: {self._BG_HOVER};"
-                f"  color: #ffffff;"
-                "  border-radius: 10px;"
-                "  padding: 4px 12px;"
-                "  font-size: 12px;"
-                "  font-weight: 500;"
-                f"  {self._FONT}"
-                "}"
-            )
+            self._label.setStyleSheet(self._label_sheet(hover=True))
 
     def leaveEvent(self, event):
         self._dismiss_timer.start(self._DURATION_MS)
+        self._pill.setStyleSheet(f"QWidget {{ {self._pill_sheet()} }}")
         if self._label:
-            self._label.setStyleSheet(
-                "QLabel {"
-                f"  background-color: {self._BG};"
-                f"  color: {self._FG};"
-                "  border-radius: 10px;"
-                "  padding: 4px 12px;"
-                "  font-size: 12px;"
-                "  font-weight: 500;"
-                f"  {self._FONT}"
-                "}"
-            )
+            self._label.setStyleSheet(self._label_sheet())
 
     # ── click → copy + flash + dismiss ─────────────────────────────
     def mouseReleaseEvent(self, event):

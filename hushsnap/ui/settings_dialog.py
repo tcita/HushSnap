@@ -504,6 +504,7 @@ def _make_startup_card(label_text, subtitle_text, initial_state):
     subtitle = QtWidgets.QLabel(subtitle_text)
     subtitle.setObjectName("subtitle")
     subtitle.setStyleSheet(SUBTITLE_STYLE)
+    subtitle.setWordWrap(True)
     card_layout.addWidget(subtitle)
 
     return card, switch
@@ -548,6 +549,7 @@ def _make_setting_card(label_text, subtitle_text, hotkey_text, button_text):
     subtitle = QtWidgets.QLabel(subtitle_text)
     subtitle.setObjectName("subtitle")
     subtitle.setStyleSheet(SUBTITLE_STYLE)
+    subtitle.setWordWrap(True)
     card_layout.addWidget(subtitle)
 
     return card, pills_container, pills, btn
@@ -612,6 +614,7 @@ def _make_language_card(label_text, subtitle_text, current_lang, languages_optio
     subtitle = QtWidgets.QLabel(subtitle_text)
     subtitle.setObjectName("subtitle")
     subtitle.setStyleSheet(SUBTITLE_STYLE)
+    subtitle.setWordWrap(True)
     card_layout.addWidget(subtitle)
 
     return card, combo
@@ -1089,6 +1092,25 @@ class SettingsDialogController(QtCore.QObject):
                 "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {"
                 " background: transparent;"
                 "}"
+                "QScrollBar:horizontal {"
+                " background: transparent;"
+                " height: 8px;"
+                " margin: 0px 4px 0px 4px;"
+                "}"
+                "QScrollBar::handle:horizontal {"
+                " background: #C8C8C8;"
+                " min-width: 30px;"
+                " border-radius: 4px;"
+                "}"
+                "QScrollBar::handle:horizontal:hover {"
+                f" background: {BRAND_GREEN};"
+                "}"
+                "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {"
+                " width: 0px;"
+                "}"
+                "QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {"
+                " background: transparent;"
+                "}"
             )
             
             container = QtWidgets.QWidget()
@@ -1202,7 +1224,6 @@ class SettingsDialogController(QtCore.QObject):
         # Auto OCR after capture
         def on_auto_ocr(checked):
             update_auto_ocr_after_capture(checked, self.config_path)
-            hint_clip.setVisible(checked)
         card_auto_ocr, switch_auto_ocr = _make_startup_card(
             self.translate("settings_auto_ocr_after_capture_label"),
             self.translate("settings_auto_ocr_after_capture_subtitle"),
@@ -1210,15 +1231,6 @@ class SettingsDialogController(QtCore.QObject):
         )
         switch_auto_ocr.clicked.connect(on_auto_ocr)
         capture_layout.addWidget(card_auto_ocr)
-
-        hint_clip = QtWidgets.QLabel(self.translate("settings_auto_ocr_clipboard_hint"))
-        hint_clip.setWordWrap(True)
-        hint_clip.setStyleSheet(
-            "font-size: 12px; color:#999; padding:2px 14px 0 14px;"
-            "font-family:\"Microsoft YaHei\",\"Microsoft JhengHei\",sans-serif;"
-        )
-        hint_clip.setVisible(switch_auto_ocr.isChecked())
-        capture_layout.addWidget(hint_clip)
 
         # Thumbnail Time
         def change_thumb_time(index):
@@ -1301,6 +1313,7 @@ class SettingsDialogController(QtCore.QObject):
         sub_font = QtWidgets.QLabel(self.translate("settings_ocr_font_size_subtitle"))
         sub_font.setObjectName("subtitle")
         sub_font.setStyleSheet(SUBTITLE_STYLE)
+        sub_font.setWordWrap(True)
         v_font.addWidget(sub_font)
         l_font.addLayout(v_font)
         l_font.addStretch()
