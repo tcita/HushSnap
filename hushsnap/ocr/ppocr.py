@@ -1579,8 +1579,9 @@ def recognize_ppocr_qimage(image_or_result, language_tag: str = "") -> OcrRecogn
         #
         # _trim_working_set() is deliberately NOT called here — trimming
         # while OCR is still active would thrash (swap out model pages
-        # only to fault them back on the next call).  Trim fires 30 s
-        # after the last OCR request completes (OcrController._trim_timer).
+        # only to fault them back on the next call).  Trim fires once the
+        # event loop is idle after the last OCR result is delivered
+        # (OcrController._trim_timer, 0 ms single-shot).
         import gc
         del result, json_data, arr, bgr_image
         gc.collect()

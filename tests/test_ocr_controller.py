@@ -48,6 +48,8 @@ def _translate(key, **kwargs):
         "ocr_update_btn": "Update",
         "ocr_cancel_btn": "Cancel",
         "back_to_image_btn": "Back to Image",
+        "ocr_copy_chip_label": "Copy text",
+        "ocr_copy_chip_copied": "Copied",
     }
     return table[key].format(**kwargs)
 
@@ -407,5 +409,232 @@ def test_concurrency_correct_popup_updated(monkeypatch, qapp, tmp_path, sample_p
     callback1(OcrResponse(text="Result 1", error="", pixmap=sample_pixmap, recognition=OcrRecognition()))
     qapp.processEvents()
     assert "p1" not in results  # still not delivered — dropped correctly
+
+
+# ── Auto-OCR cache / reuse tests ──────────────────────────────────────
+
+def test_clear_auto_ocr_cache(monkeypatch, qapp, tmp_path):
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+
+    controller._auto_ocr_cache = OcrResponse(
+        text="cached", error="", pixmap=None, recognition=OcrRecognition(),
+    )
+    controller._auto_ocr_in_flight = True
+    controller._pending_popup_pixmap = "stale"
+
+    controller._clear_auto_ocr_cache()
+
+    assert controller._auto_ocr_cache is None
+    assert controller._auto_ocr_in_flight is False
+    assert controller._pending_popup_pixmap is None
+
+
+def test_auto_ocr_to_clipboard_sets_in_flight(monkeypatch, qapp, tmp_path, sample_pixmap):
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+    assert controller._auto_ocr_in_flight is False
+
+    controller.auto_ocr_to_clipboard(sample_pixmap)
+
+    assert controller._auto_ocr_in_flight is True
+
+
+def test_on_auto_ocr_done_caches_success(monkeypatch, qapp, tmp_path, sample_pixmap):
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+    controller._auto_ocr_in_flight = True
+
+    monkeypatch.setattr(
+        "hushsnap.ui.toast.show_ocr_copy_toast",
+        lambda *a, **kw: None,
+    )
+
+    response = OcrResponse(
+        text="hello", error="", pixmap=sample_pixmap, recognition=OcrRecognition(),
+    )
+    controller._on_auto_ocr_done(response)
+
+    assert controller._auto_ocr_in_flight is False
+    assert controller._auto_ocr_cache is response
+
+
+def test_on_auto_ocr_done_does_not_cache_empty(monkeypatch, qapp, tmp_path):
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+    controller._auto_ocr_in_flight = True
+
+    monkeypatch.setattr(
+        "hushsnap.ui.toast.show_ocr_copy_toast",
+        lambda *a, **kw: None,
+    )
+
+    controller._on_auto_ocr_done(
+        OcrResponse(text="", error="", pixmap=None, recognition=OcrRecognition()),
+    )
+
+    assert controller._auto_ocr_in_flight is False
+    assert controller._auto_ocr_cache is None
+
+
+def test_on_auto_ocr_done_does_not_cache_error(monkeypatch, qapp, tmp_path):
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+    controller._auto_ocr_in_flight = True
+
+    monkeypatch.setattr(
+        "hushsnap.ui.toast.show_ocr_copy_toast",
+        lambda *a, **kw: None,
+    )
+
+    controller._on_auto_ocr_done(
+        OcrResponse(text="some text", error="OCR failed", pixmap=None, recognition=OcrRecognition()),
+    )
+
+    assert controller._auto_ocr_in_flight is False
+    assert controller._auto_ocr_cache is None
+
+
+def test_start_request_cache_hit_skips_recognize_async(monkeypatch, qapp, tmp_path, sample_pixmap):
+    service = FakeService()
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path, service=service)
+    monkeypatch.setattr(
+        "hushsnap.ocr_controller.get_auto_ocr_after_capture", lambda: True,
+    )
+
+    controller._auto_ocr_cache = OcrResponse(
+        text="cached result", error="", pixmap=sample_pixmap, recognition=OcrRecognition(),
+    )
+
+    controller.start_request(sample_pixmap)
+
+    # Must NOT have called recognize_async — cache hit should short-circuit.
+    assert len(service.requests) == 0
+    # Cache consumed.
+    assert controller._auto_ocr_cache is None
+
+
+def test_start_request_in_flight_wait_stashes_pixmap(monkeypatch, qapp, tmp_path, sample_pixmap):
+    service = FakeService()
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path, service=service)
+    monkeypatch.setattr(
+        "hushsnap.ocr_controller.get_auto_ocr_after_capture", lambda: True,
+    )
+
+    controller._auto_ocr_in_flight = True
+    assert controller._pending_popup_pixmap is None
+
+    controller.start_request(sample_pixmap)
+
+    # Must NOT have called recognize_async.
+    assert len(service.requests) == 0
+    # Pixmap stashed so _on_auto_ocr_done can deliver.
+    assert controller._pending_popup_pixmap is sample_pixmap
+
+
+def test_start_request_normal_when_auto_ocr_disabled(monkeypatch, qapp, tmp_path, sample_pixmap):
+    service = FakeService()
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path, service=service)
+    monkeypatch.setattr(
+        "hushsnap.ocr_controller.get_auto_ocr_after_capture", lambda: False,
+    )
+
+    controller.start_request(sample_pixmap)
+
+    assert len(service.requests) == 1
+
+
+def test_start_request_normal_when_cache_empty_and_not_in_flight(monkeypatch, qapp, tmp_path, sample_pixmap):
+    service = FakeService()
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path, service=service)
+    monkeypatch.setattr(
+        "hushsnap.ocr_controller.get_auto_ocr_after_capture", lambda: True,
+    )
+    # No cache, not in flight → should fall through to normal OCR.
+    assert controller._auto_ocr_cache is None
+    assert controller._auto_ocr_in_flight is False
+
+    controller.start_request(sample_pixmap)
+
+    assert len(service.requests) == 1
+
+
+def test_on_auto_ocr_done_delivers_to_pending_popup(monkeypatch, qapp, tmp_path, sample_pixmap):
+    """When a start_request waited for in-flight auto-OCR, _on_auto_ocr_done
+    must redirect the result to the popup via the cache-hit path in
+    start_request."""
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+    monkeypatch.setattr(
+        "hushsnap.ocr_controller.get_auto_ocr_after_capture", lambda: True,
+    )
+    monkeypatch.setattr(
+        "hushsnap.ui.toast.show_ocr_copy_toast",
+        lambda *a, **kw: None,
+    )
+
+    controller._auto_ocr_in_flight = True
+    controller._pending_popup_pixmap = sample_pixmap
+
+    response = OcrResponse(
+        text="auto result", error="", pixmap=sample_pixmap, recognition=OcrRecognition(),
+    )
+
+    # Capture what start_request does by watching the bridge.
+    events_received = []
+    controller.bridge.ocr_result.connect(lambda resp: events_received.append(resp))
+
+    controller._on_auto_ocr_done(response)
+
+    # In-flight flag cleared.
+    assert controller._auto_ocr_in_flight is False
+    # Cache was set then consumed by inner start_request (cache-hit clears it).
+    assert controller._auto_ocr_cache is None
+    # Pending pixmap consumed.
+    assert controller._pending_popup_pixmap is None
+
+    # start_request was called, hit the cache, and posted an OcrResultEvent.
+    qapp.processEvents()
+    assert len(events_received) == 1
+    assert events_received[0] is response
+
+
+def test_start_request_cache_hit_has_priority_over_in_flight(monkeypatch, qapp, tmp_path, sample_pixmap):
+    """Cache hit is checked before in-flight — if both were somehow true,
+    cache wins."""
+    service = FakeService()
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path, service=service)
+    monkeypatch.setattr(
+        "hushsnap.ocr_controller.get_auto_ocr_after_capture", lambda: True,
+    )
+
+    cached = OcrResponse(
+        text="cached", error="", pixmap=sample_pixmap, recognition=OcrRecognition(),
+    )
+    controller._auto_ocr_cache = cached
+    controller._auto_ocr_in_flight = True  # stale — cache was set by prior auto-OCR
+    controller._pending_popup_pixmap = None
+
+    controller.start_request(sample_pixmap)
+
+    # Cache hit path: recognize_async NOT called, cache consumed.
+    assert len(service.requests) == 0
+    assert controller._auto_ocr_cache is None
+
+
+def test_pending_popup_overwritten_by_second_click(monkeypatch, qapp, tmp_path, sample_pixmap):
+    """A second thumbnail click while waiting for auto-OCR overwrites the
+    stashed pixmap — only the last clicker gets the result."""
+    service = FakeService()
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path, service=service)
+    monkeypatch.setattr(
+        "hushsnap.ocr_controller.get_auto_ocr_after_capture", lambda: True,
+    )
+    controller._auto_ocr_in_flight = True
+
+    pixmap2 = QtGui.QPixmap(64, 64)
+    pixmap2.fill(QtCore.Qt.GlobalColor.black)
+
+    controller.start_request(sample_pixmap)
+    assert controller._pending_popup_pixmap is sample_pixmap
+
+    controller.start_request(pixmap2)
+    # Overwritten.
+    assert controller._pending_popup_pixmap is pixmap2
+    assert len(service.requests) == 0
 
 

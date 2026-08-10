@@ -425,10 +425,10 @@ class Application(QtCore.QObject):
             if center is not None:
                 self.ocr_controller.set_popup_anchor(*center)
 
-        # OcrService.recognize_async has built-in seq-overwrite semantics:
-        # a later request supersedes any in-flight one, so clicking the
-        # thumbnail while auto-OCR is running is safe — start_request
-        # wins, the auto-OCR callback is silently dropped.
+        # start_request now reuses in-flight/cached auto-OCR results when
+        # auto-OCR-after-capture is enabled, so the thumbnail click avoids
+        # dispatching a second OCR.  The OcrService seq-overwrite is still
+        # the backstop for cross-capture staleness.
         from PyQt6 import QtGui
         if pil_img.mode != "RGBA":
             pil_img = pil_img.convert("RGBA")

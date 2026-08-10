@@ -3,6 +3,7 @@ import logging
 from PyQt6 import QtCore
 
 from .config import (
+    get_auto_ocr_after_capture,
     get_config_path,
 )
 from .constants import (
@@ -44,6 +45,9 @@ class OcrController:
         self._pinned_popups = []
 
         self._current_engine = OCR_ENGINE_PPOCR
+        self._auto_ocr_cache = None  # OcrResponse from last completed auto-OCR, or None
+        self._auto_ocr_in_flight = False  # True while an auto-OCR request is in the air
+        self._pending_popup_pixmap = None  # pixmap stashed when start_request waits for auto-OCR
 
         self.bridge.ocr_result.connect(self.on_ocr_finished)
         self.bridge.auto_ocr_done.connect(self._on_auto_ocr_done)
@@ -88,6 +92,13 @@ class OcrController:
         self._detach_if_pinned()
         self.popup.set_anchor_pos(x, y, width, height)
 
+    def _clear_auto_ocr_cache(self):
+        """Discard any cached auto-OCR result — called on every new capture
+        so a thumbnail click never reuses text from a previous screenshot."""
+        self._auto_ocr_cache = None
+        self._auto_ocr_in_flight = False
+        self._pending_popup_pixmap = None  # stale wait on replaced thumbnail
+
     def auto_ocr_to_clipboard(self, pixmap):
         """Run OCR silently and copy recognized text to clipboard.
 
@@ -103,6 +114,7 @@ class OcrController:
         image = pixmap.toImage() if isinstance(pixmap, QtGui.QPixmap) else pixmap
         request = OcrRequest(pixmap=image, debug_dir=None)
 
+        self._auto_ocr_in_flight = True
         self.service.recognize_async(
             request,
             lambda resp: QtCore.QCoreApplication.postEvent(
@@ -111,13 +123,23 @@ class OcrController:
         )
 
     def _on_auto_ocr_done(self, response):
-        """Main-thread handler: show click-to-copy toast near cursor.
+        """Main-thread handler: deliver auto-OCR result.
 
-        The screenshot stays on the clipboard untouched; the toast offers
-        one-click copy of the recognized text when the user wants it.
+        Always shows the copy-chip toast — auto-OCR behaviour is unchanged.
+        If a thumbnail click is waiting (start_request stashed a pixmap),
+        the result is also routed to the popup so the user sees the text
+        without a second OCR run.
         """
         self._trim_timer.start(0)
+        self._auto_ocr_in_flight = False
+
         text = response.text or ""
+
+        # Cache successful results so a later thumbnail click can reuse them.
+        if text and not response.error:
+            self._auto_ocr_cache = response
+
+        # ── toast (always — do not interfere with auto-OCR behaviour) ──
         if text:
             from .ui.toast import show_ocr_copy_toast
             show_ocr_copy_toast(
@@ -125,6 +147,14 @@ class OcrController:
                 label=self.translate("ocr_copy_chip_label"),
                 done_label=self.translate("ocr_copy_chip_copied"),
             )
+
+        # ── popup redirect: a thumbnail click happened while we were busy ──
+        # Route through start_request so every popup appearance shares the
+        # same cache-hit path — _auto_ocr_cache is already populated above.
+        pending = self._pending_popup_pixmap
+        self._pending_popup_pixmap = None
+        if pending is not None:
+            self.start_request(pending)
 
     def _trim_current_engine(self):
         if self._expecting_ocr_result:
@@ -246,6 +276,16 @@ class OcrController:
             if clipboard:
                 clipboard.setText(recognized)
 
+            # Show the copy chip near the cursor so it's always visible
+            # when the popup appears — regardless of whether this result
+            # came from a fresh OCR, the cache, or superseded auto-OCR.
+            from .ui.toast import show_ocr_copy_toast
+            show_ocr_copy_toast(
+                recognized,
+                label=self.translate("ocr_copy_chip_label"),
+                done_label=self.translate("ocr_copy_chip_copied"),
+            )
+
             logging.debug("[OCR_CHAIN] on_ocr_finished calling show_text (result)")
             target.show_text(
                 recognized,
@@ -258,15 +298,45 @@ class OcrController:
         # the thumbnail closes before the popup appears).
         if _is_active_request:
             thumbnail_manager.dismiss_current()
+
+        # Re-raise the copy chip so it sits above the popup — both windows
+        # are top-most, but the popup was shown more recently and wins the
+        # z-order contest unless we explicitly pull the chip back to the top.
+        from .ui.toast import OcrCopyChip
+        _chip = OcrCopyChip._active
+        if _chip is not None:
+            try:
+                _chip.raise_()
+            except RuntimeError:
+                pass
         
     def start_request(self, pixmap):
         self._trim_timer.stop()
         self._expecting_ocr_result = True
         self._pending_target = self.popup
-        logging.debug("[OCR_CHAIN] start_request")
 
         from PyQt6 import QtGui
         from .signal_bridge import _OcrResultEvent
+
+        # ── cache hit: auto-OCR already completed ──
+        if get_auto_ocr_after_capture() and self._auto_ocr_cache is not None:
+            cached = self._auto_ocr_cache
+            self._auto_ocr_cache = None
+            logging.debug("[OCR_CHAIN] start_request reusing auto-OCR cache")
+            QtCore.QCoreApplication.postEvent(
+                self.bridge, _OcrResultEvent(cached, "popup"),
+            )
+            return
+
+        # ── auto-OCR in flight: wait for it instead of starting a second
+        #     OCR that would waste the in-flight work.  _on_auto_ocr_done
+        #     will deliver the result to both the toast and this popup. ──
+        if get_auto_ocr_after_capture() and self._auto_ocr_in_flight:
+            self._pending_popup_pixmap = pixmap
+            logging.debug("[OCR_CHAIN] start_request waiting for in-flight auto-OCR")
+            return
+
+        logging.debug("[OCR_CHAIN] start_request")
 
         debug_dir = self.user_data_dir if self.save_debug_image else None
         image = pixmap.toImage() if isinstance(pixmap, QtGui.QPixmap) else pixmap
