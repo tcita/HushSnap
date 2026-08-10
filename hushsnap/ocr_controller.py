@@ -139,7 +139,7 @@ class OcrController:
         if text and not response.error:
             self._auto_ocr_cache = response
 
-        # ── toast (always — do not interfere with auto-OCR behaviour) ──
+        # ── toast + clipboard (always — do not interfere with auto-OCR behaviour) ──
         if text:
             from .ui.toast import show_ocr_copy_toast
             show_ocr_copy_toast(
@@ -147,6 +147,9 @@ class OcrController:
                 label=self.translate("ocr_copy_chip_label"),
                 done_label=self.translate("ocr_copy_chip_copied"),
             )
+            clipboard = self.app.clipboard()
+            if clipboard:
+                clipboard.setText(text)
 
         # ── popup redirect: a thumbnail click happened while we were busy ──
         # Route through start_request so every popup appearance shares the
@@ -272,19 +275,6 @@ class OcrController:
             target.show_text(self.translate("ocr_empty_popup_hint"), pixmap=pixmap)
         else:
             recognized = text or ""
-            clipboard = self.app.clipboard()
-            if clipboard:
-                clipboard.setText(recognized)
-
-            # Show the copy chip near the cursor so it's always visible
-            # when the popup appears — regardless of whether this result
-            # came from a fresh OCR, the cache, or superseded auto-OCR.
-            from .ui.toast import show_ocr_copy_toast
-            show_ocr_copy_toast(
-                recognized,
-                label=self.translate("ocr_copy_chip_label"),
-                done_label=self.translate("ocr_copy_chip_copied"),
-            )
 
             logging.debug("[OCR_CHAIN] on_ocr_finished calling show_text (result)")
             target.show_text(
@@ -298,17 +288,6 @@ class OcrController:
         # the thumbnail closes before the popup appears).
         if _is_active_request:
             thumbnail_manager.dismiss_current()
-
-        # Re-raise the copy chip so it sits above the popup — both windows
-        # are top-most, but the popup was shown more recently and wins the
-        # z-order contest unless we explicitly pull the chip back to the top.
-        from .ui.toast import OcrCopyChip
-        _chip = OcrCopyChip._active
-        if _chip is not None:
-            try:
-                _chip.raise_()
-            except RuntimeError:
-                pass
         
     def start_request(self, pixmap):
         self._trim_timer.stop()

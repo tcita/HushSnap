@@ -106,7 +106,7 @@ def _build_controller(monkeypatch, qapp, tmp_path, service=None):
 
 
 
-def test_ocr_finished_copies_text_and_updates_popup(monkeypatch, qapp, tmp_path, sample_pixmap):
+def test_ocr_finished_shows_popup_does_not_copy_to_clipboard(monkeypatch, qapp, tmp_path, sample_pixmap):
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
     controller._expecting_ocr_result = True
     controller._pending_target = controller.popup
@@ -124,7 +124,9 @@ def test_ocr_finished_copies_text_and_updates_popup(monkeypatch, qapp, tmp_path,
         OcrResponse(text="hello world", error="", pixmap=sample_pixmap, recognition=OcrRecognition())
     )
 
-    assert qapp.clipboard().text() == "hello world"
+    # Clipboard must NOT be touched by manual (popup) path — the popup has
+    # its own copy button; auto-OCR is the only path that writes clipboard.
+    assert qapp.clipboard().text() == ""
     assert shown["text"] == "hello world"
     assert shown["pixmap"] is sample_pixmap
     assert controller._pending_target is None  # consumed by on_ocr_finished

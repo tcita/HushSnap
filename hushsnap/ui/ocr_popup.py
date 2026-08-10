@@ -141,8 +141,8 @@ class OcrPopup(QtWidgets.QWidget):
         # Copy button — floating bottom-right
         self.copy_btn = QtWidgets.QPushButton(self)
         self.copy_btn.setObjectName("ocrCopyBtn")
-        self.copy_btn.setFixedSize(28, 24)
-        self.copy_btn.setIconSize(QtCore.QSize(14, 14))
+        self.copy_btn.setFixedSize(36, 32)
+        self.copy_btn.setIconSize(QtCore.QSize(18, 18))
         self.copy_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.copy_btn.clicked.connect(self._on_copy_clicked)
 
@@ -781,7 +781,7 @@ class OcrPopup(QtWidgets.QWidget):
 
         def _on_phase1_done():
             btn.setIcon(self._make_success_check_icon())
-            btn.setIconSize(QtCore.QSize(14, 14))
+            btn.setIconSize(QtCore.QSize(18, 18))
             QtCore.QTimer.singleShot(900, self._animate_copy_reverse)
 
         self._copy_anim.finished.connect(_on_phase1_done)
@@ -822,7 +822,7 @@ class OcrPopup(QtWidgets.QWidget):
 
         def _on_done():
             btn.setIcon(self._make_copy_icon())
-            btn.setIconSize(QtCore.QSize(14, 14))
+            btn.setIconSize(QtCore.QSize(18, 18))
             btn.setStyleSheet("")  # clear inline style → global QSS takes over
             btn.setEnabled(True)
             self._copy_anim = None
@@ -1059,7 +1059,7 @@ class OcrPopup(QtWidgets.QWidget):
         """Position buttons: pin & close peek just over the card border
         (symmetric ~¼ out, ~¾ in); copy sits fully inside the card."""
         bw, bh = self.pin_btn.width(), self.pin_btn.height()       # 24×24
-        cw, ch = self.copy_btn.width(), self.copy_btn.height()      # 28×24
+        cw, ch = self.copy_btn.width(), self.copy_btn.height()      # 36×32
         border = OUTER_MARGIN
         out = bw // 4   # ~6 px — subtle corner protrusion
 
