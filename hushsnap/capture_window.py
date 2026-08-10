@@ -226,8 +226,10 @@ class CaptureWindow(QtWidgets.QWidget):
     1. Receives fullscreen bitmap as background.
     2. Configures frameless fullscreen topmost window.
     3. Handles mouse interaction:
-       - Left drag: create selection.
-       - Left click: capture full screen.
+       - Left drag: create selection and capture region.
+       - Left click: nothing (aligned with Windows Snipping Tool;
+         also avoids wasteful full-screen OCR when auto-OCR is
+         enabled).
        - Right click / Esc: exit.
     """
     def __init__(self, pixmap, screen=None, on_captured=None, on_closed=None):
@@ -706,12 +708,14 @@ class CaptureWindow(QtWidgets.QWidget):
                 # selection is physical, so scale by this screen's DPR).
                 threshold = self.click_threshold * (self.dpr or 1.0)
                 if (global_curr - global_start).manhattanLength() <= threshold:
-                    # Capture full screen under cursor
-                    full = self.pixmap.copy()
-                    full.setDevicePixelRatio(self.pixmap.devicePixelRatio())
-                    self._set_clipboard_pixmap(full, "fullscreen")
-                    captured = full
-                    logical_size = self.rect().size()
+                    # Click (no drag): do nothing — aligned with Windows
+                    # Snipping Tool.  No capture, no dismiss; the overlay
+                    # stays.  Also avoids wasteful full-screen OCR when
+                    # auto-OCR is enabled.
+                    self.session.global_start_pos = None
+                    self.session.global_curr_pos = None
+                    self.session.update_all_windows()
+                    return
                 else:
                     global_rect = QtCore.QRect(global_start, global_curr).normalized()
                     captured, logical_size = self.session.crop_global_rect(global_rect)
@@ -734,11 +738,10 @@ class CaptureWindow(QtWidgets.QWidget):
                 logical_size = None
 
                 if (self.curr_pos - self.start_pos).manhattanLength() <= self.click_threshold:
-                    full = self.pixmap.copy()
-                    full.setDevicePixelRatio(self.pixmap.devicePixelRatio())
-                    self._set_clipboard_pixmap(full, "fullscreen")
-                    captured = full
-                    logical_size = self.rect().size()
+                    # Click (no drag): do nothing.
+                    self.start_pos = self.curr_pos = None
+                    self.update()
+                    return
                 else:
                     ratio = self.pixmap.devicePixelRatio()
                     physical = logical_to_physical_rect(rect, dpr=ratio)
