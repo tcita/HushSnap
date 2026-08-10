@@ -3,7 +3,6 @@ import os
 import time
 import logging
 from collections import namedtuple
-from pathlib import Path
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 from PIL import Image
@@ -784,67 +783,14 @@ class ThumbnailWindow(QtWidgets.QWidget):
         scaled_w = int(self.card_width * THUMBNAIL_DRAG_SCALE)
         scaled_h = int(self.card_height * THUMBNAIL_DRAG_SCALE)
 
-        # Rotating cache: keep the last 5 files to prevent race conditions 
-        # where an ongoing slow upload might fail if we delete its source 
-        # file too aggressively.
-        from ..config import get_user_data_dir, resolve_physical_path
-        cache_dir_path = resolve_physical_path(get_user_data_dir() / "drag_cache")
-        cache_dir_path.mkdir(parents=True, exist_ok=True)
-
-        # Use filename sorting: drag_YYYYMMDD_HHMMSS_mmm.png sorts perfectly alphabetically
-        try:
-            existing_files = sorted(
-                [f for f in cache_dir_path.glob("HushSnap_*.png") if f.is_file()],
-                key=lambda x: x.name
-            )
-            
-            file_count = len(existing_files)
-            if file_count > 4:
-                # Keep the 4 most recent, delete everything else
-                to_delete = existing_files[:-4]
-                logger.debug(f"Cache rotation: found {file_count} files, deleting {len(to_delete)} oldest.")
-                for f in to_delete:
-                    try:
-                        f.unlink()
-                    except OSError as e:
-                        # On Windows, this usually means the file is still locked by a browser/explorer
-                        logger.debug(f"Rotation skip: could not delete {f.name} (likely locked): {e}")
-            else:
-                logger.debug(f"Cache rotation: {file_count} files present, no cleanup needed.")
-        except Exception as e:
-            logger.warning(f"Error during cache rotation: {e}")
-
-        ts = time.strftime("%Y%m%d_%H%M%S")
-        ms = int(time.time() * 1000) % 1000
-        temp_path_obj = cache_dir_path / f"HushSnap_{ts}_{ms:03d}.png"
+        # Rotating cache: keep the last 2 files so a slow upload (e.g.
+        # browser on a sluggish network) can still read the source after
+        # drag.exec() returns.  The drop target may defer the actual file
+        # read — deleting immediately would break that upload.
+        # Startup purge cleans everything on next launch.
+        from ..system.drag_cache import create_temp
+        temp_path_obj = create_temp(self.pil_image)
         temp_path = str(temp_path_obj)
-
-        logger.debug(f"Saving drag cache to: {temp_path}")
-
-        try:
-            with open(temp_path, "wb") as f:
-                self.pil_image.save(f, "PNG")
-                f.flush()
-                os.fsync(f.fileno())
-            logger.debug(f"Temporary file saved and fsync'd: {temp_path}")
-        except Exception as e:
-            logger.error(f"Failed to save temp file for drag: {e}")
-            self._is_dragging = False
-            return
-
-        # Tell Explorer the temp file exists before QDrag references it.
-        if os.name == 'nt':
-            try:
-                import ctypes
-                shell32 = ctypes.windll.shell32
-                SHCNE_CREATE = 0x00000002
-                SHCNF_PATH = 0x00000001
-                SHCNF_FLUSHNOWAIT = 0x00000004
-                shell32.SHChangeNotify(SHCNE_CREATE,
-                                       SHCNF_PATH | SHCNF_FLUSHNOWAIT,
-                                       temp_path, None)
-            except Exception:
-                logger.debug("thumbnail: SHChangeNotify(CREATE) failed", exc_info=True)
 
         drag = QtGui.QDrag(self)
         mime_data = QtCore.QMimeData()
@@ -860,10 +806,11 @@ class ThumbnailWindow(QtWidgets.QWidget):
         drag.setHotSpot(QtCore.QPoint(scaled_w // 2, scaled_h // 2))
 
         logger.debug("Executing drag.exec()...")
-        # Force CopyAction only. This ensures the file stays in our drag_cache 
-        # so our 5-file rotation logic can safely manage its lifecycle. 
-        # Otherwise, Windows may 'Move' the file to the browser/folder, 
-        # deleting it from our cache immediately and bypassing our safety buffer.
+        # Force CopyAction: the external app gets a copy, our source file
+        # stays in drag_cache.  We do NOT delete the file here — the drop
+        # target may defer reading the file contents (e.g. a browser
+        # uploading over a slow network stores the path and reads later).
+        # The rotating cache (keep last 2) + startup purge handle cleanup.
         result = drag.exec(QtCore.Qt.DropAction.CopyAction)
         logger.debug(f"Drag finished. Result: {result}")
         

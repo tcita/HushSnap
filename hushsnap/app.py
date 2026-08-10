@@ -203,7 +203,8 @@ class Application(QtCore.QObject):
         self.startup_profiler.log_elapsed("Config loaded and logging setup")
 
         # --- Prerequisite checks ---
-        self._purge_drag_cache()
+        from .system.drag_cache import purge as purge_drag_cache
+        purge_drag_cache()
         
         with self.startup_profiler.step("Process bootstrap ready"):
             self.instance_lock = is_already_running()
@@ -258,15 +259,6 @@ class Application(QtCore.QObject):
             self.translate("startup_ready_toast", hotkey=hotkey_name),
             duration_ms=3000,
         )
-
-    def _purge_drag_cache(self):
-        try:
-            cache_dir = self.user_data_dir / "drag_cache"
-            if cache_dir.exists() and cache_dir.is_dir():
-                shutil.rmtree(cache_dir, ignore_errors=True)
-                self.logger.debug(f"Previous drag cache purged at startup: {cache_dir}")
-        except Exception:
-            self.logger.debug("Failed to purge drag cache at startup", exc_info=True)
 
     def _init_qt_app(self):
         with self.startup_profiler.step("UI services initialized"):
@@ -405,6 +397,9 @@ class Application(QtCore.QObject):
             self.logger.debug("[OCR_CHAIN] thumbnail shown")
         except Exception:
             self.logger.exception("Failed to show thumbnail")
+
+        # New screenshot → any prior auto-OCR cache is now stale.
+        self.ocr_controller._clear_auto_ocr_cache()
 
         if get_auto_ocr_after_capture():
             self.logger.debug("[OCR_CHAIN] auto-OCR triggered")
