@@ -123,17 +123,20 @@ class MenuItemWidget(QtWidgets.QWidget):
     beautiful layout padding, tinted icons, and rounded shortcut badges.
     """
     triggered = QtCore.pyqtSignal()
-    
-    def __init__(self, text, icon_path, color_hex, shortcut="", is_danger=False, parent=None):
+
+    def __init__(self, text, icon_path, color_hex, shortcut="", is_danger=False,
+                 checkable=False, parent=None):
         super().__init__(parent)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
         self.is_danger = is_danger
+        self._checkable = checkable
+        self._checked = False
         self.setObjectName("MenuItemWidget")
-        
+
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(10)
-        
+
         # Icon label
         self.icon_label = QtWidgets.QLabel()
         self.icon_label.setFixedSize(16, 16)
@@ -142,13 +145,24 @@ class MenuItemWidget(QtWidgets.QWidget):
             if not pixmap.isNull():
                 self.icon_label.setPixmap(pixmap)
         layout.addWidget(self.icon_label)
-        
+
         # Text label
         self.text_label = QtWidgets.QLabel(text)
         layout.addWidget(self.text_label)
-        
+
         layout.addStretch()
-        
+
+        # Checkmark label (for checkable items)
+        self.checkmark_label = QtWidgets.QLabel("✓")
+        self.checkmark_label.setStyleSheet(
+            f"color: {BRAND_GREEN}; font-size: 15px; font-weight: bold;"
+            "background-color: transparent;"
+            "font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
+        )
+        layout.addWidget(self.checkmark_label)
+        if not self._checkable or not self._checked:
+            self.checkmark_label.hide()
+
         # Shortcut badge
         self.shortcut_label = QtWidgets.QLabel()
         self.shortcut_label.setStyleSheet(
@@ -157,14 +171,14 @@ class MenuItemWidget(QtWidgets.QWidget):
             "font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
         )
         layout.addWidget(self.shortcut_label)
-        
+
         if shortcut:
             self.shortcut_label.setText(shortcut)
         else:
             self.shortcut_label.hide()
-            
+
         self.setLayout(layout)
-        
+
         # QSS Stylesheets for hover highlight effects
         self.normal_style = """
             #MenuItemWidget {
@@ -179,7 +193,7 @@ class MenuItemWidget(QtWidgets.QWidget):
             }
         """
         self.setStyleSheet(self.normal_style)
-        
+
         # Text tinting
         if is_danger:
             self.text_label.setStyleSheet("color: #D32F2F; font-size: 13px; font-weight: bold; background-color: transparent;"
@@ -187,15 +201,21 @@ class MenuItemWidget(QtWidgets.QWidget):
         else:
             self.text_label.setStyleSheet("color: #333333; font-size: 13px; background-color: transparent;"
                 " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;")
-            
+
+    def set_checked(self, checked):
+        """Update the checkmark visibility for checkable items."""
+        self._checked = bool(checked)
+        if self._checkable:
+            self.checkmark_label.setVisible(self._checked)
+
     def enterEvent(self, event):
         self.setStyleSheet(self.hover_style)
         super().enterEvent(event)
-        
+
     def leaveEvent(self, event):
         self.setStyleSheet(self.normal_style)
         super().leaveEvent(event)
-        
+
     def mouseReleaseEvent(self, event):
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
             self.triggered.emit()
@@ -205,22 +225,26 @@ class MenuItemWidget(QtWidgets.QWidget):
 class StyledMenuAction(QtWidgets.QWidgetAction):
     """
     Custom QWidgetAction that integrates the MenuItemWidget.
-    Supports standard action signals and dynamic shortcut updates.
+    Supports standard action signals, dynamic shortcut updates,
+    and checkable state for toggle items.
     """
-    def __init__(self, text, icon_path, color_hex, shortcut="", is_danger=False, on_triggered=None, parent_menu=None):
+    def __init__(self, text, icon_path, color_hex, shortcut="", is_danger=False,
+                 checkable=False, on_triggered=None, parent_menu=None):
         super().__init__(parent_menu)
-        self.widget = MenuItemWidget(text, icon_path, color_hex, shortcut, is_danger, parent_menu)
+        self.widget = MenuItemWidget(text, icon_path, color_hex, shortcut,
+                                     is_danger, checkable=checkable,
+                                     parent=parent_menu)
         self.setDefaultWidget(self.widget)
-        
+
         # Propagate widget click to standard QAction.trigger()
         self.widget.triggered.connect(self.trigger)
-        
+
         if on_triggered:
             self.triggered.connect(on_triggered)
-            
+
         # Ensure context menu closes after click
         self.triggered.connect(parent_menu.close)
-            
+
     def update_shortcut(self, shortcut):
         """Update the text of the shortcut badge dynamically."""
         if shortcut:
@@ -228,6 +252,10 @@ class StyledMenuAction(QtWidgets.QWidgetAction):
             self.widget.shortcut_label.show()
         else:
             self.widget.shortcut_label.hide()
+
+    def set_checked(self, checked):
+        """Show or hide the checkmark for checkable items."""
+        self.widget.set_checked(checked)
 
 
 def create_tray(
@@ -238,10 +266,12 @@ def create_tray(
     on_open_config_dir,
     on_quit,
     initial_hotkey="",
+    auto_ocr_enabled=False,
+    on_toggle_auto_ocr=None,
 ):
     """
     Initialize and create the system tray icon and its menu.
-    
+
     Args:
         app (QApplication): Application instance.
         translate (callable): Translation function.
@@ -250,9 +280,13 @@ def create_tray(
         on_open_config_dir (callable): Callback to open config directory.
         on_quit (callable): Callback to quit application.
         initial_hotkey (str): Initial main screenshot hotkey name.
-        
+        auto_ocr_enabled (bool): Initial check state for Auto OCR toggle.
+        on_toggle_auto_ocr (callable): Callback invoked with the new checked
+            state when the user clicks the Auto OCR menu item.
+
     Returns:
-        tuple: (tray_icon, settings_action) for later dynamic operations.
+        tuple: (tray_icon, settings_action, auto_ocr_action) for later
+        dynamic operations.
     """
     # Load tray icon with rounded-corner alpha mask applied to every ICO frame.
     # This prevents dark anti-alias pixels in the four corners from appearing as
@@ -344,9 +378,29 @@ def create_tray(
     )
     tray_menu.addAction(screenshot_action)
 
+    # 2. Auto OCR toggle (checkable)
+    def on_auto_ocr_triggered():
+        new_state = not auto_ocr_action.widget._checked
+        auto_ocr_action.set_checked(new_state)
+        if on_toggle_auto_ocr:
+            on_toggle_auto_ocr(new_state)
+
+    auto_ocr_action = StyledMenuAction(
+        text=translate("menu_auto_ocr"),
+        icon_path=screenshot_icon_path,
+        color_hex=BRAND_GREEN,
+        shortcut="",
+        is_danger=False,
+        checkable=True,
+        on_triggered=on_auto_ocr_triggered,
+        parent_menu=tray_menu,
+    )
+    auto_ocr_action.set_checked(auto_ocr_enabled)
+    tray_menu.addAction(auto_ocr_action)
+
     tray_menu.addSeparator()
 
-    # 2. Settings Action
+    # 3. Settings Action
     settings_action = StyledMenuAction(
         text=translate("menu_settings"),
         icon_path=settings_icon_path,
@@ -358,7 +412,7 @@ def create_tray(
     )
     tray_menu.addAction(settings_action)
 
-    # 3. Config Directory Action
+    # 4. Config Directory Action
     config_dir_action = StyledMenuAction(
         text=translate("menu_open_install_dir"),
         icon_path=folder_icon_path,
@@ -372,7 +426,7 @@ def create_tray(
 
     tray_menu.addSeparator()
     
-    # 4. Quit Action
+    # 5. Quit Action
     quit_action = StyledMenuAction(
         text=translate("menu_quit"),
         icon_path=power_icon_path,
@@ -390,4 +444,4 @@ def create_tray(
 
     tray_icon.update_shortcuts = update_shortcuts
 
-    return tray_icon, settings_action
+    return tray_icon, settings_action, auto_ocr_action
