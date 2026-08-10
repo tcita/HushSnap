@@ -14,6 +14,7 @@ GWL_STYLE = -16           # Window style index
 GWL_EXSTYLE = -20         # Extended window style index
 WM_CANCELMODE = 0x001F    # Cancel mode message (used to force menu dismissal, etc.)
 HWND_TOPMOST = -1         # Place window in topmost z-order
+HWND_NOTOPMOST = -2       # Remove topmost z-order
 SWP_NOSIZE = 0x0001       # Keep current size
 SWP_NOMOVE = 0x0002       # Keep current position
 SWP_FRAMECHANGED = 0x0020 # Send frame-changed message

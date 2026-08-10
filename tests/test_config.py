@@ -18,8 +18,6 @@ from hushsnap.config import (
     ui_text,
     get_configured_ui_lang,
     update_ui_lang_in_config,
-    get_close_ocr_popup_on_focus_loss,
-    update_close_ocr_popup_on_focus_loss,
     get_debug_enabled,
     get_show_capture_dimension_label,
     get_thumbnail_display_time,
@@ -218,13 +216,13 @@ def test_config_migration_does_not_overwrite_existing_keys(tmp_path):
     """Keys already present in config must not be overwritten by defaults."""
     config_path = tmp_path / "hushsnap_config.toml"
     config_path.write_text(
-        'hotkey = "Alt+X"\nclose_ocr_popup_on_focus_loss = false\n', encoding="utf-8"
+        'hotkey = "Alt+X"\n', encoding="utf-8"
     )
 
     _ensure_default_config_exists(config_path)
 
     data = tomllib.loads(config_path.read_text(encoding="utf-8"))
-    assert data["close_ocr_popup_on_focus_loss"] is False  # user's choice
+    assert data["hotkey"] == "Alt+X"  # user's choice
 
 
 # ── Editor window size persistence ─────────────────────────────────────
@@ -434,41 +432,6 @@ def test_hotkey_reload_parse_failure_no_status_toast(tmp_path):
     # No status/toast emitted; current hotkey kept as-is.
     assert calls == []
     assert hm.current_hotkey_name == "Alt+Q"
-
-
-# ── close_ocr_popup_on_focus_loss (new config key) ────────────────────
-
-def test_close_ocr_popup_default_true(tmp_path):
-    """When the key is absent, the default is True."""
-    config_path = tmp_path / "hushsnap_config.toml"
-    _write_config(config_path, "hotkey = 'Alt+Q'\n")
-    assert get_close_ocr_popup_on_focus_loss(config_path) is True
-
-
-def test_close_ocr_popup_reads_false(tmp_path):
-    config_path = tmp_path / "hushsnap_config.toml"
-    _write_config(config_path, "close_ocr_popup_on_focus_loss = false\n")
-    assert get_close_ocr_popup_on_focus_loss(config_path) is False
-
-
-def test_close_ocr_popup_bad_value_falls_back(tmp_path, caplog):
-    """A non-bool value falls back to True and logs a warning."""
-    config_path = tmp_path / "hushsnap_config.toml"
-    _write_config(config_path, 'close_ocr_popup_on_focus_loss = "yes"\n')
-    with caplog.at_level(logging.WARNING, logger="hushsnap.config"):
-        assert get_close_ocr_popup_on_focus_loss(config_path) is True
-    assert any("close_ocr_popup_on_focus_loss" in r.message
-               for r in caplog.records)
-
-
-def test_close_ocr_popup_roundtrip(tmp_path):
-    """Write then read back; other keys preserved."""
-    config_path = tmp_path / "hushsnap_config.toml"
-    _write_config(config_path, "hotkey = 'Alt+Q'\n")
-    update_close_ocr_popup_on_focus_loss(False, config_path)
-    assert get_close_ocr_popup_on_focus_loss(config_path) is False
-    # Other keys untouched
-    assert get_show_capture_dimension_label(config_path) is True
 
 
 # ── get_mutex_name simplification ─────────────────────────────────────

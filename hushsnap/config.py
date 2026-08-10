@@ -78,7 +78,6 @@ _CONFIG_DEFAULTS = {
     "thumbnail_display_time": THUMBNAIL_DISPLAY_MS,
     "thumbnail_frame": "",
     "show_capture_dimension_label": True,
-    "close_ocr_popup_on_focus_loss": True,
     "auto_ocr_after_capture": False,
 }
 
@@ -677,34 +676,6 @@ def update_auto_ocr_after_capture(enabled, config_path=None):
         _write_config_data(config_path, config_data)
     except Exception as e:
         logger.error(f"Failed to update auto_ocr_after_capture: {e}")
-
-
-def get_close_ocr_popup_on_focus_loss(config_path=None):
-    """Read 'close_ocr_popup_on_focus_loss' from config (default True)."""
-    if config_path is None:
-        config_path = get_config_path()
-    config_data = _load_config_data(config_path)
-    raw = config_data.get("close_ocr_popup_on_focus_loss", True)
-    if not isinstance(raw, bool):
-        logger.warning(
-            "Config key 'close_ocr_popup_on_focus_loss' has non-boolean value %r "
-            "— falling back to default True.",
-            raw,
-        )
-        return True
-    return raw
-
-
-def update_close_ocr_popup_on_focus_loss(enabled, config_path=None):
-    """Update and persist 'close_ocr_popup_on_focus_loss' in config."""
-    if config_path is None:
-        config_path = get_config_path()
-    config_data = _load_config_data(config_path)
-    config_data["close_ocr_popup_on_focus_loss"] = bool(enabled)
-    try:
-        _write_config_data(config_path, config_data)
-    except Exception as e:
-        logger.error(f"Failed to update close_ocr_popup_on_focus_loss: {e}")
 
 
 def get_last_save_directory(config_path=None):

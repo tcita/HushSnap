@@ -6,9 +6,10 @@ import logging
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
-from ..config import get_close_ocr_popup_on_focus_loss, get_ocr_font_size, get_resource_dir
+from ..config import get_ocr_font_size, get_resource_dir
 from ..constants import APP_ICON_FILENAME
 from ..dpi import cursor_screen
+from ..system.win32_window_utils import HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, get_hwnd_value
 from ..ocr.text import _iter_url_spans, find_url_at_position, normalize_url
 from .styles import BRAND_GREEN
 
@@ -107,15 +108,10 @@ class OcrPopup(QtWidgets.QWidget):
             QtCore.Qt.WindowType.Window
             | QtCore.Qt.WindowType.Tool
             | QtCore.Qt.WindowType.FramelessWindowHint
-            | QtCore.Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, False)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_Hover, True)
-        # Appear without stealing activation — the copy chip (also top-most)
-        # stays above instead of being buried by the newly-activated popup.
-        # The user can still click the popup to activate and edit text.
-        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setMouseTracking(True)
 
         self._app_icon = QtGui.QIcon(str(get_resource_dir() / APP_ICON_FILENAME))
@@ -205,9 +201,7 @@ class OcrPopup(QtWidgets.QWidget):
         # This guarantees perfect whitespace preservation and native scrolling.
         self.text_edit = QtWidgets.QPlainTextEdit()
         self.text_edit.setObjectName("ocrText")
-        # Only accept focus on explicit click — no auto-focus, no misleading
-        # blinking cursor when the popup first appears.  The popup itself is
-        # WA_ShowWithoutActivating so it does not steal OS-level activation.
+        # Accept focus on click, not on show — no blinking cursor on appearance.
         self.text_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
         self.text_edit.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Expanding,
@@ -449,6 +443,7 @@ class OcrPopup(QtWidgets.QWidget):
         self._refresh_labels()
         self.show()
         self.raise_()
+        self.activateWindow()
 
     def show_text(self, text, pixmap=None, lines=None):
         logging.debug("[OCR_CHAIN] show_text entered, text_len=%d", len(text or ""))
@@ -478,6 +473,7 @@ class OcrPopup(QtWidgets.QWidget):
         self._update_button_positions()
         self.show()
         self.raise_()
+        self.activateWindow()
         logging.info("[OCR_CHAIN] show_text done, visible=%s", self.isVisible())
 
     def set_intended_geom(self, geom):
@@ -717,7 +713,27 @@ class OcrPopup(QtWidgets.QWidget):
         self.pin_btn.setToolTip(
             self.translate("ocr_unpin_btn" if checked else "ocr_pin_btn")
         )
+        # Pin → topmost so it stays visible above other windows.
+        # Unpin → back to normal z-order, and if another window is
+        # active the popup will hide via ActivationChange.
+        self._set_topmost(checked)
         self.pin_toggled.emit(checked)
+
+    def _set_topmost(self, on):
+        """Toggle WS_EX_TOPMOST via SetWindowPos (avoids window recreation)."""
+        import ctypes
+        from ctypes import wintypes
+        try:
+            hwnd = get_hwnd_value(self.winId())
+            if hwnd:
+                ctypes.windll.user32.SetWindowPos(
+                    wintypes.HWND(hwnd),
+                    wintypes.HWND(HWND_TOPMOST if on else HWND_NOTOPMOST),
+                    0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                )
+        except Exception:
+            pass
 
     # ── copy button ──────────────────────────────────────────────────
     def _on_copy_clicked(self):
@@ -1117,7 +1133,6 @@ class OcrPopup(QtWidgets.QWidget):
             event.type() == QtCore.QEvent.Type.ActivationChange
             and not self._pinned
             and not self.isActiveWindow()
-            and get_close_ocr_popup_on_focus_loss()
         ):
             self.hide()
         super().changeEvent(event)

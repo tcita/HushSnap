@@ -101,16 +101,13 @@ def send_alt_q():
     _send_key(VK_MENU, up=True)
 
 
-def dismiss_popup(primary_rect):
-    """Click empty desktop so the OCR popup loses focus and auto-hides.
+def dismiss_popup(rect):
+    """Click empty desktop so the OCR popup is dismissed.
 
-    The OCR popup (ui/ocr_popup.py:1091-1097) hides itself on
-    ActivationChange when it is not pinned and stops being the active
-    window — it does NOT respond to Esc. Clicking empty desktop steals
-    focus and dismisses the popup before the next round's Alt+Q grabs the
-    screen. Without this, the previous round's popup is captured into the
-    next screenshot, making every round's OCR input different and
-    potentially masking the rare crash's reproduction conditions.
+    The OCR popup (ui/ocr_popup.py) floats on top and does not close
+    on Esc — clicking empty desktop before the next round's Alt+Q
+    removes it from the screenshot so every round's OCR input stays
+    consistent.
 
     We click the LEFT-center of the primary screen: that vertical edge is
     empty desktop (no taskbar buttons, no icons in the middle of the side),

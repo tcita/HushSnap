@@ -18,8 +18,6 @@ from ..config import (
     update_ocr_font_size,
     get_auto_ocr_after_capture,
     update_auto_ocr_after_capture,
-    get_close_ocr_popup_on_focus_loss,
-    update_close_ocr_popup_on_focus_loss,
     get_show_capture_dimension_label,
     update_show_capture_dimension_label,
     get_thumbnail_display_time,
@@ -1321,17 +1319,6 @@ class SettingsDialogController(QtCore.QObject):
         step.value_changed.connect(on_font_val)
         l_font.addWidget(step, 0, QtCore.Qt.AlignmentFlag.AlignVCenter)
         ocr_layout.addWidget(card_font)
-
-        # Close OCR popup on click outside
-        def on_close_on_click_outside(checked):
-            update_close_ocr_popup_on_focus_loss(checked, self.config_path)
-        card_ocr_click_outside, switch_ocr_click_outside = _make_startup_card(
-            self.translate("settings_close_ocr_on_click_outside_label"),
-            self.translate("settings_close_ocr_on_click_outside_subtitle"),
-            get_close_ocr_popup_on_focus_loss(self.config_path),
-        )
-        switch_ocr_click_outside.clicked.connect(on_close_on_click_outside)
-        ocr_layout.addWidget(card_ocr_click_outside)
 
         ocr_layout.addStretch()
         content_stack.addWidget(ocr_page)
