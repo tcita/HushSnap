@@ -43,6 +43,7 @@ After capture, a thumbnail fades in at the bottom-right corner of your screen. T
 - **Edit** (the brush button on the action pill) opens the built-in **image editor** - see [Image Editor](#image-editor) below for the full toolset.
 - **Right-click** the thumbnail for **Copy Text from Image** (silent OCR - text straight to the clipboard, no popup) or **Save to Desktop**.
 - Optionally overlay a decorative **vine ornament** on the thumbnail’s top-left corner (enable it in Settings - Capture). It is purely cosmetic; it does not change the thumbnail’s hit area or any behavior.
+- Enable **Auto OCR After Capture** in Settings to have text recognized and copied to the clipboard automatically right after capture — no thumbnail click needed.
 
 
 As the project continues to evolve, some parts of this README may occasionally lag behind the latest behavior or features.
