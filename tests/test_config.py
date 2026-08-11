@@ -21,7 +21,6 @@ from hushsnap.config import (
     get_debug_enabled,
     get_show_capture_dimension_label,
     get_thumbnail_display_time,
-    get_ocr_engine,
     get_ocr_font_size,
     get_onboarding_toast_shown,
 )
@@ -209,7 +208,7 @@ def test_config_migration_adds_missing_keys(tmp_path):
     assert data["language"] == "zh"
     # Default keys injected
     assert data["debug"] is True  # dev-mode default
-    assert data["thumbnail_display_time"] == 12000
+    assert data["thumbnail_display_time"] == 5000
 
 
 def test_config_migration_does_not_overwrite_existing_keys(tmp_path):
@@ -310,7 +309,7 @@ def test_thumbnail_display_time_bad_value_falls_back_no_crash(tmp_path, caplog):
     _write_config(config_path, 'thumbnail_display_time = "apple"\n')
     with caplog.at_level(logging.WARNING, logger="hushsnap.config"):
         result = get_thumbnail_display_time(config_path)
-    assert result == 12000  # default, not a crash
+    assert result == 5000  # default, not a crash
     assert any("thumbnail_display_time" in r.message and "apple" in r.message
                for r in caplog.records)
 
@@ -322,24 +321,6 @@ def test_thumbnail_display_time_valid_value(tmp_path, caplog):
         assert get_thumbnail_display_time(config_path) == 5000
     assert not any("thumbnail_display_time" in r.message for r in caplog.records)
 
-
-def test_ocr_engine_bad_value_falls_back(tmp_path, caplog):
-    state_path = tmp_path / "hushsnap_state.toml"
-    _write_config(state_path, 'ocr_engine = "apple"\n')
-    with caplog.at_level(logging.WARNING, logger="hushsnap.config"):
-        assert get_ocr_engine(state_path) == "ppocr"  # default
-    assert any("ocr_engine" in r.message and "apple" in r.message
-               for r in caplog.records)
-
-
-def test_ocr_engine_missing_key_no_warning(tmp_path, caplog):
-    """A missing key is the normal migration/first-run case - it must NOT
-    log a warning (only genuinely bad values do)."""
-    state_path = tmp_path / "hushsnap_state.toml"
-    _write_config(state_path, "ocr_font_size = 16\n")  # no ocr_engine key
-    with caplog.at_level(logging.WARNING, logger="hushsnap.config"):
-        assert get_ocr_engine(state_path) == "ppocr"  # default, silently
-    assert not any("ocr_engine" in r.message for r in caplog.records)
 
 
 def test_ocr_font_size_out_of_range_falls_back(tmp_path, caplog):
@@ -393,7 +374,7 @@ def test_config_unusable_logs_warning_and_falls_back(tmp_path, caplog):
     _write_config(config_path, 'thumbnail_display_time = cat\n')
 
     with caplog.at_level(logging.WARNING, logger="hushsnap.config"):
-        assert get_thumbnail_display_time(config_path) == 12000  # default
+        assert get_thumbnail_display_time(config_path) == 5000  # default
 
     assert any(
         r.levelno == logging.WARNING and "config data" in r.message

@@ -21,7 +21,6 @@ from .constants import (
     MOD_CONTROL,
     MOD_SHIFT,
     MOD_WIN,
-    OCR_ENGINE_PPOCR,
     THUMBNAIL_DISPLAY_MS,
 )
 from .translations import (
@@ -88,7 +87,7 @@ _CONFIG_DEFAULTS = {
 # stamped by ``_migrate_config`` so pre-version files (no field) are treated as
 # v1 and run through the migration ladder, rather than being back-filled as if
 # they had always been current.
-_CONFIG_VERSION = 3
+_CONFIG_VERSION = 4
 
 
 def is_running_as_package() -> bool:
@@ -239,6 +238,17 @@ def _migrate_config(config_data):
             changed = True
             logger.debug(
                 "Config migrated v2->v3: thumbnail_display_time 30000 -> 12000"
+            )
+    # ── v3 → v4: new default 5 s thumbnail duration ──
+    # The default was shortened from 12 s to 5 s.  Migrate users who had
+    # the old default so they pick up the new one automatically.  Users
+    # who prefer 12 s can reselect it in Settings.
+    if v < 4:
+        if config_data.get("thumbnail_display_time") == 12000:
+            config_data["thumbnail_display_time"] = 5000
+            changed = True
+            logger.debug(
+                "Config migrated v3->v4: thumbnail_display_time 12000 -> 5000"
             )
     if v != _CONFIG_VERSION or "config_version" not in config_data:
         config_data["config_version"] = _CONFIG_VERSION
@@ -531,7 +541,6 @@ def _write_state_data(state_data, state_path=None):
     """
     if state_path is None:
         state_path = STATE_PATH
-    engine = _normalize_ocr_engine(state_data.get("ocr_engine")) or OCR_ENGINE_PPOCR
     font_size = state_data.get("ocr_font_size", DEFAULT_OCR_FONT_SIZE)
     if not isinstance(font_size, int):
         font_size = DEFAULT_OCR_FONT_SIZE
@@ -539,7 +548,6 @@ def _write_state_data(state_data, state_path=None):
 
     # Known scalar keys, written in a stable order.
     out = {
-        "ocr_engine": f'"{engine}"',
         "ocr_font_size": str(font_size),
         "onboarding_toast_shown": "true" if onboarding_shown else "false",
     }
@@ -580,29 +588,9 @@ def _ensure_default_state_exists(state_path=None):
     if state_path.exists():
         return
     try:
-        _write_state_data({"ocr_engine": OCR_ENGINE_PPOCR, "ocr_font_size": DEFAULT_OCR_FONT_SIZE}, state_path)
+        _write_state_data({"ocr_font_size": DEFAULT_OCR_FONT_SIZE}, state_path)
     except Exception as e:
         logger.debug(f"Failed to ensure default state exists at {state_path}: {e}")
-
-
-def _migrate_ocr_from_config(state_data, config_path):
-    """One-shot: pull ocr_engine from old config TOML into state dict."""
-    config_data = _load_config_data(config_path)
-    if not config_data:
-        return state_data
-    migrated = False
-    if "ocr_engine" not in state_data:
-        engine = _normalize_ocr_engine(config_data.get("ocr_engine"))
-        if engine:
-            state_data["ocr_engine"] = engine
-            migrated = True
-    if migrated:
-        try:
-            _write_state_data(state_data)
-            logger.debug("Migrated OCR settings from config to state file")
-        except Exception:
-            logger.info("Failed to persist OCR settings migration to state file; will retry next launch", exc_info=True)
-    return state_data
 
 
 def get_debug_enabled(config_path=None):
@@ -733,19 +721,19 @@ def update_last_save_directory(directory, config_path=None):
 
 
 def get_thumbnail_display_time(config_path=None):
-    """Read 'thumbnail_display_time' from config (default 12000)."""
+    """Read 'thumbnail_display_time' from config (default 5000)."""
     if config_path is None:
         config_path = get_config_path()
     config_data = _load_config_data(config_path)
-    raw = config_data.get("thumbnail_display_time", 12000)
+    raw = config_data.get("thumbnail_display_time", 5000)
     try:
         value = int(raw)
     except (TypeError, ValueError):
         logger.warning(
-            "Config key 'thumbnail_display_time' has non-integer value %r; falling back to default 12000.",
+            "Config key 'thumbnail_display_time' has non-integer value %r; falling back to default 5000.",
             raw,
         )
-        return 12000
+        return 5000
     return value
 
 
@@ -797,44 +785,6 @@ def update_thumbnail_frame(ornament_id, config_path=None):
         _write_config_data(config_path, config_data)
     except Exception as e:
         logger.error(f"Failed to update thumbnail_frame: {e}")
-
-
-def get_ocr_engine(state_path=None, config_path=None):
-    """Read OCR engine from state file, with migration fallback from config."""
-    if state_path is None:
-        state_path = STATE_PATH
-    _ensure_default_state_exists(state_path)
-    state_data = _load_state_data(state_path)
-    raw = state_data.get("ocr_engine")
-    engine = _normalize_ocr_engine(raw)
-    if engine:
-        return engine
-    if raw is not None:
-        # Value present but unrecognized - a real user error worth logging.
-        # (A missing key is the normal migration case, not logged here.)
-        logger.warning(
-            "State key 'ocr_engine' has unrecognized value %r; falling back to default %r.",
-            raw, OCR_ENGINE_PPOCR,
-        )
-    # Migration: try old config location
-    state_data = _migrate_ocr_from_config(state_data, config_path or get_config_path())
-    engine = _normalize_ocr_engine(state_data.get("ocr_engine"))
-    if engine:
-        return engine
-    return OCR_ENGINE_PPOCR
-
-
-def update_ocr_engine(engine, state_path=None):
-    """Persist OCR engine to state file."""
-    if state_path is None:
-        state_path = STATE_PATH
-    _ensure_default_state_exists(state_path)
-    try:
-        state_data = _load_state_data(state_path)
-        state_data["ocr_engine"] = _normalize_ocr_engine(engine) or OCR_ENGINE_PPOCR
-        _write_state_data(state_data, state_path)
-    except Exception as e:
-        logger.error(f"Failed to update OCR engine in state: {e}")
 
 
 def get_ocr_font_size(state_path=None):
@@ -1037,16 +987,6 @@ def _normalize_ui_language_code(raw_value, allow_auto=False):
     if normalized in ("ja", "ja-jp"):
         return UI_LANG_JA
 
-    return None
-
-
-def _normalize_ocr_engine(raw_value):
-    if not isinstance(raw_value, str):
-        return None
-
-    normalized = raw_value.strip().lower().replace("-", "").replace("_", "")
-    if normalized in {"ppocr"}:
-        return OCR_ENGINE_PPOCR
     return None
 
 

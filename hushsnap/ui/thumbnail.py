@@ -455,7 +455,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
             from ..config import get_thumbnail_display_time, get_config_path
             return get_thumbnail_display_time(get_config_path())
         except Exception:
-            return 12000 # Fallback to 12s
+            return THUMBNAIL_DISPLAY_MS
 
     def _pil_to_qpixmap(self, pil_img: Image.Image) -> QtGui.QPixmap:
         from .editor.utils import _pil_to_qpixmap as _shared
