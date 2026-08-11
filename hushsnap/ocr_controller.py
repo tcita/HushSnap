@@ -55,6 +55,7 @@ class OcrController:
         
         # New popups always start unpinned to avoid "sticky" state confusion.
         self.popup.pin_toggled.connect(self._handle_pin_toggled)
+        self.popup.font_size_changed.connect(self.apply_font_sizes)
 
         self._trim_timer = QtCore.QTimer()
         self._trim_timer.setSingleShot(True)
@@ -82,6 +83,7 @@ class OcrController:
             self.popup = OcrPopup(self.translate)
             self.popup.apply_font_size()
             self.popup.pin_toggled.connect(self._handle_pin_toggled)
+            self.popup.font_size_changed.connect(self.apply_font_sizes)
 
             # Old popup gets deleted when closed
             old_active.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, True)

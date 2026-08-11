@@ -14,8 +14,6 @@ from ..config import (
 
     get_configured_ui_lang,
     update_ui_lang_in_config,
-    get_ocr_font_size,
-    update_ocr_font_size,
     get_auto_ocr_after_capture,
     update_auto_ocr_after_capture,
     get_show_capture_dimension_label,
@@ -380,90 +378,6 @@ class SleekSwitch(QtWidgets.QAbstractButton):
         self._animation.start()
 
 
-class FontSizeStepper(QtWidgets.QWidget):
-    """Compact − / value / + stepper for font size selection."""
-    value_changed = QtCore.pyqtSignal(int)
-
-    STEPS = [12, 14, 16, 18, 20, 22, 24]
-    _btn_style = (
-        "QPushButton {"
-        " background: transparent;"
-        " border: 0.5px solid #D5D5D5;"
-        " border-radius: 4px;"
-        " color: #555;"
-        " font-size: 14px;"
-        " font-weight: 600;"
-        " min-width: 26px;"
-        " max-width: 26px;"
-        " min-height: 26px;"
-        " max-height: 26px;"
-        " padding: 0;"
-        "}"
-        "QPushButton:hover { background: #F0F0F0; border-color: #BBB; }"
-        "QPushButton:disabled { color: #CCC; border-color: #E8E8E8; }"
-    )
-
-    def __init__(self, initial_value=16, parent=None):
-        super().__init__(parent)
-        self._current = initial_value
-        if self._current not in self.STEPS:
-            self._current = 16
-
-        layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
-
-        self._minus_btn = QtWidgets.QPushButton("−")
-        self._minus_btn.setStyleSheet(self._btn_style)
-        self._minus_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-        self._minus_btn.clicked.connect(self._decrement)
-
-        self._label = QtWidgets.QLabel(f"{self._current} px")
-        self._label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        self._label.setStyleSheet(
-            "color: #333; font-size: 14px; font-weight: 500;"
-            " border: none; background: transparent;"
-            " min-width: 44px;"
-            " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
-        )
-
-        self._plus_btn = QtWidgets.QPushButton("+")
-        self._plus_btn.setStyleSheet(self._btn_style)
-        self._plus_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-        self._plus_btn.clicked.connect(self._increment)
-
-        layout.addWidget(self._minus_btn)
-        layout.addWidget(self._label)
-        layout.addWidget(self._plus_btn)
-
-        self._update_enabled()
-
-    def _decrement(self):
-        idx = self.STEPS.index(self._current)
-        if idx > 0:
-            self._current = self.STEPS[idx - 1]
-            self._label.setText(f"{self._current} px")
-            self._update_enabled()
-            self.value_changed.emit(self._current)
-
-    def _increment(self):
-        idx = self.STEPS.index(self._current)
-        if idx < len(self.STEPS) - 1:
-            self._current = self.STEPS[idx + 1]
-            self._label.setText(f"{self._current} px")
-            self._update_enabled()
-            self.value_changed.emit(self._current)
-
-    def _update_enabled(self):
-        idx = self.STEPS.index(self._current)
-        self._minus_btn.setEnabled(idx > 0)
-        self._plus_btn.setEnabled(idx < len(self.STEPS) - 1)
-
-    @property
-    def value(self):
-        return self._current
-
-
 def _make_startup_card(label_text, subtitle_text, initial_state):
     """Build startup setting card: label + subtitle on left, switch on right.
 
@@ -543,12 +457,13 @@ def _make_setting_card(label_text, subtitle_text, hotkey_text, button_text):
 
     card_layout.addWidget(top_row)
 
-    # --- Bottom row: subtitle ---
-    subtitle = QtWidgets.QLabel(subtitle_text)
-    subtitle.setObjectName("subtitle")
-    subtitle.setStyleSheet(SUBTITLE_STYLE)
-    subtitle.setWordWrap(True)
-    card_layout.addWidget(subtitle)
+    # --- Bottom row: subtitle (only when non-empty) ---
+    if subtitle_text:
+        subtitle = QtWidgets.QLabel(subtitle_text)
+        subtitle.setObjectName("subtitle")
+        subtitle.setStyleSheet(SUBTITLE_STYLE)
+        subtitle.setWordWrap(True)
+        card_layout.addWidget(subtitle)
 
     return card, pills_container, pills, btn
 
@@ -984,12 +899,11 @@ class SettingsDialogController(QtCore.QObject):
     language_changed = QtCore.pyqtSignal()
 
     def __init__(self, translate, config_path, hotkey_manager,
-                 on_font_size_changed=None, on_dim_label_changed=None):
+                 on_dim_label_changed=None):
         super().__init__()
         self.translate = translate
         self.config_path = config_path
         self.hotkey_manager = hotkey_manager
-        self._on_font_size_changed = on_font_size_changed
         self._on_dim_label_changed = on_dim_label_changed
         self._dialog = None
         self._screenshot_pills_container = None
@@ -1203,7 +1117,7 @@ class SettingsDialogController(QtCore.QObject):
 
         card_hot, self._screenshot_pills_container, self._screenshot_pills, btn_hot = _make_setting_card(
             self.translate("settings_hotkey_label"),
-            self.translate("settings_hotkey_subtitle"),
+            "",
             self.hotkey_manager.current_hotkey_name,
             self.translate("settings_change_hotkey_btn"),
         )
@@ -1285,46 +1199,9 @@ class SettingsDialogController(QtCore.QObject):
         capture_layout.addStretch()
         content_stack.addWidget(capture_page)
 
-        # ── Page: OCR ──────────────────────────────────────────
-        ocr_page, ocr_layout = create_page()
-        
-        # Section: Recognition Engine
-        ocr_layout.addWidget(QtWidgets.QLabel(self.translate("settings_section_ocr").upper()))
-
-        # Font size
-        def on_font_val(v):
-            update_ocr_font_size(v)
-            if self._on_font_size_changed: self._on_font_size_changed()
-        
-        card_font = QtWidgets.QFrame()
-        card_font.setObjectName("settingCard")
-        card_font.setStyleSheet(SETTING_CARD_STYLE)
-        l_font = QtWidgets.QHBoxLayout(card_font)
-        l_font.setContentsMargins(14, 10, 14, 10)
-        v_font = QtWidgets.QVBoxLayout()
-        label_font = QtWidgets.QLabel(self.translate("settings_ocr_font_size_label"))
-        label_font.setObjectName("rowLabel")
-        label_font.setStyleSheet(ROW_LABEL_STYLE)
-        v_font.addWidget(label_font)
-        sub_font = QtWidgets.QLabel(self.translate("settings_ocr_font_size_subtitle"))
-        sub_font.setObjectName("subtitle")
-        sub_font.setStyleSheet(SUBTITLE_STYLE)
-        sub_font.setWordWrap(True)
-        v_font.addWidget(sub_font)
-        l_font.addLayout(v_font)
-        l_font.addStretch()
-        step = FontSizeStepper(initial_value=get_ocr_font_size())
-        step.value_changed.connect(on_font_val)
-        l_font.addWidget(step, 0, QtCore.Qt.AlignmentFlag.AlignVCenter)
-        ocr_layout.addWidget(card_font)
-
-        ocr_layout.addStretch()
-        content_stack.addWidget(ocr_page)
-
         # --- Sidebar Actions ---
         sidebar.addItem(self.translate("settings_section_general"))
         sidebar.addItem(self.translate("settings_section_capture"))
-        sidebar.addItem(self.translate("settings_section_ocr"))
         sidebar.currentRowChanged.connect(content_stack.setCurrentIndex)
         sidebar.setCurrentRow(target_row)
 

@@ -43,6 +43,8 @@ def _translate(key, **kwargs):
         "ocr_status_paste_hint": "Ctrl+V to paste",
         "ocr_pin_btn": "Pin",
         "ocr_unpin_btn": "Unpin",
+        "ocr_font_minus": "Decrease",
+        "ocr_font_plus": "Increase",
         "close_btn": "Close",
         "ocr_edit_btn": "Edit",
         "ocr_update_btn": "Update",

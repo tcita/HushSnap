@@ -797,7 +797,8 @@ def get_ocr_font_size(state_path=None):
     if isinstance(font_size, int) and 8 <= font_size <= 48:
         return font_size
     logger.warning(
-        "State key 'ocr_font_size' has out-of-range value %r (need int in 8..48); falling back to default %d.",
+        "State key 'ocr_font_size' has out-of-range value %r; "
+        "falling back to default %d.",
         font_size, DEFAULT_OCR_FONT_SIZE,
     )
     return DEFAULT_OCR_FONT_SIZE

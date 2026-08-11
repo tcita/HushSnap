@@ -6,7 +6,7 @@ import logging
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
-from ..config import get_ocr_font_size, get_resource_dir
+from ..config import get_ocr_font_size, update_ocr_font_size, get_resource_dir
 from ..constants import APP_ICON_FILENAME
 from ..dpi import cursor_screen
 from ..system.win32_window_utils import HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, get_hwnd_value
@@ -93,6 +93,7 @@ class UrlHighlighter(QtGui.QSyntaxHighlighter):
 class OcrPopup(QtWidgets.QWidget):
     """Semi-transparent floating popup for recognized OCR text."""
     pin_toggled = QtCore.pyqtSignal(bool)
+    font_size_changed = QtCore.pyqtSignal()
 
     def __init__(self, translate, parent=None):
         super().__init__(parent)
@@ -141,10 +142,23 @@ class OcrPopup(QtWidgets.QWidget):
         # Copy button — floating bottom-right
         self.copy_btn = QtWidgets.QPushButton(self)
         self.copy_btn.setObjectName("ocrCopyBtn")
-        self.copy_btn.setFixedSize(36, 32)
-        self.copy_btn.setIconSize(QtCore.QSize(18, 18))
+        self.copy_btn.setFixedSize(28, 28)
+        self.copy_btn.setIconSize(QtCore.QSize(16, 16))
         self.copy_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.copy_btn.clicked.connect(self._on_copy_clicked)
+
+        # Font size stepper — tiny ± buttons (overlay, top-right, left of close)
+        self.font_minus_btn = QtWidgets.QPushButton("−", self)
+        self.font_minus_btn.setObjectName("ocrFontBtn")
+        self.font_minus_btn.setFixedSize(20, 20)
+        self.font_minus_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self.font_minus_btn.clicked.connect(self._on_font_minus)
+
+        self.font_plus_btn = QtWidgets.QPushButton("+", self)
+        self.font_plus_btn.setObjectName("ocrFontBtn")
+        self.font_plus_btn.setFixedSize(20, 20)
+        self.font_plus_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self.font_plus_btn.clicked.connect(self._on_font_plus)
 
         # ── unified card (the only container) ────────────────────────
         self.text_block = QtWidgets.QFrame()
@@ -167,6 +181,8 @@ class OcrPopup(QtWidgets.QWidget):
         self.pin_btn.raise_()
         self.close_btn.raise_()
         self.copy_btn.raise_()
+        self.font_minus_btn.raise_()
+        self.font_plus_btn.raise_()
 
         # Main layout for the card: text on top, copy button on bottom
         self.bubble_layout = QtWidgets.QVBoxLayout(self.text_block)
@@ -301,14 +317,13 @@ class OcrPopup(QtWidgets.QWidget):
             "/* ── floating overlay buttons (subdued, transparent background) ── */"
             "#ocrCopyBtn {"
             " color: #5fc98a;"
-            " border: 1px solid rgba(255, 255, 255, 12);"
-            " border-radius: 6px;"
-            " background: rgba(42, 42, 42, 140);"
-            " padding: 0;"
-            " font-size: 12px;"
+            " border: none;"
+            " border-radius: 12px;"
+            " background: rgba(0, 0, 0, 60);"
+            " font-size: 13px;"
             " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
             "}"
-            "#ocrCopyBtn:hover { background: #333333; border-color: #5fc98a; }"
+            "#ocrCopyBtn:hover { background: rgba(95, 201, 138, 40); }"
 
             "#ocrPinBtn {"
             " color: rgba(255, 255, 255, 100);"
@@ -330,6 +345,19 @@ class OcrPopup(QtWidgets.QWidget):
             " font-weight: bold;"
             "}"
             "#ocrCloseBtn:hover { background: #f44336; color: #FFF; }"
+
+            "#ocrFontBtn {"
+            " color: rgba(255, 255, 255, 80);"
+            " border: none;"
+            " border-radius: 10px;"
+            " background: rgba(0, 0, 0, 60);"
+            " font-size: 14px;"
+            " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
+            "}"
+            "#ocrFontBtn:hover {"
+            " background: rgba(95, 201, 138, 40);"
+            " color: #5fc98a;"
+            "}"
 
             "/* ── custom vertical scrollbar ── */"
             "QScrollBar:vertical {"
@@ -372,6 +400,8 @@ class OcrPopup(QtWidgets.QWidget):
         self.copy_btn.setToolTip(self.translate("ocr_copy_btn"))
         self.pin_btn.setToolTip(self.translate("ocr_pin_btn"))
         self.close_btn.setToolTip(self.translate("close_btn"))
+        self.font_minus_btn.setToolTip(self.translate("ocr_font_minus"))
+        self.font_plus_btn.setToolTip(self.translate("ocr_font_plus"))
 
     # ── show / hide text ─────────────────────────────────────────────
     def show_loading(self, pixmap=None):
@@ -382,6 +412,8 @@ class OcrPopup(QtWidgets.QWidget):
 
         self.text_edit.hide()
         self.copy_btn.hide()
+        self.font_minus_btn.hide()
+        self.font_plus_btn.hide()
         self.loading_container.show()
 
         # ── determine the actual content size ──────────────────────────
@@ -454,6 +486,8 @@ class OcrPopup(QtWidgets.QWidget):
         self.loading_container.hide()
         self.text_edit.show()
         self.copy_btn.show()
+        self.font_minus_btn.show()
+        self.font_plus_btn.show()
 
         self._refresh_labels()
         self.apply_font_size()
@@ -671,6 +705,18 @@ class OcrPopup(QtWidgets.QWidget):
         font.setPointSizeF(get_ocr_font_size() * 0.75)
         self.text_edit.setFont(font)
 
+    def _on_font_minus(self):
+        new_val = max(8, get_ocr_font_size() - 1)
+        update_ocr_font_size(new_val)
+        self.apply_font_size()
+        self.font_size_changed.emit()
+
+    def _on_font_plus(self):
+        new_val = min(48, get_ocr_font_size() + 1)
+        update_ocr_font_size(new_val)
+        self.apply_font_size()
+        self.font_size_changed.emit()
+
     # ── custom icons ─────────────────────────────────────────────────
     @staticmethod
     def _make_close_icon():
@@ -741,30 +787,28 @@ class OcrPopup(QtWidgets.QWidget):
         self._animate_copy_success()
 
     def _animate_copy_success(self):
-        """Phase 1: smooth color morph to success state, then swap to checkmark icon."""
+        """Phase 1: smooth background morph to green success tint, then checkmark."""
         btn = self.copy_btn
 
-        # Cancel any in-flight animation (prevents double-click glitches)
         if hasattr(self, "_copy_anim") and self._copy_anim is not None:
             self._copy_anim.stop()
             self._copy_anim = None
         btn.setEnabled(False)
 
-        bg_normal = QtGui.QColor("#1e4a30")
-        bg_success = QtGui.QColor("#2a5a3a")
-        border_normal = QtGui.QColor("#1e4a30")
-        border_success = QtGui.QColor(BRAND_GREEN)
+        bg_normal = QtGui.QColor(0, 0, 0, 60)
+        bg_success = QtGui.QColor(95, 201, 138, 60)
 
         def _interp(a, b, t):
             return QtGui.QColor(
                 int(a.red() + (b.red() - a.red()) * t),
                 int(a.green() + (b.green() - a.green()) * t),
                 int(a.blue() + (b.blue() - a.blue()) * t),
+                int(a.alpha() + (b.alpha() - a.alpha()) * t),
             )
 
-        def _apply(bg, bd):
+        def _apply(bg):
             btn.setStyleSheet(
-                f"#ocrCopyBtn {{ background: {bg.name()}; border-color: {bd.name()}; }}"
+                f"#ocrCopyBtn {{ background: rgba({bg.red()},{bg.green()},{bg.blue()},{bg.alpha()}); }}"
             )
 
         self._copy_anim = QtCore.QVariantAnimation()
@@ -773,39 +817,35 @@ class OcrPopup(QtWidgets.QWidget):
         self._copy_anim.setEndValue(1.0)
         self._copy_anim.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
         self._copy_anim.valueChanged.connect(
-            lambda v: _apply(
-                _interp(bg_normal, bg_success, v),
-                _interp(border_normal, border_success, v),
-            )
+            lambda v: _apply(_interp(bg_normal, bg_success, v))
         )
 
         def _on_phase1_done():
             btn.setIcon(self._make_success_check_icon())
-            btn.setIconSize(QtCore.QSize(18, 18))
+            btn.setIconSize(QtCore.QSize(16, 16))
             QtCore.QTimer.singleShot(900, self._animate_copy_reverse)
 
         self._copy_anim.finished.connect(_on_phase1_done)
         self._copy_anim.start()
 
     def _animate_copy_reverse(self):
-        """Phase 2: smooth color morph back to normal, restore copy icon."""
+        """Phase 2: fade background back to normal, restore copy icon."""
         btn = self.copy_btn
 
-        bg_success = QtGui.QColor("#2a5a3a")
-        bg_normal = QtGui.QColor("#1e4a30")
-        border_success = QtGui.QColor(BRAND_GREEN)
-        border_normal = QtGui.QColor("#1e4a30")
+        bg_success = QtGui.QColor(95, 201, 138, 60)
+        bg_normal = QtGui.QColor(0, 0, 0, 60)
 
         def _interp(a, b, t):
             return QtGui.QColor(
                 int(a.red() + (b.red() - a.red()) * t),
                 int(a.green() + (b.green() - a.green()) * t),
                 int(a.blue() + (b.blue() - a.blue()) * t),
+                int(a.alpha() + (b.alpha() - a.alpha()) * t),
             )
 
-        def _apply(bg, bd):
+        def _apply(bg):
             btn.setStyleSheet(
-                f"#ocrCopyBtn {{ background: {bg.name()}; border-color: {bd.name()}; }}"
+                f"#ocrCopyBtn {{ background: rgba({bg.red()},{bg.green()},{bg.blue()},{bg.alpha()}); }}"
             )
 
         self._copy_anim = QtCore.QVariantAnimation()
@@ -814,15 +854,12 @@ class OcrPopup(QtWidgets.QWidget):
         self._copy_anim.setEndValue(1.0)
         self._copy_anim.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
         self._copy_anim.valueChanged.connect(
-            lambda v: _apply(
-                _interp(bg_success, bg_normal, v),
-                _interp(border_success, border_normal, v),
-            )
+            lambda v: _apply(_interp(bg_success, bg_normal, v))
         )
 
         def _on_done():
             btn.setIcon(self._make_copy_icon())
-            btn.setIconSize(QtCore.QSize(18, 18))
+            btn.setIconSize(QtCore.QSize(16, 16))
             btn.setStyleSheet("")  # clear inline style → global QSS takes over
             btn.setEnabled(True)
             self._copy_anim = None
@@ -1056,29 +1093,38 @@ class OcrPopup(QtWidgets.QWidget):
         self.move(x, y)
 
     def _update_button_positions(self):
-        """Position buttons: pin & close peek just over the card border
-        (symmetric ~¼ out, ~¾ in); copy sits fully inside the card."""
+        """Position overlay buttons — all inset inside the card."""
         bw, bh = self.pin_btn.width(), self.pin_btn.height()       # 24×24
-        cw, ch = self.copy_btn.width(), self.copy_btn.height()      # 36×32
+        cw, ch = self.copy_btn.width(), self.copy_btn.height()      # 28×28
         border = OUTER_MARGIN
-        out = bw // 4   # ~6 px — subtle corner protrusion
+        inset = 5  # px inside the card edge
 
-        # Pin — top-left
-        self.pin_btn.move(border - out, border - out)
-        # Close — top-right (symmetric with pin: right edge = width - border + out)
+        # Pin — top-left inside
+        self.pin_btn.move(border + inset, border + inset)
+        # Close — top-right inside
         self.close_btn.move(
-            self.width() - border - bw + out,
-            border - out,
+            self.width() - border - inset - bw,
+            border + inset,
         )
-        # Copy — inside card, bottom-right corner, flush with card edges
+        # Copy — inside card, bottom-right corner
         self.copy_btn.move(
-            self.width() - border - cw,
-            self.height() - border - ch,
+            self.width() - border - inset - cw,
+            self.height() - border - inset - ch,
         )
+        # Font ± buttons — left of copy, vertically centred with it
+        fbw = self.font_minus_btn.width()  # 20
+        gap = 4
+        # Font ± — inside the card, bottom-left, vertically aligned with copy
+        copy_center_y = self.height() - border - inset - ch // 2
+        fb_top = copy_center_y - fbw // 2
+        self.font_minus_btn.move(border + inset, fb_top)
+        self.font_plus_btn.move(border + inset + fbw + gap, fb_top)
 
         self.pin_btn.raise_()
         self.close_btn.raise_()
         self.copy_btn.raise_()
+        self.font_minus_btn.raise_()
+        self.font_plus_btn.raise_()
 
     # ── window events ────────────────────────────────────────────────
     def resizeEvent(self, event):
