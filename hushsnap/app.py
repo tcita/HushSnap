@@ -15,7 +15,6 @@ from .capture_session import CaptureSession
 from .config import (
     get_app_id,
     get_auto_ocr_after_capture,
-    update_auto_ocr_after_capture,
     get_config_path,
     get_debug_enabled,
     get_onboarding_toast_shown,
@@ -352,7 +351,7 @@ class Application(QtCore.QObject):
     def _init_ui_shell(self):
         with self.startup_profiler.step("Shell integration initialized"):
             from .ui.tray import create_tray
-            self.tray_icon, settings_action, auto_ocr_action = create_tray(
+            self.tray_icon, settings_action = create_tray(
                 self.qt_app,
                 self.translate,
                 self.capture_session.request_capture,
@@ -360,10 +359,6 @@ class Application(QtCore.QObject):
                 self._open_config_dir,
                 self.qt_app.quit,
                 initial_hotkey=self.hotkey_manager.current_hotkey_name,
-                auto_ocr_enabled=get_auto_ocr_after_capture(self.config_path),
-                on_toggle_auto_ocr=lambda enabled: update_auto_ocr_after_capture(
-                    enabled, self.config_path
-                ),
             )
 
             self.ocr_controller.tray_icon = self.tray_icon

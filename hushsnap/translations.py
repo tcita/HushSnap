@@ -80,7 +80,6 @@ UI_TEXT = {
         "open_dir_failed_body": "Unable to open the folder. Check logs for details.",
         "menu_screenshot": "Screenshot",
         "menu_screenshot_ocr": "Screenshot and OCR",
-        "menu_auto_ocr": "Auto OCR After Capture",
         "menu_settings": "Settings...",
 
         "menu_about": "About...",
@@ -255,7 +254,6 @@ UI_TEXT = {
         "open_dir_failed_body": "无法打开目录，请查看日志。",
         "menu_screenshot": "截图",
         "menu_screenshot_ocr": "截图并识别",
-        "menu_auto_ocr": "截图后自动 OCR",
         "menu_settings": "设置...",
 
         "menu_about": "关于...",
@@ -430,7 +428,6 @@ UI_TEXT = {
         "open_dir_failed_body": "無法開啟目錄，請檢視記錄檔。",
         "menu_screenshot": "截圖",
         "menu_screenshot_ocr": "截圖並辨識",
-        "menu_auto_ocr": "截圖後自動 OCR",
         "menu_settings": "設定...",
 
         "menu_about": "關於...",
@@ -605,7 +602,6 @@ UI_TEXT = {
         "open_dir_failed_body": "フォルダーを開けませんでした。ログを確認してください。",
         "menu_screenshot": "スクリーンショット",
         "menu_screenshot_ocr": "スクリーンショット＋OCR",
-        "menu_auto_ocr": "撮影後に自動OCR",
         "menu_settings": "設定...",
 
         "menu_about": "HushSnap について...",
