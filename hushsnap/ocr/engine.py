@@ -9,14 +9,13 @@ _ENGINES: dict[str, dict] = {}
 _DEFAULT_ENGINE: str | None = None
 
 
-def register_engine(engine_id: str, *, recognize, release=None, trim=None, load=None, metadata=None):
+def register_engine(engine_id: str, *, recognize, release=None, load=None, metadata=None):
     """Register an OCR engine implementation.
 
     Args:
         engine_id: Unique identifier (e.g. "ppocr").
         recognize: Callable(image: QImage, language_tag: str) -> OcrRecognition.
         release: Optional zero-arg callable to free engine resources.
-        trim: Optional zero-arg callable to trim engine resident memory.
         load: Optional zero-arg callable to pre-initialize engine resources.
         metadata: Optional dict (display_name, error_prefixes list, etc.).
     """
@@ -25,7 +24,6 @@ def register_engine(engine_id: str, *, recognize, release=None, trim=None, load=
     _ENGINES[engine_id] = {
         "recognize": recognize,
         "release": release if release is not None else (existing["release"] if existing else None),
-        "trim": trim if trim is not None else (existing["trim"] if existing else None),
         "load": load if load is not None else (existing["load"] if existing else None),
         "metadata": metadata if metadata is not None else (existing["metadata"] if existing else {}),
     }
@@ -48,13 +46,6 @@ def release_engine(engine_id: str):
     entry = _ENGINES.get(engine_id)
     if entry and entry["release"]:
         entry["release"]()
-
-
-def trim_engine(engine_id: str):
-    """Trim memory for a specific engine (no-op if engine has no trim hook)."""
-    entry = _ENGINES.get(engine_id)
-    if entry and entry.get("trim"):
-        entry["trim"]()
 
 
 def load_engine(engine_id: str):

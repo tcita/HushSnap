@@ -51,15 +51,10 @@ class OcrController:
 
         self.bridge.ocr_result.connect(self.on_ocr_finished)
         self.bridge.auto_ocr_done.connect(self._on_auto_ocr_done)
-        self.bridge.load_finished.connect(self._schedule_post_load_trim)
-        
+
         # New popups always start unpinned to avoid "sticky" state confusion.
         self.popup.pin_toggled.connect(self._handle_pin_toggled)
         self.popup.font_size_changed.connect(self.apply_font_sizes)
-
-        self._trim_timer = QtCore.QTimer()
-        self._trim_timer.setSingleShot(True)
-        self._trim_timer.timeout.connect(self._trim_current_engine)
 
         # Load engine in background (model init only, no inference)
         if load:
@@ -132,7 +127,6 @@ class OcrController:
         the result is also routed to the popup so the user sees the text
         without a second OCR run.
         """
-        self._trim_timer.start(0)
         self._auto_ocr_in_flight = False
 
         text = response.text or ""
@@ -157,15 +151,6 @@ class OcrController:
         self._pending_popup_pixmap = None
         if pending is not None:
             self.start_request(pending)
-
-    def _trim_current_engine(self):
-        if self._expecting_ocr_result:
-            return
-        from .ocr.engine import trim_engine
-        try:
-            trim_engine(self._current_engine)
-        except Exception:
-            logging.getLogger(__name__).exception("Trim failed")
 
     def _handle_pin_toggled(self, pinned):
         # Pinning is now purely visual — the popup becomes an independent
@@ -217,8 +202,6 @@ class OcrController:
         was called.  _pending_target is set on the main thread by
         start_request and read here on the main thread (via QueuedConnection),
         so there is no cross-thread QObject pointer in flight."""
-        self._trim_timer.start(0)
-
         target = self._pending_target
         self._pending_target = None
 
@@ -289,7 +272,6 @@ class OcrController:
             thumbnail_manager.dismiss_current()
         
     def start_request(self, pixmap):
-        self._trim_timer.stop()
         self._expecting_ocr_result = True
         self._pending_target = self.popup
 
@@ -346,7 +328,3 @@ class OcrController:
 
         threading.Thread(target=run_load, daemon=True).start()
 
-    def _schedule_post_load_trim(self):
-        if self._expecting_ocr_result:
-            return
-        self._trim_timer.start(0)

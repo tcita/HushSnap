@@ -38,21 +38,6 @@ def main():
              "Off by default (matches production behaviour)."
     )
     parser.add_argument(
-        "--idle-trim",
-        action="store_true",
-        help="Simulate production idle-trim timer between warm iterations. "
-             "Calls trim_engine() after --trim-delay seconds of the interval, "
-             "then waits the remaining interval before the next OCR. "
-             "Use for A/B testing trim vs no-trim."
-    )
-    parser.add_argument(
-        "--trim-delay",
-        type=float, default=5.0,
-        help="Seconds after previous OCR before firing idle trim "
-             "(default: 5.0, matches production _trim_timer). "
-             "Must be ≤ --interval.  Only meaningful with --idle-trim."
-    )
-    parser.add_argument(
         "--json",
         type=Path, default=None,
         help="Export results as JSON to this file path"
@@ -85,7 +70,7 @@ def main():
         action="store_true",
         help="Enable ONNX Runtime CPU memory arena (production: False). "
              "Arena=True pools allocations for ~7%% speedup but retains "
-             "~700 MB after OCR unless trimmed."
+             "~700 MB after OCR."
     )
     parser.add_argument(
         "--no-cls",
@@ -140,8 +125,6 @@ def main():
             interval=args.interval,
             profile=args.profile,
             gc_between=args.gc_between,
-            idle_trim=args.idle_trim,
-            trim_delay_s=args.trim_delay,
             engine_overrides=override_params,
         )
 

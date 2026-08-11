@@ -160,32 +160,6 @@ def test_on_ocr_finished_skips_when_no_target(monkeypatch, qapp, tmp_path, sampl
     assert qapp.clipboard().text() == ""
 
 
-def test_memory_trim_timer_behavior(monkeypatch, qapp, tmp_path, sample_pixmap):
-    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-
-    # 1. Start OCR -> timer should stop
-    controller._trim_timer.start(5000)
-    assert controller._trim_timer.isActive()
-
-    controller.start_request(sample_pixmap)
-    assert not controller._trim_timer.isActive()
-
-    # 2. Finish OCR -> timer should start
-    controller.on_ocr_finished(
-        OcrResponse(text="test", error="", pixmap=sample_pixmap, recognition=OcrRecognition())
-    )
-    assert controller._trim_timer.isActive()
-    assert controller._trim_timer.interval() == 0
-
-    # 3. Verify trim_engine is called on timeout
-    trimmed_engine = []
-    monkeypatch.setattr("hushsnap.ocr.engine.trim_engine", lambda engine: trimmed_engine.append(engine))
-
-    controller._trim_current_engine()
-    assert trimmed_engine == ["ppocr"]
-
-
-
 # ── Load vs. OCR collision tests ──────────────────────────────────────
 
 def test_load_skipped_when_ocr_already_requested(monkeypatch, qapp, tmp_path):
@@ -242,51 +216,6 @@ def test_load_runs_when_no_ocr_pending(monkeypatch, qapp, tmp_path):
     assert load_received == [True]
 
 
-def test_post_load_trim_skipped_when_ocr_in_progress(monkeypatch, qapp, tmp_path):
-    """_schedule_post_load_trim must not start the trim timer when
-    an OCR request is active."""
-    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    controller._expecting_ocr_result = True
-
-    controller._trim_timer.stop()
-    assert not controller._trim_timer.isActive()
-
-    controller._schedule_post_load_trim()
-
-    assert not controller._trim_timer.isActive()
-
-
-def test_post_load_trim_starts_timer_when_idle(monkeypatch, qapp, tmp_path):
-    """_schedule_post_load_trim should start the trim timer (interval=0)
-    when no OCR is pending."""
-    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    controller._expecting_ocr_result = False
-    controller._expecting_ocr_result = False
-
-    controller._trim_timer.stop()
-    assert not controller._trim_timer.isActive()
-
-    controller._schedule_post_load_trim()
-
-    assert controller._trim_timer.isActive()
-    assert controller._trim_timer.interval() == 0
-
-
-def test_ocr_request_cancels_pending_trim(monkeypatch, qapp, tmp_path, sample_pixmap):
-    """_start_request must stop the trim timer, cancelling any pending
-    post-load or post-OCR trim."""
-    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    controller._expecting_ocr_result = True
-
-    # Simulate a pending trimming timer (post-load or post-OCR)
-    controller._trim_timer.start(0)
-    assert controller._trim_timer.isActive()
-
-    controller.start_request(sample_pixmap)
-
-    assert not controller._trim_timer.isActive()
-
-
 def test_start_request_does_not_show_loading(monkeypatch, qapp, tmp_path, sample_pixmap):
     """start_request should NOT call show_loading — loading is shown
     on the thumbnail, not on the popup."""
@@ -300,39 +229,6 @@ def test_start_request_does_not_show_loading(monkeypatch, qapp, tmp_path, sample
     controller.start_request(sample_pixmap)
 
     assert len(loading_called) == 0, "start_request must not call show_loading"
-
-
-def test_load_finished_signal_triggers_trim(monkeypatch, qapp, tmp_path):
-    """The load_finished Qt signal must be connected to
-    _schedule_post_load_trim, which starts the trim timer when idle."""
-    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    controller._expecting_ocr_result = False
-
-    controller._trim_timer.stop()
-    assert not controller._trim_timer.isActive()
-
-    # Emit the signal directly — simulates load thread finishing
-    controller.bridge.load_finished.emit()
-
-    assert controller._trim_timer.isActive()
-    assert controller._trim_timer.interval() == 0
-
-
-def test_trim_current_engine_skips_when_ocr_active(monkeypatch, qapp, tmp_path):
-    """_trim_current_engine must be a no-op when OCR is active,
-    regardless of which path (post-load or post-OCR) triggered it."""
-    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
-    controller._expecting_ocr_result = True
-
-    trim_calls = []
-    monkeypatch.setattr(
-        "hushsnap.ocr.engine.trim_engine",
-        lambda engine: trim_calls.append(engine),
-    )
-
-    controller._trim_current_engine()
-
-    assert trim_calls == []  # trim was skipped
 
 
 def test_set_popup_anchor_detaches_pinned_popup(monkeypatch, qapp, tmp_path):

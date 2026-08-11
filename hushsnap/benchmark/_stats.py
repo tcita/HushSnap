@@ -83,8 +83,7 @@ def classify_shape(retention: float, decay_lambda: float = -1.0,
         the EXPECTED steady state, not an anomaly: the detector's
         intermediate tensors commit once on first inference and stay
         resident for the process lifetime (release_engine is dead
-        code in production); the OS only reclaims those physical pages
-        via idle-trim.  See scripts/OCR_FIRST_INFERENCE.md.
+        code in production).  See scripts/OCR_FIRST_INFERENCE.md.
     decay_lambda:
         Exponential decay rate in s⁻¹.  Pass -1 if unavailable.
     r_squared:

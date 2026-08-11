@@ -18,11 +18,9 @@ logger = logging.getLogger(__name__)
 _HANDLE: ctypes.c_void_p | None = None
 _INIT_LOCK = threading.Lock()
 _SIZE_T = ctypes.c_size_t
-_SSIZE_T = ctypes.c_ssize_t
 
 # Cached function pointers
 _GET_PROCESS_MEMORY_INFO = None
-_SET_PROCESS_WORKING_SET_SIZE = None
 
 
 class _PROCESS_MEMORY_COUNTERS(ctypes.Structure):
@@ -42,7 +40,7 @@ class _PROCESS_MEMORY_COUNTERS(ctypes.Structure):
 
 def _init() -> ctypes.c_void_p | None:
     """One-time ctypes binding. Returns the current process pseudo-handle."""
-    global _HANDLE, _GET_PROCESS_MEMORY_INFO, _SET_PROCESS_WORKING_SET_SIZE
+    global _HANDLE, _GET_PROCESS_MEMORY_INFO
     if _HANDLE is not None:
         return _HANDLE
 
@@ -68,37 +66,10 @@ def _init() -> ctypes.c_void_p | None:
             ]
             _GET_PROCESS_MEMORY_INFO.restype = ctypes.wintypes.BOOL
 
-            _SET_PROCESS_WORKING_SET_SIZE = kernel32.SetProcessWorkingSetSize
-            _SET_PROCESS_WORKING_SET_SIZE.argtypes = [
-                ctypes.c_void_p,
-                _SSIZE_T,
-                _SSIZE_T,
-            ]
-            _SET_PROCESS_WORKING_SET_SIZE.restype = ctypes.c_int
-
             return _HANDLE
         except Exception:
             logger.debug("Failed to initialise Win32 memory APIs", exc_info=True)
             return None
-
-
-def trim_working_set() -> bool:
-    """Aggressively trim the process working set. Returns True on success.
-
-    Safe to call from any thread; uses internal locks to ensure Win32 APIs
-    are initialized correctly.
-    """
-    handle = _init()
-    if handle is None or _SET_PROCESS_WORKING_SET_SIZE is None:
-        return False
-
-    try:
-        # Use -1, -1 as specified in Win32 docs to swap as much as possible to the pagefile
-        res = _SET_PROCESS_WORKING_SET_SIZE(handle, -1, -1)
-        return res != 0
-    except Exception:
-        logger.debug("trim_working_set failed", exc_info=True)
-        return False
 
 
 def get_working_set_mb() -> float:

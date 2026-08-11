@@ -261,8 +261,6 @@ def test_release_engine_waits_while_request_is_loading_engine(monkeypatch, qapp)
     monkeypatch.setattr(ppocr_module, "_engine", fake_engine)
     monkeypatch.setattr(ppocr_module, "_active_requests", 0)
     monkeypatch.setattr(ppocr_module, "get_ppocr_engine", _blocking_get_engine)
-    monkeypatch.setattr(ppocr_module, "_trim_working_set", lambda: None)
-
     img = QtGui.QImage(100, 100, QtGui.QImage.Format.Format_ARGB32)
     img.fill(QtCore.Qt.GlobalColor.white)
 

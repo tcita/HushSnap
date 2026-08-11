@@ -60,7 +60,7 @@ class BenchmarkRunner:
 
     Uses the exact same code path as a user-triggered OCR capture
     (preprocessing → engine inference → text composition), but
-    suppresses UI side effects (popup, clipboard, tray, idle trim)
+    suppresses UI side effects (popup, clipboard, tray)
     so they don't add noise to the measurements.
 
     Parameters
@@ -106,7 +106,7 @@ class BenchmarkRunner:
 
         # ── Suppress remaining UI side effects ──────────────────────
         # Disconnect the production on_ocr_finished handler so that
-        # clipboard writes, tray notifications, and the 5 s idle-trim
+        # clipboard writes and tray notifications.
         # timer don't fire during benchmarking.
         try:
             self.controller.bridge.ocr_result.disconnect()
@@ -148,8 +148,6 @@ class BenchmarkRunner:
             self._last_text = ""
             self._ocr_error = True
         self._finished = True
-        # Mirror the production handler's flag reset so that
-        # _trim_current_engine sees the correct state.
         self.controller._expecting_ocr_result = False
 
     # ── Public API ────────────────────────────────────────────────
@@ -159,8 +157,6 @@ class BenchmarkRunner:
             interval: float = 5.0,
             profile: bool = False,
             gc_between: bool = False,
-            idle_trim: bool = False,
-            trim_delay_s: float = 5.0,
             engine_overrides: dict | None = None,
             verbose: bool = True) -> BenchmarkResult:
         """Run the benchmark and return a structured result.
@@ -190,16 +186,6 @@ class BenchmarkRunner:
         gc_between:
             Run ``gc.collect()`` before each iteration.  Off by default
             (matches production behaviour).
-        idle_trim:
-            Simulate the production 5 s idle-trim timer between warm
-            iterations.  After ``trim_delay_s`` seconds of the interval,
-            calls ``trim_engine()`` to release the working set, then
-            waits the remaining interval before the next OCR.  Use for
-            A/B testing trim vs no-trim impact on latency and page faults.
-        trim_delay_s:
-            Seconds to wait after the previous OCR before firing the idle
-            trim.  Must be ≤ *interval*.  Default 5.0 (matches production
-            ``_trim_timer.start(5000)``).
         engine_overrides:
             Dict of engine parameters that differ from production
             defaults (recorded in the result for provenance).
@@ -211,11 +197,6 @@ class BenchmarkRunner:
         BenchmarkResult
             See :class:`BenchmarkResult` for fields.
         """
-        if idle_trim and trim_delay_s > interval:
-            raise ValueError(
-                f"trim_delay_s ({trim_delay_s:.1f}s) must be ≤ interval "
-                f"({interval:.1f}s)"
-            )
 
         image_name = self.image_path.name
 
@@ -225,8 +206,6 @@ class BenchmarkRunner:
                 flags.append("memory profile ON")
             if gc_between:
                 flags.append("gc_between ON")
-            if idle_trim:
-                flags.append(f"idle trim ON @ {trim_delay_s:.0f}s")
             print(f"\n{'='*70}")
             print(f" HushSnap OCR Benchmark — {image_name}")
             print(f" {iterations} iterations, {interval}s interval"
@@ -246,24 +225,7 @@ class BenchmarkRunner:
             if gc_between:
                 gc.collect()
 
-            # ── Inter-iteration wait (with optional idle trim) ──
-            trim_delta = 0.0
-            if idle_trim and i > 0:
-                # Simulate production idle-trim timer.
-                # Wait trim_delay_s, trim, then wait remaining interval.
-                time.sleep(trim_delay_s)
-                ws_pre_trim = _ws_mb()
-                self._trim_current_engine()
-                ws_post_trim = _ws_mb()
-                trim_delta = ws_pre_trim - ws_post_trim
-                if trim_delta > 0 and verbose:
-                    print(f"  ── Idle Trim: {ws_pre_trim:.0f} → "
-                          f"{ws_post_trim:.0f} MB (Δ={trim_delta:.0f} MB)")
-                remaining = interval - trim_delay_s
-                if remaining > 0:
-                    time.sleep(remaining)
-            else:
-                time.sleep(interval)
+            time.sleep(interval)
 
             # ── snapshots before OCR ──
             pv_before = _pvt_mb()
@@ -343,7 +305,6 @@ class BenchmarkRunner:
                 pf_delta=pf_delta,
                 h_delta=h_delta,
                 text_chars=len(self._last_text),
-                trim_delta_mb=trim_delta,
             )
             iter_results.append(ir)
             if self._last_text:
@@ -375,8 +336,6 @@ class BenchmarkRunner:
             image_name=image_name,
             iterations=iterations,
             profile_enabled=profile,
-            idle_trim_enabled=idle_trim,
-            trim_delay_s=trim_delay_s if idle_trim else 0.0,
             engine_overrides=dict(engine_overrides) if engine_overrides else {},
             iter_results=iter_results,
         )
@@ -403,10 +362,6 @@ class BenchmarkRunner:
         # iteration 0 excluded for the same cold-start reason as latency)
         warm_retentions = [r.retention for r in warm]
         result.avg_retention = sum(warm_retentions) / len(warm_retentions) if warm_retentions else -1
-
-        # Idle trim delta (warm iterations only — iteration 0 has no prior OCR to trim)
-        trim_deltas = [r.trim_delta_mb for r in warm if r.trim_delta_mb > 0]
-        result.avg_trim_delta_mb = sum(trim_deltas) / len(trim_deltas) if trim_deltas else 0.0
 
         # Profile metrics from the sampled iteration
         sampled = next((r.profile for r in iter_results if r.profile), None)
@@ -439,11 +394,7 @@ class BenchmarkRunner:
         # after OCR because the detector's intermediate tensors commit once
         # (first inference) and are never released in production
         # (release_engine is dead code); the OS only reclaims those physical
-        # pages via idle-trim (simulate with --idle-trim, reported as
-        # trim_delta_mb).  High post-OCR retention is the expected steady
-        # state, not a leak and not an arena problem (arena is off by
-        # default).  A genuine leak would show Private Bytes (commit) GROWING
-        # across warm iterations - not currently checked.
+        # not currently checked.
         warm_h_deltas = [r.h_delta for r in warm if r.h_delta != -1]
         if warm_h_deltas and all(d > 0 for d in warm_h_deltas):
             result.warnings.append(
@@ -466,24 +417,6 @@ class BenchmarkRunner:
         return result
 
     # ── Internal ──────────────────────────────────────────────────
-
-    def _trim_current_engine(self):
-        """Trim the current OCR engine's working set.
-
-        Mirrors ``OcrController._trim_current_engine``.  Only called
-        between iterations when ``_finished`` is True, so there is no
-        risk of trimming during an active OCR request.
-        """
-        if not self._finished:
-            logger.debug("Skipping trim: OCR still in progress")
-            return
-
-        from hushsnap.ocr.engine import trim_engine
-        from hushsnap.constants import OCR_ENGINE_PPOCR
-        try:
-            trim_engine(OCR_ENGINE_PPOCR)
-        except Exception:
-            logger.exception("Idle trim failed")
 
     def _wait_for_load(self):
         """Block until engine load completes (or times out).
@@ -514,7 +447,7 @@ class BenchmarkRunner:
         """Print the formatted summary block to stdout."""
         print(f"\n{'='*70}")
         print(f" Summary ({result.iterations} iterations"
-              f"{', idle trim ON' if result.idle_trim_enabled else ''})")
+              )")
         print(f"{'='*70}")
         print(f" Latency (warm avg):   {result.avg_duration_ms:8.1f} ms  "
               f"(iterations 1+; iter 0 excluded - first-inference buffer commit)")
@@ -525,9 +458,6 @@ class BenchmarkRunner:
               f"(committed virtual memory)")
         print(f" Working Set (max):    {result.max_ws_mb:8.2f} MB  "
               f"(physical RAM — Task Manager)")
-        if result.idle_trim_enabled and result.avg_trim_delta_mb > 0:
-            print(f" Trim Δ (avg warm):    {result.avg_trim_delta_mb:8.1f} MB  "
-                  f"(WS freed by idle trim @ {result.trim_delay_s:.0f}s)")
         print(f" Retention (avg warm): {result.avg_retention:8.3f}     "
               f"({'plateau' if result.avg_retention > 0.7 else 'spike'} - "
               f"plateau is expected; det tensors stay resident, see OCR_FIRST_INFERENCE.md)")

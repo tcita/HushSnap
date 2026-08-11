@@ -224,10 +224,7 @@ class OcrService:
             finally:
                 # Explicitly clear local references so that pixmap and
                 # recognition objects are eligible for immediate reclamation
-                # by CPython's reference counting.  Do NOT call gc.collect()
-                # here — the full-heap scan would touch pages that were
-                # trimmed out of the working set by a prior idle trim,
-                # pulling them back into physical RAM for no benefit.
+                # by CPython's reference counting.
                 del request
                 del response
                 del callback

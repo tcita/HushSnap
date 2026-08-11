@@ -120,7 +120,7 @@ from PyQt6 import QtCore, QtGui
 
 from .models import OcrBox, OcrLine, OcrRecognition, OcrWord
 from .preprocess import OcrPreprocessResult
-from ..system.memory_utils import get_working_set_mb, fmt_memory, trim_working_set
+from ..system.memory_utils import get_working_set_mb, fmt_memory
 
 logger = logging.getLogger(__name__)
 
@@ -1223,34 +1223,6 @@ def set_engine_params_override(params: dict | None):
     logger.info("[PPOCR] Engine params override set: %s", _engine_params_override)
 
 
-def _trim_working_set():
-    """Trim the process working set once OCR is done.
-
-    gc.collect() before the OS call was benchmarked and provides no
-    additional benefit: SetProcessWorkingSetSize(-1, -1) already
-    swaps out every page regardless of Python GC state.
-    """
-    # Guard against trimming while a recognition request is actively running
-    # in another thread. Trimming during active inference causes heavy paging
-    # lag (thrashing) as the OS swaps model data back into RAM immediately.
-    with _active_requests_cv:
-        if _active_requests > 0:
-            logger.debug("[PPOCR] Skipping _trim_working_set: %d active requests", _active_requests)
-            return
-
-    before_mb = get_working_set_mb()
-    logger.debug("[PPOCR] _trim_working_set: before trim  %s", fmt_memory())
-
-    res = trim_working_set()
-
-    after_mb = get_working_set_mb()
-    if res:
-        logger.debug("[PPOCR] _trim_working_set: after  trim  %s (delta=%.1f MB)",
-                     fmt_memory(), after_mb - before_mb)
-    else:
-        logger.warning("[PPOCR] trim_working_set failed. %s", fmt_memory())
-
-
 def _acquire_request():
     global _active_requests
     with _active_requests_cv:
@@ -1305,8 +1277,8 @@ def release_engine():
     """Release the PP-OCR engine singleton to free memory.
 
     Waits for in-flight requests, tears down ONNX sessions, then forces
-    garbage collection and a working-set trim. The engine is lazily
-    re-initialized on the next OCR call.
+    garbage collection. The engine is lazily re-initialized on the next
+    OCR call.
     """
     global _engine
 
@@ -1323,12 +1295,6 @@ def release_engine():
                 return
             # Let CPython's reference counting clean up ONNX sessions naturally
             _engine = None
-
-    ws_before_trim = get_working_set_mb()
-    logger.debug("[PPOCR] release_engine: after del, before trim  %s (delta from entry=%.1f MB)",
-                 fmt_memory(), ws_before_trim - ws_entry)
-
-    _trim_working_set()
 
     ws_exit = get_working_set_mb()
     logger.debug("[PPOCR] release_engine: exit  %s (total delta=%.1f MB)",
@@ -1576,12 +1542,6 @@ def recognize_ppocr_qimage(image_or_result, language_tag: str = "") -> OcrRecogn
         # lifetime Python ref-counting cannot fully track.  Without GC,
         # repeated OCR calls leak private bytes and kernel handles within
         # a handful of iterations.
-        #
-        # _trim_working_set() is deliberately NOT called here — trimming
-        # while OCR is still active would thrash (swap out model pages
-        # only to fault them back on the next call).  Trim fires once the
-        # event loop is idle after the last OCR result is delivered
-        # (OcrController._trim_timer, 0 ms single-shot).
         import gc
         del result, json_data, arr, bgr_image
         gc.collect()
@@ -1610,7 +1570,6 @@ register_engine(
     OCR_ENGINE_PPOCR,
     recognize=recognize_ppocr_result_from_pixmap,
     release=release_engine,
-    trim=_trim_working_set,
     load=get_ppocr_engine,
     metadata={
         "display_name": "PP-OCR",

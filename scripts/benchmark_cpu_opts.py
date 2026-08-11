@@ -11,9 +11,9 @@ Background
   - kNextPowerOfTwo   — rounds up to the next power of two (less churn,
                          slightly higher peak memory).  New production default.
 
-  HushSnap aggressively trims the working set after each OCR call via
+  HushSnap previously trimmed the working set after each OCR call via
   SetProcessWorkingSetSize(-1, -1), so the extra arena memory from
-  kNextPowerOfTwo is reclaimed promptly — the trade-off favours speed.
+  kNextPowerOfTwo was reclaimed promptly — the trade-off favoured speed.
 
 Usage
   ─────

@@ -17,7 +17,6 @@ class IterationResult:
     pf_delta: int
     h_delta: int
     text_chars: int
-    trim_delta_mb: float = 0.0   # WS reduction from idle trim (0 = no trim this iteration)
     profile: dict | None = None
 
 
@@ -30,8 +29,6 @@ class BenchmarkResult:
     image_name: str
     iterations: int
     profile_enabled: bool
-    idle_trim_enabled: bool = False
-    trim_delay_s: float = 5.0
     engine_overrides: dict = field(default_factory=dict)
     iter_results: list[IterationResult] = field(default_factory=list)
 
@@ -58,7 +55,6 @@ class BenchmarkResult:
     max_ws_mb: float = 0.0
     max_pv_mb: float = 0.0
     avg_retention: float = 0.0
-    avg_trim_delta_mb: float = 0.0   # mean WS freed by idle trim (warm iters)
     shape_classification: str = ""
     decay_lambda: float = -1.0
     decay_r2: float = -1.0
@@ -74,8 +70,6 @@ class BenchmarkResult:
         flags = []
         if self.profile_enabled:
             flags.append("profiled")
-        if self.idle_trim_enabled:
-            flags.append(f"idle-trim@{self.trim_delay_s:.0f}s")
         flag_str = f", {', '.join(flags)}" if flags else ""
 
         lines = [
@@ -91,11 +85,6 @@ class BenchmarkResult:
             f"  Memory   WS peak={self.max_ws_mb:.0f}MB  "
             f"Pvt peak={self.max_pv_mb:.0f}MB",
         ]
-        if self.idle_trim_enabled and self.avg_trim_delta_mb > 0:
-            lines.append(
-                f"  Trim     avg Δ={self.avg_trim_delta_mb:.0f}MB WS freed  "
-                f"(delay={self.trim_delay_s:.0f}s)"
-            )
         lines += [
             f"  Shape    retention={self.avg_retention:.3f}  "
             f"λ={self.decay_lambda:.3f}s⁻¹  "

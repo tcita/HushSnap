@@ -12,7 +12,6 @@ from hushsnap.ocr.engine import (
     register_engine,
     registered_engines,
     release_engine,
-    trim_engine,
     load_engine,
 )
 
@@ -48,11 +47,11 @@ def test_register_engine_does_not_change_default_on_subsequent():
 
 def test_register_engine_partial_update_preserves_fields():
     register_engine("test1", recognize=_dummy_recognize, metadata={"key": "val"})
-    # Partial update: only change trim
-    register_engine("test1", recognize=_dummy_recognize, trim=lambda: None)
+    # Partial update: only change release
+    register_engine("test1", recognize=_dummy_recognize, release=lambda: None)
     entry = _ENGINES["test1"]
     assert entry["metadata"] == {"key": "val"}  # preserved
-    assert entry["trim"] is not None  # new field added
+    assert entry["release"] is not None  # new field added
     assert entry["recognize"] is _dummy_recognize
 
 
@@ -71,14 +70,6 @@ def test_release_engine_calls_hook():
 def test_release_engine_noop_for_no_hook():
     register_engine("t", recognize=_dummy_recognize)
     release_engine("t")  # should not raise
-
-
-def test_trim_engine_calls_hook():
-    trimmed = []
-    register_engine("t", recognize=_dummy_recognize,
-                    trim=lambda: trimmed.append(True))
-    trim_engine("t")
-    assert trimmed == [True]
 
 
 def test_load_engine_calls_hook():
