@@ -88,7 +88,7 @@ _CONFIG_DEFAULTS = {
 # stamped by ``_migrate_config`` so pre-version files (no field) are treated as
 # v1 and run through the migration ladder, rather than being back-filled as if
 # they had always been current.
-_CONFIG_VERSION = 2
+_CONFIG_VERSION = 3
 
 
 def is_running_as_package() -> bool:
@@ -228,6 +228,17 @@ def _migrate_config(config_data):
             logger.debug(
                 "Config migrated v1->v2: thumbnail_frame %r -> %r",
                 tf, config_data["thumbnail_frame"],
+            )
+    # ── v2 → v3: drop 30 s thumbnail duration ──
+    # The 30 s option was removed from the UI.  Existing users who had it
+    # selected are migrated to the default 12 s so the dropdown resolves
+    # to a valid entry.
+    if v < 3:
+        if config_data.get("thumbnail_display_time") == 30000:
+            config_data["thumbnail_display_time"] = 12000
+            changed = True
+            logger.debug(
+                "Config migrated v2->v3: thumbnail_display_time 30000 -> 12000"
             )
     if v != _CONFIG_VERSION or "config_version" not in config_data:
         config_data["config_version"] = _CONFIG_VERSION

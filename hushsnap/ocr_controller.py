@@ -140,9 +140,9 @@ class OcrController:
             self._auto_ocr_cache = response
 
         # ── clipboard (always) ──
-        # Auto OCR overwrites the screenshot in the clipboard with recognised
-        # text.  The chip was removed — it was redundant (clipboard already
-        # holds the text) and the settings subtitle explains the trade-off.
+        # When auto-OCR is on the screenshot image is never written to the
+        # clipboard (capture_window skips it).  OCR text is the sole clipboard
+        # content; the image is available via thumbnail drag/save.
         if text:
             clipboard = self.app.clipboard()
             if clipboard:

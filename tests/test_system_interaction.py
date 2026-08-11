@@ -173,11 +173,29 @@ def test_clipboard_fallback_logic(qapp, mock_pixmap):
     # Simulate secondary setImage failing too
     mock_clipboard.image.return_value.isNull.return_value = True
     
-    with patch("PyQt6.QtWidgets.QApplication.clipboard", return_value=mock_clipboard):
+    with patch("hushsnap.config.get_auto_ocr_after_capture", return_value=False), \
+         patch("PyQt6.QtWidgets.QApplication.clipboard", return_value=mock_clipboard):
         success = win._set_clipboard_pixmap(mock_pixmap, "test")
         assert success is False
         # Verify both setPixmap and setImage were attempted
         mock_clipboard.setPixmap.assert_called()
         mock_clipboard.setImage.assert_called()
-    
+
+    win.close()
+
+
+def test_clipboard_skips_image_when_auto_ocr_enabled(qapp, mock_pixmap):
+    """When auto-OCR is on, _set_clipboard_pixmap returns True without
+    touching the clipboard — OCR text will be the sole clipboard content."""
+    win = CaptureWindow(mock_pixmap)
+
+    mock_clipboard = MagicMock()
+    with patch("hushsnap.config.get_auto_ocr_after_capture", return_value=True), \
+         patch("PyQt6.QtWidgets.QApplication.clipboard", return_value=mock_clipboard):
+        success = win._set_clipboard_pixmap(mock_pixmap, "test")
+        assert success is True
+        # Clipboard must not be touched at all.
+        mock_clipboard.setPixmap.assert_not_called()
+        mock_clipboard.setImage.assert_not_called()
+
     win.close()
