@@ -67,10 +67,18 @@ def test_ocr_service_async_callback(monkeypatch, sample_pixmap):
         result_holder["response"] = response
         done.set()
 
-    service.recognize_async(ocr.OcrRequest(pixmap=sample_pixmap), _done)
+    service.recognize_async(ocr.OcrRequest(pixmap=sample_pixmap.toImage()), _done)
 
     assert done.wait(timeout=2), "OCR async callback timed out"
     assert result_holder["response"].text == "async"
+
+
+def test_ocr_service_async_rejects_qpixmap(sample_pixmap):
+    """A QPixmap must never cross the asynchronous worker boundary."""
+    service = ocr.OcrService()
+
+    with pytest.raises(TypeError, match="requires OcrRequest.pixmap to be a QImage"):
+        service.recognize_async(ocr.OcrRequest(pixmap=sample_pixmap), lambda _response: None)
 
 
 def test_ocr_service_receives_preprocessed_image(monkeypatch, sample_pixmap):
@@ -98,4 +106,3 @@ def test_ocr_service_receives_preprocessed_image(monkeypatch, sample_pixmap):
     # OcrService preprocesses the pixmap — the engine should receive a QImage
     assert isinstance(captured["image"], QtGui.QImage)
     assert captured["image"].format() == QtGui.QImage.Format.Format_RGB32
-

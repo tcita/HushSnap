@@ -154,6 +154,20 @@ class OcrService:
             )
 
     def recognize_async(self, request: OcrRequest, done_callback):
+        """Run OCR in a worker thread.
+
+        The asynchronous boundary accepts a ``QImage`` only.  ``QPixmap`` is
+        a GUI-thread resource, so converting it here (or later in the worker)
+        would make a future caller accidentally use it outside the GUI thread.
+        Callers that start with a pixmap must convert it on the GUI thread
+        before constructing the request.
+        """
+        if not isinstance(request.pixmap, QtGui.QImage):
+            raise TypeError(
+                "recognize_async() requires OcrRequest.pixmap to be a QImage; "
+                "convert QPixmap with toImage() on the GUI thread first"
+            )
+
         # Intentional single-slot overwrite, NOT a queue. A later request
         # replaces any pending one, and the worker (below) only delivers a
         # result when its ``seq`` still equals ``self._seq`` — i.e. it is the
