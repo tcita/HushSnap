@@ -457,7 +457,7 @@ def _serialize_config_data(config_data):
     ]
 
     # Define preferred order for core settings for better readability
-    preferred_order = ["hotkey", "language"]
+    preferred_order = ["config_version", "hotkey", "language"]
     processed_keys = set()
 
     # 1. Write preferred top-level keys first
