@@ -90,6 +90,37 @@ class UrlHighlighter(QtGui.QSyntaxHighlighter):
             self.setFormat(start, end - start, self._fmt)
 
 
+class OcrPopupCard(QtWidgets.QFrame):
+    """Rounded popup card painted directly onto its transparent parent window."""
+
+    _RADIUS = 12.0
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        self.setMouseTracking(True)
+
+    def enterEvent(self, event):
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.update()
+        super().leaveEvent(event)
+
+    def paintEvent(self, event):
+        # Avoid QSS border-radius here: on a translucent top-level window Qt
+        # can leave a few light pre-fill pixels at the extreme corners.
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        rect = QtCore.QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        painter.setBrush(QtGui.QColor("#1e1e1e"))
+        border = QtGui.QColor(BRAND_GREEN if self.underMouse() else "#2a2a2a")
+        border.setAlpha(120 if self.underMouse() else 255)
+        painter.setPen(QtGui.QPen(border, 1.0))
+        painter.drawRoundedRect(rect, self._RADIUS, self._RADIUS)
+
+
 class OcrPopup(QtWidgets.QWidget):
     """Semi-transparent floating popup for recognized OCR text."""
     pin_toggled = QtCore.pyqtSignal(bool)
@@ -161,19 +192,12 @@ class OcrPopup(QtWidgets.QWidget):
         self.font_plus_btn.clicked.connect(self._on_font_plus)
 
         # ── unified card (the only container) ────────────────────────
-        self.text_block = QtWidgets.QFrame()
+        self.text_block = OcrPopupCard()
         self.text_block.setObjectName("ocrTextBlock")
         self.text_block.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Expanding,
             QtWidgets.QSizePolicy.Policy.Expanding,
         )
-
-        # Drop shadow directly on the card
-        shadow = QtWidgets.QGraphicsDropShadowEffect(self.text_block)
-        shadow.setBlurRadius(20)
-        shadow.setColor(QtGui.QColor(0, 0, 0, 60))
-        shadow.setOffset(0, 4)
-        self.text_block.setGraphicsEffect(shadow)
 
         outer.addWidget(self.text_block, 1)
 
@@ -291,12 +315,8 @@ class OcrPopup(QtWidgets.QWidget):
 
             "/* ── unified card ── */"
             "#ocrTextBlock {"
-            " background-color: #1e1e1e;"
-            " border: 1px solid rgba(255, 255, 255, 35);"
-            " border-radius: 12px;"
-            "}"
-            "#ocrTextBlock:hover {"
-            " border-color: rgba(95, 201, 138, 120);"
+            " background: transparent;"
+            " border: none;"
             "}"
 
             "#ocrText {"
@@ -383,11 +403,19 @@ class OcrPopup(QtWidgets.QWidget):
 
     # ── paint / window chrome ────────────────────────────────────────
     def paintEvent(self, event):
-        """Enable stylesheet support."""
-        opt = QtWidgets.QStyleOption()
-        opt.initFrom(self)
+        """Paint the card's soft shadow without a QGraphicsEffect surface."""
         p = QtGui.QPainter(self)
-        self.style().drawPrimitive(QtWidgets.QStyle.PrimitiveElement.PE_Widget, opt, p, self)
+        p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        card_rect = QtCore.QRectF(self.text_block.geometry())
+        for i in range(1, 10):
+            alpha = int(25 * (1.0 - i / 10.0))
+            p.setPen(QtGui.QPen(QtGui.QColor(0, 0, 0, alpha), 2))
+            p.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+            p.drawRoundedRect(
+                card_rect.adjusted(-i + 0.5, -i + 2.0, i - 0.5, i + 2.0),
+                12 + i,
+                12 + i,
+            )
 
     # ── label refresh ────────────────────────────────────────────────
     def _refresh_labels(self):
@@ -1192,4 +1220,3 @@ class OcrPopup(QtWidgets.QWidget):
         super().hideEvent(event)
         if self.testAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose):
             self.deleteLater()
-
