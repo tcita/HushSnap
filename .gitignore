@@ -8,6 +8,8 @@ dist/
 # site-packages so pollution never ships). Recreated fresh each build.
 .venv-build/
 .pip-cache/
+# Temp venvs created by ad-hoc scripts/tests
+tmport*/
 !HushSnap.spec
 __pycache__/
 
