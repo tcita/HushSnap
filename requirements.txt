@@ -1,10 +1,10 @@
 PyQt6>=6.5,<7
 pyinstaller>=6.0
-pytest>=7.0
 rapidocr>=3.9.1,<4.0
 opencv-python==5.0.0.93
 numpy>=2.0,<3.0  # ABI: minimal cv2.pyd is compiled against numpy 2.5.1 headers; numpy 1.x crashes it on import
 onnxruntime==1.21.1
 winrt-Windows.ApplicationModel==3.2.1  # pin both projections: their ~=3.2.1 chain co-versions winrt-runtime (load-bearing for Launch-at-Startup)
 winrt-Windows.Foundation==3.2.1
+pytest>=7.0
 Pillow>=10.0,<13

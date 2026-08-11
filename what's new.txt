@@ -10,7 +10,7 @@ Release notes (newest first)
 · 缩略图点击新增水波涟漪动画。
 · 缩略图显示时长默认缩短为 5 秒，移除 30 秒选项。
 · 设置页面重新布局：快捷键移至通用页，角花装饰移至底部。
-· 修复弹窗圆角残影等若干细节问题。
+· 修复弹窗圆角渲染瑕疵等若干细节问题。
 
 · 新增截圖自動 OCR 功能：開啟後截圖自動識別文字並複製到剪貼簿。
 · 修復 OCR 過程中可能出現的崩潰問題。
@@ -18,7 +18,7 @@ Release notes (newest first)
 · 縮圖點擊新增水波漣漪動畫。
 · 縮圖顯示時長預設縮短為 5 秒，移除 30 秒選項。
 · 設定頁面重新佈局：快捷鍵移至一般頁，角花裝飾移至底部。
-· 修復彈窗圓角殘影等若干細節問題。
+· 修復彈窗圓角渲染瑕疵等若干細節問題。
 
 · New Auto OCR After Capture: when enabled, text is automatically recognized and copied to the clipboard right after capture.
 · Fixed a potential crash during OCR operations.
@@ -26,7 +26,7 @@ Release notes (newest first)
 · Thumbnail click now shows a water ripple animation.
 · Thumbnail duration default shortened to 5s, removed the 30-second option.
 · Settings page reorganized: Hotkey moved to General, Corner Ornament moved to the bottom.
-· Fixed popup rounded-corner artifacts and other minor issues.
+· Fixed popup rounded-corner rendering glitches and other minor issues.
 
 · 新機能「キャプチャ後に自動 OCR」：有効にすると、キャプチャ後に自動的にテキストを認識してクリップボードにコピーします。
 · OCR 処理中に発生する可能性のあるクラッシュを修正しました。
@@ -34,7 +34,7 @@ Release notes (newest first)
 · サムネイルクリック時に水波紋アニメーションを追加。
 · サムネイル表示時間のデフォルトを 5 秒に短縮し、30 秒オプションを削除しました。
 · 設定画面を再構成：ホットキーを一般ページへ、角花を下部へ移動。
-· ポップアップの角丸残像など細かな不具合を修正しました。
+· ポップアップの角丸の描画の乱れなど細かな不具合を修正しました。
 
 ### v1.5.5
 

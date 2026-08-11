@@ -15,7 +15,7 @@ HushSnap 是一款连接了截图与 OCR 的桌面工具，本地运行、不传
 
 不需要就放着它消失，尽量不打扰你。
 
-OCR 识别出的文字会整理成更易读的排版，不会像多数 OCR 软件那样把文字挤成一团，识别结果弹窗支持直接编辑。
+OCR 识别出的文字会整理成更易读的排版，不会像多数 OCR 软件那样把文字挤成一团，识别结果弹窗支持直接编辑。也可在设置中开启截图后自动 OCR，识别文字直接写入剪贴板，省去点击缩略图的步骤。
 
 特性：
 - 本地运行，不会向任何服务器发送你的截图或识别内容
@@ -46,7 +46,7 @@ HushSnap 是一款連接了截圖與 OCR 的桌面工具，本地運行、不傳
 
 不需要就放著它消失，盡量不打擾你。
 
-OCR 辨識出的文字會整理成更易讀的排版，不會像多數 OCR 軟體那樣把文字擠成一團，辨識結果彈窗支援直接編輯。
+OCR 辨識出的文字會整理成更易讀的排版，不會像多數 OCR 軟體那樣把文字擠成一團，辨識結果彈窗支援直接編輯。也可在設定中開啟截圖後自動 OCR，辨識文字直接寫入剪貼簿，省去點擊縮圖的步驟。
 
 特色功能：
 - 本機運行，不會將你的截圖或辨識內容傳送至任何伺服器
@@ -77,7 +77,7 @@ Right-click the thumbnail → opens a menu with more options
 
 If you don't need it, just leave it — it fades away on its own without getting in your way.
 
-Recognized text is automatically reformatted into a cleaner, more readable layout, instead of being crammed together the way most OCR tools do — and the result popup is directly editable.
+Recognized text is automatically reformatted into a cleaner, more readable layout, instead of being crammed together the way most OCR tools do — and the result popup is directly editable. You can also enable Auto OCR After Capture in settings to have text recognized and copied to the clipboard automatically, no thumbnail click needed.
 
 Features:
 - Runs entirely locally — your screenshots and recognized text are never sent to any server
@@ -108,7 +108,7 @@ HushSnap は、スクリーンショットと OCR をつなぐデスクトップ
 
 不要な場合はそのまま放置すれば自動的に消え、極力邪魔をしません。
 
-OCR で認識したテキストは読みやすいレイアウトに整形され、多くの OCR ソフトのように文字がぎゅうぎゅうに詰め込まれることはありません。認識結果のポップアップはその場で編集も可能です。
+OCR で認識したテキストは読みやすいレイアウトに整形され、多くの OCR ソフトのように文字がぎゅうぎゅうに詰め込まれることはありません。認識結果のポップアップはその場で編集も可能です。また、設定でキャプチャ後に自動 OCR を有効にすると、認識テキストが自動的にクリップボードにコピーされ、サムネイルをクリックする手間が省けます。
 
 特徴：
 - ローカルで完結し、スクリーンショットや認識結果をサーバーに送信することはありません
