@@ -2,6 +2,40 @@
 Release notes (newest first)
 ================================================================================
 
+### v1.6
+
+· 新增截图自动 OCR 功能：开启后截图自动识别文字并复制到剪贴板。
+· 修复 OCR 过程中可能出现的崩溃问题。
+· OCR 弹窗重新设计：字体缩放 ± 移至弹窗工具栏，统一按钮风格，移除独立 OCR 设置页。
+· 缩略图点击新增水波涟漪动画。
+· 缩略图显示时长默认缩短为 5 秒，移除 30 秒选项。
+· 设置页面重新布局：快捷键移至通用页，角花装饰移至底部。
+· 修复弹窗圆角残影等若干细节问题。
+
+· 新增截圖自動 OCR 功能：開啟後截圖自動識別文字並複製到剪貼簿。
+· 修復 OCR 過程中可能出現的崩潰問題。
+· OCR 彈窗重新設計：字型縮放 ± 移至彈窗工具列，統一按鈕風格，移除獨立 OCR 設定頁。
+· 縮圖點擊新增水波漣漪動畫。
+· 縮圖顯示時長預設縮短為 5 秒，移除 30 秒選項。
+· 設定頁面重新佈局：快捷鍵移至一般頁，角花裝飾移至底部。
+· 修復彈窗圓角殘影等若干細節問題。
+
+· New Auto OCR After Capture: when enabled, text is automatically recognized and copied to the clipboard right after capture.
+· Fixed a potential crash during OCR operations.
+· OCR popup redesign: font size ± moved to the popup toolbar, unified button style, removed the separate OCR settings page.
+· Thumbnail click now shows a water ripple animation.
+· Thumbnail duration default shortened to 5s, removed the 30-second option.
+· Settings page reorganized: Hotkey moved to General, Corner Ornament moved to the bottom.
+· Fixed popup rounded-corner artifacts and other minor issues.
+
+· 新機能「キャプチャ後に自動 OCR」：有効にすると、キャプチャ後に自動的にテキストを認識してクリップボードにコピーします。
+· OCR 処理中に発生する可能性のあるクラッシュを修正しました。
+· OCR ポップアップを再設計：フォントサイズ ± をポップアップのツールバーに移動し、ボタンスタイルを統一、OCR 設定ページを削除しました。
+· サムネイルクリック時に水波紋アニメーションを追加。
+· サムネイル表示時間のデフォルトを 5 秒に短縮し、30 秒オプションを削除しました。
+· 設定画面を再構成：ホットキーを一般ページへ、角花を下部へ移動。
+· ポップアップの角丸残像など細かな不具合を修正しました。
+
 ### v1.5.5
 
 · 进一步强化离线运行架构。
