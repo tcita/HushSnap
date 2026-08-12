@@ -344,7 +344,7 @@ class SleekSwitch(QtWidgets.QAbstractButton):
         self._animation = QtCore.QVariantAnimation(
             self,
             startValue=self._base_offset,
-            endValue=self._track_radius * 2 - self._thumb_radius * 2 + self._base_offset,
+            endValue=self._track_radius * 4 - self._thumb_radius * 2 - self._base_offset,
             duration=120,
             valueChanged=self._update_offset,
         )
@@ -408,7 +408,7 @@ def _make_startup_card(label_text, subtitle_text, initial_state):
     switch.setChecked(initial_state)
     # Ensure animation starts at correct position
     if initial_state:
-        switch._offset = switch._track_radius * 2 - switch._thumb_radius * 2 + switch._base_offset
+        switch._offset = switch._track_radius * 4 - switch._thumb_radius * 2 - switch._base_offset
     top_layout.addWidget(switch, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
 
     card_layout.addWidget(top_row)
