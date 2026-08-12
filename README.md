@@ -46,6 +46,11 @@ After capture, a thumbnail fades in at the bottom-right corner of your screen. T
 - Enable **Auto OCR After Capture** in Settings to have text recognized and copied to the clipboard automatically right after capture — no thumbnail click needed.
 
 
+## Release Notes
+
+See [**what's new.txt**](what's%20new.txt) for the full changelog (Simplified Chinese, Traditional Chinese, English, Japanese — newest first).
+
+
 As the project continues to evolve, some parts of this README may occasionally lag behind the latest behavior or features.
 
 ## Image Editor
