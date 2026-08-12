@@ -18,6 +18,7 @@ from .config import (
     get_config_path,
     get_debug_enabled,
     get_onboarding_toast_shown,
+    get_hide_thumbnail,
     get_show_capture_dimension_label,
     get_user_data_dir,
     is_already_running,
@@ -392,8 +393,11 @@ class Application(QtCore.QObject):
         try:
             pil_img = qpixmap_to_pil(captured_pixmap)
             pil_img.info["logical_size"] = logical_size
-            show_thumbnail(pil_img)
-            self.logger.debug("[OCR_CHAIN] thumbnail shown")
+            if not get_hide_thumbnail():
+                show_thumbnail(pil_img)
+                self.logger.debug("[OCR_CHAIN] thumbnail shown")
+            else:
+                self.logger.debug("[OCR_CHAIN] thumbnail suppressed (hide_thumbnail=True)")
         except Exception:
             self.logger.exception("Failed to show thumbnail")
 

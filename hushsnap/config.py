@@ -78,6 +78,7 @@ _CONFIG_DEFAULTS = {
     "thumbnail_frame": "",
     "show_capture_dimension_label": True,
     "auto_ocr_after_capture": False,
+    "hide_thumbnail": False,
 }
 
 # Schema version of the on-disk config file. Bump on any breaking change to
@@ -675,6 +676,39 @@ def update_auto_ocr_after_capture(enabled, config_path=None):
         _write_config_data(config_path, config_data)
     except Exception as e:
         logger.error(f"Failed to update auto_ocr_after_capture: {e}")
+
+
+def get_hide_thumbnail(config_path=None):
+    """Read 'hide_thumbnail' from config (default False).
+
+    When True, the floating thumbnail card is suppressed entirely after every
+    capture — no preview, no action pill (edit / pin / close), no save-to-desktop
+    via the thumbnail. Clipboard and OCR still work normally.
+    """
+    if config_path is None:
+        config_path = get_config_path()
+    config_data = _load_config_data(config_path)
+    raw = config_data.get("hide_thumbnail", False)
+    if not isinstance(raw, bool):
+        logger.warning(
+            "Config key 'hide_thumbnail' has non-boolean value %r "
+            "— falling back to default False.",
+            raw,
+        )
+        return False
+    return raw
+
+
+def update_hide_thumbnail(enabled, config_path=None):
+    """Update and persist 'hide_thumbnail' in config."""
+    if config_path is None:
+        config_path = get_config_path()
+    config_data = _load_config_data(config_path)
+    config_data["hide_thumbnail"] = bool(enabled)
+    try:
+        _write_config_data(config_path, config_data)
+    except Exception as e:
+        logger.error(f"Failed to update hide_thumbnail: {e}")
 
 
 def get_last_save_directory(config_path=None):

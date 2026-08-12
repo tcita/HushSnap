@@ -22,6 +22,8 @@ from ..config import (
     update_thumbnail_display_time,
     get_thumbnail_frame,
     update_thumbnail_frame,
+    get_hide_thumbnail,
+    update_hide_thumbnail,
 )
 from ..constants import MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN
 from ..system import startup_manager
@@ -1144,21 +1146,78 @@ class SettingsDialogController(QtCore.QObject):
         switch_auto_ocr.clicked.connect(on_auto_ocr)
         capture_layout.addWidget(card_auto_ocr)
 
-        # Thumbnail Time
+        # Thumbnail Time (with hidden "Hide thumbnail card" sub-option)
+        _HIDE_SENTINEL = -1
+
         def change_thumb_time(index):
             val = combo_thumb.itemData(index)
-            update_thumbnail_display_time(val, self.config_path)
-            thumbnail_manager.refresh_current()
+            if val == _HIDE_SENTINEL:
+                # Already hidden — clicking "Hidden" is a no-op.
+                if get_hide_thumbnail(self.config_path):
+                    return
+                # Show confirmation before hiding.
+                msg = QtWidgets.QMessageBox(dialog)
+                msg.setIcon(QtWidgets.QMessageBox.Icon.NoIcon)
+                msg.setWindowTitle(
+                    self.translate("settings_thumbnail_hide_confirm_title")
+                )
+                msg.setText(
+                    self.translate("settings_thumbnail_hide_confirm_text")
+                )
+                msg.setStandardButtons(
+                    QtWidgets.QMessageBox.StandardButton.Yes
+                    | QtWidgets.QMessageBox.StandardButton.No
+                )
+                msg.setDefaultButton(QtWidgets.QMessageBox.StandardButton.No)
+                msg.setStyleSheet(MESSAGE_BOX_STYLE)
+                reply = msg.exec()
+                if reply == QtWidgets.QMessageBox.StandardButton.Yes:
+                    update_hide_thumbnail(True, self.config_path)
+                    thumbnail_manager.dismiss_current()
+                    # Flip the option text to "Hidden".
+                    combo_thumb.setItemText(
+                        index, self.translate("settings_thumbnail_hidden")
+                    )
+                    combo_thumb.update()
+                else:
+                    # Revert to the previous duration value.
+                    combo_thumb.blockSignals(True)
+                    prev_duration = get_thumbnail_display_time(self.config_path)
+                    combo_thumb.setCurrentIndex(combo_thumb.findData(prev_duration))
+                    combo_thumb.blockSignals(False)
+            else:
+                update_thumbnail_display_time(val, self.config_path)
+                if get_hide_thumbnail(self.config_path):
+                    update_hide_thumbnail(False, self.config_path)
+                    # Flip "Hidden" back to "Hide thumbnail card…".
+                    hide_idx = combo_thumb.findData(_HIDE_SENTINEL)
+                    if hide_idx >= 0:
+                        combo_thumb.setItemText(
+                            hide_idx, self.translate("settings_thumbnail_hide_option")
+                        )
+                thumbnail_manager.refresh_current()
 
+        _is_hidden = get_hide_thumbnail(self.config_path)
         thumb_options = [
             (self.translate("settings_thumbnail_time_5s"), 5000),
             (self.translate("settings_thumbnail_time_12s"), 12000),
             (self.translate("settings_thumbnail_time_never"), 0),
+            (
+                self.translate("settings_thumbnail_hidden")
+                if _is_hidden
+                else self.translate("settings_thumbnail_hide_option"),
+                _HIDE_SENTINEL,
+            ),
         ]
+        _current_val = (
+            _HIDE_SENTINEL
+            if _is_hidden
+            else get_thumbnail_display_time(self.config_path)
+        )
         card_thumb, combo_thumb = _make_language_card(
             self.translate("settings_thumbnail_time_label"),
             self.translate("settings_thumbnail_time_subtitle"),
-            get_thumbnail_display_time(self.config_path),
+            _current_val,
             thumb_options,
         )
         combo_thumb.currentIndexChanged.connect(change_thumb_time)
