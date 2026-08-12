@@ -127,11 +127,16 @@ class OcrController:
     def _on_auto_ocr_done(self, response):
         """Main-thread handler: deliver auto-OCR result.
 
-        Always shows the copy-chip toast — auto-OCR behaviour is unchanged.
+        Copies recognized text to the clipboard and optionally shows a toast
+        (controlled by the ``auto_ocr_show_toast`` config flag).
+
         If a thumbnail click is waiting (start_request stashed a pixmap),
         the result is also routed to the popup so the user sees the text
         without a second OCR run.
         """
+        from .config import get_auto_ocr_show_toast
+        from .ui.toast import show_toast
+
         self._trim_timer.start(0)
         self._auto_ocr_in_flight = False
 
@@ -149,6 +154,8 @@ class OcrController:
             clipboard = self.app.clipboard()
             if clipboard:
                 clipboard.setText(text)
+            if get_auto_ocr_show_toast():
+                show_toast(self.translate("pin_ocr_copied"))
 
         # ── popup redirect: a thumbnail click happened while we were busy ──
         # Route through start_request so every popup appearance shares the

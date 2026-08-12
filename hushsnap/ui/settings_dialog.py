@@ -16,6 +16,8 @@ from ..config import (
     update_ui_lang_in_config,
     get_auto_ocr_after_capture,
     update_auto_ocr_after_capture,
+    get_auto_ocr_show_toast,
+    update_auto_ocr_show_toast,
     get_show_capture_dimension_label,
     update_show_capture_dimension_label,
     get_thumbnail_display_time,
@@ -49,7 +51,12 @@ from .styles import (
     SETTING_CARD_STYLE,
     SETTINGS_CAPTURE_DIALOG_MIN_WIDTH,
     SETTINGS_DIALOG_WIDTH,
+    SETTINGS_CARD_BG,
+    SETTINGS_CARD_BORDER,
+    SETTINGS_GHOST_BORDER,
+    SETTINGS_GHOST_HOVER_BG,
     SETTINGS_LABEL_COLOR,
+    SETTINGS_SUBTITLE_COLOR,
     SETTINGS_WARNING_COLOR,
     STATUS_LABEL_STYLE,
     SUBTITLE_STYLE,
@@ -896,6 +903,142 @@ class HotkeyCaptureDialog(QtWidgets.QDialog):
         event.accept()
 
 
+class ConfirmDialog(QtWidgets.QDialog):
+    """A polished confirmation dialog matching HushSnap's design language.
+
+    Shows an icon, title, body text, and two action buttons. The default
+    button is set to the safe / cancel action so pressing Enter doesn't
+    confirm a destructive choice.
+    """
+
+    _DIALOG_WIDTH = 400
+
+    def __init__(self, title, text, confirm_label, cancel_label, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setModal(False)
+        self.setFixedWidth(self._DIALOG_WIDTH)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
+
+        root = QtWidgets.QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # ── card container ──────────────────────────────────────────
+        card = QtWidgets.QFrame()
+        card.setObjectName("confirmCard")
+        card.setStyleSheet(
+            "QFrame#confirmCard {"
+            f" background: {SETTINGS_CARD_BG};"
+            f" border: 0.5px solid {SETTINGS_CARD_BORDER};"
+            " border-radius: 10px;"
+            "}"
+        )
+        root.addWidget(card)
+
+        layout = QtWidgets.QVBoxLayout(card)
+        layout.setContentsMargins(24, 24, 24, 16)
+        layout.setSpacing(0)
+
+        # ── icon + body ─────────────────────────────────────────────
+        top = QtWidgets.QHBoxLayout()
+        top.setSpacing(14)
+
+        icon_lbl = QtWidgets.QLabel("⚠")  # ⚠ warning sign
+        icon_lbl.setFixedSize(36, 36)
+        icon_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        icon_lbl.setStyleSheet(
+            "font-size: 22px;"
+            " background: #FFF3E0;"
+            " border-radius: 18px;"
+            f" color: {SETTINGS_WARNING_COLOR};"
+        )
+        top.addWidget(icon_lbl, alignment=QtCore.Qt.AlignmentFlag.AlignTop)
+
+        body = QtWidgets.QLabel(text)
+        body.setWordWrap(True)
+        body.setStyleSheet(
+            "font-size: 14px;"
+            f" color: {SETTINGS_LABEL_COLOR};"
+            " background: transparent; border: none;"
+            " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
+        )
+        top.addWidget(body, 1, QtCore.Qt.AlignmentFlag.AlignVCenter)
+
+        layout.addLayout(top)
+
+        layout.addSpacing(20)
+
+        # ── separator ───────────────────────────────────────────────
+        sep = QtWidgets.QFrame()
+        sep.setFixedHeight(1)
+        sep.setStyleSheet(
+            f"background: {SETTINGS_CARD_BORDER}; border: none;"
+        )
+        layout.addWidget(sep)
+        layout.addSpacing(12)
+
+        # ── buttons ─────────────────────────────────────────────────
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.setSpacing(10)
+        btn_row.addStretch()
+
+        cancel_btn = QtWidgets.QPushButton(cancel_label)
+        cancel_btn.setFixedHeight(32)
+        cancel_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        cancel_btn.setStyleSheet(
+            "QPushButton {"
+            f" background: #FFFFFF;"
+            f" border: 1px solid {SETTINGS_GHOST_BORDER};"
+            " border-radius: 6px;"
+            " padding: 0 18px;"
+            " font-size: 13px;"
+            f" color: {SETTINGS_LABEL_COLOR};"
+            " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
+            "}"
+            "QPushButton:hover {"
+            f" background: {SETTINGS_GHOST_HOVER_BG};"
+            "}"
+        )
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+
+        confirm_btn = QtWidgets.QPushButton(confirm_label)
+        confirm_btn.setFixedHeight(32)
+        confirm_btn.setDefault(False)
+        confirm_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        confirm_btn.setStyleSheet(
+            "QPushButton {"
+            f" background: {SETTINGS_WARNING_COLOR};"
+            " border: none;"
+            " border-radius: 6px;"
+            " padding: 0 18px;"
+            " font-size: 13px; font-weight: 600;"
+            " color: #FFFFFF;"
+            " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
+            "}"
+            "QPushButton:hover {"
+            " background: #D48317;"
+            "}"
+        )
+        confirm_btn.clicked.connect(self.accept)
+        btn_row.addWidget(confirm_btn)
+
+        layout.addLayout(btn_row)
+
+        # Make Cancel the default so Enter doesn't confirm.
+        cancel_btn.setDefault(True)
+
+        # ── drop shadow ─────────────────────────────────────────────
+        shadow = QtWidgets.QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(24)
+        shadow.setColor(QtGui.QColor(0, 0, 0, 60))
+        shadow.setOffset(0, 8)
+        self.setGraphicsEffect(shadow)
+
+        self.adjustSize()
+
+
 class SettingsDialogController(QtCore.QObject):
     """Settings panel with categories (General, Capture, OCR)."""
     language_changed = QtCore.pyqtSignal()
@@ -1138,6 +1281,7 @@ class SettingsDialogController(QtCore.QObject):
         # Auto OCR after capture
         def on_auto_ocr(checked):
             update_auto_ocr_after_capture(checked, self.config_path)
+            _toast_card.setVisible(checked)
         card_auto_ocr, switch_auto_ocr = _make_startup_card(
             self.translate("settings_auto_ocr_after_capture_label"),
             self.translate("settings_auto_ocr_after_capture_subtitle"),
@@ -1146,45 +1290,78 @@ class SettingsDialogController(QtCore.QObject):
         switch_auto_ocr.clicked.connect(on_auto_ocr)
         capture_layout.addWidget(card_auto_ocr)
 
+        # Sub-option: OCR completion toast (visible only when auto OCR is on)
+        def on_auto_ocr_toast(checked):
+            update_auto_ocr_show_toast(checked, self.config_path)
+
+        _auto_ocr_on = get_auto_ocr_after_capture(self.config_path)
+        _toast_card, _switch_toast = _make_startup_card(
+            self.translate("settings_auto_ocr_toast_label"),
+            self.translate("settings_auto_ocr_toast_subtitle"),
+            get_auto_ocr_show_toast(self.config_path),
+        )
+        _switch_toast.clicked.connect(on_auto_ocr_toast)
+        # Wrap with left indent to visually nest under auto OCR card.
+        _toast_wrapper = QtWidgets.QWidget()
+        _toast_wrapper.setStyleSheet("background: transparent;")
+        _toast_wrap_layout = QtWidgets.QHBoxLayout(_toast_wrapper)
+        _toast_wrap_layout.setContentsMargins(20, 0, 0, 0)
+        _toast_wrap_layout.addWidget(_toast_card)
+        _toast_wrapper.setVisible(_auto_ocr_on)
+        capture_layout.addWidget(_toast_wrapper)
+
         # Thumbnail Time (with hidden "Hide thumbnail card" sub-option)
         _HIDE_SENTINEL = -1
+        _hide_confirm_dlg = None  # guard against duplicate dialogs
 
         def change_thumb_time(index):
+            nonlocal _hide_confirm_dlg
             val = combo_thumb.itemData(index)
             if val == _HIDE_SENTINEL:
                 # Already hidden — clicking "Hidden" is a no-op.
                 if get_hide_thumbnail(self.config_path):
                     return
-                # Show confirmation before hiding.
-                msg = QtWidgets.QMessageBox(dialog)
-                msg.setIcon(QtWidgets.QMessageBox.Icon.NoIcon)
-                msg.setWindowTitle(
-                    self.translate("settings_thumbnail_hide_confirm_title")
+                # Only one confirmation at a time.
+                if _hide_confirm_dlg is not None and _hide_confirm_dlg.isVisible():
+                    _hide_confirm_dlg.raise_()
+                    _hide_confirm_dlg.activateWindow()
+                    return
+                # Show confirmation before hiding (modeless — won't block
+                # the capture hotkey or steal focus from the overlay).
+                dlg = ConfirmDialog(
+                    title=self.translate("settings_thumbnail_hide_confirm_title"),
+                    text=self.translate("settings_thumbnail_hide_confirm_text"),
+                    confirm_label=self.translate("settings_thumbnail_hide_confirm_yes"),
+                    cancel_label=self.translate("settings_thumbnail_hide_confirm_no"),
+                    parent=dialog,
                 )
-                msg.setText(
-                    self.translate("settings_thumbnail_hide_confirm_text")
-                )
-                msg.setStandardButtons(
-                    QtWidgets.QMessageBox.StandardButton.Yes
-                    | QtWidgets.QMessageBox.StandardButton.No
-                )
-                msg.setDefaultButton(QtWidgets.QMessageBox.StandardButton.No)
-                msg.setStyleSheet(MESSAGE_BOX_STYLE)
-                reply = msg.exec()
-                if reply == QtWidgets.QMessageBox.StandardButton.Yes:
-                    update_hide_thumbnail(True, self.config_path)
-                    thumbnail_manager.dismiss_current()
-                    # Flip the option text to "Hidden".
-                    combo_thumb.setItemText(
-                        index, self.translate("settings_thumbnail_hidden")
-                    )
-                    combo_thumb.update()
-                else:
-                    # Revert to the previous duration value.
-                    combo_thumb.blockSignals(True)
-                    prev_duration = get_thumbnail_display_time(self.config_path)
-                    combo_thumb.setCurrentIndex(combo_thumb.findData(prev_duration))
-                    combo_thumb.blockSignals(False)
+                _hide_confirm_dlg = dlg
+                def _clear_dlg():
+                    nonlocal _hide_confirm_dlg
+                    _hide_confirm_dlg = None
+                dlg.destroyed.connect(_clear_dlg)
+                dlg.setWindowModality(QtCore.Qt.WindowModality.NonModal)
+
+                def _on_hide_reply(code):
+                    if code == QtWidgets.QDialog.DialogCode.Accepted:
+                        update_hide_thumbnail(True, self.config_path)
+                        thumbnail_manager.dismiss_current()
+                        combo_thumb.setItemText(
+                            index, self.translate("settings_thumbnail_hidden")
+                        )
+                        combo_thumb.update()
+                    else:
+                        combo_thumb.blockSignals(True)
+                        prev_duration = get_thumbnail_display_time(
+                            self.config_path
+                        )
+                        combo_thumb.setCurrentIndex(
+                            combo_thumb.findData(prev_duration)
+                        )
+                        combo_thumb.blockSignals(False)
+
+                dlg.finished.connect(_on_hide_reply)
+                dlg.show()
             else:
                 update_thumbnail_display_time(val, self.config_path)
                 if get_hide_thumbnail(self.config_path):
