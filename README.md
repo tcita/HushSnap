@@ -18,6 +18,8 @@ HushSnap bridges screenshots and OCR into one fluid flow. Press a hotkey and a c
 
 [Demo Video](https://youtu.be/untWW6_Ea3M)
 
+[爱发电 (Support)](https://afdian.com/a/tcita)
+
 </td>
 </tr>
 </table>
