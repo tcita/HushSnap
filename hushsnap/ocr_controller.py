@@ -155,7 +155,10 @@ class OcrController:
             if clipboard:
                 clipboard.setText(text)
             if get_auto_ocr_show_toast():
-                show_toast(self.translate("pin_ocr_copied"))
+                # Shorter than the 2000 ms default: this toast fires on every
+                # capture, and lingering bottom-center could be captured into
+                # the next screenshot.  Total visible ≈ 800 ms hold + 400 ms fade.
+                show_toast(self.translate("pin_ocr_copied"), duration_ms=800)
 
         # ── popup redirect: a thumbnail click happened while we were busy ──
         # Route through start_request so every popup appearance shares the
