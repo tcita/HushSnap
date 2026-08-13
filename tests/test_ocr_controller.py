@@ -50,6 +50,7 @@ def _translate(key, **kwargs):
         "ocr_update_btn": "Update",
         "ocr_cancel_btn": "Cancel",
         "back_to_image_btn": "Back to Image",
+        "pin_ocr_copied": "Text extracted",
     }
     return table[key].format(**kwargs)
 
