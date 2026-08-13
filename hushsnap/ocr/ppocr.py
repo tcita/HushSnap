@@ -79,16 +79,33 @@ Parameter choices vs RapidOCR defaults
       reinstate that pin.
 
   Rec.rec_batch_num = 1 (default 6)
-      Recognition runs sequentially on CPU — batching only adds threading
-      overhead without parallelism.
+      Batching groups crops into fewer ONNX Run calls, amortizing per-call
+      fixed overhead, at the cost of padding each group to its widest crop
+      (crops are width-sorted first so groups are similar).  Measured
+      2026-08: early block A/Bs suggested ±10 % differences, but a strict
+      interleaved A/B (20 paired rounds, alternating engines on the same
+      image) found NO real effect — median diff +24 ms against per-round
+      noise of ±300–1000 ms.  Batch size is a no-op on this CPU stack;
+      text is byte-identical regardless.  (The previous "batching only
+      adds threading overhead" rationale was wrong too — the current
+      rapidocr batches via larger tensors, no threads.)
 
-  intra_op_num_threads = -1 (default -1)
-      Left at the ONNX Runtime default.  Manual tuning has been attempted
-      but the optimal value drifts across ORT versions (1.20 → 8, 1.28 →
-      12, 1.21 → 14) and is only measurable on large/dense screenshots.
-      On typical captures (≤200 chars) the difference is in the noise.
-      Let ORT's own heuristics choose — they are maintained alongside the
-      thread pool and adapt across versions.
+  intra_op_num_threads = min(8, physical cores), auto-detected
+      Strict interleaved A/B (2026-08, Ryzen 8945HX 16c/32t 2×8 CCDs, 20
+      paired rounds per config, alternating engines) measured -1 (all 32
+      logical threads) to be 23 % SLOWER than 8: every ORT operator
+      parallelizes over the whole pool, and the small PP-OCR tensors pay
+      more thread-sync overhead than the work is worth — plus SMT and
+      cross-CCD contention.  The optimum is 8 = ONE CCD's physical cores;
+      measured vs 8: 4=+31 %, 6=+6 %, 10=+15 %, 12=+11 %, 16=+3 %, every
+      paired diff same-signed (15/15 rounds).  The earlier claim "optimal
+      drifts across ORT versions, let ORT choose" was block-measured and
+      is retracted.
+      The rule is deliberately simple: cap at 8, never exceed the
+      machine's physical cores (_detect_intra_threads counts
+      RelationProcessorCore entries; a per-CCD L3-group detection was
+      tried and dropped — raw topology data is not reported cleanly
+      enough to trust across machines).
 
   inter_op_num_threads = 1 (default -1)
       Det → Rec pipeline is strictly sequential; inter-op parallelism has
@@ -296,6 +313,35 @@ _BOX_H_TO_FS_RATIO = 1.2
 # source (mean/std, use_dilation); override only where a rapidocr default is
 # demonstrably bad for screenshots (limit_side_len 736 collapses small crops);
 # switch off rapidocr-only features that have no PP-OCR equivalent.
+def _detect_intra_threads() -> int:
+    """Pick intra_op_num_threads = min(8, physical core count).
+
+    Strict interleaved A/B (2026-08, Ryzen 8945HX 16c/32t, 2×8-core CCDs)
+    measured the optimum at 8: 32 threads is 23 % slower (per-op thread
+    sync on small tensors costs more than the work), and 16 physical is
+    3 % slower than 8 (cross-CCD sync).  The rule is deliberately simple:
+    cap at 8, never exceed the machine's physical cores.  A per-CCD
+    L3-group detection was attempted and dropped — the raw topology data
+    (L3 group masks) is not reported cleanly enough to trust across
+    machines; psutil's battle-tested cpu_count(logical=False) is the
+    whole implementation.
+    """
+    import os
+
+    try:
+        import psutil
+
+        physical = psutil.cpu_count(logical=False)
+        if not physical:
+            raise OSError("cpu_count(logical=False) returned 0")
+        return max(1, min(8, physical))
+    except Exception:
+        logger.debug("[PPOCR] intra-thread topology detection failed", exc_info=True)
+        return max(1, min(8, os.cpu_count() or 1))
+
+
+_INTRA_OP_THREADS = _detect_intra_threads()
+
 _DEFAULT_ENGINE_PARAMS: dict = {
     # Global.max_side_len was pinned to 4000 (rapidocr-ONLY pre-det long-side
     # cap; no PP-OCR equivalent).  REMOVED: with use_preprocess_img=False the
@@ -416,7 +462,7 @@ _DEFAULT_ENGINE_PARAMS: dict = {
     # (updated: reversed to False).
     # det-use-dilation-true (updated: reversed to False).
     "Det.use_dilation": False,
-    "EngineConfig.onnxruntime.intra_op_num_threads": -1,
+    "EngineConfig.onnxruntime.intra_op_num_threads": _INTRA_OP_THREADS,
     "EngineConfig.onnxruntime.inter_op_num_threads": 1,
     "EngineConfig.onnxruntime.enable_cpu_mem_arena": False,
 }

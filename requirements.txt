@@ -8,3 +8,4 @@ winrt-Windows.ApplicationModel==3.2.1  # pin both projections: their ~=3.2.1 cha
 winrt-Windows.Foundation==3.2.1
 pytest>=7.0
 Pillow>=10.0,<13
+psutil>=6.0
