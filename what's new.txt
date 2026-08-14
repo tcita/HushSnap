@@ -2,6 +2,28 @@
 Release notes (newest first)
 ================================================================================
 
+### v1.6.1
+
+· 截图自动 OCR 完成后新增"已提取文字"提示条：低调的深色胶囊样式，自动向上堆叠、不遮挡其他提示，可在设置中关闭。
+· 缩略图时长下拉框新增"隐藏"选项：截图后不再显示缩略图卡片，选择时会弹出确认框，说明将失去编辑/固定/保存/一键 OCR。
+· OCR 线程数改为按物理核心数自动适配（最多 8 个），不再固定使用全部线程。
+· 增加了软件的稳定性。
+
+· 截圖自動 OCR 完成後新增「已提取文字」提示條：低調的深色膠囊樣式，自動向上堆疊、不遮擋其他提示，可在設定中關閉。
+· 縮圖時長下拉框新增「隱藏」選項：截圖後不再顯示縮圖卡片，選擇時會彈出確認框，說明將失去編輯/釘選/儲存/一鍵 OCR。
+· OCR 執行緒數改為按實體核心數自動適配（最多 8 個），不再固定使用全部執行緒。
+· 增加了軟體的穩定性。
+
+· New "Text extracted" toast after auto-OCR completes — a subtle dark pill that stacks upward so it never covers other toasts; can be turned off in Settings.
+· New "Hide" option in the Thumbnail Duration dropdown: no thumbnail card shows after capture; choosing it opens a confirmation listing what you'll lose (edit / pin / save / one-click OCR).
+· OCR thread count now adapts to your physical core count (up to 8) instead of using all available threads.
+· Stability improvements.
+
+· 自動 OCR 完了後に「テキストを抽出しました」トーストを追加。控えめなダークピルスタイルで、他のトーストを隠さないよう上方向に重なります。設定でオフにできます。
+· サムネイル時間のドロップダウンに「非表示」を追加：キャプチャ後にサムネイルカードを表示しません。選択時に確認ダイアログが表示され、失う機能（編集・ピン留め・保存・ワンクリック OCR）を説明します。
+· OCR のスレッド数を物理コア数に応じて自動調整（最大 8）するよう変更し、全スレッド固定使用をやめました。
+· 安定性を向上させました。
+
 ### v1.6
 
 · 新增截图自动 OCR 功能：开启后截图自动识别文字并复制到剪贴板。
