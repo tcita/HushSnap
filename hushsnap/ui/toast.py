@@ -15,8 +15,7 @@ class Toast(QtWidgets.QFrame):
 
     ``variant="subtle"`` is the quiet style for HIGH-FREQUENCY messages
     (e.g. the auto-OCR completion toast that fires on every capture):
-    a small brand-green pill — high contrast on both light and dark
-    backgrounds, instantly recognizable, but compact and briefly visible.
+    a compact success card with a brand-green confirmation badge.
 
     Toasts at the default position (bottom-center of the cursor's screen)
     STACK upward: a new toast places itself above any live bottom-center
@@ -24,7 +23,7 @@ class Toast(QtWidgets.QFrame):
     can never cover each other.
     """
     def __init__(self, text, parent=None, duration_ms=2000, is_error=False,
-                 position=None, variant="normal"):
+                 position=None, variant="normal", detail=None):
         super().__init__(parent)
         self.duration_ms = duration_ms
         self.is_error = is_error
@@ -67,31 +66,51 @@ class Toast(QtWidgets.QFrame):
             accent_bar.setFixedWidth(4)
             layout.addWidget(accent_bar)
 
-        # Content area
-        self.label = QtWidgets.QLabel(text)
         if subtle:
-            # Neutral dark pill + thin light border + small green check:
-            # reads on light backgrounds by its darkness, on dark
-            # backgrounds by the border; the green check carries the
-            # success/identity signal without a wall of color.
-            import html as _html
-            self.label.setText(
-                f"<span style='color: {BRAND_GREEN};'>✓</span> "
-                f"{_html.escape(text)}"
-            )
-            self.label.setStyleSheet(
-                "QLabel {"
+            # Auto-OCR is frequent, so use a compact card rather than the
+            # full toast. The badge gives it a clear success state while the
+            # two-line hierarchy confirms exactly where the text went.
+            self.container.setStyleSheet(
+                "QFrame {"
                 " background-color: rgba(28, 28, 28, 0.96);"
-                " color: #FFFFFF;"
                 " border: 1px solid rgba(255, 255, 255, 0.28);"
-                " border-radius: 8px;"
-                " padding: 7px 16px;"
-                " font-size: 13px;"
-                " font-weight: 400;"
-                " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", \"Segoe UI\", sans-serif;"
+                " border-radius: 12px;"
                 "}"
             )
+            layout.setContentsMargins(10, 9, 14, 9)
+            layout.setSpacing(9)
+
+            badge = QtWidgets.QLabel("✓")
+            badge.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+            badge.setFixedSize(24, 24)
+            badge.setStyleSheet(
+                f"QLabel {{ background-color: {BRAND_GREEN}; color: #09251E; "
+                "border: none; border-radius: 12px; font-size: 15px; font-weight: 700; }}"
+            )
+            layout.addWidget(badge)
+
+            text_layout = QtWidgets.QVBoxLayout()
+            text_layout.setContentsMargins(0, 0, 0, 0)
+            text_layout.setSpacing(1)
+            self.label = QtWidgets.QLabel(text)
+            self.label.setStyleSheet(
+                "QLabel { color: #FFFFFF; border: none; background: transparent; "
+                "font-size: 13px; font-weight: 600; "
+                "font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", \"Segoe UI\", sans-serif; }"
+            )
+            text_layout.addWidget(self.label)
+            if detail:
+                detail_label = QtWidgets.QLabel(detail)
+                detail_label.setStyleSheet(
+                    "QLabel { color: rgba(255, 255, 255, 0.68); border: none; background: transparent; "
+                    "font-size: 11px; font-weight: 400; "
+                    "font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", \"Segoe UI\", sans-serif; }"
+                )
+                text_layout.addWidget(detail_label)
+            layout.addLayout(text_layout)
         else:
+            # Content area
+            self.label = QtWidgets.QLabel(text)
             self.label.setStyleSheet(
                 "QLabel {"
                 " background-color: rgba(28, 28, 28, 0.96);"
@@ -192,7 +211,7 @@ class Toast(QtWidgets.QFrame):
         self.setWindowOpacity(opacity)
 
 def show_toast(text, duration_ms=2000, is_error=False, position=None,
-               variant="normal"):
+               variant="normal", detail=None):
     """Helper function to show a toast globally.
 
     ``variant="subtle"`` is the quiet brand-green pill for high-frequency
@@ -201,4 +220,4 @@ def show_toast(text, duration_ms=2000, is_error=False, position=None,
     normal variant.
     """
     return Toast(text, duration_ms=duration_ms, is_error=is_error,
-                 position=position, variant=variant)
+                 position=position, variant=variant, detail=detail)

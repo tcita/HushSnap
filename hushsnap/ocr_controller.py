@@ -155,15 +155,15 @@ class OcrController:
             if clipboard:
                 clipboard.setText(text)
             if get_auto_ocr_show_toast():
-                # Fires on EVERY capture — quiet brand-green pill (subtle
-                # variant: smaller, no accent bar, gentle entrance).  Stays
-                # at the default bottom-center position, which now STACKS
+                # Fires on EVERY capture — quiet success card (subtle
+                # variant: green badge + title, no accent bar, gentle entrance).
+                # Stays at the default bottom-center position, which now STACKS
                 # upward, so the thumbnail's right-click Save-to-Desktop
-                # toast can no longer cover it.  Total visible ≈ 800 ms hold
-                # + 400 ms fade.
+                # toast can no longer cover it.  Total visible ≈ 1100 ms hold
+                # + fade.
                 show_toast(
                     self.translate("pin_ocr_copied"),
-                    duration_ms=800,
+                    duration_ms=1100,
                     variant="subtle",
                 )
 
