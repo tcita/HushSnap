@@ -8,6 +8,21 @@ logger = logging.getLogger(__name__)
 # Global list to keep Toast instances alive (prevent GC) until they close themselves
 _active_toasts = []
 
+
+def _label_font(px: int) -> QtGui.QFont:
+    """Font for toast text.
+
+    ``PreferNoHinting``: full hinting snaps curved strokes to the pixel grid,
+    which makes the corners of letters like e/a/d look jagged at small sizes.
+    Disabling hinting lets antialiasing smooth those curves instead.
+    """
+    font = QtGui.QFont()
+    font.setFamilies(["Microsoft YaHei", "Microsoft JhengHei", "Segoe UI"])
+    font.setPixelSize(px)
+    font.setHintingPreference(QtGui.QFont.HintingPreference.PreferNoHinting)
+    return font
+
+
 class Toast(QtWidgets.QFrame):
     """
     A sleek, non-intrusive floating notification (Toast).
@@ -31,6 +46,9 @@ class Toast(QtWidgets.QFrame):
         self.position = position
         _active_toasts.append(self)
 
+        subtle = variant == "subtle"
+        self._radius = 12 if subtle else 8
+
         self.setWindowFlags(
             QtCore.Qt.WindowType.FramelessWindowHint
             | QtCore.Qt.WindowType.WindowStaysOnTopHint
@@ -39,44 +57,14 @@ class Toast(QtWidgets.QFrame):
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
 
-        subtle = variant == "subtle"
-
-        # Main layout for the top-level Toast widget (transparent wrapper)
-        outer_layout = QtWidgets.QVBoxLayout(self)
-        outer_layout.setContentsMargins(28, 28, 28, 34)
-        outer_layout.setSpacing(0)
-
-        # Container widget for actual content
-        self.container = QtWidgets.QFrame()
-        self.container.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
-        outer_layout.addWidget(self.container)
-
-        # Main container layout inside container
-        layout = QtWidgets.QHBoxLayout(self.container)
+        layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-
-        # Left accent bar (normal variant only)
-        if not subtle:
-            accent_bar = QtWidgets.QFrame()
-            accent_color = "#FF5252" if is_error else BRAND_GREEN
-            accent_bar.setStyleSheet(
-                f"background-color: {accent_color}; border-top-left-radius: 8px; border-bottom-left-radius: 8px;"
-            )
-            accent_bar.setFixedWidth(4)
-            layout.addWidget(accent_bar)
 
         if subtle:
             # Auto-OCR is frequent, so use a compact card rather than the
             # full toast. The badge gives it a clear success state while the
             # two-line hierarchy confirms exactly where the text went.
-            self.container.setStyleSheet(
-                "QFrame {"
-                " background-color: rgba(28, 28, 28, 0.96);"
-                " border: 1px solid rgba(255, 255, 255, 0.28);"
-                " border-radius: 12px;"
-                "}"
-            )
             layout.setContentsMargins(10, 9, 14, 9)
             layout.setSpacing(9)
 
@@ -93,37 +81,41 @@ class Toast(QtWidgets.QFrame):
             text_layout.setContentsMargins(0, 0, 0, 0)
             text_layout.setSpacing(1)
             self.label = QtWidgets.QLabel(text)
+            self.label.setFont(_label_font(13))
             self.label.setStyleSheet(
-                "QLabel { color: #FFFFFF; border: none; background: transparent; "
-                "font-size: 13px; font-weight: 600; "
-                "font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", \"Segoe UI\", sans-serif; }"
+                "QLabel { color: #FFFFFF; border: none; background: transparent; }"
             )
             text_layout.addWidget(self.label)
             if detail:
                 detail_label = QtWidgets.QLabel(detail)
+                detail_label.setFont(_label_font(11))
                 detail_label.setStyleSheet(
-                    "QLabel { color: rgba(255, 255, 255, 0.68); border: none; background: transparent; "
-                    "font-size: 11px; font-weight: 400; "
-                    "font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", \"Segoe UI\", sans-serif; }"
+                    "QLabel { color: rgba(255, 255, 255, 0.68); border: none; background: transparent; }"
                 )
                 text_layout.addWidget(detail_label)
             layout.addLayout(text_layout)
         else:
-            # Content area
+            # Left accent bar + title text.  The accent bar's own rounded-left
+            # corners match the card silhouette (solid color, no border, so no
+            # stylesheet corner artifact).
+            accent_bar = QtWidgets.QFrame()
+            accent_color = "#FF5252" if is_error else BRAND_GREEN
+            accent_bar.setStyleSheet(
+                f"background-color: {accent_color}; border-top-left-radius: 8px; border-bottom-left-radius: 8px;"
+            )
+            accent_bar.setFixedWidth(4)
+            layout.addWidget(accent_bar)
+
             self.label = QtWidgets.QLabel(text)
+            self.label.setFont(_label_font(14))
             self.label.setStyleSheet(
                 "QLabel {"
-                " background-color: rgba(28, 28, 28, 0.96);"
+                " background: transparent;"
                 " color: #FFFFFF;"
-                " border-top-right-radius: 8px;"
-                " border-bottom-right-radius: 8px;"
                 " padding: 12px 20px;"
-                " font-size: 14px;"
-                " font-weight: 500;"
-                " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", \"Segoe UI\", sans-serif;"
                 "}"
             )
-        layout.addWidget(self.label)
+            layout.addWidget(self.label)
 
         self.adjustSize()
 
@@ -171,18 +163,6 @@ class Toast(QtWidgets.QFrame):
         self.group.addAnimation(fade_in)
         self.group.addAnimation(slide_in)
 
-        # Drop shadow on the container widget to render inside the top-level window
-        shadow = QtWidgets.QGraphicsDropShadowEffect(self.container)
-        if subtle:
-            shadow.setBlurRadius(14)
-            shadow.setColor(QtGui.QColor(0, 0, 0, 80))
-            shadow.setOffset(0, 3)
-        else:
-            shadow.setBlurRadius(25)
-            shadow.setColor(QtGui.QColor(0, 0, 0, 120))
-            shadow.setOffset(0, 6)
-        self.container.setGraphicsEffect(shadow)
-
         self.show()
         self.group.start()
 
@@ -197,6 +177,20 @@ class Toast(QtWidgets.QFrame):
         QtCore.QTimer.singleShot(duration_ms, self.fade_timer.start)
         self.fade_timer.setInterval(self.fade_step_ms)
 
+    def paintEvent(self, event):
+        # Self-drawn rounded card: dark background + thin light border.  Painted
+        # with QPainter (not a stylesheet border) so the rounded corners stay
+        # clean — a stylesheet ``border`` + ``border-radius`` anti-aliases the
+        # semi-transparent border into bright 1px dots at the corners.
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        rect = QtCore.QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        path = QtGui.QPainterPath()
+        path.addRoundedRect(rect, self._radius, self._radius)
+        painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 71), 1.0))
+        painter.setBrush(QtGui.QBrush(QtGui.QColor(28, 28, 28, 245)))
+        painter.drawPath(path)
+
     def _perform_fade(self):
         self._current_fade_step += 1
         if self._current_fade_step > self.fade_steps:
@@ -209,6 +203,7 @@ class Toast(QtWidgets.QFrame):
         t = self._current_fade_step / self.fade_steps
         opacity = 1.0 - (t * t)
         self.setWindowOpacity(opacity)
+
 
 def show_toast(text, duration_ms=2000, is_error=False, position=None,
                variant="normal", detail=None):
