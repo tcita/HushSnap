@@ -1,4 +1,4 @@
-<!--
+"<!--
   HushSnap Landing Page — https://tcita.github.io/HushSnap/
   ==========================================================
   GitHub Pages site for HushSnap, a Windows screenshot & offline OCR tool.
@@ -334,7 +334,7 @@
             <div style="color:#888;margin-top:3px;font-size:12px;">极简高效的截图识字助手</div>
             <div style="color:#5fc98a;margin-top:3px;font-size:12px;">サクッと使える画面文字認識</div>
           </div>
-          <div style="margin-top:12px;font-size:10px;color:#555;line-height:1.5;" id="el-ocr-note">* 已针对简/繁/英/日进行优化。<br>其他语言识别效果有限。</div>
+          <div style="margin-top:12px;font-size:10px;color:#555;line-height:1.5;" id="el-ocr-note">* 支持 50 种语言,简/繁/英/日深度优化。</div>
         </div>
       </div>
 
@@ -405,6 +405,7 @@
     <span class="feature-dot" data-index="3"></span>
     <span class="feature-dot" data-index="4"></span>
     <span class="feature-dot" data-index="5"></span>
+    <span class="feature-dot" data-index="6"></span>
   </div>
   <div class="feature-stage">
     <div class="feature-row active">
@@ -425,7 +426,7 @@
       <div class="feature-icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="#5fc98a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 010 20"/></svg></div>
       <div class="feature-text">
         <h3 id="el-f3-title">多语 OCR</h3>
-        <p id="el-f3-desc">内置 PP-OCRv6,简/繁/英/日表现优异,结果可编辑、复制、置顶。</p>
+        <p id="el-f3-desc">内置 PP-OCRv6,一次识别 50 种语言,中/日支持竖排,结果可编辑、复制、置顶。</p>
       </div>
     </div>
     <div class="feature-row">
@@ -439,7 +440,7 @@
       <div class="feature-icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="#5fc98a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg></div>
       <div class="feature-text">
         <h3 id="el-f5-title">轻量省资源</h3>
-        <p id="el-f5-desc">常驻系统托盘,内存占用极低,后台静默不拖慢电脑。</p>
+        <p id="el-f5-desc">常驻系统托盘,内存占用低,后台静默不拖慢电脑。</p>
       </div>
     </div>
     <div class="feature-row">
@@ -447,6 +448,13 @@
       <div class="feature-text">
         <h3 id="el-f6-title">极简美学</h3>
         <p id="el-f6-desc">深色界面干净利落,功能直达不深藏。没有满屏按钮,只有恰到好处的设计。</p>
+      </div>
+    </div>
+    <div class="feature-row">
+      <div class="feature-icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="#5fc98a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2z"/></svg></div>
+      <div class="feature-text">
+        <h3 id="el-f7-title">自动 OCR</h3>
+        <p id="el-f7-desc">开启后截图即识别,文字直达剪贴板,粘贴即可。</p>
       </div>
     </div>
   </div>
@@ -468,7 +476,7 @@ const dictionary = {
     headline: "Snap.<br><span>Recognize.</span><br>Done.",
     tagline: "A local screenshot & OCR tool for Windows. Smooth, private, and fully offline.",
     ocrTitle: "OCR Recognition",
-    disclaimer: "* Tuned for ZH, EN, and JA.<br>Other scripts may have limited recognition accuracy.",
+    disclaimer: "* Supports 50 languages; optimized for ZH, EN, and JA.",
     dragText: "Drag to Apps",
     lblCapture: "1. Capture",
     lblHub: "2. Thumbnail",
@@ -484,19 +492,21 @@ const dictionary = {
     f2Title: "Instant Hotkey",
     f2Desc: "Alt+Q summons a crosshair; select to capture straight to the clipboard, no window to pre-open.",
     f3Title: "Multilingual OCR",
-    f3Desc: "Built-in PP-OCRv6 with strong ZH/EN/JA support; edit, copy, or pin the results.",
+    f3Desc: "Built-in PP-OCRv6 recognizes 50 languages, with vertical text for Chinese & Japanese; edit, copy, or pin the results.",
     f4Title: "Built-in Image Editor",
     f4Desc: "Annotate, redact, crop, rotate, and resize — touch up a capture, then copy or save.",
     f5Title: "Lightweight Footprint",
-    f5Desc: "Sits quietly in your system tray with minimal memory use — won't slow down your PC.",
+    f5Desc: "Sits quietly in your system tray with low memory use — won't slow down your PC.",
     f6Title: "Clean & Elegant",
-    f6Desc: "A polished dark UI free of clutter. OCR is one click away — no digging through buried menus."
+    f6Desc: "A polished dark UI free of clutter. OCR is one click away — no digging through buried menus.",
+    f7Title: "Auto OCR",
+    f7Desc: "Enable it and capture triggers instant recognition — text goes straight to your clipboard, ready to paste."
   },
   zh: {
     headline: "截图.<br><span>识字.</span><br>搞定.",
     tagline: "Windows 离线截图与文字识别工具。流畅、私密、全本地。",
     ocrTitle: "OCR 文字识别",
-    disclaimer: "* 已针对简/繁/英/日进行优化。<br>其他语言识别效果有限。",
+    disclaimer: "* 支持 50 种语言,简/繁/英/日深度优化。",
     dragText: "拖拽至应用",
     lblCapture: "1. 截图",
     lblHub: "2. 缩略图",
@@ -512,19 +522,21 @@ const dictionary = {
     f2Title: "热键秒起",
     f2Desc: "Alt+Q 唤出十字准星,选区即截,直接进剪贴板,无需预开窗口。",
     f3Title: "多语 OCR",
-    f3Desc: "内置 PP-OCRv6,简/繁/英/日表现优异,结果可编辑、复制、置顶。",
+    f3Desc: "内置 PP-OCRv6,一次识别 50 种语言,中/日支持竖排,结果可编辑、复制、置顶。",
     f4Title: "内置图片编辑器",
     f4Desc: "标注、打码、裁剪、旋转、缩放,截图后顺手修图,复制或保存。",
     f5Title: "轻量省资源",
-    f5Desc: "常驻系统托盘,内存占用极低,后台静默不拖慢电脑。",
+    f5Desc: "常驻系统托盘,内存占用低,后台静默不拖慢电脑。",
     f6Title: "极简美学",
-    f6Desc: "深色界面干净利落,功能直达不深藏。没有满屏按钮,只有恰到好处的设计。"
+    f6Desc: "深色界面干净利落,功能直达不深藏。没有满屏按钮,只有恰到好处的设计。",
+    f7Title: "自动 OCR",
+    f7Desc: "开启后截图即识别,文字直达剪贴板,粘贴即可。"
   },
   tw: {
     headline: "截圖.<br><span>識字.</span><br>搞定.",
     tagline: "Windows 本機截圖與文字識別工具。流暢、私密、全本機。",
     ocrTitle: "OCR 文字識別",
-    disclaimer: "* 已針對簡/繁/英/日進行優化。<br>其他語言識別效果有限。",
+    disclaimer: "* 支援 50 種語言,簡/繁/英/日深度優化。",
     dragText: "拖曳至應用",
     lblCapture: "1. 截圖",
     lblHub: "2. 縮圖",
@@ -540,19 +552,21 @@ const dictionary = {
     f2Title: "熱鍵秒起",
     f2Desc: "Alt+Q 喚出十字準星,選區即截,直接進剪貼簿,無需預開視窗。",
     f3Title: "多語 OCR",
-    f3Desc: "內建 PP-OCRv6,簡/繁/英/日表現優異,結果可編輯、複製、置頂。",
+    f3Desc: "內建 PP-OCRv6,一次辨識 50 種語言,中/日支援直排,結果可編輯、複製、置頂。",
     f4Title: "內建圖片編輯器",
     f4Desc: "標註、打碼、裁剪、旋轉、縮放,截圖後順手修圖,複製或儲存。",
     f5Title: "輕量省資源",
-    f5Desc: "常駐系統匣,記憶體佔用極低,後台靜默不拖慢電腦。",
+    f5Desc: "常駐系統匣,記憶體佔用低,後台靜默不拖慢電腦。",
     f6Title: "極簡美學",
-    f6Desc: "深色介面乾淨俐落,功能直達不深藏。沒有滿屏按鈕,只有恰到好處的設計。"
+    f6Desc: "深色介面乾淨俐落,功能直達不深藏。沒有滿屏按鈕,只有恰到好處的設計。",
+    f7Title: "自動 OCR",
+    f7Desc: "開啟後截圖即辨識,文字直達剪貼簿,貼上即可。"
   },
   ja: {
     headline: "キャプチャ.<br><span>認識.</span><br>完了.",
     tagline: "Windows 向けのローカル OCR ツール。軽快、プライベート、完全オフライン。",
     ocrTitle: "OCR テキスト認識",
-    disclaimer: "* 簡体字・繁体字・英語・日本語向けに最適化済み。<br>その他の言語は認識精度が限定的です。",
+    disclaimer: "* 50 言語に対応。簡体・繁体・英・日は深度最適化済み。",
     dragText: "アプリにドラッグ",
     lblCapture: "1. キャプチャ",
     lblHub: "2. サムネイル",
@@ -568,13 +582,15 @@ const dictionary = {
     f2Title: "ホットキーで瞬時に",
     f2Desc: "Alt+Q で十字カーソルを呼び出し、範囲選択でクリップボードへ直接。事前起動不要。",
     f3Title: "多言語 OCR",
-    f3Desc: "内蔵 PP-OCRv6 が ZH/EN/JA に高精度で対応。結果は編集・コピー・固定可能。",
+    f3Desc: "内蔵 PP-OCRv6 が 50 言語を認識。中国語・日本語は縦書きにも対応。結果は編集・コピー・固定可能。",
     f4Title: "内蔵画像エディタ",
     f4Desc: "注釈、モザイク、切り抜き、回転、リサイズ。キャプチャ後そのまま編集、コピーや保存。",
     f5Title: "軽量 & 省リソース",
-    f5Desc: "システムトレイに常駐し、メモリ使用量は最小限。PC の動作を妨げません。",
+    f5Desc: "システムトレイに常駐し、メモリ使用量は低め。PC の動作を妨げません。",
     f6Title: "洗練された UI",
-    f6Desc: "ダークテーマの洗練された画面。OCR はワンクリック、メニューを掘る必要なし。"
+    f6Desc: "ダークテーマの洗練された画面。OCR はワンクリック、メニューを掘る必要なし。",
+    f7Title: "自動 OCR",
+    f7Desc: "有効にすると、キャプチャだけで自動認識。文字はクリップボードに直行、あとは貼り付けるだけ。"
   }
 };
 
@@ -720,13 +736,14 @@ function switchLang(lang) {
   set('el-f4-title', dict.f4Title); set('el-f4-desc', dict.f4Desc);
   set('el-f5-title', dict.f5Title); set('el-f5-desc', dict.f5Desc);
   set('el-f6-title', dict.f6Title); set('el-f6-desc', dict.f6Desc);
+  set('el-f7-title', dict.f7Title); set('el-f7-desc', dict.f7Desc);
 
   renderLayout();
 }
 
 // ── Feature carousel ──
 let featureIdx = 0;
-const FEATURE_COUNT = 6;
+const FEATURE_COUNT = 7;
 let featureTimer = null;
 
 function showFeature(idx) {
