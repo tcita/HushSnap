@@ -122,6 +122,31 @@ def test_thumbnail_open_in_viewer_signal_relay(qapp):
         win.close()
 
 
+def test_thumbnail_copy_image_signal_relay(qapp):
+    """The 'Copy Image' menu action relays pil_image through the manager.
+
+    The right-click menu emits copy_image_signal, which the manager
+    re-emits as copy_image(pil_image) - the clipboard-copy path.
+    """
+    from hushsnap.ui.thumbnail import ThumbnailManager
+
+    img = Image.new("RGBA", (100, 100), (255, 0, 0, 255))
+    mgr = ThumbnailManager()  # fresh instance: avoid cross-test singleton lifetime
+    mgr._do_show(img)
+    assert len(mgr._windows) == 1
+    win = mgr._windows[0]
+
+    received = []
+    mgr.copy_image.connect(lambda pil: received.append(pil))
+    try:
+        win.copy_image_signal.emit()
+        assert len(received) == 1
+        assert received[0] is img
+    finally:
+        mgr.copy_image.disconnect()
+        win.close()
+
+
 def test_thumbnail_vine_frame_geometry(qapp, monkeypatch):
     """When the corner ornament is enabled the window is enlarged on the top-left
     side only, the card shifts down-right by that padding (its bottom-right stays

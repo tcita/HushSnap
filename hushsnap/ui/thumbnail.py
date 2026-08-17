@@ -72,6 +72,7 @@ class ThumbnailWindow(QtWidgets.QWidget):
     # Signals for local handling, Manager will relay these globally
     clicked_signal = QtCore.pyqtSignal()
     save_to_desktop_signal = QtCore.pyqtSignal()
+    copy_image_signal = QtCore.pyqtSignal()
     pin_requested_signal = QtCore.pyqtSignal()
     edit_requested_signal = QtCore.pyqtSignal()
     open_in_viewer_signal = QtCore.pyqtSignal()
@@ -751,9 +752,10 @@ class ThumbnailWindow(QtWidgets.QWidget):
         apply_menu_shadow(menu)
 
         # The hover pill already exposes Edit / Pin / Close, so the right-click
-        # menu carries only actions the pill does NOT: View Original and
-        # Save to Desktop.
+        # menu carries only actions the pill does NOT: View Original,
+        # Copy Image, and Save to Desktop.
         view_action = menu.addAction(ui_text(lang, "thumbnail_open_in_viewer"))
+        copy_action = menu.addAction(ui_text(lang, "pin_copy_image"))
         desktop_action = menu.addAction(ui_text(lang, "thumbnail_save_to_desktop"))
 
         action = menu.exec(pos)
@@ -761,6 +763,9 @@ class ThumbnailWindow(QtWidgets.QWidget):
 
         if action == view_action:
             self.open_in_viewer_signal.emit()
+            self.close()
+        elif action == copy_action:
+            self.copy_image_signal.emit()
             self.close()
         elif action == desktop_action:
             self.save_to_desktop_signal.emit()
@@ -1087,6 +1092,7 @@ class ThumbnailManager(QtCore.QObject):
     show_signal = QtCore.pyqtSignal(object)
     clicked = QtCore.pyqtSignal(object)
     save_to_desktop = QtCore.pyqtSignal(object)
+    copy_image = QtCore.pyqtSignal(object)
     pin_requested = QtCore.pyqtSignal(object, object, object)
     edit_requested = QtCore.pyqtSignal(object)
     open_in_viewer = QtCore.pyqtSignal(object)
@@ -1115,6 +1121,7 @@ class ThumbnailManager(QtCore.QObject):
         win = ThumbnailWindow(pil_image)
         win.clicked_signal.connect(lambda: self.clicked.emit(pil_image))
         win.save_to_desktop_signal.connect(lambda: self.save_to_desktop.emit(pil_image))
+        win.copy_image_signal.connect(lambda: self.copy_image.emit(pil_image))
         win.edit_requested_signal.connect(lambda: self.edit_requested.emit(pil_image))
         win.open_in_viewer_signal.connect(lambda: self.open_in_viewer.emit(pil_image))
         win.pin_requested_signal.connect(
