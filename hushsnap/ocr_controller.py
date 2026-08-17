@@ -48,6 +48,8 @@ class OcrController:
         self._auto_ocr_cache = None  # OcrResponse from last completed auto-OCR, or None
         self._auto_ocr_in_flight = False  # True while an auto-OCR request is in the air
         self._pending_popup_pixmap = None  # pixmap stashed when start_request waits for auto-OCR
+        self._shutting_down = False  # app exit in progress (aboutToQuit)
+        self._load_thread = None     # background engine-load thread, joined on shutdown
 
         self.bridge.ocr_result.connect(self.on_ocr_finished)
         self.bridge.auto_ocr_done.connect(self._on_auto_ocr_done)
@@ -357,11 +359,34 @@ class OcrController:
             except Exception:
                 logging.error("Load failed", exc_info=True)
             finally:
-                QtCore.QCoreApplication.postEvent(
-                    self.bridge, _LoadFinishedEvent(),
-                )
+                if not self._shutting_down:
+                    QtCore.QCoreApplication.postEvent(
+                        self.bridge, _LoadFinishedEvent(),
+                    )
 
-        threading.Thread(target=run_load, daemon=True).start()
+        thread = threading.Thread(target=run_load, daemon=True)
+        self._load_thread = thread
+        thread.start()
+
+    def shutdown(self, timeout: float = 3.0):
+        """Stop background threads and wait for them to finish.
+
+        Called on app exit (aboutToQuit).  Stops the engine-load thread and
+        shuts down the OCR service workers so no background thread can
+        deliver a Qt event to a UI object that is already being torn down.
+        Idempotent and safe to call from any thread.
+        """
+        self._shutting_down = True
+        load_thread = self._load_thread
+        if load_thread is not None:
+            try:
+                load_thread.join(timeout=timeout)
+            except RuntimeError:
+                logging.debug("load thread join on non-started thread", exc_info=True)
+        try:
+            self.service.shutdown(timeout=timeout)
+        except Exception:
+            logging.getLogger(__name__).exception("OCR service shutdown failed")
 
     def _schedule_post_load_trim(self):
         if self._expecting_ocr_result:

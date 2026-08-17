@@ -81,6 +81,52 @@ def test_ocr_service_async_rejects_qpixmap(sample_pixmap):
         service.recognize_async(ocr.OcrRequest(pixmap=sample_pixmap), lambda _response: None)
 
 
+def test_ocr_service_shutdown_stops_worker_and_joins(monkeypatch, sample_pixmap):
+    """shutdown() must set the flag, join the worker thread, and refuse new work."""
+    started = threading.Event()
+    release = threading.Event()
+
+    def _recognize(*args, **kwargs):
+        started.set()
+        release.wait(timeout=2)
+        return ocr.OcrRecognition(text="never delivered")
+
+    register_engine(OCR_ENGINE_PPOCR, recognize=_recognize)
+
+    service = ocr.OcrService()
+    called = []
+
+    service.recognize_async(
+        ocr.OcrRequest(pixmap=sample_pixmap.toImage()),
+        lambda response: called.append(response),
+    )
+
+    # Worker is blocked inside recognize(); shutdown must join it (with timeout)
+    assert started.wait(timeout=2), "worker never started"
+    service.shutdown(timeout=1)
+
+    # Callback must NOT be delivered — shutdown drops the in-flight result
+    release.set()
+    import time
+    time.sleep(0.2)
+    assert called == []
+
+    # After shutdown, no new work is accepted
+    service.recognize_async(
+        ocr.OcrRequest(pixmap=sample_pixmap.toImage()),
+        lambda response: called.append(response),
+    )
+    time.sleep(0.2)
+    assert called == []
+
+
+def test_ocr_service_shutdown_idempotent(sample_pixmap):
+    """Calling shutdown() more than once must not raise."""
+    service = ocr.OcrService()
+    service.shutdown()
+    service.shutdown()
+
+
 def test_ocr_service_receives_preprocessed_image(monkeypatch, sample_pixmap):
     captured = {}
 

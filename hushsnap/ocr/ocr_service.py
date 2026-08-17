@@ -114,6 +114,8 @@ class OcrService:
         self._lock = threading.Lock()
         self._pending: tuple | None = None
         self._busy = False
+        self._shutdown = False
+        self._worker_threads: set[threading.Thread] = set()
 
     def recognize(self, request: OcrRequest) -> OcrResponse:
         try:
@@ -179,6 +181,12 @@ class OcrService:
         # rapidly re-captures and re-OCRs — at most one in-flight inference
         # plus one pending, never an unbounded backlog.
         with self._lock:
+            if self._shutdown:
+                # Service is stopping (app exit) — refuse new work so a
+                # freshly-spawned worker never delivers a result to a UI
+                # object that may already be tearing down.
+                logger.debug("[OCR_CHAIN] recognize_async rejected during shutdown")
+                return
             self._seq += 1
             seq = self._seq
             self._pending = (request, done_callback, seq)
@@ -187,61 +195,93 @@ class OcrService:
                 self._busy = True
         logger.debug("[OCR_CHAIN] recognize_async, seq=%d, spawned_worker=%s", seq, spawn)
         if spawn:
-            threading.Thread(target=self._worker, daemon=True).start()
+            worker = threading.Thread(target=self._worker, daemon=True)
+            with self._lock:
+                self._worker_threads.add(worker)
+            worker.start()
 
     def _worker(self):
-        while True:
-            with self._lock:
-                if self._pending is None:
-                    self._busy = False
-                    return
-                request, callback, seq = self._pending
-                self._pending = None
-            logger.debug("[OCR_CHAIN] worker picked up, seq=%d", seq)
+        self_ident = threading.current_thread()
+        try:
+            while True:
+                with self._lock:
+                    if self._shutdown:
+                        self._busy = False
+                        return
+                    if self._pending is None:
+                        self._busy = False
+                        return
+                    request, callback, seq = self._pending
+                    self._pending = None
+                logger.debug("[OCR_CHAIN] worker picked up, seq=%d", seq)
 
-            response = None  # guard: ensure del response in finally never raises UnboundLocalError
+                response = None  # guard: ensure del response in finally never raises UnboundLocalError
+                try:
+                    response = self.recognize(request)
+                    logger.debug("[OCR_CHAIN] worker recognize done, seq=%d", seq)
+                    # Decide under the lock whether this result is still the
+                    # newest, but emit OUTSIDE the lock. Calling the callback
+                    # (which emits a Qt signal carrying the response — including
+                    # a QPixmap — across threads) while holding self._lock risks
+                    # a deadlock / reentrant-lock crash if anything on the main
+                    # thread tries to acquire the lock while the emit is in
+                    # flight. The seq check is the only thing that needs the
+                    # lock; the delivery does not.
+                    deliver = False
+                    with self._lock:
+                        if not self._shutdown and seq == self._seq:
+                            deliver = True
+                        else:
+                            logger.info("[OCR_CHAIN] worker result superseded or dropped (shutdown), seq=%d", seq)
+                    if deliver:
+                        callback(response)
+                        logger.info("[OCR_CHAIN] worker callback emitted, seq=%d", seq)
+                except Exception as exc:
+                    logger.exception(f"Unexpected error in OCR worker thread: {exc}")
+                    logger.info("[OCR_CHAIN] worker exception, seq=%d", seq)
+                    response = OcrResponse(
+                        text="",
+                        error=str(exc),
+                        pixmap=request.pixmap,
+                        recognition=None,
+                    )
+                    deliver_err = False
+                    with self._lock:
+                        if not self._shutdown and seq == self._seq:
+                            deliver_err = True
+                    if deliver_err:
+                        callback(response)
+                finally:
+                    # Explicitly clear local references so that pixmap and
+                    # recognition objects are eligible for immediate reclamation
+                    # by CPython's reference counting.  Do NOT call gc.collect()
+                    # here — the full-heap scan would touch pages that were
+                    # trimmed out of the working set by a prior idle trim,
+                    # pulling them back into physical RAM for no benefit.
+                    del request
+                    del response
+                    del callback
+        finally:
+            with self._lock:
+                self._worker_threads.discard(self_ident)
+
+    def shutdown(self, timeout: float = 3.0):
+        """Stop OCR workers and wait for them to finish.
+
+        Sets a shutdown flag so running/in-flight workers stop taking new
+        requests and exit.  Blocks until each worker thread terminates or
+        *timeout* seconds elapse.  Called on app exit (aboutToQuit) so a
+        worker can never deliver a result to a UI object that is already
+        being torn down (which would crash on a stale QObject pointer).
+
+        Idempotent and safe to call from any thread.
+        """
+        with self._lock:
+            self._shutdown = True
+            workers = list(self._worker_threads)
+        for worker in workers:
             try:
-                response = self.recognize(request)
-                logger.debug("[OCR_CHAIN] worker recognize done, seq=%d", seq)
-                # Decide under the lock whether this result is still the
-                # newest, but emit OUTSIDE the lock. Calling the callback
-                # (which emits a Qt signal carrying the response — including
-                # a QPixmap — across threads) while holding self._lock risks
-                # a deadlock / reentrant-lock crash if anything on the main
-                # thread tries to acquire the lock while the emit is in
-                # flight. The seq check is the only thing that needs the
-                # lock; the delivery does not.
-                deliver = False
-                with self._lock:
-                    if seq == self._seq:
-                        deliver = True
-                    else:
-                        logger.info("[OCR_CHAIN] worker result superseded, seq=%d", seq)
-                if deliver:
-                    callback(response)
-                    logger.info("[OCR_CHAIN] worker callback emitted, seq=%d", seq)
-            except Exception as exc:
-                logger.exception(f"Unexpected error in OCR worker thread: {exc}")
-                logger.info("[OCR_CHAIN] worker exception, seq=%d", seq)
-                response = OcrResponse(
-                    text="",
-                    error=str(exc),
-                    pixmap=request.pixmap,
-                    recognition=None,
-                )
-                deliver_err = False
-                with self._lock:
-                    if seq == self._seq:
-                        deliver_err = True
-                if deliver_err:
-                    callback(response)
-            finally:
-                # Explicitly clear local references so that pixmap and
-                # recognition objects are eligible for immediate reclamation
-                # by CPython's reference counting.  Do NOT call gc.collect()
-                # here — the full-heap scan would touch pages that were
-                # trimmed out of the working set by a prior idle trim,
-                # pulling them back into physical RAM for no benefit.
-                del request
-                del response
-                del callback
+                worker.join(timeout=timeout)
+            except RuntimeError:
+                logger.debug("[OCR_CHAIN] worker join on non-started thread", exc_info=True)
+            logger.debug("[OCR_CHAIN] worker joined after shutdown (alive=%s)", worker.is_alive())

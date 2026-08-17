@@ -323,6 +323,9 @@ class Application(QtCore.QObject):
         self.hotkey_manager.register_initial()
         self.hotkey_manager.start_watch(self.qt_app)
         self.qt_app.aboutToQuit.connect(self.hotkey_manager.release_resources)
+        # Stop OCR worker/load threads before teardown so a background thread
+        # can never deliver a Qt event to a UI object that is being destroyed.
+        self.qt_app.aboutToQuit.connect(self.ocr_controller.shutdown)
 
         # 4. Native Event Filter (Hotkey hook)
         from .hotkey import HotkeyFilter

@@ -622,3 +622,56 @@ def test_pending_popup_overwritten_by_second_click(monkeypatch, qapp, tmp_path, 
     assert len(service.requests) == 0
 
 
+def test_controller_shutdown_stops_background_load(monkeypatch, qapp, tmp_path):
+    """shutdown() must set the flag, join the load thread, and be idempotent."""
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+    controller._expecting_ocr_result = False
+
+    load_calls = []
+    monkeypatch.setattr(
+        "hushsnap.ocr.engine.load_engine",
+        lambda engine: load_calls.append(engine),
+    )
+
+    controller._background_load()
+    assert controller._load_thread is not None
+
+    controller.shutdown()
+    assert controller._shutting_down is True
+    # No crash / no second join when called again.
+    controller.shutdown()
+
+
+def test_controller_shutdown_joins_load_thread(monkeypatch, qapp, tmp_path):
+    """shutdown() joins a running load thread before returning."""
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+    controller._expecting_ocr_result = False
+
+    import threading
+    import time
+
+    entered = threading.Event()
+    release = threading.Event()
+
+    def _slow_load(engine):
+        entered.set()
+        release.wait(timeout=2)
+        load_calls.append(engine)
+
+    load_calls = []
+    monkeypatch.setattr(
+        "hushsnap.ocr.engine.load_engine",
+        lambda engine: _slow_load(engine),
+    )
+
+    controller._background_load()
+    assert entered.wait(timeout=2), "load thread never started"
+
+    # shutdown() must join the blocked load thread (with timeout) and return
+    controller.shutdown(timeout=1)
+    assert controller._shutting_down is True
+
+    release.set()
+    time.sleep(0.1)
+
+
