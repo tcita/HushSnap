@@ -540,13 +540,24 @@ $stageDir = Join-Path $rootDir "build\msix_stage"
 # ballooned to ~186 MB because pandas/llvmlite/scipy leaked in. A fresh venv
 # installed only from requirements.txt is the root-cause fix: nothing extra
 # exists to scan. Created fresh each run so a stale/polluted venv can never
-# silently ship junk. pip's download cache still avoids re-fetching wheels,
-# so rebuilds are only as slow as the install step itself.
+# silently ship junk.
 
 $buildVenvDir = Join-Path $rootDir ".venv-build"
 $pythonExe = Join-Path $buildVenvDir "Scripts\python.exe"
 $pyinstallerExe = Join-Path $buildVenvDir "Scripts\pyinstaller.exe"
 $requirementsPath = Join-Path $rootDir "requirements.txt"
+
+# uv is the package manager (venv creation + install). Its cache is a single
+# global content-addressed store (%LOCALAPPDATA%\uv\cache) that survives venv
+# deletion, so rebuilds don't re-download wheels the way pip's HTTP cache did
+# (pip re-validates stale entries against mirror Cache-Control/ETag and
+# re-fetches when the mirror responds 200). Install with --offline first so a
+# warm-cache build touches no network; fall back to online only when the cache
+# is cold (first build) or requirements.txt added new packages.
+$uvExe = (Get-Command uv.exe -ErrorAction SilentlyContinue).Source
+if (-not $uvExe) {
+    throw "uv not found on PATH - install it (winget install astral-sh.uv) before building."
+}
 
 Write-Host "Creating clean build virtual environment..." -ForegroundColor Cyan
 
@@ -563,23 +574,19 @@ if (-not $basePython) {
     throw "python.exe not found on PATH - cannot create build venv."
 }
 
-& $basePython -m venv $buildVenvDir
+& $uvExe venv $buildVenvDir --python $basePython
 if ($LASTEXITCODE -ne 0) {
-    throw "Failed to create venv at $buildVenvDir (exit $LASTEXITCODE)."
+    throw "uv venv failed at $buildVenvDir (exit $LASTEXITCODE)."
 }
 
-Write-Host "  Installing dependencies from requirements.txt (this may take a few minutes)..." -ForegroundColor Cyan
-# Use a project-local persistent pip cache. The shared cache at
-# AppData\Local\pip\cache is used by every Python install on the machine
-# (including other tools) and can hold wheel files with ACLs/locks this
-# build cannot write to - observed as "Permission denied" on a cached
-# antlr4 wheel mid-install. A project-local cache outside the venv
-# persists across builds so wheels are only downloaded once; pip still
-# installs into the fresh venv each time.
-$pipCacheDir = Join-Path $rootDir ".pip-cache"
-& $pythonExe -m pip install --disable-pip-version-check --cache-dir $pipCacheDir -r $requirementsPath
+Write-Host "  Installing dependencies from requirements.txt..." -ForegroundColor Cyan
+& $uvExe pip install --python $pythonExe --offline -r $requirementsPath
 if ($LASTEXITCODE -ne 0) {
-    throw "pip install -r requirements.txt failed (exit $LASTEXITCODE)."
+    Write-Host "  Offline install failed (cold uv cache or new packages) - retrying online..." -ForegroundColor Yellow
+    & $uvExe pip install --python $pythonExe -r $requirementsPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "uv pip install failed (exit $LASTEXITCODE)."
+    }
 }
 
 # Strip stale winrt-bundled VC++ runtime from the build venv.

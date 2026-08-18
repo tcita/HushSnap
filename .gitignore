@@ -7,7 +7,6 @@ dist/
 # Clean build venv created by installer/build_msix.ps1 (isolated from dev
 # site-packages so pollution never ships). Recreated fresh each build.
 .venv-build/
-.pip-cache/
 # Temp venvs created by ad-hoc scripts/tests
 tmport*/
 !HushSnap.spec
