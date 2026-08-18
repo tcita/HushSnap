@@ -4,6 +4,7 @@ from pathlib import Path
 
 from PyQt6 import QtGui
 
+from ..constants import OCR_SUPERSEDED_ERROR
 from .engine import get_default_engine, get_recognize_fn
 from .models import OcrRequest, OcrResponse
 from .preprocess import run_minimal_pipeline
@@ -155,7 +156,7 @@ class OcrService:
                 recognition=None,
             )
 
-    def recognize_async(self, request: OcrRequest, done_callback):
+    def recognize_async(self, request: OcrRequest, done_callback, notify_if_dropped=False):
         """Run OCR in a worker thread.
 
         The asynchronous boundary accepts a ``QImage`` only.  ``QPixmap`` is
@@ -163,6 +164,15 @@ class OcrService:
         would make a future caller accidentally use it outside the GUI thread.
         Callers that start with a pixmap must convert it on the GUI thread
         before constructing the request.
+
+        ``notify_if_dropped``: when True, ``done_callback`` is *guaranteed* to
+        be called exactly once — with the real result, or with an
+        ``OcrResponse`` whose ``error`` is ``OCR_SUPERSEDED_ERROR`` if the
+        request lost the single worker slot to a newer request (either while
+        still pending, or after the worker picked it up).  Defaults to False so
+        GUI callers keep the historical silent-drop behaviour; the loopback OCR
+        server passes True so a blocking client never hangs on a dropped
+        request.
         """
         if not isinstance(request.pixmap, QtGui.QImage):
             raise TypeError(
@@ -180,6 +190,7 @@ class OcrService:
         # result clobber a newer one. It also bounds work when a user
         # rapidly re-captures and re-OCRs — at most one in-flight inference
         # plus one pending, never an unbounded backlog.
+        superseded_pending = None
         with self._lock:
             if self._shutdown:
                 # Service is stopping (app exit) — refuse new work so a
@@ -187,12 +198,24 @@ class OcrService:
                 # object that may already be tearing down.
                 logger.debug("[OCR_CHAIN] recognize_async rejected during shutdown")
                 return
+            # The displaced pending request (if any) is dropped by this
+            # overwrite.  If it asked for guaranteed delivery, notify it — but
+            # never while holding the lock (the callback may emit Qt signals).
+            prev = self._pending
+            if prev is not None and prev[3]:
+                superseded_pending = prev
             self._seq += 1
             seq = self._seq
-            self._pending = (request, done_callback, seq)
+            self._pending = (request, done_callback, seq, notify_if_dropped)
             spawn = not self._busy
             if spawn:
                 self._busy = True
+        if superseded_pending is not None:
+            prev_request, prev_callback, prev_seq, _ = superseded_pending
+            logger.info(
+                "[OCR_CHAIN] pending request superseded before run, seq=%d", prev_seq,
+            )
+            prev_callback(self._dropped_response(prev_request))
         logger.debug("[OCR_CHAIN] recognize_async, seq=%d, spawned_worker=%s", seq, spawn)
         if spawn:
             worker = threading.Thread(target=self._worker, daemon=True)
@@ -211,7 +234,7 @@ class OcrService:
                     if self._pending is None:
                         self._busy = False
                         return
-                    request, callback, seq = self._pending
+                    request, callback, seq, notify = self._pending
                     self._pending = None
                 logger.debug("[OCR_CHAIN] worker picked up, seq=%d", seq)
 
@@ -228,14 +251,21 @@ class OcrService:
                     # flight. The seq check is the only thing that needs the
                     # lock; the delivery does not.
                     deliver = False
+                    notify_drop = False
                     with self._lock:
                         if not self._shutdown and seq == self._seq:
                             deliver = True
+                        elif notify and not self._shutdown:
+                            notify_drop = True
+                            logger.info("[OCR_CHAIN] worker result superseded (notify), seq=%d", seq)
                         else:
                             logger.info("[OCR_CHAIN] worker result superseded or dropped (shutdown), seq=%d", seq)
                     if deliver:
                         callback(response)
                         logger.info("[OCR_CHAIN] worker callback emitted, seq=%d", seq)
+                    elif notify_drop:
+                        callback(self._dropped_response(request))
+                        logger.info("[OCR_CHAIN] worker callback emitted (superseded), seq=%d", seq)
                 except Exception as exc:
                     logger.exception(f"Unexpected error in OCR worker thread: {exc}")
                     logger.info("[OCR_CHAIN] worker exception, seq=%d", seq)
@@ -246,11 +276,16 @@ class OcrService:
                         recognition=None,
                     )
                     deliver_err = False
+                    notify_err = False
                     with self._lock:
                         if not self._shutdown and seq == self._seq:
                             deliver_err = True
+                        elif notify and not self._shutdown:
+                            notify_err = True
                     if deliver_err:
                         callback(response)
+                    elif notify_err:
+                        callback(self._dropped_response(request))
                 finally:
                     # Explicitly clear local references so that pixmap and
                     # recognition objects are eligible for immediate reclamation
@@ -261,9 +296,20 @@ class OcrService:
                     del request
                     del response
                     del callback
+                    del notify
         finally:
             with self._lock:
                 self._worker_threads.discard(self_ident)
+
+    def _dropped_response(self, request: OcrRequest) -> OcrResponse:
+        """Build the response delivered to a caller that asked to be notified
+        when its request loses the single worker slot to a newer one."""
+        return OcrResponse(
+            text="",
+            error=OCR_SUPERSEDED_ERROR,
+            pixmap=request.pixmap,
+            recognition=None,
+        )
 
     def shutdown(self, timeout: float = 3.0):
         """Stop OCR workers and wait for them to finish.

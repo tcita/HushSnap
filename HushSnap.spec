@@ -20,9 +20,11 @@ a = Analysis(
     datas=bundle_datas,
     hiddenimports=[
 	    'hushsnap',
+	    'hushsnap.cli',
 	    'hushsnap.ocr',
 	    'hushsnap.ocr.ppocr',
 	    'hushsnap.ocr.engine',
+	    'hushsnap.ocr.ocr_server',
 	    'hushsnap.ui.thumbnail',
 	    'hushsnap.ocr.models',
 	    'hushsnap.ocr.preprocess',

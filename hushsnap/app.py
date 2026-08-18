@@ -30,6 +30,7 @@ from .config import (
     ui_text,
 )
 from .ocr_controller import OcrController
+from .ocr.ocr_server import OcrHttpServer
 from .system.hotkey_manager import HotkeyManager
 from .ui.settings_dialog import SettingsDialogController
 from .ui.thumbnail import thumbnail_manager, show_thumbnail, qpixmap_to_pil
@@ -37,7 +38,7 @@ from .ui.pinned_image import pinned_image_manager
 from .ui.tray import create_tray
 from .ui.toast import show_toast
 from .hotkey import HotkeyFilter
-from .constants import CAPTURE_DEBUG_LOG_FILENAME
+from .constants import CAPTURE_DEBUG_LOG_FILENAME, OCR_SERVER_FILENAME
 from .logging_config import setup_logging
 from .startup_profiler import StartupProfiler
 from . import wer
@@ -192,6 +193,7 @@ class Application(QtCore.QObject):
         
         # Components
         self.ocr_controller = None
+        self.ocr_server = None
         self.capture_session = None
         self.hotkey_manager = None
         self.settings_controller = None
@@ -302,6 +304,21 @@ class Application(QtCore.QObject):
             user_data_dir=self.user_data_dir,
             save_debug_image=self.force_debug,
         )
+
+        # 1b. Loopback OCR server — lets external tools (a CLI, an AI agent)
+        # reuse the app's already-tuned, already-warm engine.  Requests funnel
+        # through the same single OcrService worker (strict serialization,
+        # latest-wins preserved).  The server exists only while this app is
+        # running; the CLI never auto-launches it.
+        try:
+            self.ocr_server = OcrHttpServer(
+                service=self.ocr_controller.service,
+                info_path=self.user_data_dir / OCR_SERVER_FILENAME,
+            )
+            self.ocr_server.start()
+            self.qt_app.aboutToQuit.connect(self.ocr_server.shutdown)
+        except Exception:
+            self.logger.exception("Failed to start OCR server")
 
         # 2. Capture Session
         self.capture_session = CaptureSession(

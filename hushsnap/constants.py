@@ -25,6 +25,15 @@ APP_STATE_FILENAME = "hushsnap_state.toml"
 CAPTURE_DEBUG_LOG_FILENAME = "hushsnap.log"
 # Tray icon filename
 APP_ICON_FILENAME = "hushsnap.ico"
+# Filename of the OCR server discovery file. The running app writes it into the
+# user data dir (bound port + auth token); the CLI reads it to find the loopback
+# server and authenticate.  Removed on clean app exit.
+OCR_SERVER_FILENAME = "ocr_server.json"
+# Error string carried by an OcrResponse when an async OCR request was superseded
+# by a newer request before its result could be delivered.  Callers that submit
+# with notify_if_dropped=True receive this instead of hanging; callers that don't
+# keep the historical silent-drop behaviour (see OcrService.recognize_async).
+OCR_SUPERSEDED_ERROR = "superseded_by_newer_request"
 
 # --- 3. Logic thresholds and timing (ms/px) ---
 # Hotkey re-registration debounce delay
