@@ -265,17 +265,17 @@ def create_tray(
     # Tooltip shown when hovering the tray icon (otherwise Windows renders an empty bubble).
     tray_icon.setToolTip(translate("tray_tooltip"))
     # Create right-click context menu.
-    # Rounded card is self-drawn by RoundedMenu (light theme for the tray).
+    # Create right-click context menu.
+    # Opaque menu card; rounded corners are drawn by the OS via DWM on
+    # Windows 11 (RoundedMenu requests DWMWCP_ROUND on show).  Previously the
+    # tray menu used QSS rounded corners + per-pixel alpha, which composites
+    # as solid black corners without DWM composition (VMs, RDP, basic theme);
+    # an opaque card avoids that entirely and Windows 10 falls back to a clean
+    # square.
     tray_menu = RoundedMenu(light=True)
     tray_icon.setContextMenu(tray_menu)
     # Tray is shown after OCR engine load completes (see app.py).
     # Delaying the tray gives a subtle "still loading" signal to the user.
-    #
-    # Previously the tray menu used an opaque square card: its QSS rounded
-    # corners + per-pixel alpha correlated with solid black corners at the four
-    # corners in VM testing.  RoundedMenu self-draws the rounded card with
-    # QPainter instead, making the corner pixels deterministic (see styles.py),
-    # so the rounded look can safely come back here too.
 
     # Resolve local icon directory paths
     icons_dir = Path(__file__).resolve().parent / "icons"

@@ -339,15 +339,16 @@ QMessageBox QPushButton:hover {{
 """
 
 # Modern Dark Context Menu Style.
-# The QMenu card itself (background, border, border-radius) is NOT painted by
-# the stylesheet: RoundedMenu self-draws it with QPainter.  A QSS border-radius
-# on a translucent native popup leaves the corner alpha to the style engine,
-# which on some DWM/GPU combos composites as solid black corners (see tray.py
-# notes); self-drawing makes the corner pixels deterministic everywhere.  The
-# stylesheet below only styles the items/separators drawn on top of the card.
+# Opaque card: the rounded corners are drawn by the OS (DWM corner preference,
+# set in RoundedMenu.showEvent) instead of QSS border-radius or a self-drawn
+# QPainter card.  A translucent menu (per-pixel alpha) composites black corners
+# on systems without DWM composition (VMs without GPU, RDP, basic theme), so we
+# stay fully opaque and let the system round the corners.  On Windows 10 the
+# corner preference is ignored and the menu renders as a clean square.
 MODERN_MENU_STYLE = """
 QMenu {
-    background-color: transparent;
+    background-color: #252525;
+    border: 1px solid rgba(255, 255, 255, 30);
     padding: 6px 0px;
 }
 QMenu::item {
@@ -374,10 +375,12 @@ QMenu::separator {
 """
 
 
-# Light menu style for the tray menu (self-drawn rounded card via RoundedMenu).
+# Light menu style for the tray menu.  Same opaque + OS-rounded approach as
+# MODERN_MENU_STYLE, just a light theme.
 TRAY_MENU_STYLE = """
 QMenu {
-    background-color: transparent;
+    background-color: #FFFFFF;
+    border: 1px solid #E5E5E5;
     padding: 8px;
     font-size: 13px;
     font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
@@ -395,49 +398,54 @@ QMenu::separator {
 
 
 class RoundedMenu(QtWidgets.QMenu):
-    """A standard QMenu whose rounded card is painted with QPainter.
+    """A QMenu with OS-drawn rounded corners.
 
-    Draws the rounded card (background + thin border) in ``paintEvent`` before
-    the style engine renders the items, so the corner pixels are deterministic
-    rather than left to the QSS style's anti-aliasing on a translucent native
-    popup.  Matches how the thumbnail / pinned windows self-draw their rounded
-    cards instead of using ``border-radius``.
+    The card stays fully opaque (no ``WA_TranslucentBackground``), so there is
+    no per-pixel alpha to composite as black corners on systems without DWM
+    composition (VMs without a GPU, RDP, Windows basic theme).  On Windows 11
+    ``showEvent`` asks DWM to round the popup's corners; on Windows 10 the
+    attribute is ignored and the menu is a clean square.
 
     Defaults to the dark modern look (MODERN_MENU_STYLE).  Pass ``light=True``
-    for a light card (used by the tray menu).
+    for the light tray theme (TRAY_MENU_STYLE).
     """
 
-    def __init__(self, parent=None, corner_radius=10, light=False):
+    def __init__(self, parent=None, light=False):
         super().__init__(parent)
-        self._corner_radius = corner_radius
         self._light = light
-        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setStyleSheet(TRAY_MENU_STYLE if light else MODERN_MENU_STYLE)
 
-    def paintEvent(self, event):
-        painter = QtGui.QPainter(self)
-        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._round_corners_via_dwm()
 
-        rect = QtCore.QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
-        path = QtGui.QPainterPath()
-        path.addRoundedRect(rect, self._corner_radius, self._corner_radius)
+    def _round_corners_via_dwm(self):
+        """Ask DWM to round the popup's corners (Windows 11).
 
-        if self._light:
-            bg = QtGui.QColor("#FFFFFF")
-            border = QtGui.QColor(0, 0, 0, 16)
-        else:
-            bg = QtGui.QColor("#252525")
-            border = QtGui.QColor(255, 255, 255, 30)
-        # Card background
-        painter.fillPath(path, bg)
-        # Thin light border
-        painter.setPen(QtGui.QPen(border, 1))
-        painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
-        painter.drawPath(path)
-
-        painter.end()
-        # Let the style engine draw the items on top of the self-drawn card.
-        super().paintEvent(event)
+        Uses ``DWMWA_WINDOW_CORNER_PREFERENCE`` = ``DWMWCP_ROUND``.  Silently
+        ignored on Windows 10 and non-Windows platforms.
+        """
+        import sys
+        if sys.platform != "win32":
+            return
+        try:
+            import ctypes
+            from ctypes import wintypes
+            hwnd = self.winId()
+            if not hwnd:
+                return
+            dwmapi = ctypes.windll.dwmapi
+            DWMWA_WINDOW_CORNER_PREFERENCE = 33
+            DWMWCP_ROUND = 2
+            pref = ctypes.c_int(DWMWCP_ROUND)
+            dwmapi.DwmSetWindowAttribute(
+                wintypes.HWND(int(hwnd)),
+                DWMWA_WINDOW_CORNER_PREFERENCE,
+                ctypes.byref(pref),
+                ctypes.sizeof(pref),
+            )
+        except Exception:
+            pass
 
 
 def apply_menu_shadow(menu):
