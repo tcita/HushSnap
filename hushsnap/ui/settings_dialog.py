@@ -109,8 +109,14 @@ class SleekComboBox(QtWidgets.QComboBox):
     def showPopup(self):
         popup = self.view().window()
         if popup:
+            # Opaque popup: rounded corners are drawn by the OS via DWM on
+            # Windows 11 (round_window_corners_via_dwm).  A translucent popup
+            # with QSS border-radius composites as black corners on systems
+            # without DWM composition (VMs, RDP, basic theme), so we stay
+            # opaque and let the OS round the corners.
             popup.setWindowFlags(QtCore.Qt.WindowType.Popup | QtCore.Qt.WindowType.FramelessWindowHint)
-            popup.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
+            from .styles import round_window_corners_via_dwm
+            round_window_corners_via_dwm(popup)
         super().showPopup()
 
     def wheelEvent(self, event):

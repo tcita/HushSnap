@@ -136,9 +136,13 @@ class _SwatchPopup(QtWidgets.QFrame):
             QtCore.Qt.WindowType.Popup
             | QtCore.Qt.WindowType.FramelessWindowHint
         )
-        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
-        self.setStyleSheet("_SwatchPopup { background: #333; border: 1px solid #555; border-radius: 6px; }")
+        # Opaque card: rounded corners are drawn by the OS via DWM on
+        # Windows 11 (round_window_corners_via_dwm).  A translucent popup with
+        # QSS border-radius composites as black corners on systems without DWM
+        # composition (VMs, RDP, basic theme), so we stay opaque and let the OS
+        # round the corners.
+        self.setStyleSheet("_SwatchPopup { background: #333; border: 1px solid #555; }")
 
         grid = QtWidgets.QGridLayout(self)
         grid.setContentsMargins(_SWATCH_PAD + 2, _SWATCH_PAD + 2, _SWATCH_PAD + 2, _SWATCH_PAD + 2)
@@ -180,4 +184,6 @@ class _SwatchPopup(QtWidgets.QFrame):
             if pos.x() + self.width() > sg.right():
                 pos.setX(sg.right() - self.width() - 4)
         self.move(pos)
+        from ...styles import round_window_corners_via_dwm
+        round_window_corners_via_dwm(self)
         self.show()

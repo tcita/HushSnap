@@ -280,7 +280,6 @@ QComboBox#settingsCombo::down-arrow {{
 QComboBox#settingsCombo QAbstractItemView {{
     background-color: #FFFFFF;
     border: 0.5px solid {SETTINGS_GHOST_BORDER};
-    border-radius: 6px;
     outline: 0px;
     selection-background-color: {SETTINGS_GHOST_HOVER_BG};
     selection-color: {SETTINGS_LABEL_COLOR};
@@ -397,6 +396,38 @@ QMenu::separator {
 """
 
 
+def round_window_corners_via_dwm(widget) -> bool:
+    """Ask DWM to round *widget*'s corners (Windows 11).
+
+    Uses ``DWMWA_WINDOW_CORNER_PREFERENCE`` = ``DWMWCP_ROUND``.  Silently
+    ignored on Windows 10 and non-Windows platforms.
+
+    Returns True if the attribute was set successfully.
+    """
+    import sys
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+        hwnd = widget.winId()
+        if not hwnd:
+            return False
+        dwmapi = ctypes.windll.dwmapi
+        DWMWA_WINDOW_CORNER_PREFERENCE = 33
+        DWMWCP_ROUND = 2
+        pref = ctypes.c_int(DWMWCP_ROUND)
+        dwmapi.DwmSetWindowAttribute(
+            wintypes.HWND(int(hwnd)),
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            ctypes.byref(pref),
+            ctypes.sizeof(pref),
+        )
+        return True
+    except Exception:
+        return False
+
+
 class RoundedMenu(QtWidgets.QMenu):
     """A QMenu with OS-drawn rounded corners.
 
@@ -417,35 +448,7 @@ class RoundedMenu(QtWidgets.QMenu):
 
     def showEvent(self, event):
         super().showEvent(event)
-        self._round_corners_via_dwm()
-
-    def _round_corners_via_dwm(self):
-        """Ask DWM to round the popup's corners (Windows 11).
-
-        Uses ``DWMWA_WINDOW_CORNER_PREFERENCE`` = ``DWMWCP_ROUND``.  Silently
-        ignored on Windows 10 and non-Windows platforms.
-        """
-        import sys
-        if sys.platform != "win32":
-            return
-        try:
-            import ctypes
-            from ctypes import wintypes
-            hwnd = self.winId()
-            if not hwnd:
-                return
-            dwmapi = ctypes.windll.dwmapi
-            DWMWA_WINDOW_CORNER_PREFERENCE = 33
-            DWMWCP_ROUND = 2
-            pref = ctypes.c_int(DWMWCP_ROUND)
-            dwmapi.DwmSetWindowAttribute(
-                wintypes.HWND(int(hwnd)),
-                DWMWA_WINDOW_CORNER_PREFERENCE,
-                ctypes.byref(pref),
-                ctypes.sizeof(pref),
-            )
-        except Exception:
-            pass
+        round_window_corners_via_dwm(self)
 
 
 def apply_menu_shadow(menu):
