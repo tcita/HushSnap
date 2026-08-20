@@ -3,6 +3,8 @@ HushSnap UI style constants module.
 Defines dimensions, colors, and CSS styles for settings dialog and other UI components.
 """
 
+from PyQt6 import QtCore, QtGui, QtWidgets
+
 # Window/dialog dimensions (pixels)
 SETTINGS_DIALOG_WIDTH = 460
 SETTINGS_CAPTURE_DIALOG_MIN_WIDTH = 400
@@ -336,12 +338,16 @@ QMessageBox QPushButton:hover {{
 }}
 """
 
-# Modern Dark Context Menu Style
+# Modern Dark Context Menu Style.
+# The QMenu card itself (background, border, border-radius) is NOT painted by
+# the stylesheet: RoundedMenu self-draws it with QPainter.  A QSS border-radius
+# on a translucent native popup leaves the corner alpha to the style engine,
+# which on some DWM/GPU combos composites as solid black corners (see tray.py
+# notes); self-drawing makes the corner pixels deterministic everywhere.  The
+# stylesheet below only styles the items/separators drawn on top of the card.
 MODERN_MENU_STYLE = """
 QMenu {
-    background-color: #252525;
-    border: 1px solid rgba(255, 255, 255, 30);
-    border-radius: 10px;
+    background-color: transparent;
     padding: 6px 0px;
 }
 QMenu::item {
@@ -366,6 +372,72 @@ QMenu::separator {
     margin: 4px 8px;
 }
 """
+
+
+# Light menu style for the tray menu (self-drawn rounded card via RoundedMenu).
+TRAY_MENU_STYLE = """
+QMenu {
+    background-color: transparent;
+    padding: 8px;
+    font-size: 13px;
+    font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
+}
+QMenu::item {
+    font-size: 13px;
+    font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
+}
+QMenu::separator {
+    height: 1px;
+    background: #EEEEEE;
+    margin: 3px 8px;
+}
+"""
+
+
+class RoundedMenu(QtWidgets.QMenu):
+    """A standard QMenu whose rounded card is painted with QPainter.
+
+    Draws the rounded card (background + thin border) in ``paintEvent`` before
+    the style engine renders the items, so the corner pixels are deterministic
+    rather than left to the QSS style's anti-aliasing on a translucent native
+    popup.  Matches how the thumbnail / pinned windows self-draw their rounded
+    cards instead of using ``border-radius``.
+
+    Defaults to the dark modern look (MODERN_MENU_STYLE).  Pass ``light=True``
+    for a light card (used by the tray menu).
+    """
+
+    def __init__(self, parent=None, corner_radius=10, light=False):
+        super().__init__(parent)
+        self._corner_radius = corner_radius
+        self._light = light
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setStyleSheet(TRAY_MENU_STYLE if light else MODERN_MENU_STYLE)
+
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+
+        rect = QtCore.QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        path = QtGui.QPainterPath()
+        path.addRoundedRect(rect, self._corner_radius, self._corner_radius)
+
+        if self._light:
+            bg = QtGui.QColor("#FFFFFF")
+            border = QtGui.QColor(0, 0, 0, 16)
+        else:
+            bg = QtGui.QColor("#252525")
+            border = QtGui.QColor(255, 255, 255, 30)
+        # Card background
+        painter.fillPath(path, bg)
+        # Thin light border
+        painter.setPen(QtGui.QPen(border, 1))
+        painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+        painter.drawPath(path)
+
+        painter.end()
+        # Let the style engine draw the items on top of the self-drawn card.
+        super().paintEvent(event)
 
 
 def apply_menu_shadow(menu):

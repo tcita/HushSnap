@@ -7,7 +7,7 @@ from collections import namedtuple
 from PyQt6 import QtCore, QtGui, QtWidgets
 from PIL import Image
 
-from .styles import BRAND_GREEN, MODERN_MENU_STYLE
+from .styles import BRAND_GREEN
 from ..constants import (
     THUMBNAIL_WIDTH,
     THUMBNAIL_HEIGHT,
@@ -745,10 +745,8 @@ class ThumbnailWindow(QtWidgets.QWidget):
         self._pause_countdown()
         self.setWindowOpacity(1.0)
 
-        menu = QtWidgets.QMenu(self)
-        from .styles import MODERN_MENU_STYLE, apply_menu_shadow
-        menu.setStyleSheet(MODERN_MENU_STYLE)
-        menu.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
+        from .styles import RoundedMenu, apply_menu_shadow
+        menu = RoundedMenu(self)
         apply_menu_shadow(menu)
 
         # The hover pill already exposes Edit / Pin / Close, so the right-click

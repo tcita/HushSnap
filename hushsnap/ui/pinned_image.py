@@ -7,7 +7,6 @@ from PIL import Image
 import io
 from pathlib import Path
 
-from .styles import MODERN_MENU_STYLE, apply_menu_shadow
 from .toast import show_toast
 from ..dpi import current_dpr, cursor_screen, logical_to_physical_size, physical_to_logical_size
 
@@ -419,9 +418,8 @@ class PinnedImageWindow(QtWidgets.QWidget):
     def _show_context_menu(self, pos):
         from ..config import resolve_ui_lang, ui_text, get_config_path
         lang = resolve_ui_lang(get_config_path())
-        menu = QtWidgets.QMenu(self)
-        menu.setStyleSheet(MODERN_MENU_STYLE)
-        menu.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
+        from .styles import RoundedMenu, apply_menu_shadow
+        menu = RoundedMenu(self)
         apply_menu_shadow(menu)
         copy_action = menu.addAction(ui_text(lang, "pin_copy_image"))
         edit_action = menu.addAction(ui_text(lang, "thumbnail_edit"))
