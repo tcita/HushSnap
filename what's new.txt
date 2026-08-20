@@ -7,24 +7,28 @@ Release notes (newest first)
 · 缩略图右键菜单新增"复制图片"：无需打开原图，一键将整张截图复制到剪贴板。
 · 自动 OCR 完成提示条重新设计：绿色对勾徽章 + 简洁卡片，停留约 1.1 秒。
 · 修复提示条文字在较小字号下边缘发虚、发糊的抗锯齿问题，文字更锐利清晰。
+· 右键菜单圆角改由系统绘制，修复在部分环境（虚拟机/远程桌面）下菜单四角出现黑角的问题。
 · 修复退出应用时可能出现的崩溃：OCR 工作线程与模型加载线程现在会随应用一起正常关闭。
 · 增加了软件的稳定性。
 
 · 縮略圖右鍵選單新增「複製圖片」：無需開啟原圖，一鍵將整張截圖複製到剪貼簿。
 · 自動 OCR 完成提示條重新設計：綠色勾選徽章 + 簡潔卡片，停留約 1.1 秒。
 · 修復提示條文字在較小字級下邊緣發虛、發糊的抗鋸齒問題，文字更銳利清晰。
+· 右鍵選單圓角改由系統繪製，修復在部分環境（虛擬機器/遠端桌面）下選單四角出現黑角的問題。
 · 修復結束應用程式時可能出現的當機：OCR 工作執行緒與模型載入執行緒現在會隨應用程式一起正常關閉。
 · 增加了軟體的穩定性。
 
 · New "Copy Image" action in the thumbnail right-click menu — copy the whole screenshot to the clipboard without opening it.
 · Auto-OCR toast redesigned: a green check badge on a clean card, ~1.1 s hold.
 · Fixed the anti-aliasing issue that made toast text look soft and blurry at small sizes — it now renders sharp and crisp.
+· Context-menu corners are now drawn by the OS, fixing black corners at the menu's four corners in some environments (VMs / remote desktop).
 · Fixed a possible crash when quitting the app: OCR worker and model-load threads now shut down cleanly with the app.
 · Stability improvements.
 
 · サムネイルの右クリックメニューに「画像をコピー」を追加：原画像を開かずにスクリーンショット全体をクリップボードへコピーできます。
 · 自動 OCR 完了トーストを再設計：緑のチェックバッジ＋シンプルなカードになり、約 1.1 秒表示されます。
 · 小さな文字サイズでトースト文字がぼやけていたアンチエイリアスの問題を修正し、文字がシャープになりました。
+· メニューの角丸を OS の描画に任せるようになり、一部の環境（仮想マシン／リモートデスクトップ）でメニューの四隅に黒い角が出る問題を修正しました。
 · アプリ終了時に発生する可能性があったクラッシュを修正：OCR のワーカースレッドとモデル読み込みスレッドがアプリとともに正常に終了するようになりました。
 · 安定性を向上させました。
 
