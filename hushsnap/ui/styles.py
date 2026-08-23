@@ -87,14 +87,15 @@ QLabel#headerIcon {{
 """
 
 # Row label (bold, main title of each setting)
+# NOTE: font-family/size/weight and the +2 descender headroom live in code
+# (settings_dialog._make_row_label), not here — QSS font properties would
+# override the PreferNoHinting QFont, and QSS padding would fight the fixed
+# height that stops descender clipping.
 ROW_LABEL_STYLE = f"""
 QLabel#rowLabel {{
     color: {SETTINGS_LABEL_COLOR};
-    font-size: 14px;
-    font-weight: 600;
     border: none;
     background: transparent;
-    font-family: "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
 }}
 """
 

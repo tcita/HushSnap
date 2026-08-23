@@ -261,6 +261,43 @@ def _is_conflict_prone_hotkey(modifier_mask, virtual_key):
     return False
 
 
+def _row_label_font() -> QtGui.QFont:
+    """Font for the settings row (main-title) labels.
+
+    ``PreferNoHinting``: full hinting snaps curved strokes to the pixel grid,
+    leaving jagged corners on letters like e/a/d at 14px.  Disabling hinting
+    lets antialiasing smooth those curves instead (same treatment as the
+    toast, see hushsnap/ui/toast.py).  Bold is real YaHei Bold (700), not a
+    synthetic 600/500 emboldening.
+    """
+    font = QtGui.QFont()
+    font.setFamilies(["Microsoft YaHei", "Microsoft JhengHei", "Segoe UI"])
+    font.setPixelSize(14)
+    font.setWeight(QtGui.QFont.Weight.Bold)
+    font.setHintingPreference(QtGui.QFont.HintingPreference.PreferNoHinting)
+    return font
+
+
+def _make_row_label(label_text) -> QtWidgets.QLabel:
+    """Create the settings row (main-title) label.
+
+    Height is fixed to ``fontMetrics().height() + 8`` instead of letting the
+    label auto-size to the font's reported metrics: Microsoft YaHei's descent
+    metric (3.66 px) under-reports the actual ink below the baseline (≈4.3 px
+    for letters like g/y/p), so an auto-sized label clips their descenders.
+    The label sits alone on its row, so we give it generous headroom — the
+    text stays vertically centred with room to breathe, and no descender is
+    ever clipped.
+    """
+    label = QtWidgets.QLabel(label_text)
+    label.setObjectName("rowLabel")
+    label.setStyleSheet(ROW_LABEL_STYLE)
+    font = _row_label_font()
+    label.setFont(font)
+    label.setFixedHeight(int(QtGui.QFontMetricsF(font).height()) + 8)
+    return label
+
+
 def _make_kbd_pill(text):
     """Create a single kbd pill for one key."""
     pill = QtWidgets.QLabel(text)
@@ -412,9 +449,7 @@ def _make_startup_card(label_text, subtitle_text, initial_state):
     top_layout.setContentsMargins(0, 0, 0, 0)
     top_layout.setSpacing(8)
 
-    label = QtWidgets.QLabel(label_text)
-    label.setObjectName("rowLabel")
-    label.setStyleSheet(ROW_LABEL_STYLE)
+    label = _make_row_label(label_text)
     top_layout.addWidget(label, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
 
     top_layout.addStretch()
@@ -457,9 +492,7 @@ def _make_setting_card(label_text, subtitle_text, hotkey_text, button_text):
     top_layout.setContentsMargins(0, 0, 0, 0)
     top_layout.setSpacing(8)
 
-    label = QtWidgets.QLabel(label_text)
-    label.setObjectName("rowLabel")
-    label.setStyleSheet(ROW_LABEL_STYLE)
+    label = _make_row_label(label_text)
     top_layout.addWidget(label, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
 
     top_layout.addStretch()
@@ -504,9 +537,7 @@ def _make_language_card(label_text, subtitle_text, current_lang, languages_optio
     top_layout.setContentsMargins(0, 0, 0, 0)
     top_layout.setSpacing(8)
 
-    label = QtWidgets.QLabel(label_text)
-    label.setObjectName("rowLabel")
-    label.setStyleSheet(ROW_LABEL_STYLE)
+    label = _make_row_label(label_text)
     top_layout.addWidget(label, alignment=QtCore.Qt.AlignmentFlag.AlignVCenter)
 
     top_layout.addStretch()
