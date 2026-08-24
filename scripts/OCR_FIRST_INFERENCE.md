@@ -224,6 +224,32 @@ nothing like the hundreds of MB of an enabled arena) and fits the established
 memory-for-speed tradeoff. If it ever needs addressing, the lever is wiring up
 `release_engine()` on long idle (currently unused) - NOT a dummy load inference.
 
+### Measured baseline (2026-08-25, live process, ORT 1.21.1, limit_side_len=32)
+
+Single-variable chain — same process, idle-trimmed steady-state after each OCR:
+
+| capture | peak WS (during inference) | steady-state commit (private bytes) | steady-state WS |
+|---|---|---|---|
+| normal single-screen shots | ~340 MB | 153 MB | ~65 MB |
+| larger dual-screen giant (after normal) | ~1.40 GB | 254 MB | ~50 MB |
+
+**Single-variable delta (normal → larger giant, same process): commit +101 MB,
+peak WS +1062 MB.** This is the clean measurement of one novel larger shape's
+contribution — the larger giant allocates a fresh, bigger det-bucket and commit
+steps up to 254, never shrinking.
+
+**Do not confuse working set with commit.** Peak working set is large (up to
+~1.40 GB on a giant capture) because it includes all shared, read-only DLL
+pages (Qt6, onnxruntime, cv2, the PyInstaller bundle) plus the transiently
+touched inference pages. Commit (private bytes) is the process's own booked
+virtual memory and is only 153-254 MB. An earlier internal note mistook peak
+WS (~879 MB, from a 2526×1212 capture) for commit; that was off by ~4×. The
++101 MB commit step from normal to giant is the det-bucket growth the "commit
+staircase" describes — modest, one-way, and the whole reason a dummy warmup
+is the wrong lever (you cannot predict which bucket the user's first capture
+will need).
+
+
 ## Key files
 
 - `hushsnap/ocr/ppocr.py` - `get_ppocr_engine` (1291), `release_engine` (1338, dead
