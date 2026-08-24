@@ -26,8 +26,8 @@ CORNER_HIT = 52  # Wide corner zone — corners are point targets, need the extr
 # Chrome estimates: outer margins + borders + viewport paddings + scrollbar.
 _CHROME_WIDTH = 136
 # OUTER_MARGIN*2 + viewport_top + viewport_bottom + borders - _BUBBLE_PAD
-# 36*2 + 24 + 28 + 4 - 22 = 106
-_CHROME_HEIGHT = 106
+# 36*2 + 24 + 34 + 4 - 22 = 112
+_CHROME_HEIGHT = 112
 # Viewport reduction = outer_margins + viewport_margins + scrollbar + borders.
 # 36*2 + 24*2 + 4 = 124
 _VP_WIDTH_REDUCTION = 124
@@ -173,8 +173,8 @@ class OcrPopup(QtWidgets.QWidget):
         # Copy button — floating bottom-right
         self.copy_btn = QtWidgets.QPushButton(self)
         self.copy_btn.setObjectName("ocrCopyBtn")
-        self.copy_btn.setFixedSize(28, 28)
-        self.copy_btn.setIconSize(QtCore.QSize(16, 16))
+        self.copy_btn.setFixedSize(34, 34)
+        self.copy_btn.setIconSize(QtCore.QSize(18, 18))
         self.copy_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.copy_btn.clicked.connect(self._on_copy_clicked)
 
@@ -254,7 +254,7 @@ class OcrPopup(QtWidgets.QWidget):
         
         # Use viewport margins to simulate padding inside the card.
         # Bottom margin leaves room for the floating copy button.
-        self.text_edit.setViewportMargins(24, 24, 24, 28)
+        self.text_edit.setViewportMargins(24, 24, 24, 34)
 
         # Match the measurement document (which uses documentMargin 0) so the
         # actual available text width equals the calculated width — otherwise
@@ -338,7 +338,7 @@ class OcrPopup(QtWidgets.QWidget):
             "#ocrCopyBtn {"
             " color: #5fc98a;"
             " border: none;"
-            " border-radius: 12px;"
+            " border-radius: 15px;"
             " background: rgba(0, 0, 0, 60);"
             " font-size: 13px;"
             " font-family: \"Microsoft YaHei\", \"Microsoft JhengHei\", sans-serif;"
@@ -1123,7 +1123,7 @@ class OcrPopup(QtWidgets.QWidget):
     def _update_button_positions(self):
         """Position overlay buttons — all inset inside the card."""
         bw, bh = self.pin_btn.width(), self.pin_btn.height()       # 24×24
-        cw, ch = self.copy_btn.width(), self.copy_btn.height()      # 28×28
+        cw, ch = self.copy_btn.width(), self.copy_btn.height()      # 34×34
         border = OUTER_MARGIN
         inset = 5  # px inside the card edge
 
