@@ -234,8 +234,22 @@ class OcrService:
                         else:
                             logger.info("[OCR_CHAIN] worker result superseded or dropped (shutdown), seq=%d", seq)
                     if deliver:
-                        callback(response)
-                        logger.info("[OCR_CHAIN] worker callback emitted, seq=%d", seq)
+                        # Re-check _shutdown immediately before invoking the
+                        # callback.  The lock was released above, so shutdown()
+                        # may have set _shutdown=True and begun joining workers /
+                        # tearing down the app in the tiny window between the
+                        # locked seq-check and this call.  _shutdown only ever
+                        # flips False→True (never back), so this unlocked read is
+                        # a safe one-direction gate: a result that passes here
+                        # cannot later discover shutdown flipped back.  Calling
+                        # the callback (which postEvents to a SignalBridge that
+                        # aboutToQuit may be destroying) after shutdown began is
+                        # the classic cross-thread Qt crash — drop it instead.
+                        if self._shutdown:
+                            logger.info("[OCR_CHAIN] worker result dropped on re-check (shutdown raced in), seq=%d", seq)
+                        else:
+                            callback(response)
+                            logger.info("[OCR_CHAIN] worker callback emitted, seq=%d", seq)
                 except Exception as exc:
                     logger.exception(f"Unexpected error in OCR worker thread: {exc}")
                     logger.info("[OCR_CHAIN] worker exception, seq=%d", seq)

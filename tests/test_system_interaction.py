@@ -173,8 +173,7 @@ def test_clipboard_fallback_logic(qapp, mock_pixmap):
     # Simulate secondary setImage failing too
     mock_clipboard.image.return_value.isNull.return_value = True
     
-    with patch("hushsnap.config.get_auto_ocr_after_capture", return_value=False), \
-         patch("PyQt6.QtWidgets.QApplication.clipboard", return_value=mock_clipboard):
+    with patch("PyQt6.QtWidgets.QApplication.clipboard", return_value=mock_clipboard):
         success = win._set_clipboard_pixmap(mock_pixmap, "test")
         assert success is False
         # Verify both setPixmap and setImage were attempted
@@ -184,18 +183,24 @@ def test_clipboard_fallback_logic(qapp, mock_pixmap):
     win.close()
 
 
-def test_clipboard_skips_image_when_auto_ocr_enabled(qapp, mock_pixmap):
-    """When auto-OCR is on, _set_clipboard_pixmap returns True without
-    touching the clipboard — OCR text will be the sole clipboard content."""
+def test_clipboard_writes_image_even_when_auto_ocr_enabled(qapp, mock_pixmap):
+    """The screenshot image is ALWAYS written to the clipboard, even when
+    auto-OCR (prefetch) is enabled.  This replaces the old
+    test_clipboard_skips_image_when_auto_ocr_enabled, which asserted the
+    opposite (now-removed) behavior.  Locks the 'capture-first' contract:
+    the image is the clipboard boss; prefetch only fills a cache and never
+    displaces it."""
     win = CaptureWindow(mock_pixmap)
 
     mock_clipboard = MagicMock()
+    # setPixmap succeeds on first try.
+    mock_clipboard.pixmap.return_value.isNull.return_value = False
+
     with patch("hushsnap.config.get_auto_ocr_after_capture", return_value=True), \
          patch("PyQt6.QtWidgets.QApplication.clipboard", return_value=mock_clipboard):
         success = win._set_clipboard_pixmap(mock_pixmap, "test")
         assert success is True
-        # Clipboard must not be touched at all.
-        mock_clipboard.setPixmap.assert_not_called()
-        mock_clipboard.setImage.assert_not_called()
+        # Image MUST be written — auto-OCR no longer skips clipboard.
+        mock_clipboard.setPixmap.assert_called_once()
 
     win.close()

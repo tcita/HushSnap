@@ -16,8 +16,6 @@ from ..config import (
     update_ui_lang_in_config,
     get_auto_ocr_after_capture,
     update_auto_ocr_after_capture,
-    get_auto_ocr_show_toast,
-    update_auto_ocr_show_toast,
     get_show_capture_dimension_label,
     update_show_capture_dimension_label,
     get_thumbnail_display_time,
@@ -1315,10 +1313,9 @@ class SettingsDialogController(QtCore.QObject):
         # Section: Shortcuts & Behavior
         capture_layout.addWidget(QtWidgets.QLabel(self.translate("settings_section_capture").upper()))
 
-        # Auto OCR after capture
+        # Auto OCR after capture (prefetch — fills cache, does not touch clipboard)
         def on_auto_ocr(checked):
             update_auto_ocr_after_capture(checked, self.config_path)
-            _toast_card.setVisible(checked)
         card_auto_ocr, switch_auto_ocr = _make_startup_card(
             self.translate("settings_auto_ocr_after_capture_label"),
             self.translate("settings_auto_ocr_after_capture_subtitle"),
@@ -1326,26 +1323,6 @@ class SettingsDialogController(QtCore.QObject):
         )
         switch_auto_ocr.clicked.connect(on_auto_ocr)
         capture_layout.addWidget(card_auto_ocr)
-
-        # Sub-option: OCR completion toast (visible only when auto OCR is on)
-        def on_auto_ocr_toast(checked):
-            update_auto_ocr_show_toast(checked, self.config_path)
-
-        _auto_ocr_on = get_auto_ocr_after_capture(self.config_path)
-        _toast_card, _switch_toast = _make_startup_card(
-            self.translate("settings_auto_ocr_toast_label"),
-            self.translate("settings_auto_ocr_toast_subtitle"),
-            get_auto_ocr_show_toast(self.config_path),
-        )
-        _switch_toast.clicked.connect(on_auto_ocr_toast)
-        # Wrap with left indent to visually nest under auto OCR card.
-        _toast_wrapper = QtWidgets.QWidget()
-        _toast_wrapper.setStyleSheet("background: transparent;")
-        _toast_wrap_layout = QtWidgets.QHBoxLayout(_toast_wrapper)
-        _toast_wrap_layout.setContentsMargins(20, 0, 0, 0)
-        _toast_wrap_layout.addWidget(_toast_card)
-        _toast_wrapper.setVisible(_auto_ocr_on)
-        capture_layout.addWidget(_toast_wrapper)
 
         # Thumbnail Time (with hidden "Hide thumbnail card" sub-option)
         _HIDE_SENTINEL = -1

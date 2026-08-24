@@ -50,7 +50,6 @@ def _translate(key, **kwargs):
         "ocr_update_btn": "Update",
         "ocr_cancel_btn": "Cancel",
         "back_to_image_btn": "Back to Image",
-        "pin_ocr_copied": "Text extracted",
     }
     return table[key].format(**kwargs)
 
@@ -125,8 +124,8 @@ def test_ocr_finished_shows_popup_does_not_copy_to_clipboard(monkeypatch, qapp, 
         OcrResponse(text="hello world", error="", pixmap=sample_pixmap, recognition=OcrRecognition())
     )
 
-    # Clipboard must NOT be touched by manual (popup) path — the popup has
-    # its own copy button; auto-OCR is the only path that writes clipboard.
+    # Clipboard must NOT be touched by the popup path — only the popup's own
+    # copy button writes clipboard.  (Prefetch also no longer writes it.)
     assert qapp.clipboard().text() == ""
     assert shown["text"] == "hello world"
     assert shown["pixmap"] is sample_pixmap
@@ -432,11 +431,11 @@ def test_clear_auto_ocr_cache(monkeypatch, qapp, tmp_path):
     assert controller._pending_popup_pixmap is None
 
 
-def test_auto_ocr_to_clipboard_sets_in_flight(monkeypatch, qapp, tmp_path, sample_pixmap):
+def test_prefetch_ocr_sets_in_flight(monkeypatch, qapp, tmp_path, sample_pixmap):
     controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
     assert controller._auto_ocr_in_flight is False
 
-    controller.auto_ocr_to_clipboard(sample_pixmap)
+    controller.prefetch_ocr(sample_pixmap)
 
     assert controller._auto_ocr_in_flight is True
 
@@ -452,6 +451,28 @@ def test_on_auto_ocr_done_caches_success(monkeypatch, qapp, tmp_path, sample_pix
 
     assert controller._auto_ocr_in_flight is False
     assert controller._auto_ocr_cache is response
+
+
+def test_prefetch_done_does_not_touch_clipboard(monkeypatch, qapp, tmp_path, sample_pixmap):
+    """Prefetch OCR completing must NOT write the clipboard — the screenshot
+    image remains the sole clipboard content.  This is the core contract of
+    the auto-OCR → prefetch downgrade: recognise in the background, fill the
+    cache, but never auto-displace the image.  Guards against an accidental
+    revert to the old auto-OCR-to-clipboard behavior."""
+    controller, _ = _build_controller(monkeypatch, qapp, tmp_path)
+    controller._auto_ocr_in_flight = True
+    qapp.clipboard().clear()
+
+    response = OcrResponse(
+        text="recognised text that must NOT reach the clipboard",
+        error="", pixmap=sample_pixmap, recognition=OcrRecognition(),
+    )
+    controller._on_auto_ocr_done(response)
+
+    # Cache filled (so a later thumbnail click can reuse it)...
+    assert controller._auto_ocr_cache is response
+    # ...but the clipboard was not touched.
+    assert qapp.clipboard().text() == ""
 
 
 def test_on_auto_ocr_done_does_not_cache_empty(monkeypatch, qapp, tmp_path):

@@ -79,7 +79,6 @@ _CONFIG_DEFAULTS = {
     "show_capture_dimension_label": True,
     "auto_ocr_after_capture": False,
     "hide_thumbnail": False,
-    "auto_ocr_show_toast": True,
 }
 
 # Schema version of the on-disk config file. Bump on any breaking change to
@@ -650,8 +649,10 @@ def update_show_capture_dimension_label(enabled, config_path=None):
 def get_auto_ocr_after_capture(config_path=None):
     """Read 'auto_ocr_after_capture' from config (default False).
 
-    When True, OCR runs silently after every screenshot and copies recognized
-    text to the clipboard with a toast confirmation.
+    When True, OCR runs silently in the background after every screenshot as
+    a prefetch — the result fills an in-memory cache so a later thumbnail
+    click shows the text faster.  It does NOT write to the clipboard and
+    shows no toast; the screenshot image remains the sole clipboard content.
     """
     if config_path is None:
         config_path = get_config_path()
@@ -712,36 +713,6 @@ def update_hide_thumbnail(enabled, config_path=None):
         logger.error(f"Failed to update hide_thumbnail: {e}")
 
 
-def get_auto_ocr_show_toast(config_path=None):
-    """Read 'auto_ocr_show_toast' from config (default True).
-
-    When True, a toast notification appears after auto-OCR successfully copies
-    text to the clipboard. When False, auto-OCR stays silent.
-    """
-    if config_path is None:
-        config_path = get_config_path()
-    config_data = _load_config_data(config_path)
-    raw = config_data.get("auto_ocr_show_toast", True)
-    if not isinstance(raw, bool):
-        logger.warning(
-            "Config key 'auto_ocr_show_toast' has non-boolean value %r "
-            "— falling back to default True.",
-            raw,
-        )
-        return True
-    return raw
-
-
-def update_auto_ocr_show_toast(enabled, config_path=None):
-    """Update and persist 'auto_ocr_show_toast' in config."""
-    if config_path is None:
-        config_path = get_config_path()
-    config_data = _load_config_data(config_path)
-    config_data["auto_ocr_show_toast"] = bool(enabled)
-    try:
-        _write_config_data(config_path, config_data)
-    except Exception as e:
-        logger.error(f"Failed to update auto_ocr_show_toast: {e}")
 
 
 def get_last_save_directory(config_path=None):

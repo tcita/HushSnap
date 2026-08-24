@@ -405,12 +405,12 @@ class Application(QtCore.QObject):
         except Exception:
             self.logger.exception("Failed to show thumbnail")
 
-        # New screenshot → any prior auto-OCR cache is now stale.
+        # New screenshot → any prior prefetch cache is now stale.
         self.ocr_controller._clear_auto_ocr_cache()
 
         if get_auto_ocr_after_capture():
-            self.logger.debug("[OCR_CHAIN] auto-OCR triggered")
-            self.ocr_controller.auto_ocr_to_clipboard(captured_pixmap)
+            self.logger.debug("[OCR_CHAIN] prefetch OCR triggered")
+            self.ocr_controller.prefetch_ocr(captured_pixmap)
 
     def _handle_thumbnail_clicked(self, pil_img):
         self.logger.debug("[OCR_CHAIN] thumbnail click handled")

@@ -41,11 +41,11 @@ After capture, a thumbnail fades in at the bottom-right corner of your screen. T
 
 - **Hover** to pause auto-hide and reveal an action pill with **Edit**, **Pin**, and **Close** buttons.
 - **Drag and drop** the thumbnail anywhere to save the image - into a chat, an email, a folder, or another app.
-- **Left-click** the thumbnail to run **OCR**. Recognized text opens in a floating popup where you can edit, copy, resize, or pin the window to keep it visible. By default the text is also auto-copied to your clipboard.
+- **Left-click** the thumbnail to run **OCR**. Recognized text opens in a floating popup where you can edit, copy, resize, or pin the window to keep it visible.
 - **Edit** (the brush button on the action pill) opens the built-in **image editor** - see [Image Editor](#image-editor) below for the full toolset.
-- **Right-click** the thumbnail for **Copy Text from Image** (silent OCR - text straight to the clipboard, no popup) or **Save to Desktop**.
+- **Right-click** the thumbnail for **View Original** (open the capture in your default viewer), **Copy Image** to clipboard, or **Save to Desktop**.
 - Optionally overlay a decorative **vine ornament** on the thumbnail’s top-left corner (enable it in Settings - Capture). It is purely cosmetic; it does not change the thumbnail’s hit area or any behavior.
-- Enable **Auto OCR After Capture** in Settings to have text recognized and copied to the clipboard automatically right after capture — no thumbnail click needed.
+- Enable **Background OCR Prefetch** in Settings to run OCR quietly after each capture so the thumbnail popup opens faster.
 
 
 ## Release Notes

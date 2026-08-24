@@ -103,10 +103,14 @@ class OcrController:
         self._auto_ocr_in_flight = False
         self._pending_popup_pixmap = None  # stale wait on replaced thumbnail
 
-    def auto_ocr_to_clipboard(self, pixmap):
-        """Run OCR silently and copy recognized text to clipboard.
+    def prefetch_ocr(self, pixmap):
+        """Run OCR silently in the background as a prefetch after capture.
 
-        Fire-and-forget: the result arrives as a toast.  No popup.
+        Fire-and-forget: the result is NOT written to the clipboard and no
+        toast is shown.  The screenshot image remains the sole clipboard
+        content.  The recognised text only fills an in-memory cache so that a
+        later thumbnail click (popup) or any future explicit copy path can
+        reuse it instead of running OCR a second time.
 
         Uses QCoreApplication.postEvent (thread-safe per Qt docs) to
         hand the response from the worker thread to the main thread,
@@ -122,23 +126,21 @@ class OcrController:
         self.service.recognize_async(
             request,
             lambda resp: QtCore.QCoreApplication.postEvent(
-                self.bridge, _OcrResultEvent(resp, "toast"),
+                self.bridge, _OcrResultEvent(resp, "prefetch"),
             ),
         )
 
     def _on_auto_ocr_done(self, response):
-        """Main-thread handler: deliver auto-OCR result.
+        """Main-thread handler: a prefetch OCR completed.
 
-        Copies recognized text to the clipboard and optionally shows a toast
-        (controlled by the ``auto_ocr_show_toast`` config flag).
+        Does NOT touch the clipboard and does NOT show a toast — the
+        screenshot image stays as the clipboard content.  The result only
+        fills the in-memory cache so a later thumbnail click can reuse it.
 
         If a thumbnail click is waiting (start_request stashed a pixmap),
         the result is also routed to the popup so the user sees the text
         without a second OCR run.
         """
-        from .config import get_auto_ocr_show_toast
-        from .ui.toast import show_toast
-
         self._trim_timer.start(0)
         self._auto_ocr_in_flight = False
 
@@ -147,27 +149,6 @@ class OcrController:
         # Cache successful results so a later thumbnail click can reuse them.
         if text and not response.error:
             self._auto_ocr_cache = response
-
-        # ── clipboard (always) ──
-        # When auto-OCR is on the screenshot image is never written to the
-        # clipboard (capture_window skips it).  OCR text is the sole clipboard
-        # content; the image is available via thumbnail drag/save.
-        if text:
-            clipboard = self.app.clipboard()
-            if clipboard:
-                clipboard.setText(text)
-            if get_auto_ocr_show_toast():
-                # Fires on EVERY capture — quiet success card (subtle
-                # variant: green badge + title, no accent bar, gentle entrance).
-                # Stays at the default bottom-center position, which now STACKS
-                # upward, so the thumbnail's right-click Save-to-Desktop
-                # toast can no longer cover it.  Total visible ≈ 1100 ms hold
-                # + fade.
-                show_toast(
-                    self.translate("pin_ocr_copied"),
-                    duration_ms=1100,
-                    variant="subtle",
-                )
 
         # ── popup redirect: a thumbnail click happened while we were busy ──
         # Route through start_request so every popup appearance shares the

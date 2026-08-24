@@ -6,9 +6,11 @@ class _OcrResultEvent(QtCore.QEvent):
     main thread via QCoreApplication.postEvent(), which is explicitly
     thread-safe per Qt documentation.
 
-    ``kind`` is 'popup' for thumbnail-click OCR or 'toast' for auto-OCR.
-    On the main thread, SignalBridge.event() routes the response to the
-    correct handler by emitting ocr_result or auto_ocr_done.
+    ``kind`` is 'popup' for thumbnail-click OCR or 'prefetch' for the
+    silent background OCR that runs after capture (its result fills a
+    cache; it never touches the clipboard).  On the main thread,
+    SignalBridge.event() routes the response to the correct handler by
+    emitting ocr_result or auto_ocr_done.
     """
 
     _EVENT_TYPE = QtCore.QEvent.Type(QtCore.QEvent.registerEventType())
@@ -42,7 +44,7 @@ class SignalBridge(QtCore.QObject):
     # OCR popup path (thumbnail click → start_request)
     ocr_result = QtCore.pyqtSignal(object)
 
-    # Auto-OCR-to-clipboard path (toast, no popup)
+    # Background prefetch path (fills cache, no popup, no clipboard)
     auto_ocr_done = QtCore.pyqtSignal(object)
 
     load_finished = QtCore.pyqtSignal()
@@ -51,7 +53,7 @@ class SignalBridge(QtCore.QObject):
         if isinstance(event, _OcrResultEvent):
             if event.kind == "popup":
                 self.ocr_result.emit(event.response)
-            elif event.kind == "toast":
+            elif event.kind == "prefetch":
                 self.auto_ocr_done.emit(event.response)
             return True
         if isinstance(event, _LoadFinishedEvent):

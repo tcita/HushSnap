@@ -259,16 +259,13 @@ class CaptureWindow(QtWidgets.QWidget):
     def _set_clipboard_pixmap(self, pixmap, scene):
         """Write generated image into system clipboard.
 
-        When auto-OCR-after-capture is enabled the screenshot image is NOT
-        written to the clipboard — the OCR text will be placed there instead
-        once recognition completes.  The image remains available via the
-        thumbnail (drag-to-drop or right-click → Save to Desktop).
+        The screenshot image is always written here — it is the primary
+        clipboard content.  When auto-OCR (prefetch) is enabled, OCR runs
+        silently in the background *without* touching the clipboard; its
+        result only fills an in-memory cache so a later thumbnail click is
+        faster.  The image is never displaced from the clipboard.
         """
         try:
-            from .config import get_auto_ocr_after_capture
-            if get_auto_ocr_after_capture():
-                return True
-
             if pixmap.isNull():
                 logger.error(f"clip_err | scene={scene}, reason=null")
                 return False
