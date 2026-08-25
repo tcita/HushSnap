@@ -2,6 +2,29 @@
 Release notes (newest first)
 ================================================================================
 
+ v1.6.3
+
+
+· 移除了自动 OCR，改为后台预识别：开启后台预识别后，截图后在后台静默识别文字，让随后的识别结果弹窗更快打开。默认关闭，可在设置中开启。
+· OCR 结果弹窗的复制按钮加大。
+· 修复设置页部分文字边缘发糊、发锯的问题。
+· 优化多处文案表述。
+
+· 移除了自動 OCR，改為後台預辨識：開啟後台預辨識後，截圖後在後台靜默辨識文字，讓隨後的辨識結果彈窗更快開啟。預設關閉，可在設定中開啟。
+· OCR 結果彈窗的複製按鈕加大。
+· 修復設定頁部分文字邊緣發糊、發鋸的問題。
+· 調整多處文案表述。
+
+· Removed auto-OCR in favor of background prefetch: when enabled, OCR runs silently in the background after each capture so the result popup opens faster. Off by default; toggle it in Settings.
+· Enlarged the OCR popup copy button.
+· Fixed jagged, blurry settings text.
+· Refined several copy strings.
+
+· 自動 OCR を廃止し、バックグラウンド先読みに変更：バックグラウンド先読みを有効にすると、撮影後にバックグラウンドで静かに認識し、認識結果ポップアップがより速く開きます。デフォルトはオフ、設定で有効にできます。
+· OCR 結果ポップアップのコピーボタンを拡大。
+· 設定画面の一部文字がぼやけてジャギーが出る問題を修正。
+· 複数の文言を見直しました。
+
  v1.6.2
 
 · 缩略图右键菜单新增"复制图片"：无需打开原图，一键将整张截图复制到剪贴板。
