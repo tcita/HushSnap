@@ -389,31 +389,53 @@ class CropTool(BaseTool):
                 hx - sz / 2.0, hy - sz / 2.0, sz, sz,
             ))
 
+        painter.end()
+        _position_action_buttons(self)
+
+    def on_paint(self, canvas, painter: QtGui.QPainter) -> None:
+        """Draw the crop dimension label in screen space.
+
+        The overlay is at image resolution and gets scaled by the canvas, so
+        text painted there is resampled and looks blurry at any zoom other
+        than 100%. Painting here (already in screen space, like ResizeTool's
+        readout) keeps the numbers crisp.
+        """
+        r = self._crop_rect
+        if r is None:
+            return
+        pm = self._editor._rendered_display_pixmap()
+        if not pm:
+            return
+        scale = self._editor._effective_scale()
+        offset = canvas._image_offset()
+
         dim_text = f"{r.width()} × {r.height()}"
         font = QtGui.QFontDatabase.systemFont(
             QtGui.QFontDatabase.SystemFont.GeneralFont
         )
-        font.setPixelSize(11)
+        font.setPixelSize(14)
+        font.setBold(True)
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.TextAntialiasing)
         painter.setFont(font)
         fm = QtGui.QFontMetricsF(font)
         text_rect = fm.boundingRect(dim_text)
-        pad = 4.0
+        pad = 6.0
         bw = text_rect.width() + pad * 2
         bh = text_rect.height() + pad * 2
-        label_x = r.right() - bw - 4
-        label_y = r.top() - bh - 4
+        label_x = offset.x() + r.right() * scale - bw - 4
+        label_y = offset.y() + r.top() * scale - bh - 4
         if label_y < 2:
-            label_y = r.top() + 4
+            label_y = offset.y() + r.top() * scale + 4
         bg = QtCore.QRectF(label_x, label_y, bw, bh)
-        painter.setPen(QtCore.Qt.PenStyle.NoPen)
-        painter.setBrush(QtGui.QBrush(QtGui.QColor(0, 0, 0, 160)))
-        painter.drawRoundedRect(bg, 3, 3)
+        painter.setPen(QtGui.QPen(QtGui.QColor(0, 0, 0, 200), 1.0))
+        painter.setBrush(QtGui.QBrush(QtGui.QColor(0, 0, 0, 170)))
+        painter.drawRoundedRect(bg, 4, 4)
         painter.setPen(QtGui.QPen(QtGui.QColor("#ffffff")))
         painter.drawText(bg.adjusted(pad, pad, -pad, -pad),
                          QtCore.Qt.AlignmentFlag.AlignCenter, dim_text)
-
-        painter.end()
-        _position_action_buttons(self)
+        painter.restore()
 
 
 # ── Whole-image transforms (direct-manipulation tools) ─────────────────────
@@ -1070,7 +1092,7 @@ class ResizeTool(BaseTool):
             w, h = pm.width(), pm.height()
         label = "{} × {}".format(w, h)
         font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.SystemFont.GeneralFont)
-        font.setPixelSize(11)
+        font.setPixelSize(14)
         font.setBold(True)
         painter.setFont(font)
         fm = QtGui.QFontMetricsF(font)
@@ -1079,9 +1101,9 @@ class ResizeTool(BaseTool):
         by = rect.top() + 6
         painter.setPen(QtCore.Qt.PenStyle.NoPen)
         painter.setBrush(QtGui.QBrush(QtGui.QColor(0, 0, 0, 170)))
-        painter.drawRoundedRect(QtCore.QRectF(bx, by, tw + 10, th + 4), 4, 4)
+        painter.drawRoundedRect(QtCore.QRectF(bx, by, tw + 14, th + 8), 4, 4)
         painter.setPen(QtGui.QPen(QtGui.QColor("#ffffff")))
-        painter.drawText(QtCore.QPointF(bx + 5, by + fm.ascent()), label)
+        painter.drawText(QtCore.QPointF(bx + 7, by + 4 + fm.ascent()), label)
 
         painter.restore()
 
