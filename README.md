@@ -11,8 +11,9 @@
 <table align="center" width="600">
 <tr>
 <td align="left">
+**HushSnap is an opinionated, deliberately minimal screenshot tool built around a thumbnail hub.** Press a hotkey, select a region, and the capture is done—no floating toolbar, no extra confirmation step. It lands on your clipboard instantly.
 
-HushSnap is an opinionated screenshot tool first. Press a hotkey and a crosshair overlay appears instantly - select a region and the shot lands on your clipboard right away. A thumbnail fades in at the bottom-right corner; it is the hub for everything after: edit, pin, save, or on-demand OCR. Left-click it and the recognized text pops up, already reformatted into a clean, readable layout you can edit on the spot. Its deepest work is in OCR, but OCR is always on-demand via thumbnail click - it never overwrites your clipboard by design. Everything runs locally - your screenshots and recognized text never leave your device. It lives quietly in the system tray, so there are no windows or menus to pre-launch: the UI surfaces only when you need it, then fades away.
+A subtle thumbnail fades in at the bottom-right corner. **It is the interface:** use its controls to edit or pin, click it for on-demand OCR, or drag it to save. Nothing else gets in the way. HushSnap stays quietly in the tray until you need it. Everything runs locally—your screenshots and recognized text never leave your device.
 
 [HushSnap Website](https://tcita.github.io/HushSnap/)
 
