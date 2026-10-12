@@ -1325,6 +1325,8 @@ def get_ppocr_engine() -> "PPOCR":
                 # for 180° flipped images (e.g. phone held upside-down).
                 # Saves ~10% latency + ~6 MB memory with no accuracy impact
                 # on correctly-oriented or slightly tilted input.
+                # rapidocr ≥3.10 lazily initializes models, so with use_cls=False
+                # the cls onnx is never constructed/loaded (and not bundled).
                 params = {
                     "Det.ocr_version": OCRVersion.PPOCRV6,
                     "Det.model_type": ModelType.SMALL,

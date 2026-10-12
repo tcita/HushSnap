@@ -78,8 +78,7 @@ def get(url: str, stream: bool = False, timeout: int = 60):
         f"install directory.  Check that the following files exist and their "
         f"SHA256 matches rapidocr/default_models.yaml:\n"
         f"  - PP-OCRv6_det_small.onnx\n"
-        f"  - PP-OCRv6_rec_small.onnx\n"
-        f"  - ch_ppocr_mobile_v2.0_cls_mobile.onnx\n\n"
+        f"  - PP-OCRv6_rec_small.onnx\n\n"
         f"This stub lives at _stubs/requests/__init__.py and is selected by "
         f"pathex=['_stubs'] in HushSnap.spec."
     )

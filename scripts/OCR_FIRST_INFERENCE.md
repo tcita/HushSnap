@@ -270,4 +270,40 @@ init from lazy (Meyer's Singleton, first `GetEnv()` call) to eager
 The eager init creates global thread pools, probes hardware devices via
 `GetSortedOrtHardwareDevices()`, and takes ~7 s on this dual-GPU laptop.
 
+Re-verified 2026-10-13 against 1.31.0 (latest at the time): NOT fixed,
+slightly worse. Isolated measurement on this machine, fresh processes:
+
+| version | outer wall `python -c "import onnxruntime"` (×3) | `-X importtime`, pyd self / total |
+|---|---|---|
+| 1.21.1 | 0.23 / 0.20 / 0.20 s | 0.019 s / 0.16 s |
+| 1.31.0 | 9.96 / 9.36 / 9.25 s | 9.31 s / 9.45 s (98.5% in the pyd) |
+
+A post-import DLL snapshot of the 1.31.0 process shows exactly the
+discovery pipeline and nothing else new: SetupDi (`setupapi/cfgmgr32/
+devobj`) + DXGI/DXCore (`dxgi/DXCore/directxdatabasehelper`) + driver
+registry-key trust verification (`wintrust/msasn1/dbghelp`) — matching
+`DiscoverDevicesForPlatform()` in ORT source. Function-level proof (cdb
+breakpoint trace, same machine): the import-time thread runs
+`SetupDiEnumDeviceInfo` 38× from `GetDeviceInfoSetupApi` and
+`CreateDXGIFactory2` 2× from `GetDeviceInfoD3D12`, with the full caller
+chain `DiscoverDevicesForPlatform → GetDevices → SortDevicesByType →
+GetSortedHardwareDevices → Environment::EpInfo::Create → …
+→ Environment::Initialize → OrtEnv::GetOrCreateInstance → CreateOrtEnv`
+(PyInit). Mid-enumeration the loader pulls `nvdlistx.dll` (NVIDIA driver
+store) plus `dxcore.dll`/`directxdatabasehelper.dll`; `D3D12CreateDevice`
+is never called and no `nvwgf2umx` stays loaded — so the ~9 s is the
+SetupDi/DXGI enumeration walk itself (which does touch the NVIDIA driver
+store), not GPU device creation. `!runaway` shows ~5.3 s user-mode CPU
+burned on the importing thread out of ~9.4 s wall: mostly burn (registry
+reads, signature checks), not just blocked waits. It serves nothing in
+our build:
+`get_available_providers()` returns `Azure,CPU` on both versions.
+
+There is no opt-out: the discovery code has no env-var/config gate, only
+a compile-time `ORT_MINIMAL_BUILD` branch the PyPI wheel doesn't take, and
+`OrtEnvCreationOptions` (1.24+) exposes nothing to skip it. So this is
+architectural, not a per-version bug — no "upgrade to 1.2x to fix it"
+version exists. Revisit only if release notes mention lazy env creation
+or optional device discovery.
+
 See memory: [[onnxruntime-import-slowdown-getorcreateinstance]]

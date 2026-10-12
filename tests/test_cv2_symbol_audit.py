@@ -36,8 +36,8 @@ import pytest
 ALLOWED_MODULES = frozenset({"core", "imgproc", "imgcodecs"})
 
 # Every cv2.<symbol> rapidocr is known to use, mapped to its OpenCV module.
-# Verified against the installed rapidocr package on 2026-07-29.  A symbol
-# found in source but missing here fails the test -- forcing a human to
+# Verified against the installed rapidocr package on 2026-10-13 (3.10.0).
+# A symbol found in source but missing here fails the test -- forcing a human to
 # classify it before the minimal build can be trusted.  The module tag is
 # documentation/secondary; the load-bearing assertion is "no unknown symbol".
 KNOWN_SYMBOLS: dict[str, str] = {
@@ -53,7 +53,9 @@ KNOWN_SYMBOLS: dict[str, str] = {
     "BORDER_CONSTANT": "imgproc",
     "BORDER_REPLICATE": "imgproc",
     "CHAIN_APPROX_SIMPLE": "imgproc",
+    "COLOR_BGRA2BGR": "imgproc",  # 3.10 load_raw_memory_image (not on our ndarray path)
     "COLOR_GRAY2BGR": "imgproc",
+    "COLOR_RGBA2BGR": "imgproc",  # 3.10 load_raw_memory_image (not on our ndarray path)
     "COLOR_RGB2BGR": "imgproc",
     "FONT_HERSHEY_SIMPLEX": "imgproc",
     "INTER_CUBIC": "imgproc",
@@ -72,6 +74,11 @@ KNOWN_SYMBOLS: dict[str, str] = {
     "resize": "imgproc",
     "warpPerspective": "imgproc",
     # --- imgcodecs: image encode (debug-vis path only; decode is PIL) ---
+    # imdecode/IMREAD_COLOR: 3.10 load_memory_image (address+length input;
+    # not on our ndarray path).  Verified present + functional in the minimal
+    # pyd (5.0.0) on 2026-10-13.
+    "IMREAD_COLOR": "imgcodecs",
+    "imdecode": "imgcodecs",
     "imencode": "imgcodecs",
     "imwrite": "imgcodecs",
 }

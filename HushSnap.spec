@@ -118,10 +118,16 @@ def filter_binaries(binaries):
     # carries the latest system CRT regardless of the Python install.
     #
     # NOTE: This is NOT a fix for the onnxruntime import slowdown — that
-    # regression (1.22+ → ~7 s) is caused by SetupDiGetClassDevsA GPU
-    # enumeration inside PyInit, not CRT version.  The real fix is pinning
-    # onnxruntime==1.21.1 (last version without DML provider probing).
-    # See memory/ for full investigation.
+    # regression (1.22+ → ~7 s, still present in 1.31.0) is caused by eager
+    # OrtEnv creation + hardware device discovery inside PyInit, not CRT
+    # version.  Verified 2026-10: -X importtime attributes 98.5% of import
+    # to onnxruntime_pybind11_state.pyd, and a cdb breakpoint trace shows
+    # 38x SetupDiEnumDeviceInfo (GetDeviceInfoSetupApi) + CreateDXGIFactory2
+    # (GetDeviceInfoD3D12) under Environment::Initialize, touching nvdlistx.dll
+    # (NVIDIA driver store) but never calling D3D12CreateDevice — i.e. the
+    # SetupDi/DXGI enumeration walk itself, not GPU device creation.
+    # The real fix is pinning onnxruntime==1.21.1 (last version without the
+    # discovery infra).  See scripts/OCR_FIRST_INFERENCE.md "ORT version pin".
     _SYSTEM32 = r'C:\Windows\System32'
     result = [
         (
@@ -151,6 +157,12 @@ def filter_datas(datas):
     out = []
     for d in datas:
         if 'translations' in d[0].lower():
+            continue
+        # rapidocr >=3.10 lazily initializes models: with Global.use_cls=False
+        # the orientation classifier is never constructed, so its onnx is
+        # excluded from the bundle (saves ~0.6 MB and removes the missing-cls
+        # failure mode at startup).
+        if d[0].lower().endswith('ch_ppocr_mobile_v2.0_cls_mobile.onnx'):
             continue
         out.append(d)
     return out

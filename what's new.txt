@@ -2,6 +2,20 @@
 Release notes (newest first)
 ================================================================================
 
+ v1.6.4
+
+· 修复编辑器裁剪尺寸标注发糊的问题。
+· 底层维护：OCR 引擎升级。
+
+· 修復編輯器裁剪尺寸標註發糊的問題。
+· 底層維護：OCR 引擎升級。
+
+· Fixed blurry crop dimension label in the editor.
+· Under-the-hood maintenance: OCR engine upgrade.
+
+· エディターの切り抜き寸法ラベルがぼやける問題を修正。
+· 内部メンテナンス：OCR エンジン更新。
+
  v1.6.3
 
 

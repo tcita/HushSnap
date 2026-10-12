@@ -9,6 +9,42 @@ from ...styles import BRAND_GREEN, BRAND_GREEN_DEEP, BRAND_GREEN_DEEPER
 
 logger = logging.getLogger(__name__)
 
+
+def _dimension_chip_font() -> QtGui.QFont:
+    font = QtGui.QFontDatabase.systemFont(
+        QtGui.QFontDatabase.SystemFont.GeneralFont
+    )
+    font.setPixelSize(14)
+    font.setBold(True)
+    return font
+
+
+def _dimension_chip_size(text: str) -> tuple:
+    """Pixel size of the shared dimension chip for *text* (matches _draw_dimension_chip)."""
+    fm = QtGui.QFontMetricsF(_dimension_chip_font())
+    return fm.horizontalAdvance(text) + 14, fm.height() + 8
+
+
+def _draw_dimension_chip(painter: QtGui.QPainter, rect: QtCore.QRectF,
+                         text: str) -> None:
+    """Paint the shared "W × H" readout chip — identical in crop + resize.
+
+    Single source of truth so the two tools can never drift again: NoPen,
+    black α170 fill, white 14px bold text.  Callers own save/restore and
+    render hints, and must position the chip over UNDIMMED content (inside
+    the active rect) — over the crop dim band the same fill reads darker.
+    """
+    font = _dimension_chip_font()
+    painter.setFont(font)
+    fm = QtGui.QFontMetricsF(font)
+    painter.setPen(QtCore.Qt.PenStyle.NoPen)
+    painter.setBrush(QtGui.QBrush(QtGui.QColor(0, 0, 0, 170)))
+    painter.drawRoundedRect(rect, 4, 4)
+    painter.setPen(QtGui.QPen(QtGui.QColor("#ffffff")))
+    painter.drawText(QtCore.QPointF(rect.x() + 7, rect.y() + 4 + fm.ascent()),
+                     text)
+
+
 class MosaicTool(BaseTool):
     """Drag a rectangle to pixelate (mosaic) the region."""
 
@@ -410,31 +446,16 @@ class CropTool(BaseTool):
         offset = canvas._image_offset()
 
         dim_text = f"{r.width()} × {r.height()}"
-        font = QtGui.QFontDatabase.systemFont(
-            QtGui.QFontDatabase.SystemFont.GeneralFont
-        )
-        font.setPixelSize(14)
-        font.setBold(True)
+        cw, ch = _dimension_chip_size(dim_text)
+        # Inside the rect over undimmed content (like ResizeTool): the old
+        # above-rect position sat over the dimmed band and read darker.
+        label_x = offset.x() + r.right() * scale - cw - 4
+        label_y = offset.y() + r.top() * scale + 4
         painter.save()
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QtGui.QPainter.RenderHint.TextAntialiasing)
-        painter.setFont(font)
-        fm = QtGui.QFontMetricsF(font)
-        text_rect = fm.boundingRect(dim_text)
-        pad = 6.0
-        bw = text_rect.width() + pad * 2
-        bh = text_rect.height() + pad * 2
-        label_x = offset.x() + r.right() * scale - bw - 4
-        label_y = offset.y() + r.top() * scale - bh - 4
-        if label_y < 2:
-            label_y = offset.y() + r.top() * scale + 4
-        bg = QtCore.QRectF(label_x, label_y, bw, bh)
-        painter.setPen(QtGui.QPen(QtGui.QColor(0, 0, 0, 200), 1.0))
-        painter.setBrush(QtGui.QBrush(QtGui.QColor(0, 0, 0, 170)))
-        painter.drawRoundedRect(bg, 4, 4)
-        painter.setPen(QtGui.QPen(QtGui.QColor("#ffffff")))
-        painter.drawText(bg.adjusted(pad, pad, -pad, -pad),
-                         QtCore.Qt.AlignmentFlag.AlignCenter, dim_text)
+        _draw_dimension_chip(painter, QtCore.QRectF(label_x, label_y, cw, ch),
+                             dim_text)
         painter.restore()
 
 
@@ -1091,19 +1112,10 @@ class ResizeTool(BaseTool):
             pm = self._editor._display_pixmap
             w, h = pm.width(), pm.height()
         label = "{} × {}".format(w, h)
-        font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.SystemFont.GeneralFont)
-        font.setPixelSize(14)
-        font.setBold(True)
-        painter.setFont(font)
-        fm = QtGui.QFontMetricsF(font)
-        tw, th = fm.horizontalAdvance(label), fm.height()
-        bx = rect.right() - tw - 12
+        cw, ch = _dimension_chip_size(label)
+        bx = rect.right() - cw + 2
         by = rect.top() + 6
-        painter.setPen(QtCore.Qt.PenStyle.NoPen)
-        painter.setBrush(QtGui.QBrush(QtGui.QColor(0, 0, 0, 170)))
-        painter.drawRoundedRect(QtCore.QRectF(bx, by, tw + 14, th + 8), 4, 4)
-        painter.setPen(QtGui.QPen(QtGui.QColor("#ffffff")))
-        painter.drawText(QtCore.QPointF(bx + 7, by + 4 + fm.ascent()), label)
+        _draw_dimension_chip(painter, QtCore.QRectF(bx, by, cw, ch), label)
 
         painter.restore()
 

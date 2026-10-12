@@ -364,26 +364,26 @@ function Invoke-PostPyInstallerValidation {
     }
 
     # 2.3 ── PP-OCR model files bundled ────────────────────────────
-    # Locked to exactly 3 onnx: cls + det_small + rec_small. rapidocr
-    # unconditionally constructs TextClassifier in _initialize (loads
-    # the cls onnx) even with Global.use_cls=False - use_cls only skips
-    # the inference call, not construction. So cls must ship in the pkg.
+    # Locked to exactly 2 onnx: det_small + rec_small. rapidocr >=3.10
+    # lazily initializes models: with Global.use_cls=False the orientation
+    # classifier (cls onnx) is never constructed, so it is excluded from
+    # the bundle (HushSnap.spec filter_datas) and must NOT ship in the pkg.
     # If the count ever changes (a model slipped past filter_datas, or
     # one went missing) it is release-blocking - acknowledge by editing
     # this assertion, not silently packaging. A same-count model swap
     # (e.g. det_small -> det_server ~100MB) is caught by the size cap.
     $modelDir = Join-Path $DistDir "_internal\rapidocr\models"
     $modelFiles = Get-ChildItem -Path $modelDir -Filter "*.onnx" -ErrorAction SilentlyContinue
-    if (-not $modelFiles -or $modelFiles.Count -ne 3) {
+    if (-not $modelFiles -or $modelFiles.Count -ne 2) {
         $found = if ($modelFiles) { $modelFiles.Name -join ', ' } else { '(none)' }
-        Write-Fail "PP-OCR onnx count != 3 (found $($modelFiles.Count)): $found"
+        Write-Fail "PP-OCR onnx count != 2 (found $($modelFiles.Count)): $found"
         $errors++
     } else {
         Write-Pass "PP-OCR model files present ($($modelFiles.Count) .onnx files)"
     }
 
     # 2.3b ── PP-OCR model total size cap (catches same-count swap) ─
-    if ($modelFiles -and $modelFiles.Count -eq 3) {
+    if ($modelFiles -and $modelFiles.Count -eq 2) {
         $onnxTotalMB = [math]::Round(($modelFiles | Measure-Object -Property Length -Sum).Sum / 1MB, 1)
         if ($onnxTotalMB -gt 50) {
             Write-Fail "PP-OCR onnx total ${onnxTotalMB}MB > 50MB cap - a small model was likely swapped for a server variant"
