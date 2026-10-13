@@ -11,6 +11,7 @@
 <table align="center" width="600">
 <tr>
 <td align="left">
+
 **HushSnap is an opinionated, deliberately minimal screenshot tool built around a thumbnail hub.** Press a hotkey, select a region, and the capture is done—no floating toolbar, no extra confirmation step. It lands on your clipboard instantly.
 
 A subtle thumbnail fades in at the bottom-right corner. **It is the interface:** use its controls to edit or pin, drag it to save, or click it for OCR. **The recognized text pops up already reformatted into a clean, readable layout you can edit on the spot.** HushSnap stays quietly in the tray until you need it. Everything runs locally—your screenshots and recognized text never leave your device.
