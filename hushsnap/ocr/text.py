@@ -3,17 +3,26 @@ from typing import Callable
 
 
 # ── URL detection (shared by the OCR popup highlighter & click handling) ──────
-# Matches http(s) URLs.  The body stops at whitespace and closing brackets so a
-# trailing "。"/")" that the OCR picked up (or that sits in the source text)
-# doesn't get swallowed into the link.  Remaining trailing punctuation —
-# ASCII and CJK — is trimmed in _iter_url_spans so the coloured span and the
-# clickable region stay in sync.
+# Matches http(s) URLs and magnet: links.  The body stops at whitespace and
+# closing brackets so a trailing "。"/")" that the OCR picked up (or that sits
+# in the source text) doesn't get swallowed into the link.  Remaining trailing
+# punctuation — ASCII and CJK — is trimmed in _iter_url_spans so the coloured
+# span and the clickable region stay in sync.
 #
 # The scheme separator accepts ONE or TWO slashes: OCR not infrequently drops a
 # slash and yields "https:/host" (see normalize_url — QUrl needs the second
 # slash restored before opening, but matching it here keeps it highlighted and
 # protects it from the punctuation-cleanup spacers).
-URL_REGEX = re.compile(r"https?://?[^\s<>\]\)\}]+", re.IGNORECASE)
+#
+# magnet: is matched with the same body rule (no whitespace).  A magnet link
+# split across lines by OCR (e.g. "magnet:?" / "xt=...") stays two plain-text
+# runs until the user joins them — links never span newlines, so no
+# auto-joining is done here (WYSIWYG: what is blue is exactly what
+# Ctrl+Click will open).
+URL_REGEX = re.compile(
+    r"(?:https?://?[^\s<>\]\)\}]+|magnet:\?[^\s<>\]\)\}]+)",
+    re.IGNORECASE,
+)
 
 # Trailing characters stripped from a matched URL.  CJK fullwidth punctuation
 # is included because OCR of Chinese/Japanese text frequently appends 。 or ）
@@ -66,6 +75,7 @@ def normalize_url(url: str) -> str:
     ``https:/host`` with an empty host and ``QDesktopServices.openUrl`` then
     fails to navigate.  The matched/highlighted span keeps the OCR text as-is
     (so the user sees what was recognised); this is applied only at open time.
+    Non-http(s) schemes (e.g. ``magnet:``) pass through unchanged.
     """
     return re.sub(r"^(https?:)/(?!/)", r"\1//", url, flags=re.IGNORECASE)
 

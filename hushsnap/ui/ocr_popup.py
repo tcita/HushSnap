@@ -64,13 +64,17 @@ _LOADING_SCREEN_FRAC = 0.55
 _DEFAULT_W = 420
 _DEFAULT_H = 200
 
-# ── Link styling (http(s) URLs in recognised text) ───────────────────────────
+# ── Link styling (http(s) URLs and magnet: links in recognised text) ─────────
+# What is coloured here is exactly what Ctrl+Click will open (see
+# ``ocr.text._iter_url_spans``).  No auto-joining across line breaks is done:
+# a link split over two hard-wrapped lines stays plain text until the user
+# joins it — WYSIWYG, no inference of user intent.
 _LINK_COLOR = "#7ab7ff"          # light blue — reads on the dark card
 _LINK_UNDERLINE = QtGui.QTextCharFormat.UnderlineStyle.SingleUnderline
 
 
 class UrlHighlighter(QtGui.QSyntaxHighlighter):
-    """Highlights http(s) URLs in the OCR text so they read as clickable links.
+    """Highlights http(s) URLs and magnet: links so they read as clickable.
 
     Shares the URL span logic with the click/hover handling via
     ``ocr.text._iter_url_spans`` — whatever is coloured is exactly what
@@ -251,6 +255,13 @@ class OcrPopup(QtWidgets.QWidget):
         # Enable native scrolling within the bubble
         self.text_edit.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.text_edit.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # NOTE (hard vs soft line break): word-wrap is ON with no H-scroll, so a
+        # hard "\n" and a soft wrap look identical.  Deleting a "\n" on a narrow
+        # window may appear to do nothing — the joined line simply soft-wraps to
+        # the same visual lines (widen the window to reveal it).  This matches
+        # Notepad with word-wrap; it is standard editor semantics, not a bug.
+        # Deliberately NOT auto-resizing the window on every edit to "prove"
+        # the deletion — that would fight the user's own resize.
         
         # Use viewport margins to simulate padding inside the card.
         # Bottom margin leaves room for the floating copy button.
