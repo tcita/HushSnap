@@ -24,9 +24,9 @@
 
 [HushSnap 官网](https://tcita.github.io/HushSnap/)
 
-[演示视频](https://youtu.be/untWW6_Ea3M)
+[演示视频（YouTube）](https://youtu.be/untWW6_Ea3M)
 
-[爱发电 (支持作者)](https://afdian.com/a/tcita)
+[演示视频（哔哩哔哩）](https://www.bilibili.com/video/BV1FquL6iESH)
 
 </td>
 </tr>

@@ -24,9 +24,9 @@ A subtle thumbnail fades in at the bottom-right corner. **It is the interface:**
 
 [HushSnap Website](https://tcita.github.io/HushSnap/)
 
-[Demo Video](https://youtu.be/untWW6_Ea3M)
+[Demo Video (YouTube)](https://youtu.be/untWW6_Ea3M)
 
-[爱发电 (Support)](https://afdian.com/a/tcita)
+[Demo Video (Bilibili)](https://www.bilibili.com/video/BV1FquL6iESH)
 
 </td>
 </tr>
