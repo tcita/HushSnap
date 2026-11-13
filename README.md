@@ -1,4 +1,10 @@
 <div align="center">
+
+**English** | [简体中文](README.zh-CN.md)
+
+</div>
+
+<div align="center">
   <img src="assets/logo.png" alt="HushSnap" width="120">
   <h1>HushSnap</h1>
   <a href="https://apps.microsoft.com/detail/9p0qzv5z8njz">
