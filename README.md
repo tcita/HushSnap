@@ -112,19 +112,23 @@ Copyright © 2026 HushSnap.
 
 ## Development & Debugging
 
+Requires **Python 3.13 (64-bit)**: the bundled minimal `cv2.pyd` and ONNX Runtime are built for that version; other versions fail at `import cv2`.
+
 Install dependencies:
 
 ```powershell
 pip install -r requirements.txt
 ```
 
-Run from source:
+Run from source (from the repo root):
 
 ```powershell
 python HushSnap.py
 ```
 
-To enable debug mode, set `debug = true` in `hushsnap_config.toml` (the `--debug` CLI flag was removed because MSIX packages cannot receive command-line arguments).
+If the Microsoft Store version is already running, quit its tray icon first — single-instance detection will make the source build exit immediately. Source builds run in debug mode by default; the config file is at `%LOCALAPPDATA%\HushSnap_Dev\hushsnap_config.toml` (the `--debug` CLI flag was removed because MSIX packages cannot receive command-line arguments).
+
+Run tests: `pwsh scripts/run_tests.ps1` (picks `.venv` / the active venv / PATH python; accepts pytest args directly). `_stubs/` is only used by PyInstaller packaging and needs no setup for source runs.
 
 **Key Features of Debug Mode:**
 
@@ -132,24 +136,32 @@ To enable debug mode, set `debug = true` in `hushsnap_config.toml` (the `--debug
 - **Traceability:** Sets log level to `DEBUG` and opens the log folder immediately upon startup.
 - **Live Output:** Real-time logs are streamed to the terminal via the logging console handler (`StreamHandler`).
 - **OCR Inspection:** Debug mode saves detection-box images to the data directory. Right-click the tray icon → "Config Folder" to open this location directly.
-  - `ocr_debug_words.png` - raw PP-OCR detector word boxes (red)
-  - `ocr_debug_lines.png` - post-clustering line boxes (green, L0/L1/… badges)
+  - `ocr_debug_words.png` — raw PP-OCR detector word boxes (red)
+  - `ocr_debug_lines.png` — post-clustering line boxes (green, L0/L1/… badges)
   - Source run: `%LOCALAPPDATA%\HushSnap_Dev\`
   - Packaged run (MSIX): `%LOCALAPPDATA%\Packages\<PackageFamilyName>\LocalState\`
   - Packaged run (PyInstaller standalone): `%LOCALAPPDATA%\HushSnap\`
 
 ## Building (MSIX)
 
+Prerequisites: Windows 10/11 SDK (`makeappx.exe` and `signtool.exe`), [`uv`](https://docs.astral.sh/uv/) on PATH, and Python 3.13 (64-bit). Run from the repo root:
+
 ```powershell
-build_msix.bat              # build unsigned MSIX; version auto-resolved from git tag
-sign_for_local_test.bat     # self-sign the package for local install testing
+build_msix.bat              # build unsigned MSIX -> dist-installer\HushSnap.msix
+sign_for_local_test.bat     # self-sign -> dist-installer-test\HushSnap_Test_Signed.msix
 ```
 
-The build requires HEAD at a git tag (e.g. `v0.3.0`). For local testing, `sign_for_local_test.bat` auto-creates a self-signed certificate and trusts it - run as Administrator.
+`build_msix.bat` runs the full test suite first and aborts on failure. The version is resolved from the current git tag, so HEAD must point at a tag (e.g. `v0.3.0`). For a quick local build without tagging:
 
-Every release is tagged in git — `git checkout v1.5.4`, run `build_msix.bat`, then `sign_for_local_test.bat` to produce a locally-installable MSIX for that version.
+```powershell
+build_msix.bat -Version 0.0.0
+```
 
-Release notes (four languages, newest first) are in [`what's new.txt`](what's%20new.txt). 
+`-SkipTests` bypasses only the tests; see the `param` block at the top of `installer/build_msix.ps1` for all options.
+
+`sign_for_local_test.bat` must be run **as Administrator** and requires the build above to have completed (it reads `dist-installer\HushSnap.msix`). It reuses or creates a self-signed certificate matching the package Publisher, trusts it in Root + TrustedPeople, and signs it with `signtool`. **Double-click `dist-installer-test\HushSnap_Test_Signed.msix` to install.**
+
+To produce a locally-installable MSIX for an older release, `git checkout vX.Y.Z` first, then run both scripts.
 
 ---
 
