@@ -5,7 +5,12 @@ param(
     [string]$PublisherDisplayName = "TCITA Studio",
     [string]$DisplayName = "HushSnap",
     [string]$Version,
-    [switch]$SkipValidation
+    [switch]$SkipValidation,
+    # No CI in this repo (GitHub is code hosting only); the MSIX goes straight
+    # to the Store, so packaging is the only mandatory gate before release.
+    # Unit tests therefore run here by default.  -SkipTests bypasses ONLY the
+    # tests — -SkipValidation still independently skips the artifact checks.
+    [switch]$SkipTests
 )
 
 $ErrorActionPreference = "Stop"
@@ -659,6 +664,39 @@ while ($versionParts.Count -lt 4) {
 }
 $quadVersion = ($versionParts[0..3] -join ".")
 Write-Host "Configured MSIX package version to '$quadVersion'" -ForegroundColor Green
+
+# ══════════════════════════════════════════════════════════════════════
+#  CHECKPOINT 0 — Unit tests (release gate)
+# ══════════════════════════════════════════════════════════════════════
+# This repo has no CI: GitHub hosts the code and the MSIX is uploaded straight
+# to the Store.  Packaging is the only mandatory gate before release, so run
+# the full test suite here and ABORT the build on any failure.
+#
+# Use $pythonExe — the clean .venv-build interpreter installed from
+# requirements.txt — so what we test is exactly what gets packaged.  Do NOT
+# call scripts/run_tests.ps1 here: that picks the dev .venv / PATH python and
+# would break that dependency parity.  pytest is already in requirements.txt.
+#
+# Must stay BEFORE the __init__.py version injection below so tests see a
+# clean source tree ("__version__ = dev").
+if (-not $SkipTests) {
+    Write-ValidationHeader "Unit tests (pytest)"
+
+    # python -m pytest resolves pytest.ini, tests/ and the hushsnap package
+    # relative to the cwd, so this must run from the repo root.
+    Push-Location $rootDir
+    try {
+        & $pythonExe -m pytest -q
+        $testExit = $LASTEXITCODE
+    } finally {
+        Pop-Location
+    }
+
+    if ($testExit -ne 0) {
+        throw "Unit tests failed (exit $testExit). Fix them before packaging, or use -SkipTests to bypass."
+    }
+    Write-Pass "All unit tests passed"
+}
 
 # ══════════════════════════════════════════════════════════════════════
 #  CHECKPOINT 1 — Pre-build validation
