@@ -92,13 +92,15 @@ The shipped MSIX is slimmed down: HushSnap uses a purpose-built **24.8 MB static
 pwsh scripts/build/build_minimal_opencv.ps1 -NoIPP -ForceClean
 ```
 
-## Third-Party Acknowledgment
+## Design References
 
-Design references: [Text-Grab](https://github.com/TheJoeFin/Text-Grab) (MIT,
-OCR workflow), [Pinta](https://github.com/PintaProject/Pinta) (MIT, image editor
-toolset), [ShareX](https://github.com/ShareX/ShareX) (GPL-3.0, capture workflow).
-Built with [PyQt6](https://www.riverbankcomputing.com/software/pyqt/) (GPL-3.0-only,
-© Riverbank Computing Limited) — see `THIRD_PARTY_NOTICES.md` for all attributions.
+- [Text-Grab](https://github.com/TheJoeFin/Text-Grab) (MIT) — OCR workflow
+- [Pinta](https://github.com/PintaProject/Pinta) (MIT) — image editor toolset
+- [ShareX](https://github.com/ShareX/ShareX) (GPL-3.0) — capture workflow
+
+All third-party attributions and license details are in `THIRD_PARTY_NOTICES.md`.
+
+**Special thanks:** [RapidOCR](https://github.com/RapidAI/RapidOCR) (Apache 2.0) — HushSnap's entire OCR inference pipeline and the PP-OCRv6 models shipped with the app are provided by this Python package.
 
 ## License
 

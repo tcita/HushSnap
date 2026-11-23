@@ -92,9 +92,15 @@ HushSnap 使用 [**PP-OCRv6**](https://github.com/PaddlePaddle/PaddleOCR) 作为
 pwsh scripts/build/build_minimal_opencv.ps1 -NoIPP -ForceClean
 ```
 
-## 第三方致谢
+## 设计参考
 
-设计参考：[Text-Grab](https://github.com/TheJoeFin/Text-Grab)（MIT，OCR 流程）、[Pinta](https://github.com/PintaProject/Pinta)（MIT，图片编辑器工具集）、[ShareX](https://github.com/ShareX/ShareX)（GPL-3.0，截图流程）。基于 [PyQt6](https://www.riverbankcomputing.com/software/pyqt/) 构建（GPL-3.0-only，© Riverbank Computing Limited）——全部归属见 `THIRD_PARTY_NOTICES.md`。
+- [Text-Grab](https://github.com/TheJoeFin/Text-Grab)（MIT）——OCR 流程
+- [Pinta](https://github.com/PintaProject/Pinta)（MIT）——图片编辑器工具集
+- [ShareX](https://github.com/ShareX/ShareX)（GPL-3.0）——截图流程
+
+全部第三方归属与许可证信息见 `THIRD_PARTY_NOTICES.md`。
+
+**特别致谢：** [RapidOCR](https://github.com/RapidAI/RapidOCR)（Apache 2.0）——HushSnap 的整套 OCR 推理及随应用分发的 PP-OCRv6 模型均由该 Python 包提供。
 
 ## 许可证
 
