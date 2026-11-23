@@ -3,7 +3,16 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 from PyQt6.QtGui import QHoverEvent, QMouseEvent
 from unittest.mock import patch
 
-from hushsnap.ui.ocr_popup import OcrPopup
+from hushsnap.ui import ocr_popup as ocr_popup_module
+from hushsnap.ui.ocr_popup import (
+    OcrPopup,
+    OUTER_MARGIN,
+    WINDOW_MIN_HEIGHT,
+    _H_CHROME,
+    _V_CHROME,
+    _HEIGHT_SAFETY,
+    _VIEWPORT_MARGINS,
+)
 
 
 @pytest.fixture
@@ -110,7 +119,7 @@ def test_ocr_popup_edge_detection(qapp):
     popup = OcrPopup(_translate)
     popup.resize(400, 400)
     
-    # RESIZE_HIT is 28 (matches OUTER_MARGIN)
+    # RESIZE_HIT / CORNER_HIT match the OUTER_MARGIN resize ring (36 / 52 px)
 
     # Top-left corner
     assert popup._get_edge(QtCore.QPoint(5, 5)) == (QtCore.Qt.Edge.TopEdge | QtCore.Qt.Edge.LeftEdge)
@@ -120,7 +129,7 @@ def test_ocr_popup_edge_detection(qapp):
     assert popup._get_edge(QtCore.QPoint(390, 390)) == (QtCore.Qt.Edge.BottomEdge | QtCore.Qt.Edge.RightEdge)
     # Center (no edge)
     assert popup._get_edge(QtCore.QPoint(200, 200)) == QtCore.Qt.Edge(0)
-    # Card corner at 18,18 still falls within the 28px hit ring
+    # Card corner at 18,18 still falls within the corner hit zone
     assert popup._get_edge(QtCore.QPoint(18, 18)) == (QtCore.Qt.Edge.TopEdge | QtCore.Qt.Edge.LeftEdge)
 
 
@@ -239,5 +248,91 @@ def test_plain_click_on_url_does_not_open(qapp):
         QtWidgets.QApplication.sendEvent(popup.text_edit.viewport(), me)
         qapp.processEvents()
     assert opened == []
+
+
+# ── Window-size geometry (regression guards) ────────────────────────────────
+# This bug was "fixed" three times (7524482, 7edfaf5, 78b4dd6) and kept coming
+# back because layout margins and size constants were maintained separately
+# with nothing tying them together.  These tests pin down the invariants.
+
+
+def _fake_big_screen():
+    """Offscreen CI screens are tiny; a width/height clamp would mask the bug."""
+    class _Screen:
+        def availableGeometry(self):
+            return QtCore.QRect(0, 0, 1920, 1080)
+    return _Screen()
+
+
+def _fit_popup(popup, text, monkeypatch, qapp):
+    """Size *popup* for *text* on a screen large enough that no clamp fires."""
+    screen = _fake_big_screen()
+    monkeypatch.setattr(ocr_popup_module, "cursor_screen", lambda: screen)
+    monkeypatch.setattr(
+        QtWidgets.QApplication, "screenAt", staticmethod(lambda *a: screen)
+    )
+    popup.text_edit.setPlainText(text)
+    popup._adjust_window_size(fit_width=True)
+    popup.show()
+    qapp.processEvents()
+    popup.layout().activate()
+    qapp.processEvents()
+    return popup
+
+
+def _doc_height(font, width, text):
+    td = QtGui.QTextDocument()
+    td.setDocumentMargin(0)
+    td.setDefaultFont(font)
+    td.setTextWidth(width)
+    td.setPlainText(text)
+    h = td.size().height()
+    td.deleteLater()
+    return h
+
+
+def test_geometry_constants_match_the_layout(qapp):
+    """_H_CHROME / _V_CHROME must derive from the margins the widget really uses.
+
+    Guards against a second hard-coded setViewportMargins() call silently
+    desyncing the height calculation again.
+    """
+    popup = OcrPopup(_translate)
+    m = popup.text_edit.viewportMargins()
+    assert (m.left(), m.top(), m.right(), m.bottom()) == _VIEWPORT_MARGINS
+    assert _H_CHROME == 2 * OUTER_MARGIN + m.left() + m.right()
+    assert _V_CHROME == 2 * OUTER_MARGIN + m.top() + m.bottom()
+
+
+def test_window_height_fits_full_width_lines(qapp, monkeypatch):
+    """Near-full-width lines must not be double-counted as wrapped lines.
+
+    Before the fix the height measurement used a width ~32px narrower than the
+    real viewport, so every line wrapped twice and the window came out ~2x too
+    tall (a large empty area below the text).
+    """
+    popup = OcrPopup(_translate)
+    fm = QtGui.QFontMetrics(popup.text_edit.font())
+    unit = "M" * 20
+    line = unit * max(1, round(686 / fm.horizontalAdvance(unit)))
+    text = "\n".join([line] * 13)
+
+    _fit_popup(popup, text, monkeypatch, qapp)
+
+    real_h = _doc_height(popup.text_edit.font(), popup.text_edit.viewport().width(), text)
+    expected = real_h + _V_CHROME + _HEIGHT_SAFETY
+    assert popup.height() == pytest.approx(expected, abs=12)
+
+
+def test_short_text_keeps_minimum_window_height(qapp, monkeypatch):
+    """A one-line result must stay big enough for the floating buttons.
+
+    _V_CHROME (130) is a fixed floor; below ~148px the pin/close and copy/font
+    buttons collide with the text.  WINDOW_MIN_HEIGHT is the explicit guard —
+    do not lower it to "hug the content".
+    """
+    popup = OcrPopup(_translate)
+    _fit_popup(popup, "Hi", monkeypatch, qapp)
+    assert popup.height() >= WINDOW_MIN_HEIGHT
 
 

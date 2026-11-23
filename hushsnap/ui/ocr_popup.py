@@ -15,32 +15,54 @@ from .styles import BRAND_GREEN
 
 logger = logging.getLogger(__name__)
 
-# Minimum window size to prevent collapsing to zero
-WINDOW_MIN_WIDTH = 280
-WINDOW_MIN_HEIGHT = 180
-OUTER_MARGIN = 36  # Width of the transparent margin ring around the card
+# ── Window geometry: the single source of truth for size calculations ─────────
+# The window is a frameless, translucent surface.  The dark card is inset by
+# OUTER_MARGIN on every side (a fully transparent ring holding the painted drop
+# shadow and the mouse grab zone for edge-resizing), and the text inside the
+# card is inset again by the QPlainTextEdit viewport margins:
+#
+#   window
+#     └─ OUTER_MARGIN            (transparent shadow / resize grip)
+#         └─ text_block (card)
+#             └─ text_edit
+#                 └─ viewport, inset by _VIEWPORT_MARGINS
+#                     └─ laid-out text
+#
+# The text area is therefore smaller than the window by a FIXED amount on each
+# axis.  The two derived numbers below are the ONLY conversion between
+# "window size" and "text size": added when sizing the window from text, and
+# subtracted when measuring text from the window.  Never apply a second margin
+# on top of them — that was the old bug (the text was measured ~32px too narrow,
+# so every near-full-width line wrapped twice and the window came out ~2x tall).
+OUTER_MARGIN = 36
+_VIEWPORT_MARGINS = (24, 24, 24, 34)   # left, top, right, bottom
+_H_CHROME = 2 * OUTER_MARGIN + _VIEWPORT_MARGINS[0] + _VIEWPORT_MARGINS[2]  # 120
+_V_CHROME = 2 * OUTER_MARGIN + _VIEWPORT_MARGINS[1] + _VIEWPORT_MARGINS[3]  # 130
+
+# Extra width for the 4px vertical scrollbar and font-metric rounding.  Added
+# when choosing the window width; deliberately NOT subtracted again when
+# measuring text, so the measurement matches the width text is really laid out
+# in.  (A scrollbar only appears once content overflows the screen clamp.)
+_WIDTH_SLACK = 8
+# QTextDocument measurement vs QPlainTextEdit rendering can differ by a few px
+# (hinting, wrap rounding).  Stay slightly too tall rather than clip the last
+# line — ScrollBarAsNeeded is kept as the backstop (see commit 7edfaf5).
+_HEIGHT_SAFETY = 8
+
+# ── Size floors (policy limits, NOT geometry) ────────────────────────────────
+# _MIN_LINE_WIDTH floors the WINDOW width for one-line captures.  It must never
+# be used as a text-measurement width: that would make the measurement wider
+# than reality and under-count wrapped lines (the opposite failure).
+_MIN_LINE_WIDTH = 200
+_MIN_TEXT_HEIGHT = 40       # prevents the text area collapsing to a sliver
+WINDOW_MIN_WIDTH = 280      # hard floor for the window
+WINDOW_MIN_HEIGHT = 180     # hard floor for the window (short results)
+
+# ── Hit-testing / screen clamping ────────────────────────────────────────────
+# RESIZE_HIT matches OUTER_MARGIN: the grab zone for edge-resizing IS the
+# transparent ring around the card.
 RESIZE_HIT = 36
 CORNER_HIT = 52  # Wide corner zone — corners are point targets, need the extra room
-
-# ── Size-adjustment layout constants ─────────────────────────────────────────
-# Chrome estimates: outer margins + borders + viewport paddings + scrollbar.
-_CHROME_WIDTH = 136
-# OUTER_MARGIN*2 + viewport_top + viewport_bottom + borders - _BUBBLE_PAD
-# 36*2 + 24 + 34 + 4 - 22 = 112
-_CHROME_HEIGHT = 112
-# Viewport reduction = outer_margins + viewport_margins + scrollbar + borders.
-# 36*2 + 24*2 + 4 = 124
-_VP_WIDTH_REDUCTION = 124
-# Text width padding inside the viewport (16+16).
-_TEXT_WIDTH_PAD = 32
-# Minimum unwrapped line width before wrapping kicks in.
-_MIN_LINE_WIDTH = 200
-# Minimum text height (prevents collapsing to an invisible sliver).
-_MIN_TEXT_HEIGHT = 40
-# Line-spacing buffer added to the measured QTextDocument height.
-_LINE_SPACING_BUFFER = 4
-# Bubble padding: space between the text block and the bubble frame.
-_BUBBLE_PAD = 22
 # Screen-edge margins for clamping the final geometry.
 _SCREEN_MARGIN_W = 40
 _SCREEN_MARGIN_H = 60
@@ -263,9 +285,10 @@ class OcrPopup(QtWidgets.QWidget):
         # Deliberately NOT auto-resizing the window on every edit to "prove"
         # the deletion — that would fight the user's own resize.
         
-        # Use viewport margins to simulate padding inside the card.
-        # Bottom margin leaves room for the floating copy button.
-        self.text_edit.setViewportMargins(24, 24, 24, 34)
+        # Padding inside the card.  These are part of _H_CHROME / _V_CHROME —
+        # keep them in sync via _VIEWPORT_MARGINS, never hard-code them twice.
+        # The bottom margin leaves room for the floating copy / font buttons.
+        self.text_edit.setViewportMargins(*_VIEWPORT_MARGINS)
 
         # Match the measurement document (which uses documentMargin 0) so the
         # actual available text width equals the calculated width — otherwise
@@ -590,12 +613,18 @@ class OcrPopup(QtWidgets.QWidget):
 
     # ── height auto-fit (width stays user-controlled) ────────────────
     def _adjust_window_size(self, fit_width=False):
-        """Fit window size to bubble content.
+        """Fit the window to the text.
 
-        Height is always adjusted to prevent vertical overflow.
-        Width is adjusted only on the initial ``show_text`` call
-        (*fit_width*=True); subsequent resize events honour the user's
-        chosen width.
+        Height is always adjusted to prevent vertical overflow.  Width is
+        adjusted only on the initial ``show_text`` call (*fit_width*=True);
+        later resizes honour the user's chosen width.
+
+        The conversion between window size and text size uses ONLY
+        ``_H_CHROME`` / ``_V_CHROME`` (derived from the layout at the top of
+        this file).  Step 1 adds the horizontal chrome to size the window from
+        the longest line; step 2 subtracts that same chrome to measure the text
+        at the width it will really be laid out in.  Keeping the two in sync is
+        what makes the line count — and therefore the height — correct.
         """
         if self._is_loading:
             # During loading, we don't adjust size based on text
@@ -605,23 +634,16 @@ class OcrPopup(QtWidgets.QWidget):
         fm = QtGui.QFontMetrics(font)
         text = self.text_edit.toPlainText() or " "
 
-        # ── width: fit to the longest unwrapped line ──
+        # ── 1. Window width: fit the longest unwrapped line ─────────────
         if fit_width:
-            max_line_px = 0.0
-            for line in text.split("\n"):
-                w = fm.horizontalAdvance(line)
-                if w > max_line_px:
-                    max_line_px = w
-            max_line_px = max(max_line_px, float(_MIN_LINE_WIDTH))
+            longest_px = max(
+                (fm.horizontalAdvance(line) for line in text.split("\n")),
+                default=0.0,
+            )
+            # Policy floor: a single short line still makes a usable card.
+            longest_px = max(longest_px, float(_MIN_LINE_WIDTH))
 
-            content_w = max_line_px
-
-            # Window chrome: outer margins + borders +
-            #                 viewport margins + scrollbar + safety buffer
-            desired_w = int(content_w + _CHROME_WIDTH)
-
-            # During the transition from loading, we might want to be smaller than WINDOW_MIN_WIDTH
-            # if the text is very sparse, but usually text popups should have a baseline.
+            desired_w = int(longest_px + _H_CHROME + _WIDTH_SLACK)
             desired_w = max(desired_w, WINDOW_MIN_WIDTH)
 
             screen = QtWidgets.QApplication.screenAt(self.pos())
@@ -631,43 +653,38 @@ class OcrPopup(QtWidgets.QWidget):
                 max_w = int(screen.availableGeometry().width() * _MAX_WIDTH_SCREEN_FRAC)
                 desired_w = min(desired_w, max_w)
 
-            # Use immediate resize if not visible yet, otherwise it's handled by geometry animation
+            # Not visible yet? Resize immediately; otherwise the geometry
+            # animation in step 3 handles the change.
             if not self.isVisible():
                 self.resize(desired_w, self.height())
-            
+
             target_w = desired_w
         else:
             target_w = self.width()
 
-        # ── height ─────────────────────────────────────────────────
-        vp_w = target_w - _VP_WIDTH_REDUCTION
+        # ── 2. Text height, measured at the REAL text width ─────────────
+        # Subtract the same _H_CHROME used above so QTextDocument wraps at
+        # exactly the points QPlainTextEdit will.  No second "text padding"
+        # here — that was the old double-subtraction bug.  The floor only
+        # guards against a zero/negative width; using _MIN_LINE_WIDTH here
+        # would make the measurement WIDER than reality and under-count
+        # wrapped lines (the opposite failure).
+        text_w = max(target_w - _H_CHROME, 1)
 
-        text_w = max(vp_w - _TEXT_WIDTH_PAD, _MIN_LINE_WIDTH)
-
-        # Use QTextDocument to calculate exact height of the plain text with wrapping
         td = QtGui.QTextDocument()
         td.setDocumentMargin(0)
         td.setDefaultFont(font)
         td.setTextWidth(text_w)
-        # QPlainTextEdit uses plain text, so we use setPlainText for measurement
+        # QPlainTextEdit uses plain text, so measure with setPlainText.
         td.setPlainText(text)
-
-        # Add a small buffer for line spacing
-        text_h = int(td.size().height()) + _LINE_SPACING_BUFFER
+        text_h = int(td.size().height())
         td.deleteLater()
 
-        # Respect minimum height
         text_h = max(text_h, _MIN_TEXT_HEIGHT)
-
-        # Accumulate: bubble internals + chrome
-        bubble_h = text_h + _BUBBLE_PAD
-
-        total_h = _CHROME_HEIGHT + bubble_h
-        # Safety margin: QTextDocument measurement vs QPlainTextEdit rendering
-        # can differ by a few px (font hinting, wrap rounding).
-        total_h += 4
+        total_h = int(text_h + _V_CHROME + _HEIGHT_SAFETY)
         total_h = max(total_h, WINDOW_MIN_HEIGHT)
 
+        # ── 3. Clamp to the screen and apply ────────────────────────────
         screen = QtWidgets.QApplication.screenAt(self.pos())
         if not screen or not self.isVisible():
             screen = cursor_screen()
