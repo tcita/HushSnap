@@ -57,9 +57,15 @@ def test_initialization_thread_safety():
         assert isinstance(r, float)
         assert r > 0
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Fallback path only used off-Windows")
-def test_non_windows_fallback():
-    assert get_working_set_mb() == -1.0
-    assert fmt_memory() == "WS=unavailable"
-    stats = get_memory_stats()
+def test_unavailable_memory_api_fallback(monkeypatch):
+    """Win32 init can fail on Windows too (psapi / ctypes failure).
+
+    The queries must degrade gracefully instead of raising.
+    """
+    import hushsnap.system.memory_utils as mu
+    monkeypatch.setattr(mu, "_init", lambda: None)
+
+    assert mu.get_working_set_mb() == -1.0
+    assert mu.fmt_memory() == "WS=unavailable"
+    stats = mu.get_memory_stats()
     assert stats["working_set_mb"] == -1.0

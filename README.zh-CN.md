@@ -22,6 +22,8 @@
 
 右下角会淡入一张小缩略图。**它就是交互界面：** 用上面的按钮编辑或置顶，拖拽保存，单击做 OCR。**识别出的文字会以排版干净、可直接编辑的布局弹出来。** 平时 HushSnap 安静地待在托盘里。全程本地运行——截图和识别文字不会离开你的设备。
 
+**系统要求：** Windows 10 1809 及以上或 Windows 11（x64）。HushSnap 仅支持 Windows——依赖 Win32 API 并以 MSIX 包分发，不支持 Linux / macOS。
+
 [HushSnap 官网](https://tcita.github.io/HushSnap/)
 
 [演示视频（YouTube）](https://youtu.be/untWW6_Ea3M)

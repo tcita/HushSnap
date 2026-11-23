@@ -22,6 +22,8 @@
 
 A subtle thumbnail fades in at the bottom-right corner. **It is the interface:** use its controls to edit or pin, drag it to save, or click it for OCR. **The recognized text pops up already reformatted into a clean, readable layout you can edit on the spot.** HushSnap stays quietly in the tray until you need it. Everything runs locally—your screenshots and recognized text never leave your device.
 
+**Requirements:** Windows 10 1809+ or Windows 11 (x64). HushSnap is Windows-only — it relies on Win32 APIs and ships as an MSIX package; Linux and macOS are not supported.
+
 [HushSnap Website](https://tcita.github.io/HushSnap/)
 
 [Demo Video (YouTube)](https://youtu.be/untWW6_Ea3M)
