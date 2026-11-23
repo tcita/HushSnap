@@ -56,3 +56,4 @@ ocr_batch/*
 # cv2.pyd.  All build outputs, not source.
 /opencv-build/
 
+/docs
