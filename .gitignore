@@ -55,5 +55,3 @@ ocr_batch/*
 # cmake/ninja build tree (~500MB+, fully rebuildable), output/ = the staged
 # cv2.pyd.  All build outputs, not source.
 /opencv-build/
-
-/docs
