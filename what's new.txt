@@ -5,20 +5,20 @@ Release notes (newest first)
  v1.6.5
 
 · 修复长文本 OCR 结果弹窗底部留白过多的问题，窗口现在贴合文字高度。
-· 识别结果中的 magnet: 链接会高亮，可按 Ctrl+点击打开。
+· 识别结果中的磁力链接会高亮显示，按住 Ctrl 并点击即可打开。
 · 精简托盘提示文字。
 
-· 修復長文字 OCR 結果彈窗底部留白過多的問題，視窗現在貼合文字高度。
-· 辨識結果中的 magnet: 連結會高亮，可按 Ctrl+點擊開啟。
-· 精簡托盤提示文字。
+· 修復長文字 OCR 結果彈出視窗底部留白過多的問題，視窗現在會貼合文字高度。
+· 辨識結果中的磁力連結會醒目顯示，按住 Ctrl 並點擊即可開啟。
+· 精簡系統匣提示文字。
 
-· Fixed excessive empty space below long OCR results — the popup now fits the text height.
-· magnet: links in recognised text are highlighted and can be opened with Ctrl+Click.
-· Shortened the tray tooltip.
+· Fixed excessive empty space at the bottom of the popup for long OCR results — it now fits the text height.
+· Magnet links in recognized text are highlighted and can be opened with Ctrl+Click.
+· Shortened the system tray tooltip.
 
-· 長い OCR 結果でポップアップ下部に余白が多すぎる問題を修正し、文字の高さに合わせて表示されるようにしました。
-· 認識結果内の magnet: リンクをハイライトし、Ctrl+クリックで開けるようにしました。
-· トレイのツールチップを短くしました。
+· 長文の OCR 結果でポップアップ下部の余白が多すぎる問題を修正し、ウィンドウがテキストの高さに合うようにしました。
+· 認識結果内のマグネットリンクをハイライト表示し、Ctrl+クリックで開けるようにしました。
+· システムトレイのツールチップを簡潔にしました。
 
  v1.6.4
 
