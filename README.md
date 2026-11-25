@@ -151,7 +151,7 @@ build_msix.bat              # build unsigned MSIX -> dist-installer\HushSnap.msi
 sign_for_local_test.bat     # self-sign -> dist-installer-test\HushSnap_Test_Signed.msix
 ```
 
-`build_msix.bat` runs the full test suite first and aborts on failure. The version is resolved from the current git tag, so HEAD must point at a tag (e.g. `v0.3.0`). For a quick local build without tagging:
+`build_msix.bat` runs the full test suite first and aborts on failure. The version is resolved from the current git tag, so HEAD must point at a tag (e.g. `v0.3.0`). Tag convention: release tags use three segments `vX.Y.Z`; tags with a fourth segment such as `v1.6.4.1` are for local build tests only and are never released. For a quick local build without tagging:
 
 ```powershell
 build_msix.bat -Version 0.0.0

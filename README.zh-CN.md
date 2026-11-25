@@ -149,7 +149,7 @@ build_msix.bat              # 构建未签名 MSIX → dist-installer\HushSnap.m
 sign_for_local_test.bat     # 自签名 → dist-installer-test\HushSnap_Test_Signed.msix
 ```
 
-`build_msix.bat` 会先运行完整单元测试，失败即中止；版本号默认从当前 git tag 解析，因此 HEAD 需指向某个 tag（例如 `v0.3.0`）。只想本地试构建、不想打 tag 时：
+`build_msix.bat` 会先运行完整单元测试，失败即中止；版本号默认从当前 git tag 解析，因此 HEAD 需指向某个 tag（例如 `v0.3.0`）。tag 约定：正式发布只写三段 `vX.Y.Z`；带第四位的（如 `v1.6.4.1`）仅用于本地构建测试，不发布。只想本地试构建、不想打 tag 时：
 
 ```powershell
 build_msix.bat -Version 0.0.0
